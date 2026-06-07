@@ -1,0 +1,35 @@
+{
+  "name": "cycle",
+  "version": "1.0.0",
+  "private": true,
+  "description": "",
+  "keywords": [],
+  "license": "ISC",
+  "author": "",
+  "workspaces": [
+    "packages/*"
+  ],
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "dev": "node src/index.ts",
+    "start": "node src/index.ts",
+    "storybook": "npm run storybook -w @cycle/ui",
+    "storybook:build": "npm run storybook:build -w @cycle/ui",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "oxlint --deny-warnings src packages",
+    "lint:fix": "oxlint --fix src packages",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "check": "npm run typecheck && npm run lint && npm run format:check"
+  },
+  "dependencies": {
+    "@cycle/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.2",
+    "oxfmt": "^0.53.0",
+    "oxlint": "^1.68.0",
+    "typescript": "^6.0.3"
+  }
+}

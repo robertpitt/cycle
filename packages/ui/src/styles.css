@@ -1,0 +1,196 @@
+@import "tailwindcss";
+
+@source "./**/*.ts";
+@source "../.storybook/**/*.ts";
+
+@custom-variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  --font-sans: var(--cycle-font-sans);
+
+  --color-background: var(--cycle-color-background);
+  --color-foreground: var(--cycle-color-foreground);
+  --color-surface: var(--cycle-color-surface);
+  --color-surface-foreground: var(--cycle-color-surface-foreground);
+  --color-elevated: var(--cycle-color-elevated);
+  --color-elevated-foreground: var(--cycle-color-elevated-foreground);
+  --color-popover: var(--cycle-color-popover);
+  --color-popover-foreground: var(--cycle-color-popover-foreground);
+  --color-sidebar: var(--cycle-color-sidebar);
+  --color-sidebar-foreground: var(--cycle-color-sidebar-foreground);
+  --color-muted: var(--cycle-color-muted);
+  --color-muted-foreground: var(--cycle-color-muted-foreground);
+  --color-subtle: var(--cycle-color-subtle);
+  --color-subtle-foreground: var(--cycle-color-subtle-foreground);
+  --color-primary: var(--cycle-color-primary);
+  --color-primary-foreground: var(--cycle-color-primary-foreground);
+  --color-secondary: var(--cycle-color-secondary);
+  --color-secondary-foreground: var(--cycle-color-secondary-foreground);
+  --color-accent: var(--cycle-color-accent);
+  --color-accent-foreground: var(--cycle-color-accent-foreground);
+  --color-destructive: var(--cycle-color-destructive);
+  --color-destructive-foreground: var(--cycle-color-destructive-foreground);
+  --color-success: var(--cycle-color-success);
+  --color-success-foreground: var(--cycle-color-success-foreground);
+  --color-warning: var(--cycle-color-warning);
+  --color-warning-foreground: var(--cycle-color-warning-foreground);
+  --color-border: var(--cycle-color-border);
+  --color-input: var(--cycle-color-input);
+  --color-ring: var(--cycle-color-ring);
+  --color-overlay: var(--cycle-color-overlay);
+
+  --radius-sm: calc(var(--cycle-radius) - 2px);
+  --radius-md: var(--cycle-radius);
+  --radius-lg: calc(var(--cycle-radius) + 2px);
+  --radius-xl: calc(var(--cycle-radius) + 6px);
+
+  --shadow-card: var(--cycle-shadow-card);
+  --shadow-elevated: var(--cycle-shadow-elevated);
+  --shadow-focus: var(--cycle-shadow-focus);
+}
+
+@layer base {
+  body {
+    position: relative;
+  }
+
+  :root,
+  .cycle-theme {
+    color-scheme: light;
+    --cycle-font-sans: ui-sans-serif, "Aptos", "Segoe UI", system-ui, sans-serif;
+    --cycle-radius: 0.5rem;
+
+    --cycle-color-background: oklch(0.982 0.004 248);
+    --cycle-color-foreground: oklch(0.17 0.018 252);
+    --cycle-color-surface: oklch(0.998 0.001 248);
+    --cycle-color-surface-foreground: oklch(0.18 0.018 252);
+    --cycle-color-elevated: oklch(0.976 0.006 248);
+    --cycle-color-elevated-foreground: oklch(0.17 0.018 252);
+    --cycle-color-popover: oklch(1 0 0);
+    --cycle-color-popover-foreground: oklch(0.17 0.018 252);
+    --cycle-color-sidebar: oklch(0.955 0.007 248);
+    --cycle-color-sidebar-foreground: oklch(0.25 0.019 252);
+    --cycle-color-muted: oklch(0.94 0.008 248);
+    --cycle-color-muted-foreground: oklch(0.5 0.02 252);
+    --cycle-color-subtle: oklch(0.962 0.006 248);
+    --cycle-color-subtle-foreground: oklch(0.38 0.02 252);
+    --cycle-color-primary: oklch(0.48 0.12 252);
+    --cycle-color-primary-foreground: oklch(0.985 0.003 248);
+    --cycle-color-secondary: oklch(0.91 0.018 72);
+    --cycle-color-secondary-foreground: oklch(0.25 0.026 64);
+    --cycle-color-accent: oklch(0.71 0.15 64);
+    --cycle-color-accent-foreground: oklch(0.2 0.022 55);
+    --cycle-color-destructive: oklch(0.58 0.19 24);
+    --cycle-color-destructive-foreground: oklch(0.985 0.003 248);
+    --cycle-color-success: oklch(0.58 0.13 150);
+    --cycle-color-success-foreground: oklch(0.98 0.012 150);
+    --cycle-color-warning: oklch(0.73 0.15 72);
+    --cycle-color-warning-foreground: oklch(0.22 0.025 62);
+    --cycle-color-border: oklch(0.84 0.012 252);
+    --cycle-color-input: oklch(0.78 0.014 252);
+    --cycle-color-ring: oklch(0.66 0.15 64);
+    --cycle-color-overlay: oklch(0.16 0.018 252 / 0.48);
+
+    --cycle-shadow-card:
+      0 1px 0 oklch(1 0 0 / 0.64) inset, 0 1px 2px oklch(0.18 0.018 252 / 0.08),
+      0 10px 28px oklch(0.18 0.018 252 / 0.06);
+    --cycle-shadow-elevated:
+      0 1px 0 oklch(1 0 0 / 0.74) inset, 0 10px 24px oklch(0.18 0.018 252 / 0.1),
+      0 24px 70px oklch(0.18 0.018 252 / 0.12);
+    --cycle-shadow-focus: 0 0 0 4px oklch(0.66 0.15 64 / 0.18);
+  }
+
+  :root.dark,
+  .dark,
+  [data-theme="dark"],
+  .cycle-theme[data-theme="dark"] {
+    color-scheme: dark;
+    --cycle-color-background: #08090b;
+    --cycle-color-foreground: #f4f5f8;
+    --cycle-color-surface: #101116;
+    --cycle-color-surface-foreground: #f4f5f8;
+    --cycle-color-elevated: #111216;
+    --cycle-color-elevated-foreground: #f4f5f8;
+    --cycle-color-popover: #15161b;
+    --cycle-color-popover-foreground: #f4f5f8;
+    --cycle-color-sidebar: #0b0c10;
+    --cycle-color-sidebar-foreground: #c9ccd6;
+    --cycle-color-muted: #24262d;
+    --cycle-color-muted-foreground: #858995;
+    --cycle-color-subtle: #1a1b20;
+    --cycle-color-subtle-foreground: #a5a8b3;
+    --cycle-color-primary: #5e6ad2;
+    --cycle-color-primary-foreground: #ffffff;
+    --cycle-color-secondary: #2a2c33;
+    --cycle-color-secondary-foreground: #dfe1e7;
+    --cycle-color-accent: #f3b562;
+    --cycle-color-accent-foreground: #19140c;
+    --cycle-color-destructive: #ff6b6b;
+    --cycle-color-destructive-foreground: #ffffff;
+    --cycle-color-success: #66d9a8;
+    --cycle-color-success-foreground: #071710;
+    --cycle-color-warning: #f3b562;
+    --cycle-color-warning-foreground: #19140c;
+    --cycle-color-border: #2a2c33;
+    --cycle-color-input: #30323a;
+    --cycle-color-ring: #8b95ff;
+    --cycle-color-overlay: rgb(0 0 0 / 0.68);
+
+    --cycle-shadow-card: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 14px 36px rgb(0 0 0 / 0.24);
+    --cycle-shadow-elevated: 0 1px 0 rgb(255 255 255 / 0.06) inset, 0 24px 64px rgb(0 0 0 / 0.38);
+    --cycle-shadow-focus: 0 0 0 4px rgb(139 149 255 / 0.18);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root[data-theme="system"],
+    .cycle-theme[data-theme="system"] {
+      color-scheme: dark;
+      --cycle-color-background: #08090b;
+      --cycle-color-foreground: #f4f5f8;
+      --cycle-color-surface: #101116;
+      --cycle-color-surface-foreground: #f4f5f8;
+      --cycle-color-elevated: #111216;
+      --cycle-color-elevated-foreground: #f4f5f8;
+      --cycle-color-popover: #15161b;
+      --cycle-color-popover-foreground: #f4f5f8;
+      --cycle-color-sidebar: #0b0c10;
+      --cycle-color-sidebar-foreground: #c9ccd6;
+      --cycle-color-muted: #24262d;
+      --cycle-color-muted-foreground: #858995;
+      --cycle-color-subtle: #1a1b20;
+      --cycle-color-subtle-foreground: #a5a8b3;
+      --cycle-color-primary: #5e6ad2;
+      --cycle-color-primary-foreground: #ffffff;
+      --cycle-color-secondary: #2a2c33;
+      --cycle-color-secondary-foreground: #dfe1e7;
+      --cycle-color-accent: #f3b562;
+      --cycle-color-accent-foreground: #19140c;
+      --cycle-color-destructive: #ff6b6b;
+      --cycle-color-destructive-foreground: #ffffff;
+      --cycle-color-success: #66d9a8;
+      --cycle-color-success-foreground: #071710;
+      --cycle-color-warning: #f3b562;
+      --cycle-color-warning-foreground: #19140c;
+      --cycle-color-border: #2a2c33;
+      --cycle-color-input: #30323a;
+      --cycle-color-ring: #8b95ff;
+      --cycle-color-overlay: rgb(0 0 0 / 0.68);
+      --cycle-shadow-card: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 14px 36px rgb(0 0 0 / 0.24);
+      --cycle-shadow-elevated: 0 1px 0 rgb(255 255 255 / 0.06) inset, 0 24px 64px rgb(0 0 0 / 0.38);
+      --cycle-shadow-focus: 0 0 0 4px rgb(139 149 255 / 0.18);
+    }
+  }
+
+  .cycle-theme {
+    background:
+      radial-gradient(
+        circle at top left,
+        color-mix(in oklab, var(--cycle-color-primary) 11%, transparent),
+        transparent 34rem
+      ),
+      var(--cycle-color-background);
+    color: var(--cycle-color-foreground);
+    font-family: var(--cycle-font-sans);
+    isolation: isolate;
+  }
+}
