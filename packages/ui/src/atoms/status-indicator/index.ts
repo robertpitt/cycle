@@ -1,1 +1,1 @@
-export * from "./status-indicator.ts";
+export * from "./status-indicator.tsx";

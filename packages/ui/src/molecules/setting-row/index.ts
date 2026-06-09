@@ -1,1 +1,1 @@
-export * from "./setting-row.ts";
+export * from "./setting-row.tsx";

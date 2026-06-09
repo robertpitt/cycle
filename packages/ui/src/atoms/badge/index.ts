@@ -1,1 +1,1 @@
-export * from "./badge.ts";
+export * from "./badge.tsx";

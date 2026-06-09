@@ -1,1 +1,1 @@
-export * from "./textarea.ts";
+export * from "./textarea.tsx";

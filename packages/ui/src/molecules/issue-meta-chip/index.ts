@@ -1,1 +1,1 @@
-export * from "./issue-meta-chip.ts";
+export * from "./issue-meta-chip.tsx";

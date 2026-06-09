@@ -1,1 +1,1 @@
-export * from "./otp-code-field.ts";
+export * from "./otp-code-field.tsx";

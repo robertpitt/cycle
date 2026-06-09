@@ -1,0 +1,24 @@
+{
+  "name": "@cycle/rpc",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client/index.ts",
+    "./protocol": "./src/protocol/index.ts",
+    "./schemas": "./src/schemas/index.ts",
+    "./server": "./src/server/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@cycle/ticket-db": "workspace:*",
+    "effect": "beta"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.8"
+  }
+}

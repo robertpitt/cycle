@@ -8,5 +8,6 @@ export * from "./issue-meta-chip/index.ts";
 export * from "./navigation-item/index.ts";
 export * from "./otp-code-field/index.ts";
 export * from "./setting-row/index.ts";
+export * from "./shell-sidebar-section/index.ts";
 export * from "./view-tab/index.ts";
 export * from "./work-item-row/index.ts";

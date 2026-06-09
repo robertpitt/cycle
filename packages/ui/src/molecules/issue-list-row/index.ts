@@ -1,1 +1,1 @@
-export * from "./issue-list-row.ts";
+export * from "./issue-list-row.tsx";

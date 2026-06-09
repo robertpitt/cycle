@@ -1,1 +1,2 @@
-export * from "./workspace-kit.ts";
+export * from "./app-shell-page.tsx";
+export * from "./workspace-kit.tsx";

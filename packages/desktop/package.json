@@ -1,0 +1,47 @@
+{
+  "name": "@cycle/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./out/main/index.js",
+  "exports": {
+    ".": "./src/index.ts",
+    "./ipc": "./src/ipc/index.ts",
+    "./main": "./src/main/index.ts",
+    "./platform": "./src/platform/index.ts",
+    "./renderer": "./src/renderer/App.tsx",
+    "./shared": "./src/shared/index.ts"
+  },
+  "scripts": {
+    "build": "electron-vite build",
+    "electron:install": "node -e \"require(require.resolve('electron/install.js'))\"",
+    "dev": "electron-vite dev",
+    "predev": "node -e \"require(require.resolve('electron/install.js'))\"",
+    "preview": "electron-vite preview",
+    "prepreview": "node -e \"require(require.resolve('electron/install.js'))\"",
+    "prestart": "node -e \"require(require.resolve('electron/install.js'))\"",
+    "start": "electron-vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@cycle/core": "workspace:*",
+    "@cycle/ui": "workspace:*",
+    "@tanstack/react-query": "^5.101.0",
+    "effect": "beta",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router": "^7.17.0"
+  },
+  "devDependencies": {
+    "@swc/core": "^1.15.40",
+    "@tailwindcss/vite": "^4.3.0",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^42.3.3",
+    "electron-vite": "^5.0.0",
+    "vite": "^7.3.5",
+    "vitest": "^4.1.8"
+  }
+}

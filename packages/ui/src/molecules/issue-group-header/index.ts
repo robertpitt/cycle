@@ -1,1 +1,1 @@
-export * from "./issue-group-header.ts";
+export * from "./issue-group-header.tsx";

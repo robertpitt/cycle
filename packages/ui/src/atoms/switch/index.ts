@@ -1,1 +1,1 @@
-export * from "./switch.ts";
+export * from "./switch.tsx";

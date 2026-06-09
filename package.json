@@ -13,6 +13,10 @@
   "exports": "./src/index.ts",
   "scripts": {
     "dev": "node src/index.ts",
+    "desktop:build": "pnpm --filter @cycle/desktop build",
+    "desktop:dev": "pnpm --filter @cycle/desktop dev",
+    "desktop:start": "pnpm --filter @cycle/desktop start",
+    "desktop:typecheck": "pnpm --filter @cycle/desktop typecheck",
     "start": "node src/index.ts",
     "storybook": "npm run storybook -w @cycle/ui",
     "storybook:build": "npm run storybook:build -w @cycle/ui",

@@ -1,1 +1,1 @@
-export * from "./issues-page.ts";
+export * from "./issues-page.tsx";

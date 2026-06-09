@@ -1,1 +1,1 @@
-export * from "./view-tab.ts";
+export * from "./view-tab.tsx";

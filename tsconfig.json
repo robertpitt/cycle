@@ -2,6 +2,7 @@
   "compilerOptions": {
     "target": "ES2024",
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "types": ["node"],
@@ -14,5 +15,5 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*.ts", "packages/**/*.ts"]
+  "include": ["src/**/*.ts", "packages/**/*.ts", "packages/**/*.tsx"]
 }

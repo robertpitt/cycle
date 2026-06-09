@@ -1,1 +1,1 @@
-export * from "./command-field.ts";
+export * from "./command-field.tsx";

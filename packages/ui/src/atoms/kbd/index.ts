@@ -1,1 +1,1 @@
-export * from "./kbd.ts";
+export * from "./kbd.tsx";

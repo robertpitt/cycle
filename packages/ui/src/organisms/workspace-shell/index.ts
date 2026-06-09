@@ -1,1 +1,1 @@
-export * from "./workspace-shell.ts";
+export * from "./workspace-shell.tsx";

@@ -1,1 +1,1 @@
-export * from "./navigation-item.ts";
+export * from "./navigation-item.tsx";

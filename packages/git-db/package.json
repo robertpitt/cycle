@@ -1,0 +1,21 @@
+{
+  "name": "@cycle/git-db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "bench:local": "node scripts/benchmark-local.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@effect/platform-node": "beta",
+    "effect": "beta"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.8"
+  }
+}
