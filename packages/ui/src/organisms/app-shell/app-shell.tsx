@@ -159,7 +159,10 @@ export const AppShellSidebar = React.forwardRef<HTMLElement, AppShellSidebarProp
 
         <nav
           aria-label={`${brandLabel} navigation`}
-          className={cn("mt-5 grid content-start gap-5 overflow-y-auto", collapsed && "gap-4")}
+          className={cn(
+            "-mx-1 mt-5 grid content-start gap-5 overflow-y-auto px-1 py-1",
+            collapsed && "gap-4",
+          )}
         >
           {navSections.map((section) => (
             <ShellSidebarSection

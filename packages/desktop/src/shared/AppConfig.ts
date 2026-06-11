@@ -1,6 +1,6 @@
 import { Config, ConfigProvider, Context, Data, Effect, Schema } from "effect";
 
-export const CURRENT_APP_CONFIG_SCHEMA_VERSION = 1;
+export const CURRENT_APP_CONFIG_SCHEMA_VERSION = 2;
 
 export const ThemePreference = Schema.Literals(["light", "dark", "system"]);
 export type ThemePreference = typeof ThemePreference.Type;
@@ -36,12 +36,22 @@ export const ThemeConfig = Schema.Struct({
 });
 export type ThemeConfig = typeof ThemeConfig.Type;
 
+export const RepositoryCommitStyle = Schema.Literals(["descriptive", "compact"]);
+export type RepositoryCommitStyle = typeof RepositoryCommitStyle.Type;
+
+export const isRepositoryCommitStyle = (value: unknown): value is RepositoryCommitStyle =>
+  value === "descriptive" || value === "compact";
+
 export const RepositoryPreferences = Schema.Struct({
+  autoSync: Schema.Boolean,
+  commitStyle: RepositoryCommitStyle,
   sidebarExpanded: Schema.Boolean,
 });
 export type RepositoryPreferences = typeof RepositoryPreferences.Type;
 
 export const defaultRepositoryPreferences = (): RepositoryPreferences => ({
+  autoSync: true,
+  commitStyle: "descriptive",
   sidebarExpanded: true,
 });
 

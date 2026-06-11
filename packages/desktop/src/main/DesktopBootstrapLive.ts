@@ -2,13 +2,14 @@ import { DatabaseService, type RepositoryMetadata, type RepositoryStatus } from 
 import { GitRepository, type GitRepositoryMetadata } from "@cycle/git";
 import { GitDb, Store as GitDbStore, type SyncResult } from "@cycle/git-db";
 import { Effect, Layer } from "effect";
-import { AppConfig, type RepositoryRecord } from "../shared/AppConfig.ts";
+import type { RepositoryRecord } from "../shared/AppConfig.ts";
 import {
   DesktopBootstrap,
   type BootstrapRepositoryStatus,
   type BootstrapStatus,
 } from "../shared/Bootstrap.ts";
 import { DesktopLogger } from "./DesktopLoggerLive.ts";
+import { ElectronPreferences } from "./ElectronPreferences.ts";
 
 const DEFAULT_POINTER = "main";
 const LOCAL_PROJECTION_POLL_INTERVAL_MS = 60_000;
@@ -55,7 +56,7 @@ const repositoryStatusFromProjection = (
 export const DesktopBootstrapLive = Layer.effect(
   DesktopBootstrap,
   Effect.gen(function* () {
-    const appConfig = yield* AppConfig;
+    const preferences = yield* ElectronPreferences;
     const database = yield* DatabaseService;
     const gitRepository = yield* GitRepository;
     const logger = yield* DesktopLogger;
@@ -228,7 +229,7 @@ export const DesktopBootstrapLive = Layer.effect(
     };
 
     const repositoryById = (repositoryId: string): Effect.Effect<RepositoryRecord, unknown> =>
-      appConfig.read().pipe(
+      preferences.read().pipe(
         Effect.flatMap((config) => {
           const repository = config.localWorkspace.repositories.find(
             (candidate) => candidate.id === repositoryId,
@@ -492,7 +493,7 @@ export const DesktopBootstrapLive = Layer.effect(
       });
       yield* logger.info("bootstrap started");
 
-      const config = yield* appConfig.read().pipe(
+      const config = yield* preferences.read().pipe(
         Effect.catch((error) =>
           Effect.sync(() => {
             setStatus({
@@ -543,7 +544,11 @@ export const DesktopBootstrapLive = Layer.effect(
       });
 
       for (const repositoryId of opened.keys()) {
-        startBackgroundSync(repositoryId);
+        const autoSync = yield* preferences
+          .shouldAutoSyncRepository(repositoryId)
+          .pipe(Effect.catch(() => Effect.succeed(false)));
+
+        if (autoSync) startBackgroundSync(repositoryId);
       }
     }).pipe(
       Effect.catch((error) =>

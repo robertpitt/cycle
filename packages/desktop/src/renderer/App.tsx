@@ -9,23 +9,30 @@ import { getDesktopBridge } from "./lib/desktopBridge.ts";
 
 export const rendererQueryClient = new QueryClient();
 
-const useDesktopThemePreference = (): ThemeMode => {
+const useDesktopThemeMode = (): ThemeMode => {
   const [mode, setMode] = React.useState<ThemeMode>("system");
 
   React.useEffect(() => {
-    let active = true;
+    const bridge = getDesktopBridge();
+    if (!bridge) return undefined;
 
-    getDesktopBridge()
-      ?.getAppConfig()
-      .then((config) => {
-        if (active) setMode(config.theme.preference);
-      })
+    let active = true;
+    const applyThemeState = (state: Awaited<ReturnType<typeof bridge.getThemeState>>): void => {
+      if (active) setMode(state.source);
+    };
+
+    bridge
+      .getThemeState()
+      .then(applyThemeState)
       .catch((error: unknown) => {
-        console.error("Unable to load desktop theme preference.", error);
+        console.error("Unable to load desktop theme state.", error);
       });
+
+    const unsubscribe = bridge.onThemeStateChanged(applyThemeState);
 
     return () => {
       active = false;
+      unsubscribe();
     };
   }, []);
 
@@ -33,11 +40,11 @@ const useDesktopThemePreference = (): ThemeMode => {
 };
 
 export const DesktopRendererApp = () => {
-  const themePreference = useDesktopThemePreference();
+  const themeMode = useDesktopThemeMode();
 
   return (
     <QueryClientProvider client={rendererQueryClient}>
-      <ThemeProvider className="h-dvh overflow-hidden" mode={themePreference}>
+      <ThemeProvider className="h-dvh overflow-hidden" mode={themeMode}>
         <RouterProvider router={rendererRouter} />
       </ThemeProvider>
     </QueryClientProvider>

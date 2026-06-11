@@ -1,7 +1,12 @@
 import type { TicketRpcMethod, TicketRpcResponse } from "@cycle/rpc/protocol";
-import type { AppConfigState, ThemePreference } from "../shared/AppConfig.ts";
+import type {
+  AppConfigState,
+  RepositoryCommitStyle,
+  ThemePreference,
+} from "../shared/AppConfig.ts";
 import type { AgentProviderId, DetectedAgentProvider } from "../shared/AgentProviders.ts";
 import type { BootstrapStatus } from "../shared/Bootstrap.ts";
+import type { ElectronThemeState, ElectronThemeSource } from "../platform/ElectronTheme.ts";
 import type { CompleteOnboardingInput, ProfileUpdateInput } from "../shared/Profile.ts";
 import type {
   InitializeRepositoryPathInput,
@@ -14,7 +19,10 @@ import type { RepositoryRecord } from "../shared/AppConfig.ts";
 export const getAppConfigChannel = "cycle:desktop:app-config/get";
 export const updateProfileChannel = "cycle:desktop:profile/update";
 export const completeOnboardingChannel = "cycle:desktop:profile/complete-onboarding";
+export const getThemeStateChannel = "cycle:desktop:theme/get-state";
 export const setThemePreferenceChannel = "cycle:desktop:theme/set-preference";
+export const themeStateChangedChannel = "cycle:desktop:theme/state-changed";
+export const clearCacheChannel = "cycle:desktop:preferences/clear-cache";
 export const listRepositoriesChannel = "cycle:desktop:local-workspace/list-repositories";
 export const selectRepositoryFolderChannel =
   "cycle:desktop:local-workspace/select-repository-folder";
@@ -38,6 +46,8 @@ export type SetThemePreferenceRequest = {
   readonly preference: ThemePreference;
 };
 
+export type { ElectronThemeState, ElectronThemeSource };
+
 export type RemoveRepositoryRequest = {
   readonly id: string;
 };
@@ -54,6 +64,7 @@ export type CycleDesktopBridge = {
   readonly getBackendLogPath: () => Promise<string>;
   readonly getBootstrapStatus: () => Promise<BootstrapStatus>;
   readonly getAppConfig: () => Promise<AppConfigState>;
+  readonly getThemeState: () => Promise<ElectronThemeState>;
   readonly initializeRepositoryPath: (
     input: InitializeRepositoryPathInput,
   ) => Promise<RepositoryRecord>;
@@ -62,7 +73,9 @@ export type CycleDesktopBridge = {
   readonly platform: NodeJS.Platform;
   readonly removeRepository: (id: string) => Promise<ReadonlyArray<RepositoryRecord>>;
   readonly selectRepositoryFolder: () => Promise<SelectRepositoryFolderResult>;
+  readonly clearCache: () => Promise<void>;
   readonly setThemePreference: (preference: ThemePreference) => Promise<AppConfigState>;
+  readonly onThemeStateChanged: (listener: (state: ElectronThemeState) => void) => () => void;
   readonly ticketRpc: (request: TicketRpcBridgeRequest) => Promise<TicketRpcResponse>;
   readonly updateRepositoryPreferences: (
     input: UpdateRepositoryPreferencesInput,
@@ -89,11 +102,23 @@ export const isOpenExternalRequest = (value: unknown): value is OpenExternalRequ
 export const isThemePreferenceValue = (value: unknown): value is ThemePreference =>
   value === "light" || value === "dark" || value === "system";
 
+export const isElectronThemeSourceValue = (value: unknown): value is ElectronThemeSource =>
+  value === "light" || value === "dark" || value === "system";
+
+export const isRepositoryCommitStyleValue = (value: unknown): value is RepositoryCommitStyle =>
+  value === "descriptive" || value === "compact";
+
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const isAgentProviderId = (value: unknown): value is AgentProviderId =>
   value === "codex" || value === "claude" || value === "opencode";
+
+export const isElectronThemeState = (value: unknown): value is ElectronThemeState =>
+  isRecord(value) &&
+  isElectronThemeSourceValue(value.source) &&
+  (value.resolvedMode === "light" || value.resolvedMode === "dark") &&
+  typeof value.shouldUseDarkColors === "boolean";
 
 export const isProfileUpdateInput = (value: unknown): value is ProfileUpdateInput =>
   isRecord(value) &&
@@ -129,6 +154,9 @@ export const isUpdateRepositoryPreferencesInput = (
   isRecord(value) &&
   typeof value.id === "string" &&
   isRecord(value.preferences) &&
+  (value.preferences.autoSync === undefined || typeof value.preferences.autoSync === "boolean") &&
+  (value.preferences.commitStyle === undefined ||
+    isRepositoryCommitStyleValue(value.preferences.commitStyle)) &&
   (value.preferences.sidebarExpanded === undefined ||
     typeof value.preferences.sidebarExpanded === "boolean");
 

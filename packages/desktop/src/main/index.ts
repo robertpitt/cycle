@@ -7,6 +7,7 @@ export * from "./DesktopDatabaseLive.ts";
 export * from "./DesktopLoggerLive.ts";
 export * from "./DesktopWindow.ts";
 export * from "./DesktopWindowLive.ts";
+export * from "./ElectronPreferences.ts";
 export * from "./LocalWorkspaceLive.ts";
 export * from "./MainProgram.ts";
 export * from "./ProfileLive.ts";

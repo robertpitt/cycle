@@ -15,10 +15,12 @@ import { ArrowLeft, FolderPlus, History, Plus, RefreshCw, Upload } from "lucide-
 import * as React from "react";
 import {
   AddRepositoryStep,
+  ApplicationSettingsPanel,
   BootloaderScreen,
   IssuesPanel,
   PageBodyPlaceholder,
   RepositoryHistoryPanel,
+  RepositorySettingsPanel,
   SetupScreen,
   ViewIssuePanel,
 } from "../components/index.ts";
@@ -88,6 +90,8 @@ export const WorkspaceScreen = () => {
   const selectedIssueRepositoryId = issueRepository?.id;
   const isIssueDetailPage = isIssuesPage && selectedIssueId !== undefined;
   const isRepositoryHistoryPage = selectedRepositoryPage?.kind === "history";
+  const isRepositorySettingsPage = selectedRepositoryPage?.kind === "settings";
+  const isApplicationSettingsPage = activeItemId === "settings";
 
   const completeOnboarding = useCompleteOnboardingMutation({
     appConfig: appConfigQuery.data,
@@ -289,7 +293,19 @@ export const WorkspaceScreen = () => {
     setRepositoryInitialiseError(undefined);
     chooseRepositoryFolder();
   };
-  const rendererNavSections = createRendererNavSections(repositories);
+  const rendererNavSections = createRendererNavSections(repositories, {
+    repositoryAction: (
+      <IconButton
+        className="-mr-[9px] text-muted-foreground hover:bg-transparent hover:text-foreground"
+        icon={<Plus aria-hidden className="size-3.5" />}
+        label="Add repository"
+        onClick={chooseRepositoryFolder}
+        size="sm"
+        title="Add repository"
+        variant="ghost"
+      />
+    ),
+  });
   const activePageTitle = isIssueDetailPage
     ? (selectedIssueId ?? "Issue")
     : activePageTitleForNavItem(activeItemId, repositories);
@@ -432,9 +448,7 @@ export const WorkspaceScreen = () => {
           <AppShellSidebar
             activeItemId={activeItemId}
             collapsed={collapsed}
-            createLabel="Add Repository"
             navSections={rendererNavSections}
-            onCreate={chooseRepositoryFolder}
             onNavItemSelect={handleNavItemSelect}
             onSettingsSelect={() => setActiveItemId("settings")}
             settingsActive={activeItemId === "settings"}
@@ -448,7 +462,15 @@ export const WorkspaceScreen = () => {
                   : "relative bg-background/70 p-3"
               }
             >
-              {hasRepositories && isIssueDetailPage ? (
+              {isApplicationSettingsPage && appConfigQuery.data ? (
+                <ApplicationSettingsPanel appConfig={appConfigQuery.data} />
+              ) : hasRepositories && isRepositorySettingsPage && activeRepository ? (
+                <RepositorySettingsPanel
+                  appConfig={appConfigQuery.data}
+                  repository={activeRepository}
+                  status={repositoryStatus}
+                />
+              ) : hasRepositories && isIssueDetailPage ? (
                 <ViewIssuePanel issueId={selectedIssueId} repositoryId={issueRepository?.id} />
               ) : hasRepositories && isIssuesPage ? (
                 <IssuesPanel
@@ -478,7 +500,10 @@ export const WorkspaceScreen = () => {
                   saving={addRepository.isPending}
                 />
               )}
-              {activeRepository && !isIssueDetailPage && !isRepositoryHistoryPage ? (
+              {activeRepository &&
+              !isIssueDetailPage &&
+              !isRepositoryHistoryPage &&
+              !isRepositorySettingsPage ? (
                 <IconButton
                   className="absolute bottom-3 right-3 shadow-card"
                   icon={<History aria-hidden className="size-4" />}

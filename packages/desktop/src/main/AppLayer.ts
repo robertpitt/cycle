@@ -4,6 +4,7 @@ import { Layer } from "effect";
 import { BrowserWindowsLive } from "../platform/BrowserWindowsLive.ts";
 import { ElectronAppLive } from "../platform/ElectronAppLive.ts";
 import { ElectronShellLive } from "../platform/ElectronShellLive.ts";
+import { ElectronThemeLive } from "../platform/ElectronThemeLive.ts";
 import { ProcessLifecycleLive } from "../platform/ProcessLifecycleLive.ts";
 import { DesktopConfigLive } from "../shared/DesktopConfigLive.ts";
 import { AgentProviderDetectorLive } from "./AgentProviderDetectorLive.ts";
@@ -12,6 +13,7 @@ import { DesktopBootstrapLive } from "./DesktopBootstrapLive.ts";
 import { DesktopWindowLive } from "./DesktopWindowLive.ts";
 import { DesktopDatabaseLive } from "./DesktopDatabaseLive.ts";
 import { DesktopLoggerLive } from "./DesktopLoggerLive.ts";
+import { ElectronPreferences } from "./ElectronPreferences.ts";
 import { LocalWorkspaceLive } from "./LocalWorkspaceLive.ts";
 import { ProfileLive } from "./ProfileLive.ts";
 
@@ -35,6 +37,17 @@ const LocalWorkspaceServiceLive = LocalWorkspaceLive.pipe(
   Layer.provide(Layer.mergeAll(AppConfigServiceLive, GitRepositoryServiceLive)),
 );
 
+const ElectronPreferencesServiceLive = ElectronPreferences.defaultLayer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      AppConfigServiceLive,
+      ElectronThemeLive,
+      LocalWorkspaceServiceLive,
+      ProfileServiceLive,
+    ),
+  ),
+);
+
 const DesktopDatabaseServiceLive = DesktopDatabaseLive.pipe(
   Layer.provide(
     Layer.mergeAll(ProfileServiceLive, ElectronAppServiceLive, DesktopLoggerServiceLive),
@@ -42,9 +55,9 @@ const DesktopDatabaseServiceLive = DesktopDatabaseLive.pipe(
 );
 
 const DatabaseConsumerDependenciesLive = Layer.mergeAll(
-  AppConfigServiceLive,
   DesktopDatabaseServiceLive,
   DesktopLoggerServiceLive,
+  ElectronPreferencesServiceLive,
   GitRepositoryServiceLive,
 );
 
@@ -54,10 +67,12 @@ const DatabaseConsumersLive = Layer.mergeAll(TicketRpcLive, DesktopBootstrapLive
 
 export const DesktopLive = Layer.mergeAll(
   ElectronAppServiceLive,
+  ElectronThemeLive,
   DesktopWindowServiceLive,
   ElectronShellLive,
   AppConfigServiceLive,
   ProfileServiceLive,
+  ElectronPreferencesServiceLive,
   DesktopLoggerServiceLive,
   GitRepositoryServiceLive,
   LocalWorkspaceServiceLive,

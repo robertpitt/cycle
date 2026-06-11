@@ -125,15 +125,25 @@ const salvageRepositories = (
     const seenPaths = new Set<string>();
 
     for (const candidate of value) {
+      const preferences =
+        isRecord(candidate) && isRecord(candidate.preferences) ? candidate.preferences : {};
+      const defaults = defaultRepositoryPreferences();
       const repositoryCandidate = isRecord(candidate)
         ? {
             ...candidate,
             preferences: {
+              autoSync:
+                typeof preferences.autoSync === "boolean"
+                  ? preferences.autoSync
+                  : defaults.autoSync,
+              commitStyle:
+                preferences.commitStyle === "compact" || preferences.commitStyle === "descriptive"
+                  ? preferences.commitStyle
+                  : defaults.commitStyle,
               sidebarExpanded:
-                isRecord(candidate.preferences) &&
-                typeof candidate.preferences.sidebarExpanded === "boolean"
-                  ? candidate.preferences.sidebarExpanded
-                  : defaultRepositoryPreferences().sidebarExpanded,
+                typeof preferences.sidebarExpanded === "boolean"
+                  ? preferences.sidebarExpanded
+                  : defaults.sidebarExpanded,
             },
           }
         : candidate;

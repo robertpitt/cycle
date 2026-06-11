@@ -79,7 +79,7 @@ const readPersistedConfig = async (userData: string): Promise<AppConfigState> =>
 describe("desktop app config", () => {
   it("validates app config through Effect Config and ConfigProvider", async () => {
     const valid = await Effect.runPromise(parseAppConfig(defaultAppConfig()));
-    assert.equal(valid.schemaVersion, 1);
+    assert.equal(valid.schemaVersion, 2);
 
     await assert.rejects(() =>
       Effect.runPromise(
@@ -220,6 +220,8 @@ describe("desktop app config", () => {
     );
 
     assert.equal(result.first.id, result.second.id);
+    assert.equal(result.first.preferences.autoSync, true);
+    assert.equal(result.first.preferences.commitStyle, "descriptive");
     assert.equal(result.first.preferences.sidebarExpanded, true);
     assert.equal(result.second.displayName, "Renamed project");
     assert.equal(result.collapsed?.preferences.sidebarExpanded, false);
@@ -361,6 +363,8 @@ describe("desktop app config", () => {
     assert.equal(recovered.theme.preference, "system");
     assert.equal(recovered.localWorkspace.repositories.length, 1);
     assert.equal(recovered.localWorkspace.repositories[0]?.id, "repo_1");
+    assert.equal(recovered.localWorkspace.repositories[0]?.preferences.autoSync, true);
+    assert.equal(recovered.localWorkspace.repositories[0]?.preferences.commitStyle, "descriptive");
     assert.equal(recovered.localWorkspace.repositories[0]?.preferences.sidebarExpanded, true);
   });
 

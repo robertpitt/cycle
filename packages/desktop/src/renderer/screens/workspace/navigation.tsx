@@ -48,7 +48,14 @@ const createRepositoryNavItems = (repositories: readonly RepositoryRecord[]) =>
     ];
   });
 
-export const createRendererNavSections = (repositories: readonly RepositoryRecord[]) =>
+type RendererNavOptions = {
+  readonly repositoryAction?: AppShellNavSection["action"];
+};
+
+export const createRendererNavSections = (
+  repositories: readonly RepositoryRecord[],
+  options: RendererNavOptions = {},
+) =>
   [
     {
       id: "workspace",
@@ -78,6 +85,7 @@ export const createRendererNavSections = (repositories: readonly RepositoryRecor
       title: "Workspace",
     },
     {
+      action: options.repositoryAction,
       id: "repositories",
       items: createRepositoryNavItems(repositories),
       title: "Repositories",

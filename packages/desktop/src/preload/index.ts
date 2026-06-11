@@ -1,11 +1,14 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import {
+  clearCacheChannel,
   completeOnboardingChannel,
   detectAgentProvidersChannel,
   getAppConfigChannel,
   getBackendLogPathChannel,
   getBootstrapStatusChannel,
+  getThemeStateChannel,
   isCompleteOnboardingInput,
+  isElectronThemeState,
   isInitializeRepositoryPathInput,
   isProfileUpdateInput,
   isTicketRpcBridgeRequest,
@@ -18,6 +21,7 @@ import {
   removeRepositoryChannel,
   selectRepositoryFolderChannel,
   setThemePreferenceChannel,
+  themeStateChangedChannel,
   ticketRpcChannel,
   updateRepositoryPreferencesChannel,
   updateProfileChannel,
@@ -33,10 +37,19 @@ const desktopBridge: CycleDesktopBridge = {
 
     return ipcRenderer.invoke(completeOnboardingChannel, input);
   },
+  clearCache: async () => ipcRenderer.invoke(clearCacheChannel),
   detectAgentProviders: async () => ipcRenderer.invoke(detectAgentProvidersChannel),
   getBackendLogPath: async () => ipcRenderer.invoke(getBackendLogPathChannel),
   getBootstrapStatus: async () => ipcRenderer.invoke(getBootstrapStatusChannel),
   getAppConfig: async () => ipcRenderer.invoke(getAppConfigChannel),
+  getThemeState: async () => {
+    const state: unknown = await ipcRenderer.invoke(getThemeStateChannel);
+    if (!isElectronThemeState(state)) {
+      throw new TypeError("main process returned an invalid theme state.");
+    }
+
+    return state;
+  },
   initializeRepositoryPath: async (input) => {
     if (!isInitializeRepositoryPathInput(input)) {
       throw new TypeError("input must include a repository path.");
@@ -67,6 +80,20 @@ const desktopBridge: CycleDesktopBridge = {
     }
 
     return ipcRenderer.invoke(setThemePreferenceChannel, { preference });
+  },
+  onThemeStateChanged: (listener) => {
+    if (typeof listener !== "function") {
+      throw new TypeError("listener must be a function.");
+    }
+
+    const handler = (_event: IpcRendererEvent, state: unknown): void => {
+      if (isElectronThemeState(state)) listener(state);
+    };
+
+    ipcRenderer.on(themeStateChangedChannel, handler);
+    return () => {
+      ipcRenderer.off(themeStateChangedChannel, handler);
+    };
   },
   ticketRpc: async (request) => {
     if (!isTicketRpcBridgeRequest(request)) {

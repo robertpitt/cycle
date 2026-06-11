@@ -6,5 +6,7 @@ export * from "./ElectronError.ts";
 export * from "./ElectronShell.ts";
 export * from "./ElectronShellLive.ts";
 export * from "./ElectronShellTest.ts";
+export * from "./ElectronTheme.ts";
+export * from "./ElectronThemeLive.ts";
 export * from "./ProcessLifecycle.ts";
 export * from "./ProcessLifecycleLive.ts";

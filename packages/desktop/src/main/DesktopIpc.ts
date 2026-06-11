@@ -3,10 +3,12 @@ import { dialog, ipcMain, type IpcMainInvokeEvent, type OpenDialogOptions } from
 import { Effect } from "effect";
 import {
   completeOnboardingChannel,
+  clearCacheChannel,
   detectAgentProvidersChannel,
   getAppConfigChannel,
   getBackendLogPathChannel,
   getBootstrapStatusChannel,
+  getThemeStateChannel,
   isCompleteOnboardingInput,
   isInitializeRepositoryPathInput,
   isOpenExternalRequest,
@@ -22,18 +24,20 @@ import {
   removeRepositoryChannel,
   selectRepositoryFolderChannel,
   setThemePreferenceChannel,
+  themeStateChangedChannel,
   ticketRpcChannel,
   updateRepositoryPreferencesChannel,
   updateProfileChannel,
   upsertRepositoryPathChannel,
   type OpenExternalRequest,
+  type ElectronThemeState,
   type TicketRpcBridgeRequest,
 } from "../ipc/index.ts";
 import { electronSecurityError, type ElectronError } from "../platform/ElectronError.ts";
 import { ElectronShell } from "../platform/ElectronShell.ts";
 import { AppConfigError } from "../shared/AppConfig.ts";
 import { AgentProviderDetector } from "../shared/AgentProviders.ts";
-import { AppConfig, type ThemePreference } from "../shared/AppConfig.ts";
+import type { ThemePreference } from "../shared/AppConfig.ts";
 import { DesktopBootstrap } from "../shared/Bootstrap.ts";
 import {
   LocalWorkspace,
@@ -43,13 +47,10 @@ import {
   type UpdateRepositoryPreferencesInput,
   type UpsertRepositoryPathInput,
 } from "../shared/LocalWorkspace.ts";
-import {
-  Profile,
-  type CompleteOnboardingInput,
-  type ProfileUpdateInput,
-} from "../shared/Profile.ts";
+import type { CompleteOnboardingInput, ProfileUpdateInput } from "../shared/Profile.ts";
 import { currentDesktopWindow } from "./DesktopWindowLive.ts";
 import { DesktopLogger } from "./DesktopLoggerLive.ts";
+import { ElectronPreferences } from "./ElectronPreferences.ts";
 
 type SetThemePreferenceRequest = {
   readonly preference: ThemePreference;
@@ -293,12 +294,18 @@ const registerIpcHandler = <A, B>(
     () => Effect.sync(() => ipcMain.removeHandler(channel)),
   ).pipe(Effect.asVoid);
 
+const broadcastThemeState = (state: ElectronThemeState): Effect.Effect<void> =>
+  Effect.sync(() => {
+    const window = currentDesktopWindow();
+    if (window === null || window.isDestroyed()) return;
+    window.webContents.send(themeStateChangedChannel, state);
+  });
+
 export const registerDesktopIpc = Effect.fnUntraced(function* () {
   const shell = yield* ElectronShell;
-  const appConfig = yield* AppConfig;
+  const preferences = yield* ElectronPreferences;
   const bootstrap = yield* DesktopBootstrap;
   const logger = yield* DesktopLogger;
-  const profile = yield* Profile;
   const localWorkspace = yield* LocalWorkspace;
   const agentProviderDetector = yield* AgentProviderDetector;
   const ticketRpc = yield* TicketRpcService;
@@ -306,20 +313,35 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
   yield* registerIpcHandler(openExternalChannel, decodeOpenExternalRequest, (request) =>
     shell.openExternal(request.targetUrl),
   );
-  yield* registerIpcHandler(getAppConfigChannel, decodeEmptyRequest, () => appConfig.read());
+  yield* registerIpcHandler(getAppConfigChannel, decodeEmptyRequest, () => preferences.read());
+  yield* registerIpcHandler(getThemeStateChannel, decodeEmptyRequest, () => preferences.themeState);
   yield* registerIpcHandler(getBackendLogPathChannel, decodeEmptyRequest, () => logger.path);
   yield* registerIpcHandler(getBootstrapStatusChannel, decodeEmptyRequest, () =>
     bootstrap.status(),
   );
   yield* registerIpcHandler(updateProfileChannel, decodeProfileUpdateInput, (request) =>
-    profile.updateProfile(request),
+    preferences.updateProfile(request),
   );
   yield* registerIpcHandler(completeOnboardingChannel, decodeCompleteOnboardingInput, (request) =>
-    profile.completeOnboarding(request),
+    Effect.gen(function* () {
+      const next = yield* preferences.completeOnboarding(request);
+      const state = yield* preferences.themeState;
+      yield* broadcastThemeState(state);
+      return next;
+    }),
   );
   yield* registerIpcHandler(setThemePreferenceChannel, decodeSetThemePreferenceRequest, (request) =>
-    appConfig.setThemePreference(request.preference),
+    Effect.gen(function* () {
+      const next = yield* preferences.setThemePreference(request.preference);
+      const state = yield* preferences.themeState;
+      yield* broadcastThemeState(state);
+      return next;
+    }),
   );
+  yield* registerIpcHandler(clearCacheChannel, decodeEmptyRequest, () => preferences.clearCache());
+  yield* preferences.startThemeLifecycleSupervision({
+    onUpdated: broadcastThemeState,
+  });
   yield* registerIpcHandler(listRepositoriesChannel, decodeEmptyRequest, () =>
     localWorkspace.listRepositories(),
   );
@@ -342,7 +364,7 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
   yield* registerIpcHandler(
     updateRepositoryPreferencesChannel,
     decodeUpdateRepositoryPreferencesInput,
-    (request) => localWorkspace.updateRepositoryPreferences(request),
+    (request) => preferences.updateRepositoryPreferences(request),
   );
   yield* registerIpcHandler(detectAgentProvidersChannel, decodeEmptyRequest, () =>
     agentProviderDetector.detect(),
@@ -354,7 +376,7 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
       }
 
       const repositoryId = yield* ticketRpcRepositoryId(request);
-      const config = yield* appConfig.read();
+      const config = yield* preferences.read();
       const repository = config.localWorkspace.repositories.find(
         (candidate) => candidate.id === repositoryId,
       );

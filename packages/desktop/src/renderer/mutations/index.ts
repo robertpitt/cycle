@@ -2,6 +2,7 @@ export * from "./drafts.ts";
 export * from "./issues.ts";
 export * from "./relations.ts";
 export * from "./repositories.ts";
+export * from "./settings.ts";
 export * from "./useAddRepositoryMutation.ts";
 export * from "./useAddIssueCommentMutation.ts";
 export * from "./useCompleteOnboardingMutation.ts";
