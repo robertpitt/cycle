@@ -51,6 +51,13 @@ export const invalidRpcRequest = (message: string, details?: Readonly<Record<str
     message,
   });
 
+export const invalidRpcResponse = (message: string, details?: Readonly<Record<string, unknown>>) =>
+  ticketRpcError({
+    code: "INVALID_RPC_RESPONSE",
+    details,
+    message,
+  });
+
 export const unknownRpcMethod = (method: string) =>
   ticketRpcError({
     code: "UNKNOWN_RPC_METHOD",

@@ -77,10 +77,12 @@ Capabilities:
 Import the service from:
 
 ```ts
-import { GitRepository, GitRepositoryLive } from "@cycle/git";
+import { GitRepository } from "@cycle/git";
 ```
 
-Use `GitRepositoryLive.NodeLive` for Node/Electron runtime composition.
+Use `GitRepository.layer` when composing lower-level Node services explicitly. Use
+`GitRepository.NodeLive` as a convenience for Node/Electron runtime composition. The
+`GitRepositoryLive` namespace remains available as a compatibility export.
 
 ## Backends
 

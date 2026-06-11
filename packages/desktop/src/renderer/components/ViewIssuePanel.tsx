@@ -1,8 +1,4 @@
-import {
-  ViewIssue,
-  type ViewIssueActivityEvent,
-  type ViewIssueComment,
-} from "@cycle/ui/organisms";
+import { ViewIssue, type ViewIssueActivityEvent, type ViewIssueComment } from "@cycle/ui/organisms";
 import {
   AlertTriangle,
   BarChart3,
@@ -17,7 +13,7 @@ import type {
   HistoryCommit,
   LinkedRecord,
   TicketDocument,
-} from "@cycle/database";
+} from "@cycle/contracts";
 import {
   useAddIssueCommentMutation,
   useCreateIssueMutation,
@@ -160,8 +156,7 @@ const issueActivity = (
   const historyEvents = historyEntries
     .filter((entry) => !isCommentHistoryEntry(entry))
     .map((entry) => {
-      const authorName =
-        entry.authorName ?? entry.authorEmail ?? issue.frontmatter.createdBy.name;
+      const authorName = entry.authorName ?? entry.authorEmail ?? issue.frontmatter.createdBy.name;
 
       return {
         author: authorFromName(authorName),
@@ -455,7 +450,7 @@ export const ViewIssuePanel = ({ issueId, repositoryId }: ViewIssuePanelProps) =
             }
           : undefined
       }
-      comments={(recordsQuery.data ?? []).map(commentFromRecord)}
+      comments={(recordsQuery.data?.entries ?? []).map(commentFromRecord)}
       defaultDescription={issue.body}
       defaultTitle={issue.frontmatter.title}
       descriptionDefaultPreviewOpen

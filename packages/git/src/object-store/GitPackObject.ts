@@ -223,21 +223,27 @@ const inflatePackData = (
   expectedSize: number,
   packPath: string,
 ): Effect.Effect<Uint8Array, GitAdapterError> =>
-  Effect.try({
-    try: () => {
-      const inflated = new Uint8Array(inflateSync(compressed));
-
-      if (inflated.byteLength !== expectedSize) {
-        throw new Error(`Expected ${expectedSize} bytes but inflated ${inflated.byteLength}`);
+  Effect.flatMap(
+    Effect.try({
+      try: () => new Uint8Array(inflateSync(compressed)),
+      catch: (cause) =>
+        gitAdapterError("filesystem pack read", `Could not inflate packed object: ${packPath}`, {
+          cause,
+        }),
+    }),
+    (inflated) => {
+      if (inflated.byteLength === expectedSize) {
+        return Effect.succeed(inflated);
       }
 
-      return inflated;
+      return Effect.fail(
+        gitAdapterError(
+          "filesystem pack read",
+          `Expected ${expectedSize} bytes but inflated ${inflated.byteLength}: ${packPath}`,
+        ),
+      );
     },
-    catch: (cause) =>
-      gitAdapterError("filesystem pack read", `Could not inflate packed object: ${packPath}`, {
-        cause,
-      }),
-  });
+  );
 
 const packObjectType = (type: number): GitObject["type"] | "ofs-delta" | "ref-delta" | null => {
   switch (type) {

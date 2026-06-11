@@ -71,22 +71,18 @@ export const writeFilesystemTree = (
   });
 
 const hexToBytes = (hex: string, operation: string): Effect.Effect<Uint8Array, GitAdapterError> =>
-  Effect.try({
-    try: () => {
-      if (!/^[0-9a-fA-F]{40}$/u.test(hex)) {
-        throw new Error(`Invalid Git object id: ${hex}`);
-      }
+  Effect.suspend(() => {
+    if (!/^[0-9a-fA-F]{40}$/u.test(hex)) {
+      return Effect.fail(gitAdapterError(operation, `Invalid Git object id: ${hex}`));
+    }
 
-      const bytes = new Uint8Array(20);
+    const bytes = new Uint8Array(20);
 
-      for (let index = 0; index < hex.length; index += 2) {
-        bytes[index / 2] = Number.parseInt(hex.slice(index, index + 2), 16);
-      }
+    for (let index = 0; index < hex.length; index += 2) {
+      bytes[index / 2] = Number.parseInt(hex.slice(index, index + 2), 16);
+    }
 
-      return bytes;
-    },
-    catch: (cause) =>
-      gitAdapterError(operation, cause instanceof Error ? cause.message : String(cause), { cause }),
+    return Effect.succeed(bytes);
   });
 
 const bytesToHex = (bytes: Uint8Array): string =>

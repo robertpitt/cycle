@@ -1,8 +1,11 @@
-import type {
-  TicketRpcMethod,
-  TicketRpcPayloads,
-  TicketRpcResponse,
-  TicketRpcSuccesses,
+import { Schema } from "effect";
+import {
+  invalidRpcResponse,
+  TicketRpcSuccessSchemas,
+  type TicketRpcMethod,
+  type TicketRpcPayloads,
+  type TicketRpcResponse,
+  type TicketRpcSuccesses,
 } from "../protocol/index.ts";
 
 export type TicketRpcTransport = {
@@ -29,7 +32,10 @@ const nextRequestId = (): string => {
 };
 
 export const makeTicketRpcClient = (transport: TicketRpcTransport): TicketRpcClient => ({
-  call: async (method, payload) => {
+  call: async <Method extends TicketRpcMethod>(
+    method: Method,
+    payload: TicketRpcPayloads[Method],
+  ) => {
     const response = await transport.invoke({
       id: nextRequestId(),
       method,
@@ -40,6 +46,14 @@ export const makeTicketRpcClient = (transport: TicketRpcTransport): TicketRpcCli
       throw response.error;
     }
 
-    return response.value as TicketRpcSuccesses[typeof method];
+    try {
+      return Schema.decodeUnknownSync(TicketRpcSuccessSchemas[method])(
+        response.value,
+      ) as TicketRpcSuccesses[Method];
+    } catch (error) {
+      throw invalidRpcResponse(`Invalid RPC response for ${method}.`, {
+        parseError: String(error),
+      });
+    }
   },
 });

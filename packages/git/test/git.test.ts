@@ -5,13 +5,14 @@ import os from "node:os";
 import path from "node:path";
 import { strict as assert } from "node:assert";
 import { promisify } from "node:util";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Result } from "effect";
+import { sanitizeStderr } from "../src/command/GitCommand.ts";
 import { bytesToString } from "../src/internals/bytes.ts";
 import { Git, type GitService } from "../src/object-store/Git.ts";
 import * as GitCli from "../src/object-store/GitCli.ts";
 import * as GitFilesystem from "../src/object-store/GitFilesystem.ts";
-import { GitRepository } from "../src/repository/GitRepository.ts";
-import * as GitRepositoryLive from "../src/repository/GitRepositoryLive.ts";
+import * as GitInMemory from "../src/object-store/GitInMemory.ts";
+import { GitRepository } from "../src/index.ts";
 import { describe, it } from "./effect-vitest.ts";
 
 const execFileAsync = promisify(execFile);
@@ -80,7 +81,25 @@ const withRepo = <A, E, R>(
 
 const cliLayer = GitCli.layer.pipe(Layer.provide(NodeServices.layer));
 const filesystemLayer = GitFilesystem.layer.pipe(Layer.provide(NodeServices.layer));
-const repositoryLayer = GitRepositoryLive.layer.pipe(Layer.provide(NodeServices.layer));
+const inMemoryLayer = GitInMemory.layer.pipe(Layer.provide(NodeServices.layer));
+const repositoryLayer = GitRepository.layer.pipe(Layer.provide(NodeServices.layer));
+const conformanceBackends = [
+  {
+    layer: cliLayer,
+    name: "CLI",
+    requiresRepository: true,
+  },
+  {
+    layer: filesystemLayer,
+    name: "filesystem",
+    requiresRepository: true,
+  },
+  {
+    layer: inMemoryLayer,
+    name: "in-memory",
+    requiresRepository: false,
+  },
+] as const;
 
 const writeSnapshot = (service: GitService, repo: string, message: string, parent?: string) =>
   Effect.gen(function* () {
@@ -107,7 +126,95 @@ const writeSnapshot = (service: GitService, repo: string, message: string, paren
     return { blob, commit, store, tree };
   });
 
+const withBackendRepo = <A, E, R>(
+  backend: (typeof conformanceBackends)[number],
+  f: (repo: string) => Effect.Effect<A, E, R>,
+): Effect.Effect<A, E | unknown, R> =>
+  backend.requiresRepository ? withRepo(f) : withTempDir("cycle-git-memory-", f);
+
+const runObjectStoreConformance = (
+  service: GitService,
+  repo: string,
+  backendName: string,
+): Effect.Effect<void, unknown> =>
+  Effect.gen(function* () {
+    const ref = `refs/cycle-test/${backendName.toLowerCase()}`;
+    const first = yield* writeSnapshot(service, repo, `${backendName} create`);
+    const second = yield* writeSnapshot(service, repo, `${backendName} update`, first.commit);
+
+    assert.strictEqual(
+      bytesToString(yield* service.readBlob(first.store, first.blob)),
+      `${backendName} create\n`,
+    );
+    assert.deepStrictEqual(yield* service.readTree(first.store, first.tree), [
+      {
+        mode: "100644",
+        name: "ticket.txt",
+        objectId: first.blob,
+        type: "blob",
+      },
+    ]);
+    assert.deepStrictEqual((yield* service.readCommit(first.store, second.commit)).parents, [
+      first.commit,
+    ]);
+    assert.strictEqual(yield* service.isCommit(first.store, second.commit), true);
+    assert.strictEqual(
+      yield* service.isCommit(first.store, "0000000000000000000000000000000000000000"),
+      false,
+    );
+    assert.strictEqual(yield* service.isAncestor(first.store, first.commit, second.commit), true);
+    assert.strictEqual(yield* service.isAncestor(first.store, second.commit, first.commit), false);
+    assert.strictEqual(
+      yield* service.mergeBase(first.store, first.commit, second.commit),
+      first.commit,
+    );
+
+    yield* service.updateRef(first.store, {
+      expected: null,
+      ref,
+      target: first.commit,
+    });
+    assert.strictEqual(yield* service.readRef(first.store, ref), first.commit);
+    assert.deepStrictEqual(yield* service.listRefs(first.store, "refs/cycle-test/"), [
+      {
+        name: ref,
+        target: first.commit,
+      },
+    ]);
+
+    const mismatchedUpdate = yield* Effect.result(
+      service.updateRef(first.store, {
+        expected: null,
+        ref,
+        target: second.commit,
+      }),
+    );
+    assert.ok(Result.isFailure(mismatchedUpdate));
+
+    yield* service.updateRef(first.store, {
+      expected: first.commit,
+      ref,
+      target: second.commit,
+    });
+    assert.strictEqual(yield* service.readRef(first.store, ref), second.commit);
+
+    yield* service.deleteRef(first.store, {
+      expected: second.commit,
+      ref,
+    });
+    assert.strictEqual(yield* service.readRef(first.store, ref), null);
+  });
+
 describe("@cycle/git", () => {
+  it("sanitizes stderr metadata before logging or attaching it to command errors", () => {
+    assert.strictEqual(
+      sanitizeStderr(
+        "fatal: unable to access https://user:password@example.invalid/repo.git token=abc123",
+      ),
+      "fatal: unable to access https://<redacted>@example.invalid/repo.git token=<redacted>",
+    );
+  });
+
   it.effect("inspects and initializes repositories through the repository service", () =>
     withTempDir("cycle-git-empty-", (dir) =>
       Effect.gen(function* () {
@@ -129,6 +236,18 @@ describe("@cycle/git", () => {
       }).pipe(Effect.provide(repositoryLayer)),
     ),
   );
+
+  for (const backend of conformanceBackends) {
+    it.effect(`runs object-store conformance against the ${backend.name} backend`, () =>
+      withBackendRepo(backend, (repo) =>
+        Effect.gen(function* () {
+          const service = yield* Git;
+
+          yield* runObjectStoreConformance(service, repo, backend.name);
+        }).pipe(Effect.provide(backend.layer)),
+      ),
+    );
+  }
 
   it.effect("shares objects, refs, commits, and ancestry across CLI and filesystem backends", () =>
     withRepo((repo) =>

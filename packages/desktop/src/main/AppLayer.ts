@@ -1,6 +1,6 @@
 import { TicketRpcLive } from "@cycle/rpc/server";
 import { UseCaseRunnerLive } from "@cycle/usecases";
-import { GitRepositoryLive } from "@cycle/git";
+import { GitRepository } from "@cycle/git";
 import { Layer } from "effect";
 import { BrowserWindowsLive } from "../platform/BrowserWindowsLive.ts";
 import { DesktopRuntimeLive } from "../platform/DesktopRuntimeLive.ts";
@@ -39,7 +39,7 @@ const AppConfigServiceLive = AppConfigLive.pipe(Layer.provide(ElectronAppService
 
 const ProfileServiceLive = ProfileLive.pipe(Layer.provide(AppConfigServiceLive));
 
-const GitRepositoryServiceLive = GitRepositoryLive.NodeLive;
+const GitRepositoryServiceLive = GitRepository.NodeLive;
 
 const DesktopLoggerServiceLive = DesktopLoggerLive.pipe(Layer.provide(ElectronAppServiceLive));
 

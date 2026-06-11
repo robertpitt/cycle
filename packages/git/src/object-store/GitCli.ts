@@ -3,7 +3,7 @@ import { Effect, Layer } from "effect";
 import type { Ref as GitRef } from "../schemas/index.ts";
 import { gitAdapterError, remoteFetchError, remotePushError } from "../errors/index.ts";
 import { bytesToString } from "../internals/bytes.ts";
-import { git, formatGitFailure, formatOperation } from "../command/GitCommand.ts";
+import { git, formatGitFailure, formatOperation, sanitizeStderr } from "../command/GitCommand.ts";
 import { Git, type GitService } from "./Git.ts";
 import { commitEnv, parseCommit, parseTree } from "./GitObjectCodec.ts";
 
@@ -37,7 +37,8 @@ export const layer = Layer.effect(
               {
                 cause,
                 status: result?.status,
-                stderr: result === undefined ? undefined : bytesToString(result.stderr).trim(),
+                stderr:
+                  result === undefined ? undefined : sanitizeStderr(bytesToString(result.stderr)),
               },
             ),
         ).pipe(Effect.asVoid),
@@ -55,7 +56,7 @@ export const layer = Layer.effect(
             if (result.status === 0) return Effect.succeed(true);
             if (result.status === 1) return Effect.succeed(false);
 
-            const stderr = bytesToString(result.stderr).trim();
+            const stderr = sanitizeStderr(bytesToString(result.stderr));
 
             return Effect.fail(
               gitAdapterError("git merge-base --is-ancestor", stderr || "git merge-base failed", {
@@ -114,7 +115,8 @@ export const layer = Layer.effect(
               {
                 cause,
                 status: result?.status,
-                stderr: result === undefined ? undefined : bytesToString(result.stderr).trim(),
+                stderr:
+                  result === undefined ? undefined : sanitizeStderr(bytesToString(result.stderr)),
               },
             ),
         ).pipe(Effect.asVoid),

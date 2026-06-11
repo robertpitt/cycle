@@ -4,7 +4,7 @@ import type {
   TicketDocument,
   TicketQuery,
   UserProfileDocument,
-} from "@cycle/database";
+} from "@cycle/contracts";
 import { Avatar, AvatarFallback, Button, IconButton, Input } from "@cycle/ui/atoms";
 import { IssuesList, type IssuesListGroup, type IssuesListProps } from "@cycle/ui/organisms";
 import { cn } from "@cycle/ui/utils";

@@ -5,7 +5,7 @@ import type {
   IssueTemplateDocument,
   LabelDefinitionDocument,
   UserProfileDocument,
-} from "@cycle/database";
+} from "@cycle/contracts";
 import {
   Box,
   CalendarPlus,

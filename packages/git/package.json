@@ -13,7 +13,7 @@
     "./object-store/GitInMemory": "./src/object-store/GitInMemory.ts",
     "./object-store/GitObjectCodec": "./src/object-store/GitObjectCodec.ts",
     "./object-store/GitPack": "./src/object-store/GitPack.ts",
-    "./repository/GitRepository": "./src/repository/GitRepository.ts",
+    "./repository/GitRepository": "./src/repository/index.ts",
     "./repository/GitRepositoryLive": "./src/repository/GitRepositoryLive.ts",
     "./schemas": "./src/schemas/index.ts"
   },

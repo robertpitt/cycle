@@ -8,7 +8,7 @@ import type {
   UpdateIssueTemplatePatch,
   UpdateSavedViewPatch,
   UpsertLabelDefinitionInput,
-} from "@cycle/database";
+} from "@cycle/contracts";
 import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
 import { issueHistoryQueryKey } from "../queries/issueHistory.ts";
 import {

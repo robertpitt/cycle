@@ -1,4 +1,4 @@
-import type { RepositoryStatus } from "@cycle/database";
+import type { RepositoryStatus } from "@cycle/contracts";
 import { Button, Select, Switch } from "@cycle/ui/atoms";
 import { SettingRow } from "@cycle/ui/molecules";
 import { RefreshCw, Upload } from "lucide-react";

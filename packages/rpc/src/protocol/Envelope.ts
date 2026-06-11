@@ -1,53 +1,11 @@
+import { UseCaseAliasList, type UseCaseAlias } from "@cycle/contracts/contracts";
 import { Schema } from "effect";
 import { TicketRpcError } from "./TicketRpcError.ts";
 
-export const TicketRpcMethod = Schema.Literals([
-  "repository.history.list",
-  "repository.materializationWarnings",
-  "repository.status.get",
-  "repository.status.list",
-  "repository.push",
-  "repository.sync",
-  "ticket.draft.commit",
-  "ticket.draft.create",
-  "ticket.draft.update",
-  "ticket.issue.archive",
-  "ticket.issue.create",
-  "ticket.issue.delete",
-  "ticket.issue.diff",
-  "ticket.issue.get",
-  "ticket.issue.history",
-  "ticket.issue.list",
-  "ticket.issue.relation.add",
-  "ticket.issue.relation.remove",
-  "ticket.issue.restore",
-  "ticket.issue.revision.get",
-  "ticket.issue.search",
-  "ticket.issue.transition",
-  "ticket.issue.update",
-  "ticket.initiative.create",
-  "ticket.initiative.progress",
-  "ticket.initiative.update.add",
-  "ticket.label.archive",
-  "ticket.label.list",
-  "ticket.label.upsert",
-  "ticket.record.add",
-  "ticket.record.listForIssue",
-  "ticket.template.archive",
-  "ticket.template.create",
-  "ticket.template.get",
-  "ticket.template.list",
-  "ticket.template.update",
-  "ticket.user.get",
-  "ticket.user.list",
-  "ticket.user.upsert",
-  "ticket.view.create",
-  "ticket.view.delete",
-  "ticket.view.get",
-  "ticket.view.list",
-  "ticket.view.update",
-]);
-export type TicketRpcMethod = typeof TicketRpcMethod.Type;
+const TicketRpcMethods = UseCaseAliasList as readonly [UseCaseAlias, ...Array<UseCaseAlias>];
+
+export const TicketRpcMethod = Schema.Literals(TicketRpcMethods);
+export type TicketRpcMethod = UseCaseAlias;
 
 export class TicketRpcRequest extends Schema.Class<TicketRpcRequest>("@cycle/rpc/TicketRpcRequest")(
   {

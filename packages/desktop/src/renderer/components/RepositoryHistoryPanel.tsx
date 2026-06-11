@@ -1,4 +1,4 @@
-import type { HistoryCommit, RepositoryHistoryQuery } from "@cycle/database";
+import type { HistoryCommit, RepositoryHistoryQuery } from "@cycle/contracts";
 import { Badge, Button, Spinner } from "@cycle/ui/atoms";
 import { cn } from "@cycle/ui/utils";
 import {

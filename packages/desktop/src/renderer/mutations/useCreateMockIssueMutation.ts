@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { TicketPage } from "@cycle/database";
+import type { TicketPage } from "@cycle/contracts";
 import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
 import { issueListQueryKey, issueListRootQueryKey } from "../queries/issues.ts";
 

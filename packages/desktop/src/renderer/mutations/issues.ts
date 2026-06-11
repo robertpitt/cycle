@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { ArchiveTicketInput, DeleteTicketInput, RestoreTicketInput } from "@cycle/database";
+import type { ArchiveTicketInput, DeleteTicketInput, RestoreTicketInput } from "@cycle/contracts";
 import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
 import { issueHistoryQueryKey } from "../queries/issueHistory.ts";
 import {

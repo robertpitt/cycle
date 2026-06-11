@@ -1,4 +1,4 @@
-import type { SavedViewDocument, TicketQuery } from "@cycle/database";
+import type { SavedViewDocument, TicketQuery } from "@cycle/contracts";
 import { Button } from "@cycle/ui/atoms";
 import { cn } from "@cycle/ui/utils";
 import { Layers2, ListFilter, Pin, Plus, Search, Table2, UserRound } from "lucide-react";

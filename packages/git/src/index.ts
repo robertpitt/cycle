@@ -7,6 +7,6 @@ export * as GitFilesystem from "./object-store/GitFilesystem.ts";
 export * as GitInMemory from "./object-store/GitInMemory.ts";
 export * as GitObjectCodec from "./object-store/GitObjectCodec.ts";
 export * as GitPack from "./object-store/GitPack.ts";
+export { GitRepository, type GitRepositoryServiceShape } from "./repository/index.ts";
 export * as GitRepositoryLive from "./repository/GitRepositoryLive.ts";
 export { Git as GitService } from "./object-store/Git.ts";
-export { GitRepository, type GitRepositoryServiceShape } from "./repository/GitRepository.ts";

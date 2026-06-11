@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { SearchTicketsQuery, TicketSearchPage } from "@cycle/database";
+import type { SearchTicketsQuery, TicketSearchPage } from "@cycle/contracts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
 

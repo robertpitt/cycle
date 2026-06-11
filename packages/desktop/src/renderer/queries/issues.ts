@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { LinkedRecord, TicketDocument, TicketPage, TicketQuery } from "@cycle/database";
+import type { RecordPage, TicketDocument, TicketPage, TicketQuery } from "@cycle/contracts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
 
@@ -94,7 +94,7 @@ export const listIssueRecordsForRepository = async ({
 }: {
   readonly issueId: string;
   readonly repositoryId: string;
-}): Promise<ReadonlyArray<LinkedRecord>> =>
+}): Promise<RecordPage> =>
   ticketRpcClient.call("ticket.record.listForIssue", {
     input: {
       issueId,

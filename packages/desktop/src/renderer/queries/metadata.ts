@@ -12,7 +12,7 @@ import type {
   UserProfileDocument,
   UserProfilePage,
   UserProfileQuery,
-} from "@cycle/database";
+} from "@cycle/contracts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
 

@@ -1,1 +1,1 @@
-export { RepositoryRef } from "@cycle/usecases/schemas";
+export { RepositoryRef } from "@cycle/contracts/schemas";

@@ -1,2 +1,1 @@
-export * from "./RepositoryRef.ts";
-export * from "./Inputs.ts";
+export * from "@cycle/contracts/schemas";

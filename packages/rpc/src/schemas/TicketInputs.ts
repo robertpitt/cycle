@@ -1,1 +1,1 @@
-export * from "@cycle/usecases/schemas";
+export * from "@cycle/contracts/schemas";

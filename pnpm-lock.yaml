@@ -21,6 +21,18 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/contracts:
+    dependencies:
+      '@cycle/database':
+        specifier: workspace:*
+        version: link:../database
+      '@cycle/git-db':
+        specifier: workspace:*
+        version: link:../git-db
+      effect:
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78
+
   packages/database:
     dependencies:
       '@cycle/git-db':
@@ -36,6 +48,9 @@ importers:
 
   packages/desktop:
     dependencies:
+      '@cycle/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@cycle/database':
         specifier: workspace:*
         version: link:../database
@@ -132,6 +147,9 @@ importers:
 
   packages/rpc:
     dependencies:
+      '@cycle/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@cycle/database':
         specifier: workspace:*
         version: link:../database
@@ -221,6 +239,9 @@ importers:
 
   packages/usecases:
     dependencies:
+      '@cycle/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@cycle/database':
         specifier: workspace:*
         version: link:../database
