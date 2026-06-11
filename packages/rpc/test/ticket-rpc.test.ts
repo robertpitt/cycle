@@ -3,12 +3,22 @@ import {
   DatabaseService,
   DatabaseTest,
   type HistoryPage,
+  type InitiativeProgress,
+  type IssueTemplateDocument,
+  type IssueTemplatePage,
+  type LabelDefinitionDocument,
+  type LabelDefinitionPage,
+  type LinkedRecord,
   type RepositoryStatus,
+  type SavedViewDocument,
+  type SavedViewPage,
   type TicketDraftDocument,
   type TicketDocument,
   type TicketPage,
   type TicketRevisionDiff,
   type TicketSearchPage,
+  type UserProfileDocument,
+  type UserProfilePage,
 } from "@cycle/database";
 import { GitDbInMemory, Store as GitDbStore } from "@cycle/git-db";
 import { Effect, Layer } from "effect";
@@ -102,6 +112,100 @@ describe("@cycle/rpc", () => {
     assert.equal(result.fetched.ok, true);
     const fetchedIssue = result.fetched.value as TicketDocument | null;
     assert.equal(fetchedIssue?.id, createdIssue.id);
+  });
+
+  it("lists issues across requested repository ids", async () => {
+    const secondRepository = { id: "second-repository" };
+    const result = await runRpc(
+      Effect.gen(function* () {
+        const database = yield* DatabaseService;
+        const rpc = yield* TicketRpcService;
+        const secondStore = yield* Effect.gen(function* () {
+          return yield* GitDbStore.StoreService;
+        }).pipe(
+          Effect.provide(
+            GitDbInMemory({
+              database: "cycle-second",
+            }),
+          ),
+          Effect.orDie,
+        );
+
+        yield* database
+          .openRepository({
+            pollIntervalMs: false,
+            repositoryId: secondRepository.id,
+            store: secondStore,
+          })
+          .pipe(Effect.orDie);
+
+        const firstCreated = yield* rpc.handle({
+          id: "create-first-repository",
+          method: "ticket.issue.create",
+          payload: {
+            input: {
+              body: "First repository body",
+              repository: repository.id,
+              title: "First repository issue",
+            },
+            repository,
+          },
+        } satisfies TicketRpcRequest);
+        const secondCreated = yield* rpc.handle({
+          id: "create-second-repository",
+          method: "ticket.issue.create",
+          payload: {
+            input: {
+              body: "Second repository body",
+              repository: secondRepository.id,
+              title: "Second repository issue",
+            },
+            repository: secondRepository,
+          },
+        } satisfies TicketRpcRequest);
+        const scopedList = yield* rpc.handle({
+          id: "list-first-only",
+          method: "ticket.issue.list",
+          payload: {
+            input: {},
+            repository,
+          },
+        } satisfies TicketRpcRequest);
+        const globalList = yield* rpc.handle({
+          id: "list-all-requested",
+          method: "ticket.issue.list",
+          payload: {
+            input: {
+              repositoryIds: [repository.id, secondRepository.id],
+            },
+            repository,
+          },
+        } satisfies TicketRpcRequest);
+
+        return { firstCreated, globalList, scopedList, secondCreated };
+      }),
+    );
+
+    assert.equal(result.firstCreated.ok, true);
+    assert.equal(result.secondCreated.ok, true);
+    assert.equal(result.scopedList.ok, true);
+    assert.equal(result.globalList.ok, true);
+
+    const scopedPage = result.scopedList.value as TicketPage;
+    const globalPage = result.globalList.value as TicketPage;
+
+    assert.deepEqual(
+      scopedPage.entries.map((issue) => issue.frontmatter.title),
+      ["First repository issue"],
+    );
+    assert.deepEqual(globalPage.entries.map((issue) => issue.frontmatter.title).sort(), [
+      "First repository issue",
+      "Second repository issue",
+    ]);
+    assert.deepEqual(
+      globalPage.entries.map((issue) => issue.repositoryId).sort(),
+      [repository.id, secondRepository.id].sort(),
+    );
   });
 
   it("returns a failure response for invalid payloads", async () => {
@@ -448,5 +552,269 @@ describe("@cycle/rpc", () => {
     });
 
     assert.equal(created.frontmatter.title, "Use the typed client");
+  });
+
+  it("handles shared metadata and initiative RPC requests", async () => {
+    const result = await runRpc(
+      Effect.gen(function* () {
+        const rpc = yield* TicketRpcService;
+
+        const user = yield* rpc.handle({
+          id: "user-upsert",
+          method: "ticket.user.upsert",
+          payload: {
+            input: {
+              displayName: "Peer User",
+              email: "peer@example.invalid",
+              source: "manual",
+            },
+            repository,
+          },
+        } satisfies TicketRpcRequest);
+        const userList = yield* rpc.handle({
+          id: "user-list",
+          method: "ticket.user.list",
+          payload: {
+            input: {
+              text: "peer",
+            },
+            repository,
+          },
+        } satisfies TicketRpcRequest);
+        const userGet = yield* rpc.handle({
+          id: "user-get",
+          method: "ticket.user.get",
+          payload: {
+            input: "peer@example.invalid",
+            repository,
+          },
+        } satisfies TicketRpcRequest);
+        const label = yield* rpc.handle({
+          id: "label-upsert",
+          method: "ticket.label.upsert",
+          payload: {
+            input: {
+              color: "red",
+              name: "Customer Bug",
+            },
+            repository,
+          },
+        } satisfies TicketRpcRequest);
+
+        assert.equal(label.ok, true);
+        if (!label.ok) return { label, user, userGet, userList };
+
+        const labelDoc = label.value as LabelDefinitionDocument;
+        const labels = yield* rpc.handle({
+          id: "label-list",
+          method: "ticket.label.list",
+          payload: {
+            input: {
+              archived: false,
+            },
+            repository,
+          },
+        } satisfies TicketRpcRequest);
+        const view = yield* rpc.handle({
+          id: "view-create",
+          method: "ticket.view.create",
+          payload: {
+            input: {
+              groupBy: "status",
+              kind: "board",
+              name: "Open bugs",
+              query: {
+                labelIn: [labelDoc.id],
+              },
+            },
+            repository,
+          },
+        } satisfies TicketRpcRequest);
+        const template = yield* rpc.handle({
+          id: "template-create",
+          method: "ticket.template.create",
+          payload: {
+            input: {
+              bodyTemplate: "## Expected\n\n## Actual\n",
+              defaults: {
+                labels: [labelDoc.id],
+              },
+              kind: "bug",
+              name: "Bug report",
+              titleTemplate: "[Bug] {{title}}",
+            },
+            repository,
+          },
+        } satisfies TicketRpcRequest);
+        const initiative = yield* rpc.handle({
+          id: "initiative-create",
+          method: "ticket.initiative.create",
+          payload: {
+            input: {
+              title: "Linear-inspired workflow",
+            },
+            repository,
+          },
+        } satisfies TicketRpcRequest);
+
+        assert.equal(view.ok, true);
+        assert.equal(template.ok, true);
+        assert.equal(initiative.ok, true);
+        if (!view.ok || !template.ok || !initiative.ok)
+          return { initiative, label, labels, template, user, userGet, userList, view };
+
+        const viewDoc = view.value as SavedViewDocument;
+        const templateDoc = template.value as IssueTemplateDocument;
+        const initiativeIssue = initiative.value as TicketDocument;
+        const viewUpdate = yield* rpc.handle({
+          id: "view-update",
+          method: "ticket.view.update",
+          payload: {
+            input: {
+              id: viewDoc.id,
+              patch: {
+                pinned: true,
+              },
+            },
+            repository,
+          },
+        } satisfies TicketRpcRequest);
+        const viewList = yield* rpc.handle({
+          id: "view-list",
+          method: "ticket.view.list",
+          payload: {
+            input: {
+              pinned: true,
+            },
+            repository,
+          },
+        } satisfies TicketRpcRequest);
+        const templateArchive = yield* rpc.handle({
+          id: "template-archive",
+          method: "ticket.template.archive",
+          payload: {
+            input: {
+              id: templateDoc.id,
+            },
+            repository,
+          },
+        } satisfies TicketRpcRequest);
+        const templateList = yield* rpc.handle({
+          id: "template-list",
+          method: "ticket.template.list",
+          payload: {
+            input: {
+              active: false,
+              kind: "bug",
+            },
+            repository,
+          },
+        } satisfies TicketRpcRequest);
+        const child = yield* rpc.handle({
+          id: "initiative-child",
+          method: "ticket.issue.create",
+          payload: {
+            input: {
+              estimate: 2,
+              parent: initiativeIssue.id,
+              status: "done",
+              title: "Ship backend plumbing",
+            },
+            repository,
+          },
+        } satisfies TicketRpcRequest);
+        const progress = yield* rpc.handle({
+          id: "initiative-progress",
+          method: "ticket.initiative.progress",
+          payload: {
+            input: {
+              id: initiativeIssue.id,
+            },
+            repository,
+          },
+        } satisfies TicketRpcRequest);
+        const initiativeUpdate = yield* rpc.handle({
+          id: "initiative-update",
+          method: "ticket.initiative.update.add",
+          payload: {
+            input: {
+              id: initiativeIssue.id,
+              update: {
+                status: "on-track",
+                summary: "Backend plumbing is in place",
+              },
+            },
+            repository,
+          },
+        } satisfies TicketRpcRequest);
+
+        return {
+          child,
+          initiative,
+          initiativeUpdate,
+          label,
+          labels,
+          progress,
+          template,
+          templateArchive,
+          templateList,
+          user,
+          userGet,
+          userList,
+          view,
+          viewList,
+          viewUpdate,
+        };
+      }),
+    );
+
+    assert.equal(result.user.ok, true);
+    assert.equal((result.user.value as UserProfileDocument).email, "peer@example.invalid");
+    assert.equal(result.userGet.ok, true);
+    assert.equal((result.userGet.value as UserProfileDocument | null)?.id, "peer@example.invalid");
+    assert.equal(result.userList.ok, true);
+    assert.deepStrictEqual(
+      (result.userList.value as UserProfilePage).entries.map((entry) => entry.id),
+      ["peer@example.invalid"],
+    );
+    assert.equal(result.label.ok, true);
+    assert.equal(result.labels?.ok, true);
+    assert.ok(
+      ((result.labels?.ok ? result.labels.value : { entries: [] }) as LabelDefinitionPage).entries
+        .map((entry) => entry.name)
+        .includes("Customer Bug"),
+    );
+    assert.equal(result.viewUpdate?.ok, true);
+    assert.equal(result.viewList?.ok, true);
+    assert.ok(
+      ((result.viewList?.ok ? result.viewList.value : { entries: [] }) as SavedViewPage).entries
+        .map((entry) => entry.name)
+        .includes("Open bugs"),
+    );
+    assert.equal(result.templateArchive?.ok, true);
+    assert.equal(result.templateList?.ok, true);
+    assert.deepStrictEqual(
+      (
+        (result.templateList?.ok ? result.templateList.value : { entries: [] }) as IssueTemplatePage
+      ).entries.map((entry) => entry.active),
+      [false],
+    );
+    assert.equal(result.child?.ok, true);
+    assert.equal(result.progress?.ok, true);
+    assert.deepStrictEqual(result.progress?.value as InitiativeProgress, {
+      completedEstimate: 2,
+      completedIssues: 1,
+      estimateTotal: 2,
+      issueTotal: 1,
+      statusCounts: {
+        done: 1,
+      },
+    });
+    assert.equal(result.initiativeUpdate?.ok, true);
+    assert.equal(
+      ((result.initiativeUpdate?.ok ? result.initiativeUpdate.value : null) as LinkedRecord | null)
+        ?.recordType,
+      "initiative-update",
+    );
   });
 });

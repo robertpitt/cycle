@@ -412,6 +412,170 @@ describe("@cycle/database", () => {
     }).pipe(Effect.provide(DatabaseTest())),
   );
 
+  it.effect("commits actor user profiles alongside first shared writes", () =>
+    Effect.gen(function* () {
+      const database = yield* DatabaseService;
+      const store = yield* makeStore("users-repo");
+
+      yield* database.openRepository({
+        repositoryId: "users-repo",
+        store,
+      });
+
+      yield* database.createTicket("users-repo", {
+        title: "First shared ticket",
+      });
+
+      const users = yield* store.collection<{
+        readonly displayName: string;
+        readonly email: string;
+        readonly id: string;
+      }>("users");
+      const sourceProfile = yield* users.get("test@example.invalid");
+      const projectedProfile = yield* database.getUser("users-repo", "test@example.invalid");
+      const userList = yield* database.listUsers("users-repo", {
+        text: "test",
+      });
+
+      assert.strictEqual(sourceProfile?.id, "test@example.invalid");
+      assert.strictEqual(sourceProfile?.displayName, "Test User");
+      assert.strictEqual(projectedProfile?.email, "test@example.invalid");
+      assert.deepStrictEqual(
+        userList.entries.map((user) => user.id),
+        ["test@example.invalid"],
+      );
+    }).pipe(Effect.provide(DatabaseTest())),
+  );
+
+  it.effect("stores and projects labels, saved views, templates, and initiative updates", () =>
+    Effect.gen(function* () {
+      const database = yield* DatabaseService;
+      const store = yield* makeStore("linear-metadata-repo");
+
+      yield* database.openRepository({
+        repositoryId: "linear-metadata-repo",
+        store,
+      });
+
+      const label = yield* database.upsertLabel("linear-metadata-repo", {
+        color: "red",
+        description: "Customer-facing defects",
+        name: "Customer Bug",
+      });
+      const updatedLabel = yield* database.upsertLabel("linear-metadata-repo", {
+        color: "orange",
+        id: label.id,
+        name: "Customer Bug",
+      });
+      const view = yield* database.createView("linear-metadata-repo", {
+        groupBy: "status",
+        kind: "board",
+        name: "Open customer bugs",
+        query: {
+          labelIn: ["customer-bug"],
+          statusIn: ["backlog", "todo"],
+        },
+      });
+      const updatedView = yield* database.updateView("linear-metadata-repo", view.id, {
+        pinned: true,
+      });
+      const template = yield* database.createTemplate("linear-metadata-repo", {
+        bodyTemplate: "## Expected\n\n## Actual\n",
+        defaults: {
+          labels: ["customer-bug"],
+          priority: "high",
+        },
+        kind: "bug",
+        name: "Customer bug",
+        titleTemplate: "[Bug] {{title}}",
+      });
+      const archivedTemplate = yield* database.archiveTemplate("linear-metadata-repo", template.id);
+      const initiative = yield* database.createInitiative("linear-metadata-repo", {
+        title: "Improve issue workflow",
+      });
+      const doneChild = yield* database.createTicket("linear-metadata-repo", {
+        estimate: 3,
+        parent: initiative.id,
+        status: "done",
+        title: "Finish shared metadata",
+      });
+      yield* database.createTicket("linear-metadata-repo", {
+        estimate: 2,
+        parent: initiative.id,
+        status: "todo",
+        title: "Add desktop metadata controls",
+      });
+      const initiativeUpdate = yield* database.addInitiativeUpdate(
+        "linear-metadata-repo",
+        initiative.id,
+        {
+          nextSteps: ["Wire desktop controls"],
+          progressNote: "Backend projection is in place.",
+          status: "on-track",
+          summary: "Shared metadata landed",
+        },
+      );
+      const progress = yield* database.initiativeProgress("linear-metadata-repo", initiative.id);
+      const labels = yield* database.listLabels("linear-metadata-repo", {
+        archived: false,
+      });
+      const views = yield* database.listViews("linear-metadata-repo", {
+        pinned: true,
+      });
+      const archivedTemplates = yield* database.listTemplates("linear-metadata-repo", {
+        active: false,
+        kind: "bug",
+      });
+      const records = yield* database.ticketRecords("linear-metadata-repo", initiative.id, {
+        recordType: "initiative-update",
+      });
+      const sourceLabels = yield* store.collection<{
+        readonly color: string;
+        readonly name: string;
+      }>("labels");
+      const sourceViews = yield* store.collection<{
+        readonly name: string;
+        readonly pinned: boolean;
+      }>("views");
+      const sourceTemplates = yield* store.collection<{
+        readonly active: boolean;
+        readonly name: string;
+      }>("templates");
+
+      assert.strictEqual(updatedLabel.color, "orange");
+      assert.strictEqual(updatedView.pinned, true);
+      assert.strictEqual(archivedTemplate.active, false);
+      assert.strictEqual(initiative.type, "initiative");
+      assert.strictEqual(doneChild.parent, initiative.id);
+      assert.strictEqual(initiativeUpdate.recordType, "initiative-update");
+      assert.ok(labels.entries.some((entry) => entry.id === label.id));
+      assert.ok(labels.entries.some((entry) => entry.id === "bug"));
+      assert.ok(views.entries.some((entry) => entry.id === view.id));
+      assert.ok(views.entries.some((entry) => entry.id === "triage"));
+      assert.deepStrictEqual(
+        archivedTemplates.entries.map((entry) => entry.id),
+        [template.id],
+      );
+      assert.deepStrictEqual(progress, {
+        completedEstimate: 3,
+        completedIssues: 1,
+        estimateTotal: 5,
+        issueTotal: 2,
+        statusCounts: {
+          done: 1,
+          todo: 1,
+        },
+      });
+      assert.deepStrictEqual(
+        records.entries.map((record) => record.id),
+        [initiativeUpdate.id],
+      );
+      assert.strictEqual((yield* sourceLabels.get(label.id))?.color, "orange");
+      assert.strictEqual((yield* sourceViews.get(view.id))?.pinned, true);
+      assert.strictEqual((yield* sourceTemplates.get(template.id))?.active, false);
+    }).pipe(Effect.provide(DatabaseTest())),
+  );
+
   it.effect("rejects unsafe secret-bearing write payloads before committing", () =>
     Effect.gen(function* () {
       const database = yield* DatabaseService;

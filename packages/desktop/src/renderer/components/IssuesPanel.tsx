@@ -1,5 +1,11 @@
-import type { TicketDocument } from "@cycle/database";
-import { Avatar, AvatarFallback, IconButton } from "@cycle/ui/atoms";
+import type {
+  LabelDefinitionDocument,
+  SavedViewDocument,
+  TicketDocument,
+  TicketQuery,
+  UserProfileDocument,
+} from "@cycle/database";
+import { Avatar, AvatarFallback, Button, IconButton, Input } from "@cycle/ui/atoms";
 import { IssuesList, type IssuesListGroup, type IssuesListProps } from "@cycle/ui/organisms";
 import { cn } from "@cycle/ui/utils";
 import {
@@ -10,23 +16,45 @@ import {
   CircleOff,
   CircleUserRound,
   Plus,
+  Save,
+  Search,
   SlidersHorizontal,
+  X,
 } from "lucide-react";
 import * as React from "react";
 import type { ProfileConfig } from "../../shared/AppConfig.ts";
+import { useCreateSavedViewMutation } from "../mutations/index.ts";
 import { useUpdateIssueMutation } from "../mutations/useUpdateIssueMutation.ts";
+import { labelColorClassName } from "../screens/workspace/createIssueOptions.tsx";
 import { useIssueListQuery } from "../queries/issues.ts";
+import { useLabelListQuery, useSavedViewListQuery, useUserListQuery } from "../queries/metadata.ts";
 
 type IssuesPanelProps = {
   readonly loadingRepository?: boolean;
   readonly onCreateIssue?: () => void;
-  readonly onIssueSelect?: (issueId: string) => void;
+  readonly onIssueSelect?: (selection: IssuePanelSelection) => void;
   readonly profile?: ProfileConfig;
+  readonly query?: Omit<TicketQuery, "repositoryIds">;
   readonly repositoryId?: string;
+  readonly repositoryIds?: readonly string[];
+  readonly repositories?: readonly IssuePanelRepository[];
+  readonly savedViewId?: string;
   readonly selectedIssueId?: string;
+  readonly showSavedViewControls?: boolean;
+  readonly title?: string;
 };
 
-type IssueGrouping = "none" | "status" | "assignee" | "priority";
+export type IssuePanelSelection = {
+  readonly issueId: string;
+  readonly repositoryId?: string;
+};
+
+type IssuePanelRepository = {
+  readonly displayName: string;
+  readonly id: string;
+};
+
+type IssueGrouping = "none" | "status" | "assignee" | "priority" | "label";
 
 type IssueMenuOption = {
   readonly icon?: React.ReactNode;
@@ -55,6 +83,10 @@ const groupingOptions: readonly IssueMenuOption[] = [
   {
     id: "priority",
     label: "Priority",
+  },
+  {
+    id: "label",
+    label: "Label",
   },
 ];
 
@@ -196,7 +228,7 @@ const StatusIcon = ({ status }: { readonly status: string }) => {
 };
 
 const AssigneeAvatar = ({ assignee }: { readonly assignee?: string | null }) => {
-  if (!assignee) {
+  if (!assignee || assignee === "none") {
     return <CircleUserRound aria-hidden className="size-4 text-muted-foreground" />;
   }
 
@@ -418,10 +450,12 @@ const IssueStatusControl = ({
 };
 
 const IssueAssigneeControl = ({
+  assigneeLabel,
   issue,
   options,
   repositoryId,
 }: {
+  readonly assigneeLabel?: string;
   readonly issue: TicketDocument;
   readonly options: readonly IssueMenuOption[];
   readonly repositoryId?: string;
@@ -450,7 +484,7 @@ const IssueAssigneeControl = ({
       value={assignee}
       widthClassName="w-[280px]"
     >
-      <AssigneeAvatar assignee={issue.frontmatter.assignee} />
+      <AssigneeAvatar assignee={assigneeLabel ?? issue.frontmatter.assignee} />
     </IssueFieldMenu>
   );
 };
@@ -627,23 +661,29 @@ const assigneeDefinitions = ({
   counts,
   issues,
   profile,
+  users,
 }: {
   readonly counts: ReadonlyMap<string, number>;
   readonly issues: readonly TicketDocument[];
   readonly profile?: ProfileConfig;
+  readonly users: readonly UserProfileDocument[];
 }): readonly IssueGroupDefinition[] => {
-  const assignees = new Set<string>();
+  const assignees = new Map<string, string>();
   const profileName = profile?.displayName.trim();
 
-  if (profileName) {
-    assignees.add(profileName);
+  for (const user of users) {
+    assignees.set(user.id, user.displayName);
   }
 
   for (const issue of issues) {
     const assignee = issue.frontmatter.assignee?.trim();
     if (assignee) {
-      assignees.add(assignee);
+      assignees.set(assignee, assignees.get(assignee) ?? assignee);
     }
+  }
+
+  if (assignees.size === 0 && profileName) {
+    assignees.set(profileName, profileName);
   }
 
   return [
@@ -654,39 +694,102 @@ const assigneeDefinitions = ({
       rightMeta: counts.get("none") ?? 0,
       title: "No assignee",
     },
-    ...[...assignees].sort().map((assignee) => ({
-      icon: <AssigneeAvatar assignee={assignee} />,
-      id: assignee,
-      label: assignee,
-      rightMeta: counts.get(assignee) ?? 0,
-      title: assignee,
-    })),
+    ...[...assignees.entries()]
+      .sort((a, b) => a[1].localeCompare(b[1]))
+      .map(([id, name]) => ({
+        icon: <AssigneeAvatar assignee={name} />,
+        id,
+        label: name,
+        rightMeta: counts.get(id) ?? 0,
+        title: name,
+      })),
+  ];
+};
+
+const labelDefinitions = ({
+  counts,
+  labels,
+}: {
+  readonly counts: ReadonlyMap<string, number>;
+  readonly labels: readonly LabelDefinitionDocument[];
+}): readonly IssueGroupDefinition[] => {
+  const knownLabels = new Map(labels.map((label) => [label.id, label] as const));
+
+  return [
+    {
+      icon: <span aria-hidden className="size-3 rounded-full bg-muted-foreground" />,
+      id: "none",
+      label: "No label",
+      rightMeta: counts.get("none") ?? 0,
+      title: "No label",
+    },
+    ...[...new Set([...knownLabels.keys(), ...counts.keys()].filter((label) => label !== "none"))]
+      .sort((a, b) => (knownLabels.get(a)?.name ?? a).localeCompare(knownLabels.get(b)?.name ?? b))
+      .map((labelId) => {
+        const label = knownLabels.get(labelId);
+
+        return {
+          icon: (
+            <span
+              aria-hidden
+              className={cn("size-3 rounded-full", labelColorClassName(label?.color))}
+            />
+          ),
+          id: labelId,
+          label: label?.name ?? titleForValue(labelId),
+          rightMeta: counts.get(labelId) ?? 0,
+          title: label?.name ?? titleForValue(labelId),
+        };
+      }),
   ];
 };
 
 const issueRow = ({
   assigneeOptions,
+  labelMap,
   issue,
   priorityOptions,
+  repositoryDisplayName,
   repositoryId,
+  showRepositoryMeta,
   statusOptions,
+  userMap,
 }: {
   readonly assigneeOptions: readonly IssueMenuOption[];
+  readonly labelMap: ReadonlyMap<string, LabelDefinitionDocument>;
   readonly issue: TicketDocument;
   readonly priorityOptions: readonly IssueMenuOption[];
+  readonly repositoryDisplayName?: string;
   readonly repositoryId?: string;
+  readonly showRepositoryMeta: boolean;
   readonly statusOptions: readonly IssueMenuOption[];
+  readonly userMap: ReadonlyMap<string, UserProfileDocument>;
 }): IssuesListProps["rows"][number] => {
   const status = normalizeValue(issue.frontmatter.status);
   const priority = normalizeValue(issue.frontmatter.priority);
+  const assignee = issue.frontmatter.assignee?.trim();
+  const assigneeLabel = assignee ? (userMap.get(assignee)?.displayName ?? assignee) : undefined;
 
   return {
     assigneeControl: (
-      <IssueAssigneeControl issue={issue} options={assigneeOptions} repositoryId={repositoryId} />
+      <IssueAssigneeControl
+        assigneeLabel={assigneeLabel}
+        issue={issue}
+        options={assigneeOptions}
+        repositoryId={repositoryId}
+      />
     ),
     date: formatIssueDate(issue),
     id: issue.id,
     meta: [
+      ...(showRepositoryMeta && repositoryDisplayName
+        ? [
+            {
+              label: repositoryDisplayName,
+              tone: "neutral" as const,
+            },
+          ]
+        : []),
       ...(issue.frontmatter.type && normalizeValue(issue.frontmatter.type) !== "issue"
         ? [
             {
@@ -694,8 +797,8 @@ const issueRow = ({
             },
           ]
         : []),
-      ...(issue.frontmatter.labels ?? []).map((label) => ({
-        label,
+      ...(issue.frontmatter.labels ?? []).map((labelId) => ({
+        label: labelMap.get(labelId)?.name ?? labelId,
         tone: "success" as const,
       })),
     ],
@@ -715,23 +818,95 @@ const groupKeyForIssue = (issue: TicketDocument, grouping: IssueGrouping): strin
   if (grouping === "status") return normalizeValue(issue.frontmatter.status);
   if (grouping === "priority") return normalizeValue(issue.frontmatter.priority);
   if (grouping === "assignee") return issue.frontmatter.assignee?.trim() || "none";
+  if (grouping === "label") return issue.frontmatter.labels?.[0] ?? "none";
   return "none";
 };
+
+const groupingFromSavedView = (view: SavedViewDocument | undefined): IssueGrouping | undefined => {
+  if (!view) return undefined;
+
+  return view.groupBy === "assignee" ||
+    view.groupBy === "label" ||
+    view.groupBy === "none" ||
+    view.groupBy === "priority" ||
+    view.groupBy === "status"
+    ? view.groupBy
+    : undefined;
+};
+
+const repositoryIdForIssue = (
+  issue: TicketDocument,
+  fallbackRepositoryId?: string,
+): string | undefined => issue.repositoryId ?? issue.repository ?? fallbackRepositoryId;
 
 export const IssuesPanel = ({
   loadingRepository = false,
   onCreateIssue,
   onIssueSelect,
   profile,
+  query = {},
   repositoryId,
+  repositoryIds,
+  repositories = [],
+  savedViewId,
   selectedIssueId,
+  showSavedViewControls = true,
+  title = "Issues",
 }: IssuesPanelProps) => {
   const [grouping, setGrouping] = React.useState<IssueGrouping>("status");
+  const [searchText, setSearchText] = React.useState("");
+  const [localActiveViewId, setLocalActiveViewId] = React.useState<string>();
   const [collapsedGroupIds, setCollapsedGroupIds] = React.useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  const issuesQuery = useIssueListQuery(repositoryId);
+  const savedViewsQuery = useSavedViewListQuery(repositoryId);
+  const labelsQuery = useLabelListQuery(repositoryId, {
+    archived: false,
+  });
+  const usersQuery = useUserListQuery(repositoryId, {
+    disabled: false,
+  });
+  const createSavedView = useCreateSavedViewMutation({
+    repositoryId,
+  });
+  const savedViews = savedViewsQuery.data?.entries ?? [];
+  const activeViewId = savedViewId ?? localActiveViewId;
+  const activeSavedView = savedViews.find((view) => view.id === activeViewId);
+  const savedViewControlsVisible = showSavedViewControls && repositoryId !== undefined;
+  const effectiveQuery = React.useMemo(() => {
+    const sortPatch =
+      activeSavedView?.sort === undefined
+        ? {}
+        : {
+            orderBy: activeSavedView.sort.field,
+            orderDirection: activeSavedView.sort.direction,
+          };
+    const text = searchText.trim();
+
+    return {
+      ...query,
+      ...activeSavedView?.query,
+      ...sortPatch,
+      ...(text.length > 0 ? { text } : {}),
+    } satisfies Omit<TicketQuery, "repositoryIds">;
+  }, [activeSavedView, query, searchText]);
+  const issuesQuery = useIssueListQuery(repositoryId, effectiveQuery, repositoryIds);
   const issues = issuesQuery.data?.entries ?? [];
+  const labels = labelsQuery.data?.entries ?? [];
+  const users = usersQuery.data?.entries ?? [];
+  const labelMap = React.useMemo(() => new Map(labels.map((label) => [label.id, label])), [labels]);
+  const userMap = React.useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
+  const repositoryMap = React.useMemo(
+    () => new Map(repositories.map((repository) => [repository.id, repository] as const)),
+    [repositories],
+  );
+  const globalIssueList = repositoryIds !== undefined && repositoryIds.length > 0;
+
+  React.useEffect(() => {
+    const nextGrouping = groupingFromSavedView(activeSavedView);
+    if (nextGrouping) setGrouping(nextGrouping);
+  }, [activeSavedView]);
+
   const statusCounts = React.useMemo(
     () => countBy(issues, (issue) => normalizeValue(issue.frontmatter.status)),
     [issues],
@@ -742,6 +917,10 @@ export const IssuesPanel = ({
   );
   const assigneeCounts = React.useMemo(
     () => countBy(issues, (issue) => issue.frontmatter.assignee?.trim() || "none"),
+    [issues],
+  );
+  const labelCounts = React.useMemo(
+    () => countBy(issues, (issue) => issue.frontmatter.labels?.[0] ?? "none"),
     [issues],
   );
   const statusOptions = React.useMemo(() => statusDefinitions(statusCounts), [statusCounts]);
@@ -755,21 +934,64 @@ export const IssuesPanel = ({
         counts: assigneeCounts,
         issues,
         profile,
+        users,
       }),
-    [assigneeCounts, issues, profile],
+    [assigneeCounts, issues, profile, users],
+  );
+  const labelOptions = React.useMemo(
+    () =>
+      labelDefinitions({
+        counts: labelCounts,
+        labels,
+      }),
+    [labelCounts, labels],
   );
   const rows = React.useMemo(
     () =>
-      issues.map((issue) =>
-        issueRow({
+      issues.map((issue) => {
+        const ownerRepositoryId = repositoryIdForIssue(issue, repositoryId);
+
+        return issueRow({
           assigneeOptions,
+          labelMap,
           issue,
           priorityOptions,
-          repositoryId,
+          repositoryDisplayName:
+            ownerRepositoryId === undefined
+              ? undefined
+              : (repositoryMap.get(ownerRepositoryId)?.displayName ?? ownerRepositoryId),
+          repositoryId: ownerRepositoryId,
+          showRepositoryMeta: globalIssueList,
           statusOptions,
-        }),
-      ),
-    [assigneeOptions, issues, priorityOptions, repositoryId, statusOptions],
+          userMap,
+        });
+      }),
+    [
+      assigneeOptions,
+      globalIssueList,
+      issues,
+      labelMap,
+      priorityOptions,
+      repositoryId,
+      repositoryMap,
+      statusOptions,
+      userMap,
+    ],
+  );
+  const issueById = React.useMemo(
+    () => new Map(issues.map((issue) => [issue.id, issue] as const)),
+    [issues],
+  );
+  const handleIssueSelect = React.useCallback(
+    (issueId: string) => {
+      const issue = issueById.get(issueId);
+      onIssueSelect?.({
+        issueId,
+        repositoryId:
+          issue === undefined ? repositoryId : repositoryIdForIssue(issue, repositoryId),
+      });
+    },
+    [issueById, onIssueSelect, repositoryId],
   );
   const rowById = React.useMemo(() => new Map(rows.map((row) => [row.id, row] as const)), [rows]);
   const createGroupAction = React.useCallback(
@@ -806,7 +1028,9 @@ export const IssuesPanel = ({
         ? statusOptions
         : grouping === "priority"
           ? priorityOptions
-          : assigneeOptions;
+          : grouping === "label"
+            ? labelOptions
+            : assigneeOptions;
 
     return definitions
       .map((definition): IssuesListGroup | undefined => {
@@ -839,16 +1063,87 @@ export const IssuesPanel = ({
     createGroupAction,
     grouping,
     issues,
+    labelOptions,
     priorityOptions,
     rowById,
     statusOptions,
     toggleGroup,
   ]);
 
+  const saveCurrentView = React.useCallback(() => {
+    const name = window.prompt("Saved view name");
+    const trimmedName = name?.trim();
+
+    if (!trimmedName) return;
+
+    createSavedView.mutate({
+      groupBy: grouping,
+      kind: "list",
+      name: trimmedName,
+      pinned: true,
+      query: effectiveQuery,
+    });
+  }, [createSavedView, effectiveQuery, grouping]);
+
   return (
     <div className="min-w-0">
-      <div className="mb-2 flex items-center justify-end">
-        <ViewOptionsMenu grouping={grouping} onGroupingChange={setGrouping} />
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <label className="relative min-w-64 max-w-md flex-1">
+            <Search
+              aria-hidden
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              aria-label="Search issues"
+              className="h-9 pl-9"
+              onChange={(event) => setSearchText(event.currentTarget.value)}
+              placeholder="Search issues"
+              value={searchText}
+            />
+          </label>
+          {savedViewControlsVisible ? (
+            <select
+              aria-label="Saved view"
+              className="h-9 max-w-56 rounded-md border border-border bg-popover px-3 text-sm font-medium text-foreground shadow-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              onChange={(event) => setLocalActiveViewId(event.currentTarget.value || undefined)}
+              value={activeViewId ?? ""}
+            >
+              <option value="">All issues</option>
+              {savedViews.map((view) => (
+                <option key={view.id} value={view.id}>
+                  {view.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          {savedViewControlsVisible && activeViewId ? (
+            <IconButton
+              icon={<X aria-hidden className="size-4" />}
+              label="Clear saved view"
+              onClick={() => setLocalActiveViewId(undefined)}
+              size="sm"
+              title="Clear saved view"
+              variant="ghost"
+            />
+          ) : null}
+        </div>
+        <div className="flex items-center gap-1">
+          {savedViewControlsVisible ? (
+            <Button
+              disabled={createSavedView.isPending}
+              leftIcon={<Save aria-hidden className="size-4" />}
+              loading={createSavedView.isPending}
+              loadingLabel="Saving view"
+              onClick={saveCurrentView}
+              size="sm"
+              variant="outline"
+            >
+              Save view
+            </Button>
+          ) : null}
+          <ViewOptionsMenu grouping={grouping} onGroupingChange={setGrouping} />
+        </div>
       </div>
       <IssuesList
         className="bg-transparent"
@@ -857,20 +1152,20 @@ export const IssuesPanel = ({
         emptyState={
           loadingRepository
             ? "Loading repository issues."
-            : repositoryId
+            : repositoryId || globalIssueList
               ? "No issues yet."
               : "Choose a repository before creating issues."
         }
         error={issuesQuery.error instanceof Error ? issuesQuery.error.message : undefined}
         groups={groups}
         loading={issuesQuery.isLoading || loadingRepository}
-        onRowSelect={onIssueSelect}
+        onRowSelect={handleIssueSelect}
         rowMetaLimit={2}
         rows={rows}
         rowsClassName="grid gap-1"
         selectedRowId={selectedIssueId}
         showHeader={false}
-        title="Issues"
+        title={title}
       />
     </div>
   );

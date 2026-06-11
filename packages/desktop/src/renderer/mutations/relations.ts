@@ -2,7 +2,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { IssueRelation } from "@cycle/database";
 import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
 import { issueHistoryQueryKey } from "../queries/issueHistory.ts";
-import { issueDetailQueryKey, issueListQueryKey, issueRecordsQueryKey } from "../queries/issues.ts";
+import {
+  issueDetailQueryKey,
+  issueListRootQueryKey,
+  issueRecordsQueryKey,
+} from "../queries/issues.ts";
 
 type UseIssueRelationMutationOptions = {
   readonly issueId?: string;
@@ -38,7 +42,7 @@ const invalidateRelationQueries = async ({
       queryKey: issueHistoryQueryKey(repositoryId, relatedIssueId),
     }),
     queryClient.invalidateQueries({
-      queryKey: issueListQueryKey(repositoryId),
+      queryKey: issueListRootQueryKey,
     }),
   ]);
 };

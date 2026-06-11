@@ -3,10 +3,29 @@ import type { LinkedRecord, TicketDocument, TicketPage, TicketQuery } from "@cyc
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
 
+export const issueListRootQueryKey = ["desktop", "ticketRpc", "issues"] as const;
+
+const normalizeRepositoryIds = (repositoryIds: readonly string[] | undefined) =>
+  repositoryIds === undefined ? [] : [...new Set(repositoryIds)].sort();
+
+export const issueListRepositoryQueryKey = (repositoryId: string | undefined) =>
+  [...issueListRootQueryKey, "repository", repositoryId ?? null] as const;
+
+export const issueListGlobalQueryKey = (repositoryIds: readonly string[] | undefined) =>
+  [...issueListRootQueryKey, "global", normalizeRepositoryIds(repositoryIds)] as const;
+
 export const issueListQueryKey = (
   repositoryId: string | undefined,
   query?: Omit<TicketQuery, "repositoryIds">,
-) => ["desktop", "ticketRpc", "issues", repositoryId, query ?? {}] as const;
+  repositoryIds?: readonly string[],
+) => {
+  const scope =
+    repositoryIds !== undefined && repositoryIds.length > 0
+      ? issueListGlobalQueryKey(repositoryIds)
+      : issueListRepositoryQueryKey(repositoryId);
+
+  return query === undefined ? scope : ([...scope, query] as const);
+};
 
 export const issueDetailQueryKey = (
   repositoryId: string | undefined,
@@ -28,6 +47,30 @@ export const listIssuesForRepository = async (
       id: repositoryId,
     },
   });
+
+export const listIssuesForRepositories = async (
+  repositoryIds: readonly string[],
+  query: Omit<TicketQuery, "repositoryIds"> = {},
+): Promise<TicketPage> => {
+  const normalizedRepositoryIds = normalizeRepositoryIds(repositoryIds);
+  const requestRepositoryId = normalizedRepositoryIds[0];
+
+  if (!requestRepositoryId) {
+    return {
+      entries: [],
+    };
+  }
+
+  return ticketRpcClient.call("ticket.issue.list", {
+    input: {
+      ...query,
+      repositoryIds: normalizedRepositoryIds,
+    },
+    repository: {
+      id: requestRepositoryId,
+    },
+  });
+};
 
 export const getIssueForRepository = async ({
   issueId,
@@ -67,17 +110,24 @@ export const listIssueRecordsForRepository = async ({
 export const useIssueListQuery = (
   repositoryId: string | undefined,
   query: Omit<TicketQuery, "repositoryIds"> = {},
+  repositoryIds?: readonly string[],
 ) =>
   useQuery({
-    enabled: repositoryId !== undefined && getDesktopBridge() !== undefined,
+    enabled:
+      ((repositoryIds !== undefined && repositoryIds.length > 0) || repositoryId !== undefined) &&
+      getDesktopBridge() !== undefined,
     queryFn: () => {
+      if (repositoryIds !== undefined && repositoryIds.length > 0) {
+        return listIssuesForRepositories(repositoryIds, query);
+      }
+
       if (!repositoryId) {
         throw new Error("Choose a repository before loading issues.");
       }
 
       return listIssuesForRepository(repositoryId, query);
     },
-    queryKey: issueListQueryKey(repositoryId, query),
+    queryKey: issueListQueryKey(repositoryId, query, repositoryIds),
   });
 
 export const useIssueDetailQuery = (

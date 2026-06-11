@@ -1,7 +1,11 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { UpdateTicketPatch } from "@cycle/database";
 import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
-import { issueDetailQueryKey, issueListQueryKey, issueRecordsQueryKey } from "../queries/issues.ts";
+import {
+  issueDetailQueryKey,
+  issueListRootQueryKey,
+  issueRecordsQueryKey,
+} from "../queries/issues.ts";
 
 type UseUpdateIssueMutationOptions = {
   readonly issueId?: string;
@@ -36,7 +40,7 @@ export const useUpdateIssueMutation = ({
           queryKey: issueDetailQueryKey(repositoryId, issueId),
         }),
         queryClient.invalidateQueries({
-          queryKey: issueListQueryKey(repositoryId),
+          queryKey: issueListRootQueryKey,
         }),
         queryClient.invalidateQueries({
           queryKey: issueRecordsQueryKey(repositoryId, issueId),

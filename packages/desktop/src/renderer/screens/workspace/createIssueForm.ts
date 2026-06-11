@@ -12,7 +12,9 @@ export type CreateIssueFormValues = {
   readonly priority: CreateIssueDialogPriority;
   readonly project: string | null;
   readonly status: CreateIssueDialogStatus;
+  readonly template: string | null;
   readonly title: string;
+  readonly type: string;
 };
 
 export const initialCreateIssueFormValues = (): CreateIssueFormValues => ({
@@ -26,7 +28,9 @@ export const initialCreateIssueFormValues = (): CreateIssueFormValues => ({
   priority: "none",
   project: null,
   status: "todo",
+  template: null,
   title: "",
+  type: "issue",
 });
 
 export type CreateIssueFormDraft = {
@@ -34,6 +38,7 @@ export type CreateIssueFormDraft = {
   readonly dueDate?: string;
   readonly estimate?: number | string;
   readonly title: string;
+  readonly type?: string;
 };
 
 export const getCreateIssueFormDraft = (
@@ -52,6 +57,7 @@ export const getCreateIssueFormDraft = (
     dueDate: values.dueDate.length > 0 ? values.dueDate : undefined,
     estimate: values.estimate.trim().length > 0 ? values.estimate.trim() : undefined,
     title,
+    type: values.type,
   };
 };
 
@@ -102,7 +108,9 @@ export const useCreateIssueForm = () => {
     ),
     setProject: React.useCallback((project: string | null) => update({ project }), [update]),
     setStatus: React.useCallback((status: CreateIssueDialogStatus) => update({ status }), [update]),
+    setTemplate: React.useCallback((template: string | null) => update({ template }), [update]),
     setTitle: React.useCallback((title: string) => update({ title }), [update]),
+    setType: React.useCallback((type: string) => update({ type }), [update]),
     values,
   };
 };

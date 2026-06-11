@@ -703,6 +703,36 @@ describe("@cycle/git-db", () => {
     }).pipe(Effect.provide(GitDbInMemory())),
   );
 
+  it.effect("allows email-style document ids while rejecting path-like ids", () =>
+    Effect.gen(function* () {
+      const store = yield* StoreApi.StoreService;
+      const users = yield* store.collection<{
+        readonly displayName: string;
+        readonly email: string;
+      }>("users");
+      const userId = "robert.pitt+cycle@example.com";
+
+      yield* users.put(userId, {
+        displayName: "Robert Pitt",
+        email: userId,
+      });
+
+      const fetched = yield* users.get(userId);
+      const invalidPathId = yield* Effect.flip(
+        users.put("robert.pitt+cycle/example.com", {
+          displayName: "Invalid User",
+          email: "invalid@example.com",
+        }),
+      );
+
+      assert.deepStrictEqual(fetched, {
+        displayName: "Robert Pitt",
+        email: userId,
+      });
+      assert.ok(invalidPathId instanceof InvalidIdentifierError);
+    }).pipe(Effect.provide(GitDbInMemory())),
+  );
+
   it.effect(
     "supports the module-first helper APIs for transactions, pointers, snapshots, and sync",
     () =>

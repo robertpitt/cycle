@@ -2,6 +2,12 @@ import { DatabaseSync } from "node:sqlite";
 import type {
   HistoryCommit,
   HistoryPage,
+  IssueTemplateDocument,
+  IssueTemplatePage,
+  IssueTemplateQuery,
+  LabelDefinitionDocument,
+  LabelDefinitionPage,
+  LabelDefinitionQuery,
   LinkedRecord,
   MaterializationWarning,
   RecordPage,
@@ -11,11 +17,17 @@ import type {
   RepositoryMetadata,
   RepositoryStatus,
   RepositoryStatusValue,
+  SavedViewDocument,
+  SavedViewPage,
+  SavedViewQuery,
   SearchTicketsQuery,
   TicketDocument,
   TicketPage,
   TicketQuery,
   TicketSearchPage,
+  UserProfileDocument,
+  UserProfilePage,
+  UserProfileQuery,
 } from "../domain/index.ts";
 import { normalizeKey } from "../domain/index.ts";
 
@@ -64,6 +76,71 @@ type RecordRow = {
   readonly ticket_id: string;
 };
 
+type UserRow = {
+  readonly aliases_json: string | null;
+  readonly avatar_url: string | null;
+  readonly created_at: string;
+  readonly disabled_at: string | null;
+  readonly display_name: string;
+  readonly email: string;
+  readonly profile_json: string;
+  readonly repository_id: string;
+  readonly schema_version: number;
+  readonly source: string;
+  readonly timezone: string | null;
+  readonly updated_at: string;
+  readonly user_id: string;
+};
+
+type LabelRow = {
+  readonly archived_at: string | null;
+  readonly color: string;
+  readonly created_at: string;
+  readonly created_by_email: string | null;
+  readonly created_by_name: string;
+  readonly created_by_type: string;
+  readonly description: string | null;
+  readonly label_id: string;
+  readonly label_json: string;
+  readonly name: string;
+  readonly repository_id: string;
+  readonly schema_version: number;
+  readonly updated_at: string;
+};
+
+type SavedViewRow = {
+  readonly built_in: number;
+  readonly created_at: string;
+  readonly created_by_email: string | null;
+  readonly created_by_name: string;
+  readonly created_by_type: string;
+  readonly group_by: string;
+  readonly kind: string;
+  readonly name: string;
+  readonly owner_user_id: string | null;
+  readonly pinned: number;
+  readonly repository_id: string;
+  readonly schema_version: number;
+  readonly updated_at: string;
+  readonly view_id: string;
+  readonly view_json: string;
+};
+
+type IssueTemplateRow = {
+  readonly active: number;
+  readonly created_at: string;
+  readonly created_by_email: string | null;
+  readonly created_by_name: string;
+  readonly created_by_type: string;
+  readonly kind: string;
+  readonly name: string;
+  readonly repository_id: string;
+  readonly schema_version: number;
+  readonly template_id: string;
+  readonly template_json: string;
+  readonly updated_at: string;
+};
+
 type RepositoryRow = {
   readonly active_generation: number;
   readonly active_snapshot_id: string | null;
@@ -95,7 +172,7 @@ type HistoryRow = {
 };
 
 const WATCHED_REF = "refs/gitdb/cycle/main";
-const CURRENT_PROJECTION_SCHEMA_VERSION = 1;
+const CURRENT_PROJECTION_SCHEMA_VERSION = 2;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 250;
 
@@ -130,6 +207,7 @@ export class Projection {
     }
 
     this.ensureRepositoryMetadataColumns();
+    this.ensureSharedMetadataTables();
     if (version < CURRENT_PROJECTION_SCHEMA_VERSION) {
       this.db.exec(`PRAGMA user_version = ${CURRENT_PROJECTION_SCHEMA_VERSION}`);
     }
@@ -173,6 +251,10 @@ export class Projection {
         this.db.exec(`ALTER TABLE repositories ADD COLUMN ${column} ${definition}`);
       }
     }
+  }
+
+  private ensureSharedMetadataTables(): void {
+    this.db.exec(sharedMetadataSchemaSql);
   }
 
   registerRepository(input: RepositoryInput): RepositoryStatus {
@@ -311,6 +393,10 @@ export class Projection {
 
   clearRepositoryProjection(repositoryId: string): void {
     const tables = [
+      "users",
+      "labels",
+      "saved_views",
+      "issue_templates",
       "ticket_labels",
       "ticket_external_links",
       "comments",
@@ -545,6 +631,214 @@ export class Projection {
     this.deleteSearchDocument(repositoryId, `comment:${recordId}`);
   }
 
+  upsertUser(input: {
+    readonly repositoryId: string;
+    readonly snapshotId: string;
+    readonly user: UserProfileDocument;
+  }): void {
+    const user = input.user;
+
+    this.db
+      .prepare(
+        `INSERT INTO users (
+          repository_id, user_id, snapshot_id, email, display_name, avatar_url, timezone, source,
+          disabled_at, aliases_json, created_at, updated_at, profile_json, schema_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(repository_id, user_id) DO UPDATE SET
+          snapshot_id = excluded.snapshot_id,
+          email = excluded.email,
+          display_name = excluded.display_name,
+          avatar_url = excluded.avatar_url,
+          timezone = excluded.timezone,
+          source = excluded.source,
+          disabled_at = excluded.disabled_at,
+          aliases_json = excluded.aliases_json,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at,
+          profile_json = excluded.profile_json,
+          schema_version = excluded.schema_version`,
+      )
+      .run(
+        input.repositoryId,
+        user.id,
+        input.snapshotId,
+        user.email,
+        user.displayName,
+        user.avatarUrl ?? null,
+        user.timezone ?? null,
+        user.source,
+        user.disabledAt ?? null,
+        user.aliases === undefined ? null : JSON.stringify(user.aliases),
+        user.createdAt,
+        user.updatedAt,
+        JSON.stringify(user),
+        user.schemaVersion,
+      );
+  }
+
+  deleteUser(repositoryId: string, userId: string): void {
+    this.db
+      .prepare("DELETE FROM users WHERE repository_id = ? AND user_id = ?")
+      .run(repositoryId, userId);
+  }
+
+  upsertLabel(input: {
+    readonly label: LabelDefinitionDocument;
+    readonly repositoryId: string;
+    readonly snapshotId: string;
+  }): void {
+    const label = input.label;
+
+    this.db
+      .prepare(
+        `INSERT INTO labels (
+          repository_id, label_id, snapshot_id, name, color, description, archived_at,
+          created_by_name, created_by_email, created_by_type, created_at, updated_at,
+          label_json, schema_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(repository_id, label_id) DO UPDATE SET
+          snapshot_id = excluded.snapshot_id,
+          name = excluded.name,
+          color = excluded.color,
+          description = excluded.description,
+          archived_at = excluded.archived_at,
+          created_by_name = excluded.created_by_name,
+          created_by_email = excluded.created_by_email,
+          created_by_type = excluded.created_by_type,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at,
+          label_json = excluded.label_json,
+          schema_version = excluded.schema_version`,
+      )
+      .run(
+        input.repositoryId,
+        label.id,
+        input.snapshotId,
+        label.name,
+        label.color,
+        label.description ?? null,
+        label.archivedAt ?? null,
+        label.createdBy.name,
+        label.createdBy.email ?? null,
+        label.createdBy.type,
+        label.createdAt,
+        label.updatedAt,
+        JSON.stringify(label),
+        label.schemaVersion,
+      );
+  }
+
+  deleteLabel(repositoryId: string, labelId: string): void {
+    this.db
+      .prepare("DELETE FROM labels WHERE repository_id = ? AND label_id = ?")
+      .run(repositoryId, labelId);
+  }
+
+  upsertView(input: {
+    readonly repositoryId: string;
+    readonly snapshotId: string;
+    readonly view: SavedViewDocument;
+  }): void {
+    const view = input.view;
+
+    this.db
+      .prepare(
+        `INSERT INTO saved_views (
+          repository_id, view_id, snapshot_id, name, kind, group_by, pinned, built_in,
+          owner_user_id, created_by_name, created_by_email, created_by_type, created_at,
+          updated_at, view_json, schema_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(repository_id, view_id) DO UPDATE SET
+          snapshot_id = excluded.snapshot_id,
+          name = excluded.name,
+          kind = excluded.kind,
+          group_by = excluded.group_by,
+          pinned = excluded.pinned,
+          built_in = excluded.built_in,
+          owner_user_id = excluded.owner_user_id,
+          created_by_name = excluded.created_by_name,
+          created_by_email = excluded.created_by_email,
+          created_by_type = excluded.created_by_type,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at,
+          view_json = excluded.view_json,
+          schema_version = excluded.schema_version`,
+      )
+      .run(
+        input.repositoryId,
+        view.id,
+        input.snapshotId,
+        view.name,
+        view.kind,
+        view.groupBy,
+        view.pinned ? 1 : 0,
+        view.builtIn === true ? 1 : 0,
+        view.ownerUserId ?? null,
+        view.createdBy.name,
+        view.createdBy.email ?? null,
+        view.createdBy.type,
+        view.createdAt,
+        view.updatedAt,
+        JSON.stringify(view),
+        view.schemaVersion,
+      );
+  }
+
+  deleteView(repositoryId: string, viewId: string): void {
+    this.db
+      .prepare("DELETE FROM saved_views WHERE repository_id = ? AND view_id = ?")
+      .run(repositoryId, viewId);
+  }
+
+  upsertTemplate(input: {
+    readonly repositoryId: string;
+    readonly snapshotId: string;
+    readonly template: IssueTemplateDocument;
+  }): void {
+    const template = input.template;
+
+    this.db
+      .prepare(
+        `INSERT INTO issue_templates (
+          repository_id, template_id, snapshot_id, name, kind, active, created_by_name,
+          created_by_email, created_by_type, created_at, updated_at, template_json, schema_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(repository_id, template_id) DO UPDATE SET
+          snapshot_id = excluded.snapshot_id,
+          name = excluded.name,
+          kind = excluded.kind,
+          active = excluded.active,
+          created_by_name = excluded.created_by_name,
+          created_by_email = excluded.created_by_email,
+          created_by_type = excluded.created_by_type,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at,
+          template_json = excluded.template_json,
+          schema_version = excluded.schema_version`,
+      )
+      .run(
+        input.repositoryId,
+        template.id,
+        input.snapshotId,
+        template.name,
+        template.kind,
+        template.active ? 1 : 0,
+        template.createdBy.name,
+        template.createdBy.email ?? null,
+        template.createdBy.type,
+        template.createdAt,
+        template.updatedAt,
+        JSON.stringify(template),
+        template.schemaVersion,
+      );
+  }
+
+  deleteTemplate(repositoryId: string, templateId: string): void {
+    this.db
+      .prepare("DELETE FROM issue_templates WHERE repository_id = ? AND template_id = ?")
+      .run(repositoryId, templateId);
+  }
+
   upsertCommit(input: {
     readonly authorEmail?: string;
     readonly authorName?: string;
@@ -719,17 +1013,38 @@ export class Projection {
       filters.push("t.status = ?");
       params.push(normalizeKey(query.status));
     }
+    if (query.statusIn !== undefined && query.statusIn.length > 0) {
+      filters.push(`t.status IN (${placeholders(query.statusIn.length)})`);
+      params.push(...query.statusIn.map((status) => normalizeKey(status)));
+    }
     if (query.priority !== undefined) {
       filters.push("t.priority = ?");
       params.push(normalizeKey(query.priority));
+    }
+    if (query.priorityIn !== undefined && query.priorityIn.length > 0) {
+      filters.push(`t.priority IN (${placeholders(query.priorityIn.length)})`);
+      params.push(...query.priorityIn.map((priority) => normalizeKey(priority)));
     }
     if (query.type !== undefined) {
       filters.push("t.type = ?");
       params.push(normalizeKey(query.type));
     }
     if (query.assignee !== undefined) {
-      filters.push("t.assignee = ?");
-      params.push(normalizeKey(query.assignee));
+      if (query.assignee === null) {
+        filters.push("(t.assignee IS NULL OR t.assignee = 'none')");
+      } else {
+        filters.push("t.assignee = ?");
+        params.push(normalizeKey(query.assignee));
+      }
+    }
+    if (query.assigneeIn !== undefined && query.assigneeIn.length > 0) {
+      filters.push(`t.assignee IN (${placeholders(query.assigneeIn.length)})`);
+      params.push(...query.assigneeIn.map((assignee) => normalizeKey(assignee)));
+    }
+    if (query.hasAssignee === true) {
+      filters.push("t.assignee IS NOT NULL AND t.assignee != 'none'");
+    } else if (query.hasAssignee === false) {
+      filters.push("(t.assignee IS NULL OR t.assignee = 'none')");
     }
     if (query.parent !== undefined) {
       filters.push("t.parent_id = ?");
@@ -745,6 +1060,34 @@ export class Projection {
         )`,
       );
       params.push(normalizeKey(query.label));
+    }
+    if (query.labelIn !== undefined && query.labelIn.length > 0) {
+      filters.push(
+        `EXISTS (
+          SELECT 1 FROM ticket_labels l
+          WHERE l.repository_id = t.repository_id
+            AND l.ticket_id = t.ticket_id
+            AND l.label IN (${placeholders(query.labelIn.length)})
+        )`,
+      );
+      params.push(...query.labelIn.map((label) => normalizeKey(label)));
+    }
+    if (query.hasLabels === true) {
+      filters.push(
+        `EXISTS (
+          SELECT 1 FROM ticket_labels l
+          WHERE l.repository_id = t.repository_id
+            AND l.ticket_id = t.ticket_id
+        )`,
+      );
+    } else if (query.hasLabels === false) {
+      filters.push(
+        `NOT EXISTS (
+          SELECT 1 FROM ticket_labels l
+          WHERE l.repository_id = t.repository_id
+            AND l.ticket_id = t.ticket_id
+        )`,
+      );
     }
     if (query.dueAfter !== undefined) {
       filters.push("t.due_date >= ?");
@@ -787,6 +1130,25 @@ export class Projection {
         )`,
       );
     }
+    if (query.blocked === true) {
+      filters.push(
+        `EXISTS (
+          SELECT 1 FROM ticket_relations r
+          WHERE r.repository_id = t.repository_id
+            AND r.ticket_id = t.ticket_id
+            AND r.relation_type = 'blocked-by'
+        )`,
+      );
+    } else if (query.blocked === false) {
+      filters.push(
+        `NOT EXISTS (
+          SELECT 1 FROM ticket_relations r
+          WHERE r.repository_id = t.repository_id
+            AND r.ticket_id = t.ticket_id
+            AND r.relation_type = 'blocked-by'
+        )`,
+      );
+    }
     if (query.text !== undefined && query.text.trim().length > 0) {
       const pattern = `%${query.text.toLowerCase().replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
       filters.push("(lower(t.title) LIKE ? ESCAPE '\\' OR lower(t.body) LIKE ? ESCAPE '\\')");
@@ -799,6 +1161,10 @@ export class Projection {
     if (query.updatedBefore !== undefined) {
       filters.push("t.updated_at <= ?");
       params.push(query.updatedBefore);
+    }
+    if (query.staleBefore !== undefined) {
+      filters.push("t.updated_at < ?");
+      params.push(query.staleBefore);
     }
 
     const orderColumn =
@@ -877,6 +1243,164 @@ export class Projection {
       }),
       nextCursor: rows.length > limit ? encodeCursor(cursor.offset + limit) : undefined,
     };
+  }
+
+  getUser(repositoryId: string, userId: string): UserProfileDocument | null {
+    const row = this.db
+      .prepare("SELECT * FROM users WHERE repository_id = ? AND user_id = ?")
+      .get(repositoryId, userId) as UserRow | undefined;
+
+    return row === undefined ? null : userFromRow(row);
+  }
+
+  listUsers(repositoryId: string, query: UserProfileQuery = {}): UserProfilePage {
+    const limit = normalizeLimit(query.limit);
+    const cursor = decodeCursor(query.cursor);
+    const filters = ["repository_id = ?"];
+    const params: Array<SqlValue> = [repositoryId];
+
+    if (query.disabled === true) {
+      filters.push("disabled_at IS NOT NULL");
+    } else if (query.disabled === false) {
+      filters.push("disabled_at IS NULL");
+    }
+    if (query.text !== undefined && query.text.trim().length > 0) {
+      const pattern = `%${query.text.toLowerCase().replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+      filters.push("(lower(display_name) LIKE ? ESCAPE '\\' OR lower(email) LIKE ? ESCAPE '\\')");
+      params.push(pattern, pattern);
+    }
+
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM users
+         WHERE ${filters.join(" AND ")}
+         ORDER BY disabled_at IS NOT NULL ASC, display_name ASC, user_id ASC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(...params, limit + 1, cursor.offset) as unknown as ReadonlyArray<UserRow>;
+
+    return {
+      entries: rows.slice(0, limit).map(userFromRow),
+      nextCursor: rows.length > limit ? encodeCursor(cursor.offset + limit) : undefined,
+    };
+  }
+
+  listLabels(repositoryId: string, query: LabelDefinitionQuery = {}): LabelDefinitionPage {
+    const limit = normalizeLimit(query.limit);
+    const cursor = decodeCursor(query.cursor);
+    const filters = ["repository_id = ?"];
+    const params: Array<SqlValue> = [repositoryId];
+
+    if (query.archived === true) {
+      filters.push("archived_at IS NOT NULL");
+    } else if (query.archived !== undefined) {
+      filters.push("archived_at IS NULL");
+    }
+    if (query.text !== undefined && query.text.trim().length > 0) {
+      const pattern = `%${query.text.toLowerCase().replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+      filters.push("(lower(name) LIKE ? ESCAPE '\\' OR lower(label_id) LIKE ? ESCAPE '\\')");
+      params.push(pattern, pattern);
+    }
+
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM labels
+         WHERE ${filters.join(" AND ")}
+         ORDER BY archived_at IS NOT NULL ASC, name ASC, label_id ASC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(...params, limit + 1, cursor.offset) as unknown as ReadonlyArray<LabelRow>;
+
+    return {
+      entries: rows.slice(0, limit).map(labelFromRow),
+      nextCursor: rows.length > limit ? encodeCursor(cursor.offset + limit) : undefined,
+    };
+  }
+
+  listViews(repositoryId: string, query: SavedViewQuery = {}): SavedViewPage {
+    const limit = normalizeLimit(query.limit);
+    const cursor = decodeCursor(query.cursor);
+    const filters = ["repository_id = ?"];
+    const params: Array<SqlValue> = [repositoryId];
+
+    if (query.kind !== undefined) {
+      filters.push("kind = ?");
+      params.push(query.kind);
+    }
+    if (query.pinned !== undefined) {
+      filters.push("pinned = ?");
+      params.push(query.pinned ? 1 : 0);
+    }
+    if (query.text !== undefined && query.text.trim().length > 0) {
+      const pattern = `%${query.text.toLowerCase().replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+      filters.push("lower(name) LIKE ? ESCAPE '\\'");
+      params.push(pattern);
+    }
+
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM saved_views
+         WHERE ${filters.join(" AND ")}
+         ORDER BY pinned DESC, built_in DESC, name ASC, view_id ASC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(...params, limit + 1, cursor.offset) as unknown as ReadonlyArray<SavedViewRow>;
+
+    return {
+      entries: rows.slice(0, limit).map(viewFromRow),
+      nextCursor: rows.length > limit ? encodeCursor(cursor.offset + limit) : undefined,
+    };
+  }
+
+  getView(repositoryId: string, viewId: string): SavedViewDocument | null {
+    const row = this.db
+      .prepare("SELECT * FROM saved_views WHERE repository_id = ? AND view_id = ?")
+      .get(repositoryId, viewId) as SavedViewRow | undefined;
+
+    return row === undefined ? null : viewFromRow(row);
+  }
+
+  listTemplates(repositoryId: string, query: IssueTemplateQuery = {}): IssueTemplatePage {
+    const limit = normalizeLimit(query.limit);
+    const cursor = decodeCursor(query.cursor);
+    const filters = ["repository_id = ?"];
+    const params: Array<SqlValue> = [repositoryId];
+
+    if (query.kind !== undefined) {
+      filters.push("kind = ?");
+      params.push(query.kind);
+    }
+    if (query.active !== undefined) {
+      filters.push("active = ?");
+      params.push(query.active ? 1 : 0);
+    }
+    if (query.text !== undefined && query.text.trim().length > 0) {
+      const pattern = `%${query.text.toLowerCase().replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+      filters.push("lower(name) LIKE ? ESCAPE '\\'");
+      params.push(pattern);
+    }
+
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM issue_templates
+         WHERE ${filters.join(" AND ")}
+         ORDER BY active DESC, kind ASC, name ASC, template_id ASC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(...params, limit + 1, cursor.offset) as unknown as ReadonlyArray<IssueTemplateRow>;
+
+    return {
+      entries: rows.slice(0, limit).map(templateFromRow),
+      nextCursor: rows.length > limit ? encodeCursor(cursor.offset + limit) : undefined,
+    };
+  }
+
+  getTemplate(repositoryId: string, templateId: string): IssueTemplateDocument | null {
+    const row = this.db
+      .prepare("SELECT * FROM issue_templates WHERE repository_id = ? AND template_id = ?")
+      .get(repositoryId, templateId) as IssueTemplateRow | undefined;
+
+    return row === undefined ? null : templateFromRow(row);
   }
 
   ticketRecords(repositoryId: string, ticketId: string, query: RecordQuery = {}): RecordPage {
@@ -1133,6 +1657,84 @@ CREATE INDEX tickets_repository_parent ON tickets(repository_id, parent_id, arch
 CREATE INDEX tickets_repository_due_range ON tickets(repository_id, due_date, archived_at, deleted_at, ticket_id);
 CREATE INDEX tickets_repository_estimate ON tickets(repository_id, estimate, archived_at, deleted_at, ticket_id);
 
+CREATE TABLE users (
+  repository_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  email TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  avatar_url TEXT,
+  timezone TEXT,
+  source TEXT NOT NULL,
+  disabled_at TEXT,
+  aliases_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  profile_json TEXT NOT NULL,
+  schema_version INTEGER NOT NULL,
+  PRIMARY KEY (repository_id, user_id)
+);
+CREATE INDEX users_repository_display_name ON users(repository_id, disabled_at, display_name, user_id);
+CREATE INDEX users_repository_email ON users(repository_id, email, user_id);
+
+CREATE TABLE labels (
+  repository_id TEXT NOT NULL,
+  label_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  color TEXT NOT NULL,
+  description TEXT,
+  archived_at TEXT,
+  created_by_name TEXT NOT NULL,
+  created_by_email TEXT,
+  created_by_type TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  label_json TEXT NOT NULL,
+  schema_version INTEGER NOT NULL,
+  PRIMARY KEY (repository_id, label_id)
+);
+CREATE INDEX labels_repository_name ON labels(repository_id, archived_at, name, label_id);
+
+CREATE TABLE saved_views (
+  repository_id TEXT NOT NULL,
+  view_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  group_by TEXT NOT NULL,
+  pinned INTEGER NOT NULL,
+  built_in INTEGER NOT NULL,
+  owner_user_id TEXT,
+  created_by_name TEXT NOT NULL,
+  created_by_email TEXT,
+  created_by_type TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  view_json TEXT NOT NULL,
+  schema_version INTEGER NOT NULL,
+  PRIMARY KEY (repository_id, view_id)
+);
+CREATE INDEX saved_views_repository_order ON saved_views(repository_id, pinned, built_in, name, view_id);
+
+CREATE TABLE issue_templates (
+  repository_id TEXT NOT NULL,
+  template_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  active INTEGER NOT NULL,
+  created_by_name TEXT NOT NULL,
+  created_by_email TEXT,
+  created_by_type TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  template_json TEXT NOT NULL,
+  schema_version INTEGER NOT NULL,
+  PRIMARY KEY (repository_id, template_id)
+);
+CREATE INDEX issue_templates_repository_kind ON issue_templates(repository_id, active, kind, name, template_id);
+
 CREATE TABLE ticket_labels (
   repository_id TEXT NOT NULL,
   ticket_id TEXT NOT NULL,
@@ -1254,6 +1856,86 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
 );
 `;
 
+const sharedMetadataSchemaSql = `
+CREATE TABLE IF NOT EXISTS users (
+  repository_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  email TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  avatar_url TEXT,
+  timezone TEXT,
+  source TEXT NOT NULL,
+  disabled_at TEXT,
+  aliases_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  profile_json TEXT NOT NULL,
+  schema_version INTEGER NOT NULL,
+  PRIMARY KEY (repository_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS users_repository_display_name ON users(repository_id, disabled_at, display_name, user_id);
+CREATE INDEX IF NOT EXISTS users_repository_email ON users(repository_id, email, user_id);
+
+CREATE TABLE IF NOT EXISTS labels (
+  repository_id TEXT NOT NULL,
+  label_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  color TEXT NOT NULL,
+  description TEXT,
+  archived_at TEXT,
+  created_by_name TEXT NOT NULL,
+  created_by_email TEXT,
+  created_by_type TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  label_json TEXT NOT NULL,
+  schema_version INTEGER NOT NULL,
+  PRIMARY KEY (repository_id, label_id)
+);
+CREATE INDEX IF NOT EXISTS labels_repository_name ON labels(repository_id, archived_at, name, label_id);
+
+CREATE TABLE IF NOT EXISTS saved_views (
+  repository_id TEXT NOT NULL,
+  view_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  group_by TEXT NOT NULL,
+  pinned INTEGER NOT NULL,
+  built_in INTEGER NOT NULL,
+  owner_user_id TEXT,
+  created_by_name TEXT NOT NULL,
+  created_by_email TEXT,
+  created_by_type TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  view_json TEXT NOT NULL,
+  schema_version INTEGER NOT NULL,
+  PRIMARY KEY (repository_id, view_id)
+);
+CREATE INDEX IF NOT EXISTS saved_views_repository_order ON saved_views(repository_id, pinned, built_in, name, view_id);
+
+CREATE TABLE IF NOT EXISTS issue_templates (
+  repository_id TEXT NOT NULL,
+  template_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  active INTEGER NOT NULL,
+  created_by_name TEXT NOT NULL,
+  created_by_email TEXT,
+  created_by_type TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  template_json TEXT NOT NULL,
+  schema_version INTEGER NOT NULL,
+  PRIMARY KEY (repository_id, template_id)
+);
+CREATE INDEX IF NOT EXISTS issue_templates_repository_kind ON issue_templates(repository_id, active, kind, name, template_id);
+`;
+
 const normalizeRepositoryMetadata = (input: RepositoryInput): RepositoryMetadata => ({
   currentBranch: input.metadata?.currentBranch,
   defaultRemote: input.metadata?.defaultRemote,
@@ -1335,6 +2017,7 @@ const ticketFromRow = (row: TicketRow): TicketDocument => {
     relations:
       row.relation_summary_json === null ? undefined : JSON.parse(row.relation_summary_json),
     repository: row.repository_key ?? undefined,
+    repositoryId: row.repository_id,
     schemaVersion: 1,
     status: row.status,
     title: row.title,
@@ -1357,6 +2040,18 @@ const recordFromRow = (row: RecordRow): LinkedRecord => ({
   recordType: row.record_type,
   schemaVersion: 1,
 });
+
+const userFromRow = (row: UserRow): UserProfileDocument =>
+  JSON.parse(row.profile_json) as UserProfileDocument;
+
+const labelFromRow = (row: LabelRow): LabelDefinitionDocument =>
+  JSON.parse(row.label_json) as LabelDefinitionDocument;
+
+const viewFromRow = (row: SavedViewRow): SavedViewDocument =>
+  JSON.parse(row.view_json) as SavedViewDocument;
+
+const templateFromRow = (row: IssueTemplateRow): IssueTemplateDocument =>
+  JSON.parse(row.template_json) as IssueTemplateDocument;
 
 const historyFromRow = (row: HistoryRow): HistoryCommit => ({
   authorEmail: row.author_email ?? undefined,

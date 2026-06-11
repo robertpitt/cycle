@@ -7,3 +7,4 @@ export * from "./RepositoryHistoryPanel.tsx";
 export * from "./RepositorySettingsPanel.tsx";
 export * from "./SetupScreen.tsx";
 export * from "./ViewIssuePanel.tsx";
+export * from "./ViewsPanel.tsx";

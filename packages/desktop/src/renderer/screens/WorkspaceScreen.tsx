@@ -13,6 +13,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button, IconButton, StatusIndicator } from "@cycle/ui/atoms";
 import { ArrowLeft, FolderPlus, History, Plus, RefreshCw, Upload } from "lucide-react";
 import * as React from "react";
+import type { SavedViewDocument } from "@cycle/database";
 import {
   AddRepositoryStep,
   ApplicationSettingsPanel,
@@ -23,6 +24,7 @@ import {
   RepositorySettingsPanel,
   SetupScreen,
   ViewIssuePanel,
+  ViewsPanel,
 } from "../components/index.ts";
 import { fallbackAgentProviders, toSetupHarnesses } from "../lib/agentProviders.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
@@ -40,9 +42,13 @@ import {
   useAppConfigQuery,
   useBootstrapStatusQuery,
   issueListQueryKey,
+  issueListRootQueryKey,
   repositoryHistoryRepositoryQueryKey,
+  useIssueTemplateListQuery,
+  useLabelListQuery,
   useMaterializationWarningsQuery,
   useRepositoryStatusQuery,
+  useUserListQuery,
 } from "../queries/index.ts";
 import { getCreateIssueFormDraft, useCreateIssueForm } from "./workspace/createIssueForm.ts";
 import {
@@ -63,7 +69,11 @@ export const WorkspaceScreen = () => {
   const [setupStep, setSetupStep] = React.useState<InitialSetupStep>("profile");
   const [fullName, setFullName] = React.useState("");
   const [email, setEmail] = React.useState("");
-  const [selectedIssueId, setSelectedIssueId] = React.useState<string>();
+  const [selectedIssue, setSelectedIssue] = React.useState<{
+    readonly issueId: string;
+    readonly repositoryId?: string;
+  }>();
+  const [selectedSavedView, setSelectedSavedView] = React.useState<SavedViewDocument>();
   const [repositoryImportError, setRepositoryImportError] = React.useState<React.ReactNode>();
   const [repositoryInitialiseRequest, setRepositoryInitialiseRequest] = React.useState<{
     readonly message?: string;
@@ -82,13 +92,25 @@ export const WorkspaceScreen = () => {
   const appConfigQuery = useAppConfigQuery();
   const agentProvidersQuery = useAgentProvidersQuery();
   const repositories = appConfigQuery.data?.localWorkspace.repositories ?? [];
+  const repositoryIds = React.useMemo(
+    () => repositories.map((repository) => repository.id),
+    [repositories],
+  );
   const selectedRepositoryPage = repositoryPageFromNavItem(activeItemId, repositories);
+  const isGlobalIssuesPage = activeItemId === "issues";
   const isIssuesPage = activeItemId === "issues" || selectedRepositoryPage?.kind === "issues";
+  const isInitiativesPage = activeItemId === "projects";
+  const isViewsPage = activeItemId === "views" || selectedRepositoryPage?.kind === "views";
+  const isSavedViewDetailPage = isViewsPage && selectedSavedView !== undefined;
+  const isWorkItemsPage = isIssuesPage || isInitiativesPage || isSavedViewDetailPage;
   const activeRepository =
-    selectedRepositoryPage?.repository ?? (activeItemId === "issues" ? repositories[0] : undefined);
-  const issueRepository = isIssuesPage ? activeRepository : undefined;
-  const selectedIssueRepositoryId = issueRepository?.id;
-  const isIssueDetailPage = isIssuesPage && selectedIssueId !== undefined;
+    selectedRepositoryPage?.repository ??
+    (activeItemId === "projects" || activeItemId === "views" ? repositories[0] : undefined);
+  const issueRepository =
+    isIssuesPage || isInitiativesPage || isViewsPage ? activeRepository : undefined;
+  const selectedIssueId = selectedIssue?.issueId;
+  const selectedIssueRepositoryId = selectedIssue?.repositoryId ?? issueRepository?.id;
+  const isIssueDetailPage = isWorkItemsPage && selectedIssueId !== undefined;
   const isRepositoryHistoryPage = selectedRepositoryPage?.kind === "history";
   const isRepositorySettingsPage = selectedRepositoryPage?.kind === "settings";
   const isApplicationSettingsPage = activeItemId === "settings";
@@ -123,6 +145,15 @@ export const WorkspaceScreen = () => {
   });
   const repositoryStatusQuery = useRepositoryStatusQuery(activeRepository?.id);
   const materializationWarningsQuery = useMaterializationWarningsQuery(activeRepository?.id);
+  const userListQuery = useUserListQuery(issueRepository?.id, {
+    disabled: false,
+  });
+  const labelListQuery = useLabelListQuery(issueRepository?.id, {
+    archived: false,
+  });
+  const templateListQuery = useIssueTemplateListQuery(issueRepository?.id, {
+    active: true,
+  });
   const syncRepository = useSyncRepositoryMutation({
     repositoryId: activeRepository?.id,
   });
@@ -144,10 +175,67 @@ export const WorkspaceScreen = () => {
   const createIssueOptions = React.useMemo(
     () =>
       createIssueDialogOptionSections({
+        labels: labelListQuery.data?.entries,
         profile: appConfigQuery.data?.profile,
         repository: issueRepository,
+        templates: templateListQuery.data?.entries,
+        users: userListQuery.data?.entries,
       }),
-    [appConfigQuery.data?.profile, issueRepository],
+    [
+      appConfigQuery.data?.profile,
+      issueRepository,
+      labelListQuery.data?.entries,
+      templateListQuery.data?.entries,
+      userListQuery.data?.entries,
+    ],
+  );
+  const applyIssueTemplate = React.useCallback(
+    (templateId: string | null) => {
+      createIssueForm.setTemplate(templateId);
+      if (templateId === null) return;
+
+      const template = templateListQuery.data?.entries.find(
+        (candidate) => candidate.id === templateId,
+      );
+      if (!template) return;
+
+      const defaults = template.defaults ?? {};
+      if (
+        createIssueForm.values.title.trim().length === 0 &&
+        !template.titleTemplate.includes("{{")
+      ) {
+        createIssueForm.setTitle(template.titleTemplate);
+      }
+      if (template.bodyTemplate.trim().length > 0) {
+        createIssueForm.setDescription(template.bodyTemplate);
+      }
+      if (defaults.assignee !== undefined) {
+        createIssueForm.setAssignee(defaults.assignee);
+      }
+      if (defaults.labels !== undefined) {
+        createIssueForm.setLabels(defaults.labels);
+      }
+      if (typeof defaults.priority === "string") {
+        createIssueForm.setPriority(defaults.priority as typeof createIssueForm.values.priority);
+      }
+      if (typeof defaults.status === "string") {
+        createIssueForm.setStatus(defaults.status as typeof createIssueForm.values.status);
+      }
+      if (defaults.dueDate !== undefined && defaults.dueDate !== null) {
+        createIssueForm.setDueDate(String(defaults.dueDate));
+      }
+      if (defaults.estimate !== undefined && defaults.estimate !== null) {
+        createIssueForm.setEstimate(String(defaults.estimate));
+      }
+      if (typeof defaults.type === "string") {
+        createIssueForm.setType(defaults.type);
+      } else if (template.kind === "initiative") {
+        createIssueForm.setType("initiative");
+      } else {
+        createIssueForm.setType("issue");
+      }
+    },
+    [createIssueForm, templateListQuery.data?.entries],
   );
 
   React.useEffect(() => {
@@ -173,14 +261,16 @@ export const WorkspaceScreen = () => {
   }, [agentProvidersQuery.data]);
 
   React.useEffect(() => {
-    setSelectedIssueId(undefined);
-  }, [selectedIssueRepositoryId]);
+    if (!isWorkItemsPage) {
+      setSelectedIssue(undefined);
+    }
+  }, [isWorkItemsPage]);
 
   React.useEffect(() => {
-    if (!isIssuesPage) {
-      setSelectedIssueId(undefined);
+    if (!isViewsPage) {
+      setSelectedSavedView(undefined);
     }
-  }, [isIssuesPage]);
+  }, [isViewsPage]);
 
   React.useEffect(() => {
     if (!activeRepository?.id || repositoryStatus === undefined) return;
@@ -194,6 +284,9 @@ export const WorkspaceScreen = () => {
 
     void queryClient.invalidateQueries({
       queryKey: issueListQueryKey(issueRepository.id),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: issueListRootQueryKey,
     });
   }, [
     activeRepository?.id,
@@ -236,6 +329,12 @@ export const WorkspaceScreen = () => {
   }
 
   const chooseRepositoryFolder = () => addRepository.mutate();
+  const openCreateIssueDialog = () => {
+    createIssueForm.openDialog();
+    if (isInitiativesPage) {
+      createIssueForm.setType("initiative");
+    }
+  };
   const closeCreateIssueDialog = () => {
     if (createIssue.isPending) return;
 
@@ -267,7 +366,7 @@ export const WorkspaceScreen = () => {
         priority: createIssueForm.values.priority,
         status: createIssueForm.values.status,
         title: draft.title,
-        type: "issue",
+        type: draft.type ?? createIssueForm.values.type,
       },
       {
         onError: (error) => {
@@ -308,7 +407,9 @@ export const WorkspaceScreen = () => {
   });
   const activePageTitle = isIssueDetailPage
     ? (selectedIssueId ?? "Issue")
-    : activePageTitleForNavItem(activeItemId, repositories);
+    : selectedSavedView
+      ? selectedSavedView.name
+      : activePageTitleForNavItem(activeItemId, repositories);
   const warningCount =
     repositoryStatus?.warningCount ?? materializationWarningsQuery.data?.length ?? 0;
   const repositoryStatusTone =
@@ -389,10 +490,20 @@ export const WorkspaceScreen = () => {
       {isIssueDetailPage ? (
         <IconButton
           icon={<ArrowLeft aria-hidden className="size-4" />}
-          label="Back to issues"
-          onClick={() => setSelectedIssueId(undefined)}
+          label={isSavedViewDetailPage ? "Back to view" : "Back to issues"}
+          onClick={() => setSelectedIssue(undefined)}
           size="sm"
-          title="Back to issues"
+          title={isSavedViewDetailPage ? "Back to view" : "Back to issues"}
+          variant="outline"
+        />
+      ) : null}
+      {isSavedViewDetailPage && !isIssueDetailPage ? (
+        <IconButton
+          icon={<ArrowLeft aria-hidden className="size-4" />}
+          label="Back to views"
+          onClick={() => setSelectedSavedView(undefined)}
+          size="sm"
+          title="Back to views"
           variant="outline"
         />
       ) : null}
@@ -406,12 +517,12 @@ export const WorkspaceScreen = () => {
           variant="outline"
         />
       ) : null}
-      {isIssuesPage ? (
+      {isWorkItemsPage ? (
         <IconButton
           disabled={createIssue.isPending || !issueRepository}
           icon={<Plus aria-hidden className="size-4" />}
           label="Create issue"
-          onClick={createIssueForm.openDialog}
+          onClick={openCreateIssueDialog}
           size="sm"
           title="Create issue"
           variant="outline"
@@ -420,6 +531,11 @@ export const WorkspaceScreen = () => {
     </>
   );
   const handleNavItemSelect = (item: AppShellNavSection["items"][number]) => {
+    if (item.id !== activeItemId) {
+      setSelectedIssue(undefined);
+      setSelectedSavedView(undefined);
+    }
+
     const repositoryId = repositoryIdFromNavItem(item.id);
     if (repositoryId) {
       const repository = repositories.find((candidate) => candidate.id === repositoryId);
@@ -471,15 +587,38 @@ export const WorkspaceScreen = () => {
                   status={repositoryStatus}
                 />
               ) : hasRepositories && isIssueDetailPage ? (
-                <ViewIssuePanel issueId={selectedIssueId} repositoryId={issueRepository?.id} />
-              ) : hasRepositories && isIssuesPage ? (
+                <ViewIssuePanel
+                  issueId={selectedIssueId}
+                  repositoryId={selectedIssueRepositoryId}
+                />
+              ) : hasRepositories && isViewsPage && !isSavedViewDetailPage ? (
+                <ViewsPanel
+                  onViewSelect={(view) => {
+                    setSelectedIssue(undefined);
+                    setSelectedSavedView(view);
+                  }}
+                  repositoryId={issueRepository?.id}
+                />
+              ) : hasRepositories && isWorkItemsPage ? (
                 <IssuesPanel
                   loadingRepository={repositoryColdSyncing}
-                  onCreateIssue={createIssueForm.openDialog}
-                  onIssueSelect={setSelectedIssueId}
+                  onCreateIssue={issueRepository ? openCreateIssueDialog : undefined}
+                  onIssueSelect={setSelectedIssue}
                   profile={appConfigQuery.data?.profile}
+                  query={isInitiativesPage ? { type: "initiative" } : {}}
                   repositoryId={issueRepository?.id}
+                  repositoryIds={isGlobalIssuesPage ? repositoryIds : undefined}
+                  repositories={repositories}
+                  savedViewId={selectedSavedView?.id}
                   selectedIssueId={selectedIssueId}
+                  showSavedViewControls={!isSavedViewDetailPage && issueRepository !== undefined}
+                  title={
+                    isInitiativesPage
+                      ? "Initiatives"
+                      : selectedSavedView
+                        ? selectedSavedView.name
+                        : "Issues"
+                  }
                 />
               ) : hasRepositories && isRepositoryHistoryPage ? (
                 <RepositoryHistoryPanel
@@ -487,7 +626,10 @@ export const WorkspaceScreen = () => {
                     if (!activeRepository) return;
 
                     setActiveItemId(`repository:${activeRepository.id}:issues`);
-                    setSelectedIssueId(issueId);
+                    setSelectedIssue({
+                      issueId,
+                      repositoryId: activeRepository.id,
+                    });
                   }}
                   repositoryId={activeRepository?.id}
                 />
@@ -562,6 +704,7 @@ export const WorkspaceScreen = () => {
           onPriorityChange={createIssueForm.setPriority}
           onProjectChange={createIssueForm.setProject}
           onStatusChange={createIssueForm.setStatus}
+          onTemplateChange={applyIssueTemplate}
           onTitleChange={createIssueForm.setTitle}
           priority={createIssueForm.values.priority}
           prioritySections={createIssueOptions.prioritySections}
@@ -571,6 +714,8 @@ export const WorkspaceScreen = () => {
           status={createIssueForm.values.status}
           statusSections={createIssueOptions.statusSections}
           teamLabel={issueRepository?.displayName ?? "Repository"}
+          template={createIssueForm.values.template}
+          templateSections={createIssueOptions.templateSections}
           title={createIssueForm.values.title}
         />
       ) : null}

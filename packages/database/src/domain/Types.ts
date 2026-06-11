@@ -13,6 +13,212 @@ export type ExternalLink = {
   readonly url: string;
 };
 
+export type UserProfileSource = "import" | "local-profile" | "manual";
+
+export type UserProfileDocument = {
+  readonly aliases?: ReadonlyArray<string>;
+  readonly avatarUrl?: string;
+  readonly createdAt: string;
+  readonly disabledAt?: string;
+  readonly displayName: string;
+  readonly email: string;
+  readonly id: string;
+  readonly schemaVersion: 1;
+  readonly source: UserProfileSource;
+  readonly timezone?: string;
+  readonly updatedAt: string;
+  readonly [key: string]: unknown;
+};
+
+export type CreateOrUpdateUserProfileInput = {
+  readonly aliases?: ReadonlyArray<string>;
+  readonly avatarUrl?: string;
+  readonly disabledAt?: string | null;
+  readonly displayName: string;
+  readonly email: string;
+  readonly source?: UserProfileSource;
+  readonly timezone?: string;
+};
+
+export type UserProfileQuery = {
+  readonly cursor?: string;
+  readonly disabled?: boolean;
+  readonly limit?: number;
+  readonly text?: string;
+};
+
+export type UserProfilePage = {
+  readonly entries: ReadonlyArray<UserProfileDocument>;
+  readonly nextCursor?: string;
+};
+
+export type LabelDefinitionDocument = {
+  readonly archivedAt?: string;
+  readonly color: string;
+  readonly createdAt: string;
+  readonly createdBy: Actor;
+  readonly description?: string;
+  readonly id: string;
+  readonly name: string;
+  readonly schemaVersion: 1;
+  readonly updatedAt: string;
+  readonly [key: string]: unknown;
+};
+
+export type UpsertLabelDefinitionInput = {
+  readonly color?: string;
+  readonly description?: string | null;
+  readonly id?: string;
+  readonly name: string;
+};
+
+export type LabelDefinitionQuery = {
+  readonly archived?: boolean;
+  readonly cursor?: string;
+  readonly limit?: number;
+  readonly text?: string;
+};
+
+export type LabelDefinitionPage = {
+  readonly entries: ReadonlyArray<LabelDefinitionDocument>;
+  readonly nextCursor?: string;
+};
+
+export type SavedViewKind = "board" | "list";
+
+export type SavedViewGroupBy =
+  | "assignee"
+  | "dueDate"
+  | "label"
+  | "none"
+  | "parent"
+  | "priority"
+  | "status";
+
+export type SavedViewSort = {
+  readonly direction?: "asc" | "desc";
+  readonly field?: "createdAt" | "dueDate" | "priority" | "title" | "updatedAt";
+};
+
+export type SavedViewDisplay = {
+  readonly density?: "comfortable" | "compact";
+  readonly properties?: ReadonlyArray<
+    "assignee" | "dueDate" | "estimate" | "labels" | "priority" | "status"
+  >;
+};
+
+export type SavedViewDocument = {
+  readonly builtIn?: boolean;
+  readonly createdAt: string;
+  readonly createdBy: Actor;
+  readonly description?: string;
+  readonly display?: SavedViewDisplay;
+  readonly groupBy: SavedViewGroupBy;
+  readonly id: string;
+  readonly kind: SavedViewKind;
+  readonly name: string;
+  readonly ownerUserId?: string;
+  readonly pinned: boolean;
+  readonly query: TicketQuery;
+  readonly repositoryScope?: "current-repository";
+  readonly schemaVersion: 1;
+  readonly sort?: SavedViewSort;
+  readonly updatedAt: string;
+  readonly [key: string]: unknown;
+};
+
+export type CreateSavedViewInput = {
+  readonly description?: string;
+  readonly display?: SavedViewDisplay;
+  readonly groupBy?: SavedViewGroupBy;
+  readonly kind?: SavedViewKind;
+  readonly name: string;
+  readonly pinned?: boolean;
+  readonly query?: TicketQuery;
+  readonly sort?: SavedViewSort;
+};
+
+export type UpdateSavedViewPatch = Partial<CreateSavedViewInput> & {
+  readonly builtIn?: boolean;
+};
+
+export type SavedViewQuery = {
+  readonly cursor?: string;
+  readonly kind?: SavedViewKind;
+  readonly limit?: number;
+  readonly pinned?: boolean;
+  readonly text?: string;
+};
+
+export type SavedViewPage = {
+  readonly entries: ReadonlyArray<SavedViewDocument>;
+  readonly nextCursor?: string;
+};
+
+export type IssueTemplateKind = "bug" | "feature" | "implementation" | "initiative" | "qa";
+
+export type IssueTemplateDefaults = Partial<CreateTicketInput>;
+
+export type IssueTemplateDocument = {
+  readonly active: boolean;
+  readonly bodyTemplate: string;
+  readonly childTemplates?: ReadonlyArray<string>;
+  readonly createdAt: string;
+  readonly createdBy: Actor;
+  readonly defaults?: IssueTemplateDefaults;
+  readonly description?: string;
+  readonly id: string;
+  readonly kind: IssueTemplateKind;
+  readonly name: string;
+  readonly schemaVersion: 1;
+  readonly titleTemplate: string;
+  readonly updatedAt: string;
+  readonly [key: string]: unknown;
+};
+
+export type CreateIssueTemplateInput = {
+  readonly active?: boolean;
+  readonly bodyTemplate: string;
+  readonly defaults?: IssueTemplateDefaults;
+  readonly description?: string;
+  readonly kind: IssueTemplateKind;
+  readonly name: string;
+  readonly titleTemplate: string;
+};
+
+export type UpdateIssueTemplatePatch = Partial<CreateIssueTemplateInput>;
+
+export type IssueTemplateQuery = {
+  readonly active?: boolean;
+  readonly cursor?: string;
+  readonly kind?: IssueTemplateKind;
+  readonly limit?: number;
+  readonly text?: string;
+};
+
+export type IssueTemplatePage = {
+  readonly entries: ReadonlyArray<IssueTemplateDocument>;
+  readonly nextCursor?: string;
+};
+
+export type InitiativeStatus = "at-risk" | "blocked" | "complete" | "on-track";
+
+export type InitiativeUpdatePayload = {
+  readonly blockers?: ReadonlyArray<string>;
+  readonly nextSteps?: ReadonlyArray<string>;
+  readonly progressNote?: string;
+  readonly status: InitiativeStatus;
+  readonly summary: string;
+};
+
+export type InitiativeProgress = {
+  readonly completedEstimate: number;
+  readonly completedIssues: number;
+  readonly estimateTotal: number;
+  readonly issueTotal: number;
+  readonly statusCounts: Readonly<Record<string, number>>;
+};
+
 export type IssueRelationType = "blocked-by" | "blocking" | "duplicate" | "related";
 
 export type IssueRelation = {
@@ -66,6 +272,7 @@ export type TicketDocument = {
   readonly priority: string;
   readonly relations?: ReadonlyArray<IssueRelation>;
   readonly repository?: string;
+  readonly repositoryId?: string;
   readonly schemaVersion: 1;
   readonly status: string;
   readonly title: string;
@@ -176,6 +383,8 @@ export type AddRecordInput<TPayload = unknown> = {
 export type TicketQuery = {
   readonly archived?: boolean;
   readonly assignee?: string | null;
+  readonly assigneeIn?: ReadonlyArray<string>;
+  readonly blocked?: boolean;
   readonly cursor?: string;
   readonly deleted?: boolean;
   readonly dueAfter?: string;
@@ -183,15 +392,21 @@ export type TicketQuery = {
   readonly estimate?: number | string;
   readonly hasDueDate?: boolean;
   readonly hasEstimate?: boolean;
+  readonly hasAssignee?: boolean;
+  readonly hasLabels?: boolean;
   readonly label?: string;
+  readonly labelIn?: ReadonlyArray<string>;
   readonly limit?: number;
   readonly orderBy?: "createdAt" | "dueDate" | "priority" | "title" | "updatedAt";
   readonly orderDirection?: "asc" | "desc";
   readonly parent?: string | null;
   readonly priority?: string;
+  readonly priorityIn?: ReadonlyArray<string>;
   readonly relation?: { readonly issueId?: string; readonly type?: IssueRelationType };
   readonly repositoryIds?: ReadonlyArray<string>;
+  readonly staleBefore?: string;
   readonly status?: string;
+  readonly statusIn?: ReadonlyArray<string>;
   readonly text?: string;
   readonly type?: string;
   readonly updatedAfter?: string;

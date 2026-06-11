@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { TicketPage } from "@cycle/database";
 import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
-import { issueListQueryKey } from "../queries/issues.ts";
+import { issueListQueryKey, issueListRootQueryKey } from "../queries/issues.ts";
 
 type UseCreateMockIssueMutationOptions = {
   readonly repositoryId?: string;
@@ -16,7 +16,7 @@ export const useCreateMockIssueMutation = ({ repositoryId }: UseCreateMockIssueM
         throw new Error("Choose a repository before creating an issue.");
       }
 
-      const current = queryClient.getQueryData<TicketPage>(issueListQueryKey(repositoryId));
+      const current = queryClient.getQueryData<TicketPage>(issueListQueryKey(repositoryId, {}));
       const nextNumber = (current?.entries.length ?? 0) + 1;
 
       return ticketRpcClient.call("ticket.issue.create", {
@@ -36,7 +36,7 @@ export const useCreateMockIssueMutation = ({ repositoryId }: UseCreateMockIssueM
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: issueListQueryKey(repositoryId),
+        queryKey: issueListRootQueryKey,
       });
     },
   });

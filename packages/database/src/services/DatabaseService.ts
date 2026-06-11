@@ -18,11 +18,22 @@ import {
   type AddRecordInput,
   type ArchiveTicketInput,
   type CommitOptions,
+  type CreateIssueTemplateInput,
+  type CreateOrUpdateUserProfileInput,
+  type CreateSavedViewInput,
   type CreateTicketDraftInput,
   type CreateTicketInput,
   type DeleteTicketInput,
   type HistoryPage,
+  type InitiativeProgress,
+  type InitiativeUpdatePayload,
+  type IssueTemplateDocument,
+  type IssueTemplatePage,
+  type IssueTemplateQuery,
   type IssueRelation,
+  type LabelDefinitionDocument,
+  type LabelDefinitionPage,
+  type LabelDefinitionQuery,
   type LinkedRecord,
   type MaterializationWarning,
   type RecordPage,
@@ -31,6 +42,9 @@ import {
   type RepositoryInput,
   type RepositoryStatus,
   type RestoreTicketInput,
+  type SavedViewDocument,
+  type SavedViewPage,
+  type SavedViewQuery,
   type SearchTicketsQuery,
   type TicketDraftDocument,
   type TicketDocument,
@@ -40,8 +54,14 @@ import {
   type TicketRevisionMetadataChange,
   type TicketSearchPage,
   type TransitionTicketInput,
+  type UpdateIssueTemplatePatch,
+  type UpdateSavedViewPatch,
   type UpdateTicketDraftInput,
   type UpdateTicketPatch,
+  type UpsertLabelDefinitionInput,
+  type UserProfileDocument,
+  type UserProfilePage,
+  type UserProfileQuery,
 } from "../domain/index.ts";
 import {
   ConsistencyError,
@@ -149,7 +169,54 @@ export type DatabaseServiceShape = {
     ticketId: string,
   ) => Effect.Effect<TicketDocument | null, DatabaseFailure>;
   readonly listRepositories: () => Effect.Effect<ReadonlyArray<RepositoryStatus>, DatabaseFailure>;
+  readonly createInitiative: (
+    repositoryId: string,
+    input: CreateTicketInput,
+    options?: CommitOptions,
+  ) => Effect.Effect<TicketDocument, DatabaseFailure>;
+  readonly createTemplate: (
+    repositoryId: string,
+    input: CreateIssueTemplateInput,
+    options?: CommitOptions,
+  ) => Effect.Effect<IssueTemplateDocument, DatabaseFailure>;
+  readonly createView: (
+    repositoryId: string,
+    input: CreateSavedViewInput,
+    options?: CommitOptions,
+  ) => Effect.Effect<SavedViewDocument, DatabaseFailure>;
+  readonly getTemplate: (
+    repositoryId: string,
+    templateId: string,
+  ) => Effect.Effect<IssueTemplateDocument | null, DatabaseFailure>;
+  readonly getUser: (
+    repositoryId: string,
+    userId: string,
+  ) => Effect.Effect<UserProfileDocument | null, DatabaseFailure>;
+  readonly getView: (
+    repositoryId: string,
+    viewId: string,
+  ) => Effect.Effect<SavedViewDocument | null, DatabaseFailure>;
+  readonly initiativeProgress: (
+    repositoryId: string,
+    initiativeId: string,
+  ) => Effect.Effect<InitiativeProgress, DatabaseFailure>;
+  readonly listLabels: (
+    repositoryId: string,
+    query?: LabelDefinitionQuery,
+  ) => Effect.Effect<LabelDefinitionPage, DatabaseFailure>;
+  readonly listTemplates: (
+    repositoryId: string,
+    query?: IssueTemplateQuery,
+  ) => Effect.Effect<IssueTemplatePage, DatabaseFailure>;
   readonly listTickets: (query?: TicketQuery) => Effect.Effect<TicketPage, DatabaseFailure>;
+  readonly listUsers: (
+    repositoryId: string,
+    query?: UserProfileQuery,
+  ) => Effect.Effect<UserProfilePage, DatabaseFailure>;
+  readonly listViews: (
+    repositoryId: string,
+    query?: SavedViewQuery,
+  ) => Effect.Effect<SavedViewPage, DatabaseFailure>;
   readonly materializationWarnings: (
     repositoryId: string,
   ) => Effect.Effect<ReadonlyArray<MaterializationWarning>, DatabaseFailure>;
@@ -224,6 +291,49 @@ export type DatabaseServiceShape = {
     ticketId: string,
     patch: UpdateTicketPatch,
   ) => Effect.Effect<TicketDocument, DatabaseFailure>;
+  readonly addInitiativeUpdate: (
+    repositoryId: string,
+    initiativeId: string,
+    input: InitiativeUpdatePayload,
+    options?: CommitOptions,
+  ) => Effect.Effect<LinkedRecord, DatabaseFailure>;
+  readonly archiveLabel: (
+    repositoryId: string,
+    labelId: string,
+    options?: CommitOptions,
+  ) => Effect.Effect<LabelDefinitionDocument, DatabaseFailure>;
+  readonly archiveTemplate: (
+    repositoryId: string,
+    templateId: string,
+    options?: CommitOptions,
+  ) => Effect.Effect<IssueTemplateDocument, DatabaseFailure>;
+  readonly deleteView: (
+    repositoryId: string,
+    viewId: string,
+    options?: CommitOptions,
+  ) => Effect.Effect<SavedViewDocument, DatabaseFailure>;
+  readonly updateTemplate: (
+    repositoryId: string,
+    templateId: string,
+    patch: UpdateIssueTemplatePatch,
+    options?: CommitOptions,
+  ) => Effect.Effect<IssueTemplateDocument, DatabaseFailure>;
+  readonly updateView: (
+    repositoryId: string,
+    viewId: string,
+    patch: UpdateSavedViewPatch,
+    options?: CommitOptions,
+  ) => Effect.Effect<SavedViewDocument, DatabaseFailure>;
+  readonly upsertLabel: (
+    repositoryId: string,
+    input: UpsertLabelDefinitionInput,
+    options?: CommitOptions,
+  ) => Effect.Effect<LabelDefinitionDocument, DatabaseFailure>;
+  readonly upsertUser: (
+    repositoryId: string,
+    input: CreateOrUpdateUserProfileInput,
+    options?: CommitOptions,
+  ) => Effect.Effect<UserProfileDocument, DatabaseFailure>;
 };
 
 export class DatabaseService extends Context.Service<DatabaseService, DatabaseServiceShape>()(
@@ -233,6 +343,10 @@ export class DatabaseService extends Context.Service<DatabaseService, DatabaseSe
 const ISSUE_COLLECTION = "issues";
 const RECORD_COLLECTION = "records";
 const DRAFT_COLLECTION = "drafts";
+const USER_COLLECTION = "users";
+const LABEL_COLLECTION = "labels";
+const VIEW_COLLECTION = "views";
+const TEMPLATE_COLLECTION = "templates";
 const DEFAULT_POINTER = "main";
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;
 
@@ -383,12 +497,52 @@ export const makeDatabaseService = (
             for (const recordId of materialization.deletedRecords) {
               projection.deleteRecord(repositoryId, recordId);
             }
+            for (const userId of materialization.deletedUsers) {
+              projection.deleteUser(repositoryId, userId);
+            }
+            for (const labelId of materialization.deletedLabels) {
+              projection.deleteLabel(repositoryId, labelId);
+            }
+            for (const viewId of materialization.deletedViews) {
+              projection.deleteView(repositoryId, viewId);
+            }
+            for (const templateId of materialization.deletedTemplates) {
+              projection.deleteTemplate(repositoryId, templateId);
+            }
             for (const ticket of materialization.tickets) {
               projection.upsertTicket({
                 path: ticket.path,
                 repositoryId,
                 snapshotId: current.id,
                 ticket: ticket.value,
+              });
+            }
+            for (const user of materialization.users) {
+              projection.upsertUser({
+                repositoryId,
+                snapshotId: current.id,
+                user: user.value,
+              });
+            }
+            for (const label of materialization.labels) {
+              projection.upsertLabel({
+                label: label.value,
+                repositoryId,
+                snapshotId: current.id,
+              });
+            }
+            for (const view of materialization.views) {
+              projection.upsertView({
+                repositoryId,
+                snapshotId: current.id,
+                view: view.value,
+              });
+            }
+            for (const template of materialization.templates) {
+              projection.upsertTemplate({
+                repositoryId,
+                snapshotId: current.id,
+                template: template.value,
               });
             }
             for (const record of materialization.records) {
@@ -491,6 +645,108 @@ export const makeDatabaseService = (
       return written.result;
     });
 
+  const ensureActorUserProfile = (
+    tx: GitDbStore.Transaction,
+    actor: Actor,
+    now: string,
+  ): Effect.Effect<void, DatabaseFailure> =>
+    Effect.gen(function* () {
+      if (actor.type !== "human") return;
+      if (actor.email === undefined || actor.email.trim().length === 0) {
+        return yield* Effect.fail(
+          validationError("user.email", "human repository writes require an email address"),
+        );
+      }
+
+      const userId = yield* normalizeUserIdEffect(actor.email);
+      const users = yield* storage(
+        "open user transaction collection",
+        tx.collection<UserProfileDocument>(USER_COLLECTION),
+      );
+      const existing = yield* storage("read actor user profile", users.get(userId));
+
+      if (existing !== null && existing.displayName === actor.name) return;
+      if (existing !== null && existing.updatedAt > now) return;
+
+      const next: UserProfileDocument = {
+        aliases: existing?.aliases,
+        avatarUrl: existing?.avatarUrl,
+        createdAt: existing?.createdAt ?? now,
+        disabledAt: existing?.disabledAt,
+        displayName: actor.name,
+        email: userId,
+        id: userId,
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        source: existing?.source ?? "local-profile",
+        timezone: existing?.timezone,
+        updatedAt: now,
+      };
+
+      yield* storage(
+        "put actor user profile",
+        users.put(userId, stripUndefined(next) as UserProfileDocument),
+      );
+    });
+
+  const ensureDefaultMetadata = (repositoryId: string): Effect.Effect<void, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const repository = yield* getRepository(repositoryId);
+      const actor = yield* identity.currentActor;
+      const now = nowIso();
+      const actorUserId =
+        actor.type === "human" && actor.email !== undefined && actor.email.trim().length > 0
+          ? yield* normalizeUserIdEffect(actor.email)
+          : undefined;
+      const defaults = defaultRepositoryMetadata(actor, now, actorUserId);
+
+      let wroteDefaults = false;
+      const snapshot = yield* storage(
+        "seed default repository metadata",
+        Effect.gen(function* () {
+          const tx = yield* repository.store.begin();
+          const labels = yield* tx.collection<LabelDefinitionDocument>(LABEL_COLLECTION);
+          const views = yield* tx.collection<SavedViewDocument>(VIEW_COLLECTION);
+          const templates = yield* tx.collection<IssueTemplateDocument>(TEMPLATE_COLLECTION);
+
+          yield* ensureActorUserProfile(tx, actor, now);
+
+          for (const label of defaults.labels) {
+            if ((yield* labels.get(label.id)) === null) {
+              yield* labels.put(label.id, label);
+              wroteDefaults = true;
+            }
+          }
+          for (const view of defaults.views) {
+            if ((yield* views.get(view.id)) === null) {
+              yield* views.put(view.id, view);
+              wroteDefaults = true;
+            }
+          }
+          for (const template of defaults.templates) {
+            if ((yield* templates.get(template.id)) === null) {
+              yield* templates.put(template.id, template);
+              wroteDefaults = true;
+            }
+          }
+
+          if (!wroteDefaults) {
+            yield* tx.abort();
+            return null;
+          }
+
+          return yield* tx.commit({
+            author: gitIdentity(actor),
+            committer: gitIdentity(actor),
+            message: `${actor.name} seeded Cycle workflow metadata`,
+          });
+        }),
+      );
+
+      if (snapshot !== null) {
+        yield* syncRepository(repositoryId);
+      }
+    });
+
   const createTicket = (
     repositoryId: string,
     input: CreateTicketInput,
@@ -524,6 +780,7 @@ export const makeDatabaseService = (
               "open record transaction collection",
               tx.collection<LinkedRecord>(RECORD_COLLECTION),
             );
+            yield* ensureActorUserProfile(tx, actor, now);
             const provenance = initialProvenanceRecord(
               id,
               makeRecordId(id, "provenance", recordId),
@@ -621,6 +878,7 @@ export const makeDatabaseService = (
               "open record transaction collection",
               tx.collection<LinkedRecord>(RECORD_COLLECTION),
             );
+            yield* ensureActorUserProfile(tx, actor, now);
 
             yield* storage("put updated ticket", issues.put(ticketId, next));
             yield* storage("delete legacy issue", legacyIssues.delete(ticketId));
@@ -655,6 +913,8 @@ export const makeDatabaseService = (
     repositoryId: string,
     command: string,
     objectId: string | undefined,
+    actor: Actor,
+    now: string,
     result: A,
     tickets: ReadonlyArray<TicketDocument>,
     linkedRecords: ReadonlyArray<LinkedRecord>,
@@ -680,6 +940,7 @@ export const makeDatabaseService = (
             `open record transaction collection for ${command}`,
             tx.collection<LinkedRecord>(RECORD_COLLECTION),
           );
+          yield* ensureActorUserProfile(tx, actor, now);
 
           for (const ticket of tickets) {
             yield* storage(`put ticket for ${command}`, issues.put(ticket.id, ticket));
@@ -742,6 +1003,8 @@ export const makeDatabaseService = (
         repositoryId,
         "archiveTicket",
         ticketId,
+        actor,
+        now,
         next,
         [next],
         [record],
@@ -791,6 +1054,8 @@ export const makeDatabaseService = (
         repositoryId,
         "deleteTicket",
         ticketId,
+        actor,
+        now,
         next,
         [next],
         [record],
@@ -842,6 +1107,8 @@ export const makeDatabaseService = (
         repositoryId,
         "restoreTicket",
         ticketId,
+        actor,
+        now,
         next,
         [next],
         [record],
@@ -948,6 +1215,8 @@ export const makeDatabaseService = (
         repositoryId,
         action === "add" ? "addIssueRelation" : "removeIssueRelation",
         ticketId,
+        actor,
+        now,
         next,
         [next, nextRelated],
         [sourceRecord, relatedRecord],
@@ -1016,6 +1285,7 @@ export const makeDatabaseService = (
               "open record transaction collection",
               tx.collection<LinkedRecord>(RECORD_COLLECTION),
             );
+            yield* ensureActorUserProfile(tx, actor, now);
 
             if (input.userVisible !== false) {
               yield* storage("put ticket activity timestamp", issues.put(ticketId, nextTicket));
@@ -1132,6 +1402,7 @@ export const makeDatabaseService = (
               "open draft transaction collection",
               tx.collection<TicketDraftDocument>(DRAFT_COLLECTION),
             );
+            yield* ensureActorUserProfile(tx, actor, now);
 
             yield* storage("put draft", drafts.put(draftId, draft));
 
@@ -1178,6 +1449,7 @@ export const makeDatabaseService = (
             if (current === null) {
               return yield* Effect.fail(validationError("draftId", "draft not found"));
             }
+            yield* ensureActorUserProfile(tx, actor, now);
 
             const next: TicketDraftDocument = {
               ...current,
@@ -1236,6 +1508,7 @@ export const makeDatabaseService = (
             if (draft === null) {
               return yield* Effect.fail(validationError("draftId", "draft not found"));
             }
+            yield* ensureActorUserProfile(tx, actor, now);
 
             const ticket = makeTicketDocument(
               makeFrontmatter(draft.input, ticketId, actor, now),
@@ -1281,6 +1554,539 @@ export const makeDatabaseService = (
       );
     });
 
+  const upsertUser = (
+    repositoryId: string,
+    input: CreateOrUpdateUserProfileInput,
+    options: CommitOptions = {},
+  ): Effect.Effect<UserProfileDocument, DatabaseFailure> =>
+    Effect.gen(function* () {
+      yield* assertNoUnsafeContent("user profile input", input);
+      const actor = yield* identity.currentActor;
+      const now = nowIso();
+      const userId = yield* normalizeUserIdEffect(input.email);
+      const user = stripUndefined({
+        aliases: input.aliases,
+        avatarUrl: input.avatarUrl,
+        createdAt: now,
+        disabledAt: input.disabledAt ?? undefined,
+        displayName: input.displayName,
+        email: userId,
+        id: userId,
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        source: input.source ?? "manual",
+        timezone: input.timezone,
+        updatedAt: now,
+      }) as UserProfileDocument;
+
+      validateRequiredString("displayName", user.displayName);
+
+      return yield* writeAndSync(
+        repositoryId,
+        "upsertUser",
+        userId,
+        (repository) =>
+          Effect.gen(function* () {
+            const tx = yield* storage("begin upsert user", repository.store.begin());
+            const users = yield* storage(
+              "open user transaction collection",
+              tx.collection<UserProfileDocument>(USER_COLLECTION),
+            );
+
+            yield* ensureActorUserProfile(tx, actor, now);
+            yield* storage("put user profile", users.put(userId, user));
+
+            const snapshot = yield* storage(
+              "commit upsert user",
+              tx.commit({
+                author: gitIdentity(actor),
+                committer: gitIdentity(actor),
+                message: options.message ?? `${actor.name} updated user profile ${userId}`,
+              }),
+            );
+
+            return { result: user, snapshotId: snapshot.id };
+          }),
+        () => projection.getUser(repositoryId, userId) !== null,
+      );
+    });
+
+  const upsertLabel = (
+    repositoryId: string,
+    input: UpsertLabelDefinitionInput,
+    options: CommitOptions = {},
+  ): Effect.Effect<LabelDefinitionDocument, DatabaseFailure> =>
+    Effect.gen(function* () {
+      yield* assertNoUnsafeContent("label input", input);
+      const actor = yield* identity.currentActor;
+      const now = nowIso();
+      const labelId = normalizeKey(input.id ?? input.name);
+      const existing = projection
+        .listLabels(repositoryId)
+        .entries.find((label) => label.id === labelId);
+      const label: LabelDefinitionDocument = stripUndefined({
+        archivedAt: existing?.archivedAt,
+        color: input.color ?? existing?.color ?? "neutral",
+        createdAt: existing?.createdAt ?? now,
+        createdBy: existing?.createdBy ?? actor,
+        description:
+          input.description === null ? undefined : (input.description ?? existing?.description),
+        id: labelId,
+        name: input.name,
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        updatedAt: now,
+      }) as LabelDefinitionDocument;
+
+      parseLabelDefinition(label);
+
+      return yield* writeAndSync(
+        repositoryId,
+        "upsertLabel",
+        labelId,
+        (repository) =>
+          Effect.gen(function* () {
+            const tx = yield* storage("begin upsert label", repository.store.begin());
+            const labels = yield* storage(
+              "open label transaction collection",
+              tx.collection<LabelDefinitionDocument>(LABEL_COLLECTION),
+            );
+
+            yield* ensureActorUserProfile(tx, actor, now);
+            yield* storage("put label", labels.put(labelId, label));
+
+            const snapshot = yield* storage(
+              "commit upsert label",
+              tx.commit({
+                author: gitIdentity(actor),
+                committer: gitIdentity(actor),
+                message: options.message ?? `${actor.name} updated label ${label.name}`,
+              }),
+            );
+
+            return { result: label, snapshotId: snapshot.id };
+          }),
+        () => projection.listLabels(repositoryId).entries.some((entry) => entry.id === labelId),
+      );
+    });
+
+  const archiveLabel = (
+    repositoryId: string,
+    labelId: string,
+    options: CommitOptions = {},
+  ): Effect.Effect<LabelDefinitionDocument, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const current = projection
+        .listLabels(repositoryId)
+        .entries.find((label) => label.id === labelId);
+
+      if (current === undefined) {
+        return yield* Effect.fail(validationError("labelId", "label not found"));
+      }
+
+      const actor = yield* identity.currentActor;
+      const now = nowIso();
+      const next: LabelDefinitionDocument = {
+        ...current,
+        archivedAt: now,
+        updatedAt: now,
+      };
+
+      return yield* writeAndSync(
+        repositoryId,
+        "archiveLabel",
+        labelId,
+        (repository) =>
+          Effect.gen(function* () {
+            const tx = yield* storage("begin archive label", repository.store.begin());
+            const labels = yield* storage(
+              "open label transaction collection",
+              tx.collection<LabelDefinitionDocument>(LABEL_COLLECTION),
+            );
+
+            yield* ensureActorUserProfile(tx, actor, now);
+            yield* storage("put archived label", labels.put(labelId, next));
+
+            const snapshot = yield* storage(
+              "commit archive label",
+              tx.commit({
+                author: gitIdentity(actor),
+                committer: gitIdentity(actor),
+                message: options.message ?? `${actor.name} archived label ${current.name}`,
+              }),
+            );
+
+            return { result: next, snapshotId: snapshot.id };
+          }),
+        () =>
+          projection
+            .listLabels(repositoryId)
+            .entries.some((entry) => entry.id === labelId && entry.archivedAt !== undefined),
+      );
+    });
+
+  const createView = (
+    repositoryId: string,
+    input: CreateSavedViewInput,
+    options: CommitOptions = {},
+  ): Effect.Effect<SavedViewDocument, DatabaseFailure> =>
+    Effect.gen(function* () {
+      yield* assertNoUnsafeContent("saved view input", input);
+      const actor = yield* identity.currentActor;
+      const now = nowIso();
+      const viewId = yield* ids.viewId;
+      const view: SavedViewDocument = {
+        createdAt: now,
+        createdBy: actor,
+        display: input.display,
+        groupBy: input.groupBy ?? "status",
+        id: viewId,
+        kind: input.kind ?? "list",
+        name: input.name,
+        pinned: input.pinned ?? false,
+        query: input.query ?? {},
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        sort: input.sort,
+        updatedAt: now,
+      };
+
+      parseSavedView(view);
+
+      return yield* writeAndSync(
+        repositoryId,
+        "createView",
+        viewId,
+        (repository) =>
+          Effect.gen(function* () {
+            const tx = yield* storage("begin create view", repository.store.begin());
+            const views = yield* storage(
+              "open view transaction collection",
+              tx.collection<SavedViewDocument>(VIEW_COLLECTION),
+            );
+
+            yield* ensureActorUserProfile(tx, actor, now);
+            yield* storage("put saved view", views.put(viewId, view));
+
+            const snapshot = yield* storage(
+              "commit create view",
+              tx.commit({
+                author: gitIdentity(actor),
+                committer: gitIdentity(actor),
+                message: options.message ?? `${actor.name} created view ${view.name}`,
+              }),
+            );
+
+            return { result: view, snapshotId: snapshot.id };
+          }),
+        () => projection.getView(repositoryId, viewId) !== null,
+      );
+    });
+
+  const updateView = (
+    repositoryId: string,
+    viewId: string,
+    patch: UpdateSavedViewPatch,
+    options: CommitOptions = {},
+  ): Effect.Effect<SavedViewDocument, DatabaseFailure> =>
+    Effect.gen(function* () {
+      yield* assertNoUnsafeContent("saved view patch", patch);
+      const current = projection.getView(repositoryId, viewId);
+
+      if (current === null) return yield* Effect.fail(validationError("viewId", "view not found"));
+
+      const actor = yield* identity.currentActor;
+      const now = nowIso();
+      const next: SavedViewDocument = {
+        ...current,
+        builtIn: patch.builtIn ?? current.builtIn,
+        description: patch.description ?? current.description,
+        display: patch.display ?? current.display,
+        groupBy: patch.groupBy ?? current.groupBy,
+        kind: patch.kind ?? current.kind,
+        name: patch.name ?? current.name,
+        pinned: patch.pinned ?? current.pinned,
+        query: patch.query ?? current.query,
+        sort: patch.sort ?? current.sort,
+        updatedAt: now,
+      };
+
+      parseSavedView(next);
+
+      return yield* writeAndSync(
+        repositoryId,
+        "updateView",
+        viewId,
+        (repository) =>
+          Effect.gen(function* () {
+            const tx = yield* storage("begin update view", repository.store.begin());
+            const views = yield* storage(
+              "open view transaction collection",
+              tx.collection<SavedViewDocument>(VIEW_COLLECTION),
+            );
+
+            yield* ensureActorUserProfile(tx, actor, now);
+            yield* storage("put updated view", views.put(viewId, next));
+
+            const snapshot = yield* storage(
+              "commit update view",
+              tx.commit({
+                author: gitIdentity(actor),
+                committer: gitIdentity(actor),
+                message: options.message ?? `${actor.name} updated view ${next.name}`,
+              }),
+            );
+
+            return { result: next, snapshotId: snapshot.id };
+          }),
+        () => projection.getView(repositoryId, viewId) !== null,
+      );
+    });
+
+  const deleteView = (
+    repositoryId: string,
+    viewId: string,
+    options: CommitOptions = {},
+  ): Effect.Effect<SavedViewDocument, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const current = projection.getView(repositoryId, viewId);
+
+      if (current === null) return yield* Effect.fail(validationError("viewId", "view not found"));
+
+      const actor = yield* identity.currentActor;
+      const now = nowIso();
+
+      return yield* writeAndSync(
+        repositoryId,
+        "deleteView",
+        viewId,
+        (repository) =>
+          Effect.gen(function* () {
+            const tx = yield* storage("begin delete view", repository.store.begin());
+            const views = yield* storage(
+              "open view transaction collection",
+              tx.collection<SavedViewDocument>(VIEW_COLLECTION),
+            );
+
+            yield* ensureActorUserProfile(tx, actor, now);
+            yield* storage("delete view", views.delete(viewId));
+
+            const snapshot = yield* storage(
+              "commit delete view",
+              tx.commit({
+                author: gitIdentity(actor),
+                committer: gitIdentity(actor),
+                message: options.message ?? `${actor.name} deleted view ${current.name}`,
+              }),
+            );
+
+            return { result: current, snapshotId: snapshot.id };
+          }),
+        () => projection.getView(repositoryId, viewId) === null,
+      );
+    });
+
+  const createTemplate = (
+    repositoryId: string,
+    input: CreateIssueTemplateInput,
+    options: CommitOptions = {},
+  ): Effect.Effect<IssueTemplateDocument, DatabaseFailure> =>
+    Effect.gen(function* () {
+      yield* assertNoUnsafeContent("issue template input", input);
+      const actor = yield* identity.currentActor;
+      const now = nowIso();
+      const templateId = yield* ids.templateId;
+      const template: IssueTemplateDocument = {
+        active: input.active ?? true,
+        bodyTemplate: input.bodyTemplate,
+        createdAt: now,
+        createdBy: actor,
+        defaults: input.defaults,
+        description: input.description,
+        id: templateId,
+        kind: input.kind,
+        name: input.name,
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        titleTemplate: input.titleTemplate,
+        updatedAt: now,
+      };
+
+      parseIssueTemplate(template);
+
+      return yield* writeAndSync(
+        repositoryId,
+        "createTemplate",
+        templateId,
+        (repository) =>
+          Effect.gen(function* () {
+            const tx = yield* storage("begin create template", repository.store.begin());
+            const templates = yield* storage(
+              "open template transaction collection",
+              tx.collection<IssueTemplateDocument>(TEMPLATE_COLLECTION),
+            );
+
+            yield* ensureActorUserProfile(tx, actor, now);
+            yield* storage("put template", templates.put(templateId, template));
+
+            const snapshot = yield* storage(
+              "commit create template",
+              tx.commit({
+                author: gitIdentity(actor),
+                committer: gitIdentity(actor),
+                message: options.message ?? `${actor.name} created template ${template.name}`,
+              }),
+            );
+
+            return { result: template, snapshotId: snapshot.id };
+          }),
+        () => projection.getTemplate(repositoryId, templateId) !== null,
+      );
+    });
+
+  const updateTemplate = (
+    repositoryId: string,
+    templateId: string,
+    patch: UpdateIssueTemplatePatch,
+    options: CommitOptions = {},
+  ): Effect.Effect<IssueTemplateDocument, DatabaseFailure> =>
+    Effect.gen(function* () {
+      yield* assertNoUnsafeContent("issue template patch", patch);
+      const current = projection.getTemplate(repositoryId, templateId);
+
+      if (current === null)
+        return yield* Effect.fail(validationError("templateId", "template not found"));
+
+      const actor = yield* identity.currentActor;
+      const now = nowIso();
+      const next: IssueTemplateDocument = {
+        ...current,
+        active: patch.active ?? current.active,
+        bodyTemplate: patch.bodyTemplate ?? current.bodyTemplate,
+        defaults: patch.defaults ?? current.defaults,
+        description: patch.description ?? current.description,
+        kind: patch.kind ?? current.kind,
+        name: patch.name ?? current.name,
+        titleTemplate: patch.titleTemplate ?? current.titleTemplate,
+        updatedAt: now,
+      };
+
+      parseIssueTemplate(next);
+
+      return yield* writeAndSync(
+        repositoryId,
+        "updateTemplate",
+        templateId,
+        (repository) =>
+          Effect.gen(function* () {
+            const tx = yield* storage("begin update template", repository.store.begin());
+            const templates = yield* storage(
+              "open template transaction collection",
+              tx.collection<IssueTemplateDocument>(TEMPLATE_COLLECTION),
+            );
+
+            yield* ensureActorUserProfile(tx, actor, now);
+            yield* storage("put updated template", templates.put(templateId, next));
+
+            const snapshot = yield* storage(
+              "commit update template",
+              tx.commit({
+                author: gitIdentity(actor),
+                committer: gitIdentity(actor),
+                message: options.message ?? `${actor.name} updated template ${next.name}`,
+              }),
+            );
+
+            return { result: next, snapshotId: snapshot.id };
+          }),
+        () => projection.getTemplate(repositoryId, templateId) !== null,
+      );
+    });
+
+  const archiveTemplate = (
+    repositoryId: string,
+    templateId: string,
+    options: CommitOptions = {},
+  ): Effect.Effect<IssueTemplateDocument, DatabaseFailure> =>
+    updateTemplate(repositoryId, templateId, { active: false }, options);
+
+  const createInitiative = (
+    repositoryId: string,
+    input: CreateTicketInput,
+    options: CommitOptions = {},
+  ): Effect.Effect<TicketDocument, DatabaseFailure> =>
+    createTicket(
+      repositoryId,
+      {
+        ...input,
+        type: input.type ?? "initiative",
+      },
+      options,
+    );
+
+  const initiativeProgress = (
+    repositoryId: string,
+    initiativeId: string,
+  ): Effect.Effect<InitiativeProgress, DatabaseFailure> =>
+    sqlite("initiative progress", () => {
+      const children = projection.listTickets({
+        archived: false,
+        deleted: false,
+        parent: initiativeId,
+        repositoryIds: [repositoryId],
+      }).entries;
+      const statusCounts: Record<string, number> = {};
+      let estimateTotal = 0;
+      let completedEstimate = 0;
+      let completedIssues = 0;
+
+      for (const child of children) {
+        statusCounts[child.status] = (statusCounts[child.status] ?? 0) + 1;
+        const estimate =
+          typeof child.estimate === "number"
+            ? child.estimate
+            : typeof child.estimate === "string"
+              ? Number(child.estimate)
+              : 0;
+        const normalizedEstimate = Number.isFinite(estimate) ? estimate : 0;
+        estimateTotal += normalizedEstimate;
+        if (child.status === "done") {
+          completedIssues += 1;
+          completedEstimate += normalizedEstimate;
+        }
+      }
+
+      return {
+        completedEstimate,
+        completedIssues,
+        estimateTotal,
+        issueTotal: children.length,
+        statusCounts,
+      };
+    });
+
+  const addInitiativeUpdate = (
+    repositoryId: string,
+    initiativeId: string,
+    input: InitiativeUpdatePayload,
+    options: CommitOptions = {},
+  ): Effect.Effect<LinkedRecord, DatabaseFailure> =>
+    Effect.gen(function* () {
+      yield* Effect.try({
+        catch: (cause) =>
+          cause instanceof Error
+            ? validationError("initiative-update", cause.message, cause)
+            : validationError("initiative-update", "invalid initiative update", cause),
+        try: () => validateRequiredString("initiative update summary", input.summary),
+      });
+
+      return yield* addRecord(
+        repositoryId,
+        initiativeId,
+        {
+          payload: input,
+          recordType: "initiative-update",
+        },
+        options,
+      );
+    });
+
   return {
     addComment: (repositoryId, ticketId, input, options) =>
       addRecord(
@@ -1294,7 +2100,10 @@ export const makeDatabaseService = (
       ),
     addIssueRelation: (repositoryId, ticketId, relation, options) =>
       mutateIssueRelation(repositoryId, ticketId, relation, "add", options),
+    addInitiativeUpdate,
     addRecord,
+    archiveLabel,
+    archiveTemplate,
     archiveTicket,
     close: () =>
       Effect.sync(() => {
@@ -1305,13 +2114,32 @@ export const makeDatabaseService = (
         projection.close();
       }),
     commitDraft,
+    createInitiative,
     createDraft,
+    createTemplate,
     createTicket,
+    createView,
+    deleteView,
     deleteTicket,
     getTicket: (repositoryId, ticketId) =>
       sqlite("get ticket", () => projection.getTicket(repositoryId, ticketId)),
+    getTemplate: (repositoryId, templateId) =>
+      sqlite("get template", () => projection.getTemplate(repositoryId, templateId)),
+    getUser: (repositoryId, userId) =>
+      sqlite("get user", () => projection.getUser(repositoryId, userId)),
+    getView: (repositoryId, viewId) =>
+      sqlite("get view", () => projection.getView(repositoryId, viewId)),
+    initiativeProgress,
+    listLabels: (repositoryId, query = {}) =>
+      sqlite("list labels", () => projection.listLabels(repositoryId, query)),
     listRepositories: () => sqlite("list repositories", () => projection.listRepositories()),
+    listTemplates: (repositoryId, query = {}) =>
+      sqlite("list templates", () => projection.listTemplates(repositoryId, query)),
     listTickets: (query = {}) => sqlite("list tickets", () => projection.listTickets(query)),
+    listUsers: (repositoryId, query = {}) =>
+      sqlite("list users", () => projection.listUsers(repositoryId, query)),
+    listViews: (repositoryId, query = {}) =>
+      sqlite("list views", () => projection.listViews(repositoryId, query)),
     materializationWarnings: (repositoryId) =>
       sqlite("list materialization warnings", () => projection.warnings(repositoryId)),
     openRepository: (input) =>
@@ -1347,7 +2175,11 @@ export const makeDatabaseService = (
           );
         }
 
-        return yield* syncRepository(input.repositoryId);
+        const status = yield* syncRepository(input.repositoryId);
+        yield* ensureDefaultMetadata(input.repositoryId);
+        return yield* sqlite("repository status after default metadata", () =>
+          projection.repositoryStatus(input.repositoryId),
+        ).pipe(Effect.catch(() => Effect.succeed(status)));
       }),
     repositoryHistory: (repositoryId, query = {}) =>
       sqlite("repository history", () => projection.repositoryHistory(repositoryId, query)),
@@ -1387,7 +2219,11 @@ export const makeDatabaseService = (
         message: options?.message,
       }),
     updateDraft,
+    updateTemplate,
     updateTicket,
+    updateView,
+    upsertLabel,
+    upsertUser,
   };
 };
 
@@ -1437,11 +2273,44 @@ const buildMaterialization = (
           ".json",
         ])
       : yield* changedDocuments(repository.store, previousSnapshotId, currentSnapshotId, "records");
+    const userDocs = fullRebuild
+      ? yield* listSourceDocuments(repository.store, "collections/users", currentSnapshotId, [
+          ".json",
+        ])
+      : yield* changedDocuments(repository.store, previousSnapshotId, currentSnapshotId, "users");
+    const labelDocs = fullRebuild
+      ? yield* listSourceDocuments(repository.store, "collections/labels", currentSnapshotId, [
+          ".json",
+        ])
+      : yield* changedDocuments(repository.store, previousSnapshotId, currentSnapshotId, "labels");
+    const viewDocs = fullRebuild
+      ? yield* listSourceDocuments(repository.store, "collections/views", currentSnapshotId, [
+          ".json",
+        ])
+      : yield* changedDocuments(repository.store, previousSnapshotId, currentSnapshotId, "views");
+    const templateDocs = fullRebuild
+      ? yield* listSourceDocuments(repository.store, "collections/templates", currentSnapshotId, [
+          ".json",
+        ])
+      : yield* changedDocuments(
+          repository.store,
+          previousSnapshotId,
+          currentSnapshotId,
+          "templates",
+        );
     const warnings: Array<MaterializationWarning> = [];
     const tickets: Array<{ readonly path: string; readonly value: TicketDocument }> = [];
     const records: Array<{ readonly path: string; readonly value: LinkedRecord }> = [];
+    const users: Array<{ readonly path: string; readonly value: UserProfileDocument }> = [];
+    const labels: Array<{ readonly path: string; readonly value: LabelDefinitionDocument }> = [];
+    const views: Array<{ readonly path: string; readonly value: SavedViewDocument }> = [];
+    const templates: Array<{ readonly path: string; readonly value: IssueTemplateDocument }> = [];
     const deletedTickets: Array<string> = [];
     const deletedRecords: Array<string> = [];
+    const deletedUsers: Array<string> = [];
+    const deletedLabels: Array<string> = [];
+    const deletedViews: Array<string> = [];
+    const deletedTemplates: Array<string> = [];
     const now = nowIso();
 
     for (const doc of issueDocs.documents) {
@@ -1489,6 +2358,74 @@ const buildMaterialization = (
       }
     }
 
+    for (const doc of userDocs.documents) {
+      try {
+        const user = parseUserProfile(JSON.parse(doc.bytes));
+
+        users.push({ path: doc.path, value: user });
+      } catch (error) {
+        deletedUsers.push(doc.id);
+        warnings.push(
+          warning(repository.repositoryId, currentSnapshotId, doc.path, "user", doc.id, error, now),
+        );
+      }
+    }
+
+    for (const doc of labelDocs.documents) {
+      try {
+        const label = parseLabelDefinition(JSON.parse(doc.bytes));
+
+        labels.push({ path: doc.path, value: label });
+      } catch (error) {
+        deletedLabels.push(doc.id);
+        warnings.push(
+          warning(
+            repository.repositoryId,
+            currentSnapshotId,
+            doc.path,
+            "label",
+            doc.id,
+            error,
+            now,
+          ),
+        );
+      }
+    }
+
+    for (const doc of viewDocs.documents) {
+      try {
+        const view = parseSavedView(JSON.parse(doc.bytes));
+
+        views.push({ path: doc.path, value: view });
+      } catch (error) {
+        deletedViews.push(doc.id);
+        warnings.push(
+          warning(repository.repositoryId, currentSnapshotId, doc.path, "view", doc.id, error, now),
+        );
+      }
+    }
+
+    for (const doc of templateDocs.documents) {
+      try {
+        const template = parseIssueTemplate(JSON.parse(doc.bytes));
+
+        templates.push({ path: doc.path, value: template });
+      } catch (error) {
+        deletedTemplates.push(doc.id);
+        warnings.push(
+          warning(
+            repository.repositoryId,
+            currentSnapshotId,
+            doc.path,
+            "template",
+            doc.id,
+            error,
+            now,
+          ),
+        );
+      }
+    }
+
     const ticketIds = new Set(tickets.map((ticket) => ticket.value.id));
     for (const ticket of tickets) {
       for (const childId of ticket.value.frontmatter.children ?? []) {
@@ -1511,6 +2448,10 @@ const buildMaterialization = (
 
     deletedTickets.push(...issueDocs.deletedIds);
     deletedRecords.push(...recordDocs.deletedIds);
+    deletedUsers.push(...userDocs.deletedIds);
+    deletedLabels.push(...labelDocs.deletedIds);
+    deletedViews.push(...viewDocs.deletedIds);
+    deletedTemplates.push(...templateDocs.deletedIds);
 
     const commits = yield* buildCommitRows(repository, currentSnapshotId);
     const commitChanges = yield* buildCommitChanges(repository, currentSnapshotId);
@@ -1520,9 +2461,17 @@ const buildMaterialization = (
       commits,
       deletedRecords,
       deletedTickets,
+      deletedLabels,
+      deletedTemplates,
+      deletedUsers,
+      deletedViews,
       fullRebuild,
+      labels,
       records,
+      templates,
       tickets,
+      users,
+      views,
       warnings,
     };
   });
@@ -1531,7 +2480,7 @@ const changedDocuments = (
   store: GitDbStore.StoreServiceShape,
   previousSnapshotId: string,
   currentSnapshotId: string,
-  collection: "issues" | "records",
+  collection: "issues" | "labels" | "records" | "templates" | "users" | "views",
 ) =>
   Effect.gen(function* () {
     const diff = yield* storage(
@@ -1677,10 +2626,22 @@ const initialCommitChanges = (store: GitDbStore.StoreServiceShape, snapshotId: s
     const recordDocs = yield* listSourceDocuments(store, "collections/records", snapshotId, [
       ".json",
     ]);
+    const userDocs = yield* listSourceDocuments(store, "collections/users", snapshotId, [".json"]);
+    const labelDocs = yield* listSourceDocuments(store, "collections/labels", snapshotId, [
+      ".json",
+    ]);
+    const viewDocs = yield* listSourceDocuments(store, "collections/views", snapshotId, [".json"]);
+    const templateDocs = yield* listSourceDocuments(store, "collections/templates", snapshotId, [
+      ".json",
+    ]);
 
     return [
       ...issueDocs.documents.map((doc) => pathChange("added" as const, doc.path, doc.id)),
       ...recordDocs.documents.map((doc) => pathChange("added" as const, doc.path, doc.id)),
+      ...userDocs.documents.map((doc) => pathChange("added" as const, doc.path, doc.id)),
+      ...labelDocs.documents.map((doc) => pathChange("added" as const, doc.path, doc.id)),
+      ...viewDocs.documents.map((doc) => pathChange("added" as const, doc.path, doc.id)),
+      ...templateDocs.documents.map((doc) => pathChange("added" as const, doc.path, doc.id)),
     ];
   });
 
@@ -1707,11 +2668,27 @@ const pathChange = (
 ): CommitChange => {
   const isIssue = path.startsWith("collections/issues/");
   const isRecord = path.startsWith("collections/records/");
+  const isUser = path.startsWith("collections/users/");
+  const isLabel = path.startsWith("collections/labels/");
+  const isView = path.startsWith("collections/views/");
+  const isTemplate = path.startsWith("collections/templates/");
 
   return {
     changeType,
     objectId: id,
-    objectType: isIssue ? "ticket" : isRecord ? "record" : "unknown",
+    objectType: isIssue
+      ? "ticket"
+      : isRecord
+        ? "record"
+        : isUser
+          ? "user"
+          : isLabel
+            ? "label"
+            : isView
+              ? "view"
+              : isTemplate
+                ? "template"
+                : "unknown",
     path,
     ticketId: isIssue ? id : isRecord ? ticketIdFromRecordId(id) : undefined,
   };
@@ -1751,6 +2728,22 @@ const validateSafeSegment = (field: string, value: string): void => {
 
 const validateRequiredString = (field: string, value: string): void => {
   if (value.trim().length === 0) throw new Error(`${field} must not be empty`);
+};
+
+const validateSavedViewKind = (value: string): void => {
+  if (value !== "board" && value !== "list") throw new Error("view kind is invalid");
+};
+
+const validateSavedViewGroup = (value: string): void => {
+  if (!["assignee", "dueDate", "label", "none", "parent", "priority", "status"].includes(value)) {
+    throw new Error("view groupBy is invalid");
+  }
+};
+
+const validateIssueTemplateKind = (value: string): void => {
+  if (!["bug", "feature", "implementation", "initiative", "qa"].includes(value)) {
+    throw new Error("template kind is invalid");
+  }
 };
 
 const assertNoUnsafeContent = (
@@ -2075,6 +3068,363 @@ const mergeDraftInput = (
     title: frontmatter["title"] ?? current.title,
     type: frontmatter["type"] ?? current.type,
   }) as CreateTicketDraftInput;
+};
+
+const defaultRepositoryMetadata = (
+  actor: Actor,
+  now: string,
+  actorUserId: string | undefined,
+): {
+  readonly labels: ReadonlyArray<LabelDefinitionDocument>;
+  readonly templates: ReadonlyArray<IssueTemplateDocument>;
+  readonly views: ReadonlyArray<SavedViewDocument>;
+} => {
+  const label = (
+    id: string,
+    name: string,
+    color: string,
+    description: string,
+  ): LabelDefinitionDocument => ({
+    color,
+    createdAt: now,
+    createdBy: actor,
+    description,
+    id,
+    name,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    updatedAt: now,
+  });
+  const view = (
+    id: string,
+    name: string,
+    query: TicketQuery,
+    groupBy: SavedViewDocument["groupBy"] = "status",
+  ): SavedViewDocument => ({
+    builtIn: true,
+    createdAt: now,
+    createdBy: actor,
+    groupBy,
+    id,
+    kind: "list",
+    name,
+    pinned: true,
+    query,
+    repositoryScope: "current-repository",
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    sort: {
+      direction: "desc",
+      field: "updatedAt",
+    },
+    updatedAt: now,
+  });
+  const template = (
+    id: string,
+    name: string,
+    kind: IssueTemplateDocument["kind"],
+    titleTemplate: string,
+    bodyTemplate: string,
+    defaults: IssueTemplateDocument["defaults"] = {},
+  ): IssueTemplateDocument => ({
+    active: true,
+    bodyTemplate,
+    createdAt: now,
+    createdBy: actor,
+    defaults,
+    id,
+    kind,
+    name,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    titleTemplate,
+    updatedAt: now,
+  });
+
+  return {
+    labels: [
+      label("bug", "Bug", "red", "Defects, regressions, and broken expected behavior."),
+      label("feature", "Feature", "blue", "New user-facing capability or product workflow."),
+      label("improvement", "Improvement", "green", "Incremental refinement to existing behavior."),
+      label("qa", "QA", "amber", "Validation, test coverage, and release confidence work."),
+    ],
+    templates: [
+      template(
+        "bug",
+        "Bug report",
+        "bug",
+        "{{title}}",
+        "## Expected\n\n## Actual\n\n## Steps to reproduce\n\n## Environment\n",
+        {
+          labels: ["bug"],
+          priority: "high",
+          type: "issue",
+        },
+      ),
+      template(
+        "feature",
+        "Feature",
+        "feature",
+        "{{title}}",
+        "## Context\n\n## Outcome\n\n## Acceptance criteria\n\n## Risks\n",
+        {
+          labels: ["feature"],
+          priority: "medium",
+          type: "issue",
+        },
+      ),
+      template(
+        "implementation",
+        "Implementation task",
+        "implementation",
+        "{{title}}",
+        "## Scope\n\n## Plan\n\n## Verification\n",
+        {
+          labels: ["improvement"],
+          priority: "medium",
+          type: "issue",
+        },
+      ),
+      template("qa", "QA task", "qa", "{{title}}", "## Test focus\n\n## Scenarios\n\n## Notes\n", {
+        labels: ["qa"],
+        priority: "medium",
+        type: "issue",
+      }),
+      template(
+        "initiative",
+        "Initiative",
+        "initiative",
+        "{{title}}",
+        "## Outcome\n\n## Scope\n\n## Progress updates\n",
+        {
+          priority: "medium",
+          type: "initiative",
+        },
+      ),
+    ],
+    views: [
+      view("triage", "Triage", {
+        hasAssignee: false,
+        statusIn: ["backlog", "todo"],
+      }),
+      view("open-bugs", "Open bugs", {
+        labelIn: ["bug"],
+        statusIn: ["backlog", "todo", "in-progress"],
+      }),
+      ...(actorUserId === undefined
+        ? []
+        : [
+            view(
+              "assigned-to-me",
+              "Assigned to me",
+              {
+                assigneeIn: [actorUserId],
+                statusIn: ["backlog", "todo", "in-progress"],
+              },
+              "priority",
+            ),
+          ]),
+      view(
+        "review-queue",
+        "Review queue",
+        {
+          statusIn: ["in-progress"],
+        },
+        "assignee",
+      ),
+      view(
+        "stale-backlog",
+        "Stale backlog",
+        {
+          statusIn: ["backlog"],
+        },
+        "priority",
+      ),
+      view("blocked-work", "Blocked work", {
+        blocked: true,
+      }),
+    ],
+  };
+};
+
+const normalizeUserId = (email: string): string => {
+  const normalized = email.trim().toLowerCase();
+
+  if (!/^[^\s/@]+@[^\s/@]+\.[^\s/@]+$/u.test(normalized)) {
+    throw new Error("user email must be a valid email address");
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._@+-]*$/u.test(normalized)) {
+    throw new Error("user email contains unsupported document id characters");
+  }
+  if (
+    normalized.includes("/") ||
+    normalized.includes("\\") ||
+    normalized === "." ||
+    normalized === ".." ||
+    normalized.endsWith(".lock")
+  ) {
+    throw new Error("user email is not safe for a document id");
+  }
+
+  return normalized;
+};
+
+const normalizeUserIdEffect = (email: string): Effect.Effect<string, DatabaseFailure> =>
+  Effect.try({
+    catch: (cause) =>
+      cause instanceof Error
+        ? validationError("user.email", cause.message, cause)
+        : validationError("user.email", "invalid user email", cause),
+    try: () => normalizeUserId(email),
+  });
+
+const parseUserProfile = (input: unknown): UserProfileDocument => {
+  if (input === null || typeof input !== "object") throw new Error("user must be an object");
+
+  const value = input as Partial<UserProfileDocument>;
+
+  if (
+    typeof value.id !== "string" ||
+    typeof value.email !== "string" ||
+    typeof value.displayName !== "string" ||
+    typeof value.createdAt !== "string" ||
+    typeof value.updatedAt !== "string"
+  ) {
+    throw new Error("user is missing required fields");
+  }
+
+  const id = normalizeUserId(value.id);
+  const email = normalizeUserId(value.email);
+
+  if (id !== email) throw new Error("user id must match normalized email");
+  validateRequiredString("displayName", value.displayName);
+
+  return stripUndefined({
+    aliases: value.aliases,
+    avatarUrl: value.avatarUrl,
+    createdAt: value.createdAt,
+    disabledAt: value.disabledAt,
+    displayName: value.displayName,
+    email,
+    id,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    source: value.source ?? "manual",
+    timezone: value.timezone,
+    updatedAt: value.updatedAt,
+  }) as UserProfileDocument;
+};
+
+const parseLabelDefinition = (input: unknown): LabelDefinitionDocument => {
+  if (input === null || typeof input !== "object") throw new Error("label must be an object");
+
+  const value = input as Partial<LabelDefinitionDocument>;
+
+  if (
+    typeof value.id !== "string" ||
+    typeof value.name !== "string" ||
+    typeof value.color !== "string" ||
+    typeof value.createdAt !== "string" ||
+    typeof value.updatedAt !== "string" ||
+    value.createdBy === undefined
+  ) {
+    throw new Error("label is missing required fields");
+  }
+
+  validateSafeSegment("label id", value.id);
+  validateRequiredString("label name", value.name);
+  validateRequiredString("label color", value.color);
+
+  return stripUndefined({
+    archivedAt: value.archivedAt,
+    color: value.color,
+    createdAt: value.createdAt,
+    createdBy: value.createdBy,
+    description: value.description,
+    id: normalizeKey(value.id),
+    name: value.name,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    updatedAt: value.updatedAt,
+  }) as LabelDefinitionDocument;
+};
+
+const parseSavedView = (input: unknown): SavedViewDocument => {
+  if (input === null || typeof input !== "object") throw new Error("view must be an object");
+
+  const value = input as Partial<SavedViewDocument>;
+
+  if (
+    typeof value.id !== "string" ||
+    typeof value.name !== "string" ||
+    typeof value.kind !== "string" ||
+    typeof value.groupBy !== "string" ||
+    typeof value.pinned !== "boolean" ||
+    typeof value.createdAt !== "string" ||
+    typeof value.updatedAt !== "string" ||
+    value.createdBy === undefined
+  ) {
+    throw new Error("view is missing required fields");
+  }
+
+  validateSavedViewKind(value.kind);
+  validateSavedViewGroup(value.groupBy);
+  validateSafeSegment("view id", value.id);
+  validateRequiredString("view name", value.name);
+
+  return stripUndefined({
+    builtIn: value.builtIn,
+    createdAt: value.createdAt,
+    createdBy: value.createdBy,
+    description: value.description,
+    display: value.display,
+    groupBy: value.groupBy,
+    id: value.id,
+    kind: value.kind,
+    name: value.name,
+    ownerUserId: value.ownerUserId,
+    pinned: value.pinned,
+    query: value.query ?? {},
+    repositoryScope: value.repositoryScope,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    sort: value.sort,
+    updatedAt: value.updatedAt,
+  }) as SavedViewDocument;
+};
+
+const parseIssueTemplate = (input: unknown): IssueTemplateDocument => {
+  if (input === null || typeof input !== "object") throw new Error("template must be an object");
+
+  const value = input as Partial<IssueTemplateDocument>;
+
+  if (
+    typeof value.id !== "string" ||
+    typeof value.name !== "string" ||
+    typeof value.kind !== "string" ||
+    typeof value.titleTemplate !== "string" ||
+    typeof value.bodyTemplate !== "string" ||
+    typeof value.active !== "boolean" ||
+    typeof value.createdAt !== "string" ||
+    typeof value.updatedAt !== "string" ||
+    value.createdBy === undefined
+  ) {
+    throw new Error("template is missing required fields");
+  }
+
+  validateSafeSegment("template id", value.id);
+  validateIssueTemplateKind(value.kind);
+  validateRequiredString("template name", value.name);
+
+  return stripUndefined({
+    active: value.active,
+    bodyTemplate: value.bodyTemplate,
+    childTemplates: value.childTemplates,
+    createdAt: value.createdAt,
+    createdBy: value.createdBy,
+    defaults: value.defaults,
+    description: value.description,
+    id: value.id,
+    kind: value.kind,
+    name: value.name,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    titleTemplate: value.titleTemplate,
+    updatedAt: value.updatedAt,
+  }) as IssueTemplateDocument;
 };
 
 const parseRecord = (input: unknown): LinkedRecord => {

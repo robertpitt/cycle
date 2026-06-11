@@ -74,7 +74,7 @@ export const createRendererNavSections = (
         {
           icon: <SquareKanban aria-hidden className="size-4" />,
           id: "projects",
-          label: "Projects",
+          label: "Initiatives",
         },
         {
           icon: <PanelsTopLeft aria-hidden className="size-4" />,
@@ -153,7 +153,7 @@ export const activePageTitleForNavItem = (
     case "issues":
       return "Issues";
     case "projects":
-      return "Projects";
+      return "Initiatives";
     case "settings":
       return "Settings";
     case "views":

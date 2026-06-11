@@ -4,8 +4,11 @@ import { validationError } from "../errors.ts";
 
 export type DatabaseIdGeneratorShape = {
   readonly draftId: Effect.Effect<string, DatabaseFailure>;
+  readonly labelId: Effect.Effect<string, DatabaseFailure>;
   readonly recordId: Effect.Effect<string, DatabaseFailure>;
+  readonly templateId: Effect.Effect<string, DatabaseFailure>;
   readonly ticketId: Effect.Effect<string, DatabaseFailure>;
+  readonly viewId: Effect.Effect<string, DatabaseFailure>;
 };
 
 export class DatabaseIdGenerator extends Context.Service<
@@ -16,15 +19,21 @@ export class DatabaseIdGenerator extends Context.Service<
 export const makeDeterministicIdGenerator = (prefix = "test"): DatabaseIdGeneratorShape => {
   let ticket = 0;
   let draft = 0;
+  let label = 0;
   let record = 0;
+  let template = 0;
+  let view = 0;
 
   const next = (kind: string, value: number): string =>
     `${kind}_${prefix}_${String(value).padStart(4, "0")}`;
 
   return {
     draftId: Effect.sync(() => next("drf", ++draft)),
+    labelId: Effect.sync(() => next("lbl", ++label)),
     recordId: Effect.sync(() => next("rec", ++record)),
+    templateId: Effect.sync(() => next("tpl", ++template)),
     ticketId: Effect.sync(() => next("iss", ++ticket)),
+    viewId: Effect.sync(() => next("view", ++view)),
   };
 };
 
@@ -46,8 +55,11 @@ export const DatabaseIdGeneratorLive = Layer.effect(
 
     return DatabaseIdGenerator.of({
       draftId: makeId("drf"),
+      labelId: makeId("lbl"),
       recordId: makeId("rec"),
+      templateId: makeId("tpl"),
       ticketId: makeId("iss"),
+      viewId: makeId("view"),
     });
   }),
 );

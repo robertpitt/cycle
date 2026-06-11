@@ -8,6 +8,7 @@
   },
   "scripts": {
     "seed:cycle": "node scripts/seed-cycle-database.mjs",
+    "seed:sample-tickets": "node scripts/import-sample-tickets.mjs",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json"
   },

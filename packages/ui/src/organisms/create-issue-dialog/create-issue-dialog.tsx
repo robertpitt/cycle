@@ -8,6 +8,7 @@ import {
   CircleOff,
   CircleUserRound,
   Expand,
+  FileText,
   Link,
   Link2,
   MoreHorizontal,
@@ -43,7 +44,8 @@ export type CreateIssueDialogChipId =
   | "more"
   | "priority"
   | "project"
-  | "status";
+  | "status"
+  | "template";
 
 export type CreateIssueDialogStatus = "backlog" | "canceled" | "done" | "in-progress" | "todo";
 
@@ -91,6 +93,9 @@ export type CreateIssueDialogProps = React.HTMLAttributes<HTMLDivElement> & {
   readonly statusSections?: readonly PropertyPickerSection[];
   readonly assigneeSections?: readonly PropertyPickerSection[];
   readonly teamLabel?: string;
+  readonly template?: string | null;
+  readonly templateSections?: readonly PropertyPickerSection[];
+  readonly onTemplateChange?: (template: string | null) => void;
   readonly title?: string;
   readonly titlePlaceholder?: string;
 };
@@ -275,6 +280,19 @@ const labelSections: readonly PropertyPickerSection[] = [
   },
 ];
 
+const templateSections: readonly PropertyPickerSection[] = [
+  {
+    id: "templates",
+    options: [
+      {
+        icon: <FileText aria-hidden className="size-5" strokeWidth={2} />,
+        id: "none",
+        label: "No template",
+      },
+    ],
+  },
+];
+
 const moreSections: readonly PropertyPickerSection[] = [
   {
     id: "schedule",
@@ -411,6 +429,9 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
       status = "todo",
       statusSections: statusPickerSections = statusSections,
       teamLabel = "ROB",
+      template = null,
+      templateSections: templatePickerSections = templateSections,
+      onTemplateChange,
       title,
       titlePlaceholder = "Issue title",
       ...props
@@ -554,6 +575,21 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
                         sections={projectPickerSections}
                         triggerIcon={<Box aria-hidden className="size-4" strokeWidth={1.8} />}
                         value={project ?? "none"}
+                        widthClassName="w-[350px]"
+                      />
+                      <PropertyPicker
+                        {...getControlledOpen(currentOpenChip, "template", setOpenChip)}
+                        align="end"
+                        formatValueLabel={formatNullableLabel("Template")}
+                        onValueChange={(value) => {
+                          const selectedTemplate = getSingleValue(value);
+                          onTemplateChange?.(selectedTemplate === "none" ? null : selectedTemplate);
+                        }}
+                        placeholder="Template"
+                        searchPlaceholder="Apply template..."
+                        sections={templatePickerSections}
+                        triggerIcon={<FileText aria-hidden className="size-4" strokeWidth={1.8} />}
+                        value={template ?? "none"}
                         widthClassName="w-[350px]"
                       />
                       <PropertyPicker

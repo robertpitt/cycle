@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
-import { issueListQueryKey } from "../queries/issues.ts";
+import { issueListRootQueryKey } from "../queries/issues.ts";
 import {
   materializationWarningsQueryKey,
   repositoryListStatusQueryKey,
@@ -26,7 +26,7 @@ const invalidateRepositoryQueries = async (
       queryKey: materializationWarningsQueryKey(repositoryId),
     }),
     queryClient.invalidateQueries({
-      queryKey: issueListQueryKey(repositoryId),
+      queryKey: issueListRootQueryKey,
     }),
   ]);
 };

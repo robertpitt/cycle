@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 
 export const safeSegmentPattern = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;
+export const documentIdPattern = /^[A-Za-z0-9][A-Za-z0-9._@+-]*$/u;
 
 const filter = (expected: string, predicate: (value: string) => boolean) =>
   Schema.makeFilter<string>((value) => predicate(value) || expected, { expected });
@@ -14,6 +15,9 @@ export const isValidPathSegment = (segment: string): boolean =>
 
 export const isSafeSegment = (value: string): boolean =>
   safeSegmentPattern.test(value) && isValidPathSegment(value);
+
+export const isSafeDocumentId = (value: string): boolean =>
+  documentIdPattern.test(value) && isValidPathSegment(value);
 
 export const SafeSegment = Schema.String.check(
   Schema.isPattern(safeSegmentPattern, {
@@ -32,7 +36,13 @@ export const CollectionName = SafeSegment.check(
 );
 export type CollectionName = typeof CollectionName.Type;
 
-export const DocumentId = SafeSegment;
+export const DocumentId = Schema.String.check(
+  Schema.isPattern(documentIdPattern, {
+    expected:
+      "a non-empty document id containing letters, numbers, dots, underscores, at signs, plus signs, or hyphens",
+  }),
+  filter("a valid path segment", isValidPathSegment),
+);
 export type DocumentId = typeof DocumentId.Type;
 
 export const RemoteName = SafeSegment;

@@ -81,6 +81,7 @@ export type ViewIssueProps = Omit<React.HTMLAttributes<HTMLDivElement>, "title">
   readonly assignee?: IssueAuthor;
   readonly comments?: readonly ViewIssueComment[];
   readonly defaultDescription?: string;
+  readonly descriptionDefaultPreviewOpen?: boolean;
   readonly defaultSubIssueComposerOpen?: boolean;
   readonly defaultTitle?: string;
   readonly description?: string;
@@ -99,6 +100,7 @@ export type ViewIssueProps = Omit<React.HTMLAttributes<HTMLDivElement>, "title">
   readonly priority?: React.ReactNode;
   readonly project?: React.ReactNode;
   readonly projectDefaultOpen?: boolean;
+  readonly properties?: readonly ViewIssueProperty[];
   readonly propertiesDefaultOpen?: boolean;
   readonly resources?: readonly ViewIssueResource[];
   readonly status?: React.ReactNode;
@@ -257,6 +259,7 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
     className,
     comments = [],
     defaultDescription = "Test Issue Description",
+    descriptionDefaultPreviewOpen = false,
     defaultSubIssueComposerOpen = false,
     defaultTitle = "Test Issue Title",
     description,
@@ -280,6 +283,7 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
     priority,
     project,
     projectDefaultOpen = true,
+    properties: customProperties,
     propertiesDefaultOpen = true,
     resources = defaultResources,
     status,
@@ -294,12 +298,14 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
   );
   const [localComments, setLocalComments] = React.useState<readonly ViewIssueComment[]>(comments);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const properties = defaultProperties({
-    assignee,
-    dueDate,
-    priority,
-    status,
-  });
+  const properties =
+    customProperties ??
+    defaultProperties({
+      assignee,
+      dueDate,
+      priority,
+      status,
+    });
 
   React.useEffect(() => {
     setLocalComments(comments);
@@ -357,6 +363,7 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
           />
           <IssueEditor
             defaultValue={defaultDescription}
+            defaultPreviewOpen={descriptionDefaultPreviewOpen}
             onAttach={openFilePicker}
             onCommandSelect={onEditorCommandSelect}
             onFormatSelect={onEditorFormatSelect}

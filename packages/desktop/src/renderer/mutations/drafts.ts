@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { CreateTicketDraftInput, UpdateTicketDraftInput } from "@cycle/database";
 import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
-import { issueListQueryKey } from "../queries/issues.ts";
+import { issueListRootQueryKey } from "../queries/issues.ts";
 
 type DraftMutationOptions = {
   readonly repositoryId?: string;
@@ -66,7 +66,7 @@ export const useCommitDraftMutation = ({ repositoryId }: DraftMutationOptions) =
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: issueListQueryKey(repositoryId),
+        queryKey: issueListRootQueryKey,
       });
     },
   });

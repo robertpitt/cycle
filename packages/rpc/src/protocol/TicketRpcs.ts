@@ -1,10 +1,23 @@
 import {
   type AddRecordInput,
+  type CreateIssueTemplateInput as DatabaseCreateIssueTemplateInput,
+  type CreateOrUpdateUserProfileInput,
+  type CreateSavedViewInput as DatabaseCreateSavedViewInput,
   type CreateTicketInput,
   type HistoryPage,
+  type InitiativeProgress,
+  type IssueTemplateDocument,
+  type IssueTemplatePage,
+  type IssueTemplateQuery,
+  type LabelDefinitionDocument,
+  type LabelDefinitionPage,
+  type LabelDefinitionQuery,
   type LinkedRecord,
   type MaterializationWarning,
   type RepositoryStatus,
+  type SavedViewDocument,
+  type SavedViewPage,
+  type SavedViewQuery,
   type SearchTicketsQuery,
   type TicketDraftDocument,
   type TicketDocument,
@@ -13,43 +26,69 @@ import {
   type TicketRevisionDiff,
   type TicketSearchPage,
   type TransitionTicketInput,
+  type UpsertLabelDefinitionInput,
+  type UserProfileDocument,
+  type UserProfilePage,
+  type UserProfileQuery,
 } from "@cycle/database";
 import type { SyncResult } from "@cycle/git-db";
 import { Schema } from "effect";
 import {
   AddLinkedRecordInput as AddLinkedRecordInputSchema,
+  AddInitiativeUpdateRequestInput,
   ArchiveIssueInput,
   CreateDraftInput as CreateDraftInputSchema,
+  CreateIssueTemplateInput as CreateIssueTemplateInputSchema,
   CreateIssueInput as CreateIssueInputSchema,
+  CreateSavedViewInput as CreateSavedViewInputSchema,
   DeleteIssueInput,
   EmptyInput,
   IssueDiffInput,
   IssueHistoryInput,
   IssueIdInput,
+  InitiativeProgressInput,
+  IssueTemplateQuery as IssueTemplateQuerySchema,
   IssueQuery as IssueQuerySchema,
   IssueRevisionInput,
+  LabelDefinitionQuery as LabelDefinitionQuerySchema,
+  LabelIdInput,
   RelationIssueInput,
   RecordsForIssueInput,
   RepositoryHistoryInput,
   RepositoryScoped,
   type RepositoryScoped as RepositoryScopedType,
   RestoreIssueInput,
+  SavedViewQuery as SavedViewQuerySchema,
   SearchTicketsInput,
+  TemplateIdInput,
   TransitionIssueInput as TransitionIssueInputSchema,
   UpdateDraftInput as UpdateDraftInputSchema,
+  UpdateTemplateRequestInput,
   UpdateIssueRequestInput,
+  UpdateViewRequestInput,
+  UpsertLabelInput,
+  UpsertUserInput,
+  UserProfileQuery as UserProfileQuerySchema,
+  ViewIdInput,
+  type AddInitiativeUpdateRequestInput as AddInitiativeUpdateRequestInputType,
   type ArchiveIssueInput as ArchiveIssueInputType,
   type DeleteIssueInput as DeleteIssueInputType,
   type EmptyInput as EmptyInputType,
   type IssueDiffInput as IssueDiffInputType,
+  type InitiativeProgressInput as InitiativeProgressInputType,
   type UpdateIssueRequestInput as UpdateIssueRequestInputType,
   type IssueHistoryInput as IssueHistoryInputType,
   type IssueIdInput as IssueIdInputType,
   type IssueRevisionInput as IssueRevisionInputType,
+  type LabelIdInput as LabelIdInputType,
   type RelationIssueInput as RelationIssueInputType,
   type RecordsForIssueInput as RecordsForIssueInputType,
   type RepositoryHistoryInput as RepositoryHistoryInputType,
   type RestoreIssueInput as RestoreIssueInputType,
+  type TemplateIdInput as TemplateIdInputType,
+  type UpdateTemplateRequestInput as UpdateTemplateRequestInputType,
+  type UpdateViewRequestInput as UpdateViewRequestInputType,
+  type ViewIdInput as ViewIdInputType,
 } from "../schemas/index.ts";
 import type { TicketRpcMethod } from "./Envelope.ts";
 
@@ -87,8 +126,27 @@ export const TicketRpcPayloadSchemas = {
   "ticket.issue.search": RepositoryScoped(SearchTicketsInput),
   "ticket.issue.transition": RepositoryScoped(TransitionIssueInputSchema),
   "ticket.issue.update": RepositoryScoped(UpdateIssueRequestInput),
+  "ticket.initiative.create": RepositoryScoped(CreateIssueInputSchema),
+  "ticket.initiative.progress": RepositoryScoped(InitiativeProgressInput),
+  "ticket.initiative.update.add": RepositoryScoped(AddInitiativeUpdateRequestInput),
+  "ticket.label.archive": RepositoryScoped(LabelIdInput),
+  "ticket.label.list": RepositoryScoped(LabelDefinitionQuerySchema),
+  "ticket.label.upsert": RepositoryScoped(UpsertLabelInput),
   "ticket.record.add": RepositoryScoped(AddLinkedRecordInputSchema),
   "ticket.record.listForIssue": RepositoryScoped(RecordsForIssueInput),
+  "ticket.template.archive": RepositoryScoped(TemplateIdInput),
+  "ticket.template.create": RepositoryScoped(CreateIssueTemplateInputSchema),
+  "ticket.template.get": RepositoryScoped(TemplateIdInput),
+  "ticket.template.list": RepositoryScoped(IssueTemplateQuerySchema),
+  "ticket.template.update": RepositoryScoped(UpdateTemplateRequestInput),
+  "ticket.user.get": RepositoryScoped(Schema.String),
+  "ticket.user.list": RepositoryScoped(UserProfileQuerySchema),
+  "ticket.user.upsert": RepositoryScoped(UpsertUserInput),
+  "ticket.view.create": RepositoryScoped(CreateSavedViewInputSchema),
+  "ticket.view.delete": RepositoryScoped(ViewIdInput),
+  "ticket.view.get": RepositoryScoped(ViewIdInput),
+  "ticket.view.list": RepositoryScoped(SavedViewQuerySchema),
+  "ticket.view.update": RepositoryScoped(UpdateViewRequestInput),
 } satisfies Record<TicketRpcMethod, Schema.Top>;
 
 export const TicketRpcSuccessSchemas = {
@@ -115,8 +173,27 @@ export const TicketRpcSuccessSchemas = {
   "ticket.issue.search": IssuePage,
   "ticket.issue.transition": Schema.Unknown,
   "ticket.issue.update": Schema.Unknown,
+  "ticket.initiative.create": Schema.Unknown,
+  "ticket.initiative.progress": Schema.Unknown,
+  "ticket.initiative.update.add": Schema.Unknown,
+  "ticket.label.archive": Schema.Unknown,
+  "ticket.label.list": IssuePage,
+  "ticket.label.upsert": Schema.Unknown,
   "ticket.record.add": Schema.Unknown,
   "ticket.record.listForIssue": Schema.Array(Schema.Unknown),
+  "ticket.template.archive": Schema.Unknown,
+  "ticket.template.create": Schema.Unknown,
+  "ticket.template.get": Schema.NullOr(Schema.Unknown),
+  "ticket.template.list": IssuePage,
+  "ticket.template.update": Schema.Unknown,
+  "ticket.user.get": Schema.NullOr(Schema.Unknown),
+  "ticket.user.list": IssuePage,
+  "ticket.user.upsert": Schema.Unknown,
+  "ticket.view.create": Schema.Unknown,
+  "ticket.view.delete": Schema.Unknown,
+  "ticket.view.get": Schema.NullOr(Schema.Unknown),
+  "ticket.view.list": IssuePage,
+  "ticket.view.update": Schema.Unknown,
 } satisfies Record<TicketRpcMethod, Schema.Top>;
 
 export type TicketRpcPayloads = {
@@ -152,8 +229,27 @@ export type TicketRpcPayloads = {
     TransitionTicketInput & { readonly id: string }
   >;
   readonly "ticket.issue.update": RepositoryScopedType<UpdateIssueRequestInputType>;
+  readonly "ticket.initiative.create": RepositoryScopedType<CreateTicketInput>;
+  readonly "ticket.initiative.progress": RepositoryScopedType<InitiativeProgressInputType>;
+  readonly "ticket.initiative.update.add": RepositoryScopedType<AddInitiativeUpdateRequestInputType>;
+  readonly "ticket.label.archive": RepositoryScopedType<LabelIdInputType>;
+  readonly "ticket.label.list": RepositoryScopedType<LabelDefinitionQuery>;
+  readonly "ticket.label.upsert": RepositoryScopedType<UpsertLabelDefinitionInput>;
   readonly "ticket.record.add": RepositoryScopedType<AddRecordInput & { readonly issueId: string }>;
   readonly "ticket.record.listForIssue": RepositoryScopedType<RecordsForIssueInputType>;
+  readonly "ticket.template.archive": RepositoryScopedType<TemplateIdInputType>;
+  readonly "ticket.template.create": RepositoryScopedType<DatabaseCreateIssueTemplateInput>;
+  readonly "ticket.template.get": RepositoryScopedType<TemplateIdInputType>;
+  readonly "ticket.template.list": RepositoryScopedType<IssueTemplateQuery>;
+  readonly "ticket.template.update": RepositoryScopedType<UpdateTemplateRequestInputType>;
+  readonly "ticket.user.get": RepositoryScopedType<string>;
+  readonly "ticket.user.list": RepositoryScopedType<UserProfileQuery>;
+  readonly "ticket.user.upsert": RepositoryScopedType<CreateOrUpdateUserProfileInput>;
+  readonly "ticket.view.create": RepositoryScopedType<DatabaseCreateSavedViewInput>;
+  readonly "ticket.view.delete": RepositoryScopedType<ViewIdInputType>;
+  readonly "ticket.view.get": RepositoryScopedType<ViewIdInputType>;
+  readonly "ticket.view.list": RepositoryScopedType<SavedViewQuery>;
+  readonly "ticket.view.update": RepositoryScopedType<UpdateViewRequestInputType>;
 };
 
 export type TicketRpcSuccesses = {
@@ -180,6 +276,25 @@ export type TicketRpcSuccesses = {
   readonly "ticket.issue.search": TicketSearchPage;
   readonly "ticket.issue.transition": TicketDocument;
   readonly "ticket.issue.update": TicketDocument;
+  readonly "ticket.initiative.create": TicketDocument;
+  readonly "ticket.initiative.progress": InitiativeProgress;
+  readonly "ticket.initiative.update.add": LinkedRecord;
+  readonly "ticket.label.archive": LabelDefinitionDocument;
+  readonly "ticket.label.list": LabelDefinitionPage;
+  readonly "ticket.label.upsert": LabelDefinitionDocument;
   readonly "ticket.record.add": LinkedRecord;
   readonly "ticket.record.listForIssue": ReadonlyArray<LinkedRecord>;
+  readonly "ticket.template.archive": IssueTemplateDocument;
+  readonly "ticket.template.create": IssueTemplateDocument;
+  readonly "ticket.template.get": IssueTemplateDocument | null;
+  readonly "ticket.template.list": IssueTemplatePage;
+  readonly "ticket.template.update": IssueTemplateDocument;
+  readonly "ticket.user.get": UserProfileDocument | null;
+  readonly "ticket.user.list": UserProfilePage;
+  readonly "ticket.user.upsert": UserProfileDocument;
+  readonly "ticket.view.create": SavedViewDocument;
+  readonly "ticket.view.delete": SavedViewDocument;
+  readonly "ticket.view.get": SavedViewDocument | null;
+  readonly "ticket.view.list": SavedViewPage;
+  readonly "ticket.view.update": SavedViewDocument;
 };
