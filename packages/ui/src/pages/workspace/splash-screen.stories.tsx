@@ -11,7 +11,7 @@ const meta = {
     },
     layout: "fullscreen",
   },
-  title: "Pages/Splash Screen",
+  title: "Examples/Splash Screen",
 } satisfies Meta<typeof WorkspaceSplashScreenPage>;
 
 export default meta;

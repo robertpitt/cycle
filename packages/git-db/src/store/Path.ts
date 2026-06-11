@@ -1,4 +1,5 @@
 import { Crypto, Effect, Schema } from "effect";
+import * as GitSchemas from "@cycle/git/schemas";
 import {
   invalidIdentifier,
   invalidNamespace,
@@ -11,9 +12,7 @@ import {
 } from "../errors/index.ts";
 import { sha1Hex } from "../internals/hash.ts";
 import * as IdentifierSchema from "../schemas/Identifier.ts";
-import * as ObjectIdSchema from "../schemas/ObjectId.ts";
 import * as PathSchema from "../schemas/Path.ts";
-import * as RefSchema from "../schemas/Ref.ts";
 
 export const normalizeNamespace = (
   namespace: string,
@@ -21,7 +20,7 @@ export const normalizeNamespace = (
 ): Effect.Effect<string, InvalidNamespaceError> => {
   const normalized = namespace.replace(/\/+$/u, "");
 
-  return Schema.decodeUnknownEffect(RefSchema.namespace(allowBranchNamespace))(normalized).pipe(
+  return Schema.decodeUnknownEffect(GitSchemas.namespace(allowBranchNamespace))(normalized).pipe(
     Effect.mapError(() => namespaceError(namespace, normalized, allowBranchNamespace)),
   );
 };
@@ -44,19 +43,9 @@ export const validateCollectionName = (
     ),
   );
 
-export const validateIndexName = (name: string): Effect.Effect<string, InvalidIdentifierError> =>
-  Schema.decodeUnknownEffect(IdentifierSchema.IndexName)(name).pipe(
-    Effect.mapError(() => invalidIdentifier("index", name)),
-  );
-
 export const validateDocumentId = (id: string): Effect.Effect<string, InvalidIdentifierError> =>
   Schema.decodeUnknownEffect(IdentifierSchema.DocumentId)(id).pipe(
     Effect.mapError(() => invalidIdentifier("document id", id)),
-  );
-
-export const validateIndexKey = (key: string): Effect.Effect<string, InvalidIdentifierError> =>
-  Schema.decodeUnknownEffect(IdentifierSchema.IndexKey)(key).pipe(
-    Effect.mapError(() => invalidIdentifier("index key", key)),
   );
 
 export const validateRemoteName = (remote: string): Effect.Effect<string, InvalidIdentifierError> =>
@@ -67,11 +56,11 @@ export const validateRemoteName = (remote: string): Effect.Effect<string, Invali
 export const validatePointerName = (
   pointer: string,
 ): Effect.Effect<string, InvalidPointerNameError> =>
-  Schema.decodeUnknownEffect(RefSchema.PointerName)(pointer).pipe(
+  Schema.decodeUnknownEffect(GitSchemas.PointerName)(pointer).pipe(
     Effect.mapError(() => invalidPointerName(pointer)),
   );
 
-export const isValidPointerName = RefSchema.isValidPointerName;
+export const isValidPointerName = GitSchemas.isValidPointerName;
 
 export const normalizeStorePath = (path: string): Effect.Effect<string, InvalidPathError> => {
   if (path === "" || path === "/") {
@@ -107,51 +96,38 @@ export const documentPath = (
   collection: string,
   id: string,
   shardLength = 2,
+  extension = "json",
 ): Effect.Effect<string, InvalidIdentifierError | InvalidPathError, Crypto.Crypto> =>
   Effect.gen(function* () {
     const name = yield* validateCollectionName(collection);
     const documentId = yield* validateDocumentId(id);
+    const documentExtension = yield* validateDocumentExtension(extension);
     const root = joinStorePath("collections", name);
 
     if (shardLength <= 0) {
-      return joinStorePath(root, `${documentId}.json`);
+      return joinStorePath(root, `${documentId}.${documentExtension}`);
     }
 
     const shard = yield* hashShard(documentId, shardLength);
 
-    return joinStorePath(root, shard, `${documentId}.json`);
-  });
-
-export const indexEntryPath = (
-  collection: string,
-  index: string,
-  key: string,
-  documentId: string,
-): Effect.Effect<string, InvalidIdentifierError | InvalidPathError> =>
-  Effect.gen(function* () {
-    return joinStorePath(
-      "indexes",
-      yield* validateCollectionName(collection),
-      yield* validateIndexName(index),
-      yield* validateIndexKey(key),
-      yield* validateDocumentId(documentId),
-    );
+    return joinStorePath(root, shard, `${documentId}.${documentExtension}`);
   });
 
 export const hashShard = (value: string, length = 2): Effect.Effect<string, never, Crypto.Crypto> =>
   sha1Hex(value).pipe(Effect.map((hash) => hash.slice(0, length)));
 
-export const idFromDocumentPath = (path: string): string | null => {
+export const idFromDocumentPath = (path: string, extension = "json"): string | null => {
   const filename = path.split("/").at(-1);
+  const suffix = `.${extension}`;
 
-  if (!filename?.endsWith(".json") || filename === ".meta.json") {
+  if (!filename?.endsWith(suffix) || filename === ".meta.json") {
     return null;
   }
 
-  return filename.slice(0, -".json".length);
+  return filename.slice(0, -suffix.length);
 };
 
-export const isPotentialObjectId = ObjectIdSchema.isPotentialObjectId;
+export const isPotentialObjectId = GitSchemas.isPotentialObjectId;
 
 const namespaceError = (
   original: string,
@@ -170,4 +146,14 @@ const namespaceError = (
   }
 
   return invalidNamespace(original, "namespace is not a valid Git ref path");
+};
+
+const validateDocumentExtension = (
+  extension: string,
+): Effect.Effect<string, InvalidIdentifierError> => {
+  if (/^[A-Za-z0-9][A-Za-z0-9_-]*$/u.test(extension)) {
+    return Effect.succeed(extension);
+  }
+
+  return Effect.fail(invalidIdentifier("document extension", extension));
 };

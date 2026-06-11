@@ -15,7 +15,8 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@cycle/ticket-db": "workspace:*",
+    "@cycle/database": "workspace:*",
+    "@cycle/git-db": "workspace:*",
     "effect": "beta"
   },
   "devDependencies": {

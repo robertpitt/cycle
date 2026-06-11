@@ -88,7 +88,9 @@ export const WorkItemRow = React.forwardRef<HTMLDivElement, WorkItemRowProps>(fu
       tabIndex={props.tabIndex ?? (isInteractive && !disabled ? 0 : undefined)}
     >
       <span aria-hidden className={cn("size-2.5 rounded-full", priorityClassName[priority])} />
-      <span className="text-muted-foreground">{id}</span>
+      <span className="min-w-0 truncate text-muted-foreground" title={id}>
+        {id}
+      </span>
       <span className="truncate text-foreground">{title}</span>
       <Badge appearance="outline" tone={statusTone}>
         {status}

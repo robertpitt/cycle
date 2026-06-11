@@ -96,3 +96,21 @@ export const Default: Story = {
     </div>
   ),
 };
+
+export const CollapsedSection: Story = {
+  args: {
+    sections: [
+      {
+        ...sections[0]!,
+        collapsed: true,
+        collapsible: true,
+        id: "workspaces",
+      },
+    ],
+  },
+  render: (args) => (
+    <div className="h-[680px] w-[300px] overflow-hidden rounded-lg border border-border">
+      <IssuesSidebar {...args} />
+    </div>
+  ),
+};

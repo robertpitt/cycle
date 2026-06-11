@@ -1,6 +1,6 @@
 import { Schema } from "effect";
+import { BranchNamespace, PointerName } from "@cycle/git/schemas";
 import { DatabaseName, ShardLength } from "./Identifier.ts";
-import { BranchNamespace, PointerName } from "./Ref.ts";
 
 export const Options = Schema.Struct({
   allowBranchNamespace: Schema.optional(Schema.Boolean),

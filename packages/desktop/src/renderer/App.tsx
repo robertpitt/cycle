@@ -1,11 +1,11 @@
 import "@cycle/ui/styles.css";
 
-import { QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider, type ThemeMode } from "@cycle/ui/theme";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as React from "react";
 import { RouterProvider } from "react-router";
 import { rendererRouter } from "./Router.tsx";
-import { QueryClient } from "@tanstack/react-query";
+import { getDesktopBridge } from "./lib/desktopBridge.ts";
 
 export const rendererQueryClient = new QueryClient();
 
@@ -15,7 +15,7 @@ const useDesktopThemePreference = (): ThemeMode => {
   React.useEffect(() => {
     let active = true;
 
-    window.cycleDesktop
+    getDesktopBridge()
       ?.getAppConfig()
       .then((config) => {
         if (active) setMode(config.theme.preference);
@@ -37,7 +37,7 @@ export const DesktopRendererApp = () => {
 
   return (
     <QueryClientProvider client={rendererQueryClient}>
-      <ThemeProvider className="min-h-screen" mode={themePreference}>
+      <ThemeProvider className="h-dvh overflow-hidden" mode={themePreference}>
         <RouterProvider router={rendererRouter} />
       </ThemeProvider>
     </QueryClientProvider>

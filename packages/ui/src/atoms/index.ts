@@ -3,6 +3,7 @@ export * from "./avatar/index.ts";
 export * from "./badge/index.ts";
 export * from "./button/index.ts";
 export * from "./checkbox/index.ts";
+export * from "./chip-trigger/index.ts";
 export * from "./icon-button/index.ts";
 export * from "./input/index.ts";
 export * from "./kbd/index.ts";

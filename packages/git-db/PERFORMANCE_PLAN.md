@@ -39,20 +39,20 @@ The near-term target is not full native Git compatibility. The target is:
 
 Implement support in this order:
 
-| Scope | Decision |
-| --- | --- |
-| Loose objects | Required; already mostly implemented. |
-| Canonical Git object hashing | Required; already implemented for SHA-1 envelopes. |
-| Loose refs and `packed-refs` | Required; already partially implemented. |
-| Lockfile ref updates | Required; implemented, but durability and cleanup need tightening. |
-| Pack `.idx` lookup | Required for normal cloned repos; implemented but reparsed per lookup. |
+| Scope                           | Decision                                                                       |
+| ------------------------------- | ------------------------------------------------------------------------------ |
+| Loose objects                   | Required; already mostly implemented.                                          |
+| Canonical Git object hashing    | Required; already implemented for SHA-1 envelopes.                             |
+| Loose refs and `packed-refs`    | Required; already partially implemented.                                       |
+| Lockfile ref updates            | Required; implemented, but durability and cleanup need tightening.             |
+| Pack `.idx` lookup              | Required for normal cloned repos; implemented but reparsed per lookup.         |
 | Packed whole objects and deltas | Required; implemented but currently reads whole packs and lacks shared caches. |
-| Commit summaries | Required for performance; not yet separated from full commit parsing. |
-| Commit-graph files | Optional acceleration after summary cache and walker refactor. |
-| Multi-pack-index | Optional acceleration after stable pack index registry. |
-| Reachability bitmaps | Defer; useful for fetch/push and rev-list-style operations, not needed first. |
-| Native fetch/push protocol | Defer; keep using `GitCli` for transport. |
-| SHA-256 repositories | Model explicitly later; do not spread new SHA-1 assumptions. |
+| Commit summaries                | Required for performance; not yet separated from full commit parsing.          |
+| Commit-graph files              | Optional acceleration after summary cache and walker refactor.                 |
+| Multi-pack-index                | Optional acceleration after stable pack index registry.                        |
+| Reachability bitmaps            | Defer; useful for fetch/push and rev-list-style operations, not needed first.  |
+| Native fetch/push protocol      | Defer; keep using `GitCli` for transport.                                      |
+| SHA-256 repositories            | Model explicitly later; do not spread new SHA-1 assumptions.                   |
 
 ## Internal Architecture
 
@@ -135,7 +135,10 @@ type ObjectDatabase = {
   readonly hasObject: (id: ObjectId) => Effect.Effect<boolean, GitAdapterError>;
   readonly readObject: (
     id: ObjectId,
-  ) => Effect.Effect<{ readonly id: ObjectId; readonly type: GitObjectType; readonly payload: Uint8Array }, GitAdapterError>;
+  ) => Effect.Effect<
+    { readonly id: ObjectId; readonly type: GitObjectType; readonly payload: Uint8Array },
+    GitAdapterError
+  >;
   readonly writeObject: (
     type: GitObjectType,
     payload: Uint8Array,
@@ -242,10 +245,7 @@ type RevisionWalker = {
     ancestor: ObjectId,
     descendant: ObjectId,
   ) => Effect.Effect<boolean, GitAdapterError>;
-  readonly mergeBase: (
-    a: ObjectId,
-    b: ObjectId,
-  ) => Effect.Effect<ObjectId | null, GitAdapterError>;
+  readonly mergeBase: (a: ObjectId, b: ObjectId) => Effect.Effect<ObjectId | null, GitAdapterError>;
 };
 ```
 
@@ -264,15 +264,15 @@ Near-term improvements:
 Use several bounded caches instead of one broad cache. Prefer Effect's cache primitives over a
 home-grown LRU wherever the lookup shape fits.
 
-| Cache | Key | Value | Default policy |
-| --- | --- | --- | --- |
-| Object location | object id | loose path or pack offset | `Cache.Cache` |
-| Raw object | object id | type + payload | `Cache.Cache`, skip large blobs |
-| Commit summary | object id | parents/tree/time/generation | `Cache.Cache` |
-| Parsed tree | object id | `TreeEntry[]` | `Cache.Cache` |
-| Pack index | index path + mtime/size | parsed fanout/name/offset tables | `Cache.Cache` or `ScopedCache` if it owns handles |
-| Delta base | pack path + offset | resolved base object | `Cache.Cache` |
-| Ref snapshot | git dir + metadata | merged ref map | `Ref`/`SynchronizedRef` with metadata validation |
+| Cache           | Key                     | Value                            | Default policy                                    |
+| --------------- | ----------------------- | -------------------------------- | ------------------------------------------------- |
+| Object location | object id               | loose path or pack offset        | `Cache.Cache`                                     |
+| Raw object      | object id               | type + payload                   | `Cache.Cache`, skip large blobs                   |
+| Commit summary  | object id               | parents/tree/time/generation     | `Cache.Cache`                                     |
+| Parsed tree     | object id               | `TreeEntry[]`                    | `Cache.Cache`                                     |
+| Pack index      | index path + mtime/size | parsed fanout/name/offset tables | `Cache.Cache` or `ScopedCache` if it owns handles |
+| Delta base      | pack path + offset      | resolved base object             | `Cache.Cache`                                     |
+| Ref snapshot    | git dir + metadata      | merged ref map                   | `Ref`/`SynchronizedRef` with metadata validation  |
 
 Initial cache sizes should be conservative and configurable through internal constants. Avoid
 public configuration until the defaults have benchmark evidence.
@@ -283,20 +283,20 @@ The local Effect v4 source under `vendor/effect-v4/packages/effect/src` has seve
 that should shape the implementation. These are exported from `effect`, so we should prefer them
 over copying internal code or writing broad equivalents.
 
-| Need in GitDB | Effect primitive | Recommendation |
-| --- | --- | --- |
-| Bounded lookup cache with concurrent miss sharing | `Cache` | Use for object locations, raw small objects, commit summaries, parsed trees, delta bases, and store-level list/walk caches. |
-| Cache entries that own scoped resources | `ScopedCache` | Use only if pack indexes or pack readers later hold open file handles or mapped resources. Otherwise plain `Cache` is simpler. |
-| Keyed runtime/resource families | `RcMap` or `LayerMap` | Consider for `runtime.forStore(store)` if we support many git dirs per process and want idle eviction. A single configured `StoreService` does not need it. |
-| Mutable shared metadata | `Ref` | Use for simple ref snapshot state and counters where updates are pure and cheap. |
-| Serialized effectful metadata updates | `SynchronizedRef` | Use for ref snapshot refresh and pack registry refresh so concurrent readers do not duplicate filesystem scans. |
-| In-memory mutable indexes | `MutableHashMap` | Use inside private hot caches or registries when direct mutation is acceptable. Prefer `Cache` when miss loading, TTL, capacity, or concurrent sharing matters. |
-| Immutable transaction state | `HashMap` / `HashSet` | Keep using these for staged transaction mutations and persistent data structures. |
-| Concurrency limits | `Semaphore` | Use for bounding expensive pack inflates or concurrent filesystem scans if benchmarks show contention. |
-| Priority queue for graph traversal | custom binary heap | Do not use `TxPriorityQueue` for hot ancestry walks; it is transactional and backed by sorted chunks, not a low-overhead heap. |
-| Data models and tagged errors | `Data` / `Schema` | Keep schema-backed public/domain validation; use `Data` for small internal tagged unions if schemas are unnecessary. |
-| Platform hashing/filesystem/path | `Crypto`, `FileSystem`, `Path`, `Clock` | Continue using platform services instead of Node globals where the package already has Effect dependencies. |
-| Observability | `Effect.fn`, `Effect.withSpan`, logs | Wrap high-level operations and cache misses so benchmark traces can show object, pack, ref, and traversal costs. |
+| Need in GitDB                                     | Effect primitive                        | Recommendation                                                                                                                                                  |
+| ------------------------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bounded lookup cache with concurrent miss sharing | `Cache`                                 | Use for object locations, raw small objects, commit summaries, parsed trees, delta bases, and store-level list/walk caches.                                     |
+| Cache entries that own scoped resources           | `ScopedCache`                           | Use only if pack indexes or pack readers later hold open file handles or mapped resources. Otherwise plain `Cache` is simpler.                                  |
+| Keyed runtime/resource families                   | `RcMap` or `LayerMap`                   | Consider for `runtime.forStore(store)` if we support many git dirs per process and want idle eviction. A single configured `StoreService` does not need it.     |
+| Mutable shared metadata                           | `Ref`                                   | Use for simple ref snapshot state and counters where updates are pure and cheap.                                                                                |
+| Serialized effectful metadata updates             | `SynchronizedRef`                       | Use for ref snapshot refresh and pack registry refresh so concurrent readers do not duplicate filesystem scans.                                                 |
+| In-memory mutable indexes                         | `MutableHashMap`                        | Use inside private hot caches or registries when direct mutation is acceptable. Prefer `Cache` when miss loading, TTL, capacity, or concurrent sharing matters. |
+| Immutable transaction state                       | `HashMap` / `HashSet`                   | Keep using these for staged transaction mutations and persistent data structures.                                                                               |
+| Concurrency limits                                | `Semaphore`                             | Use for bounding expensive pack inflates or concurrent filesystem scans if benchmarks show contention.                                                          |
+| Priority queue for graph traversal                | custom binary heap                      | Do not use `TxPriorityQueue` for hot ancestry walks; it is transactional and backed by sorted chunks, not a low-overhead heap.                                  |
+| Data models and tagged errors                     | `Data` / `Schema`                       | Keep schema-backed public/domain validation; use `Data` for small internal tagged unions if schemas are unnecessary.                                            |
+| Platform hashing/filesystem/path                  | `Crypto`, `FileSystem`, `Path`, `Clock` | Continue using platform services instead of Node globals where the package already has Effect dependencies.                                                     |
+| Observability                                     | `Effect.fn`, `Effect.withSpan`, logs    | Wrap high-level operations and cache misses so benchmark traces can show object, pack, ref, and traversal costs.                                                |
 
 Concrete changes to the earlier architecture:
 

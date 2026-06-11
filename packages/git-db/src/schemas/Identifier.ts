@@ -17,7 +17,8 @@ export const isSafeSegment = (value: string): boolean =>
 
 export const SafeSegment = Schema.String.check(
   Schema.isPattern(safeSegmentPattern, {
-    expected: "a non-empty identifier segment containing letters, numbers, dots, underscores, or hyphens",
+    expected:
+      "a non-empty identifier segment containing letters, numbers, dots, underscores, or hyphens",
   }),
   filter("a valid path segment", isValidPathSegment),
 );
@@ -33,12 +34,6 @@ export type CollectionName = typeof CollectionName.Type;
 
 export const DocumentId = SafeSegment;
 export type DocumentId = typeof DocumentId.Type;
-
-export const IndexKey = SafeSegment;
-export type IndexKey = typeof IndexKey.Type;
-
-export const IndexName = SafeSegment;
-export type IndexName = typeof IndexName.Type;
 
 export const RemoteName = SafeSegment;
 export type RemoteName = typeof RemoteName.Type;

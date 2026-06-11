@@ -1,0 +1,31 @@
+{
+  "name": "@cycle/git",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./command/GitCommand": "./src/command/GitCommand.ts",
+    "./errors": "./src/errors/index.ts",
+    "./object-store/Git": "./src/object-store/Git.ts",
+    "./object-store/GitCli": "./src/object-store/GitCli.ts",
+    "./object-store/GitFilesystem": "./src/object-store/GitFilesystem.ts",
+    "./object-store/GitInMemory": "./src/object-store/GitInMemory.ts",
+    "./object-store/GitObjectCodec": "./src/object-store/GitObjectCodec.ts",
+    "./object-store/GitPack": "./src/object-store/GitPack.ts",
+    "./repository/GitRepository": "./src/repository/GitRepository.ts",
+    "./repository/GitRepositoryLive": "./src/repository/GitRepositoryLive.ts",
+    "./schemas": "./src/schemas/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@effect/platform-node": "beta",
+    "effect": "beta"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.8"
+  }
+}

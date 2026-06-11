@@ -41,14 +41,13 @@ Use `@cycle/git-db` when the application needs a JSON document store with:
 - immutable snapshots represented as Git commits
 - named mutable pointers represented as refs under a dedicated namespace
 - collection-level reads and writes
-- explicit indexes for common lookup paths
 - optimistic transactions
 - history and diff over database snapshots
 - fetch/push/full sync of GitDB refs without touching normal Git branches
 
 This package does not implement a general relational database, query planner, CRDT, merge engine, or
-worktree checkout flow. It stores JSON documents and derives trees, commits, refs, indexes, history,
-and sync behavior from Git primitives.
+worktree checkout flow. It stores JSON documents and derives trees, commits, refs, history, and sync
+behavior from Git primitives.
 
 ## Run And Test
 
@@ -120,7 +119,7 @@ Application Effect program
       -> GitDbInMemory: deterministic test backend
   -> Git object database
       -> blobs for JSON documents
-      -> trees for collections and indexes
+      -> trees for collections
       -> commits for snapshots
       -> refs for pointers
 ```
@@ -151,16 +150,15 @@ Public package exports include:
 
 ## Mental model
 
-| GitDB concept | Git storage |
-| --- | --- |
-| Store | Existing Git object database plus a GitDB ref namespace |
-| Collection | Tree under `collections/<collection>` |
-| Document | JSON blob under a sharded collection path |
-| Snapshot | Git commit whose tree is the complete database state |
-| Pointer | Ref such as `refs/gitdb/default/main` |
-| Transaction | In-memory staged mutations committed atomically |
-| Index | Tree-backed lookup under `indexes/<collection>/<index>/<key>` |
-| Sync | Explicit fetch/push of GitDB refs |
+| GitDB concept | Git storage                                             |
+| ------------- | ------------------------------------------------------- |
+| Store         | Existing Git object database plus a GitDB ref namespace |
+| Collection    | Tree under `collections/<collection>`                   |
+| Document      | JSON blob under a sharded collection path               |
+| Snapshot      | Git commit whose tree is the complete database state    |
+| Pointer       | Ref such as `refs/gitdb/default/main`                   |
+| Transaction   | In-memory staged mutations committed atomically         |
+| Sync          | Explicit fetch/push of GitDB refs                       |
 
 Default store identity:
 
@@ -178,11 +176,11 @@ The package exposes Effect layers:
 import { GitDbFilesystem, GitDbInMemory, GitDbLive } from "@cycle/git-db";
 ```
 
-| Layer | Use case |
-| --- | --- |
-| `GitDbLive(options)` | Production/default backend using the Git CLI |
-| `GitDbFilesystem(options)` | Direct filesystem object backend |
-| `GitDbInMemory(options)` | Deterministic tests and examples, no real `.git` directory required |
+| Layer                      | Use case                                                            |
+| -------------------------- | ------------------------------------------------------------------- |
+| `GitDbLive(options)`       | Production/default backend using the Git CLI                        |
+| `GitDbFilesystem(options)` | Direct filesystem object backend                                    |
+| `GitDbInMemory(options)`   | Deterministic tests and examples, no real `.git` directory required |
 
 Common options:
 
@@ -208,8 +206,8 @@ pnpm --dir packages/git-db bench:local -- --count 5000 --page-size 100
 
 The script imports the local GitDB module, loads `GitDbFilesystem` by default, seeds realistic issue
 documents into `refs/gitdb/benchmark/main`, then times cold and warm page reads, cached cursor
-navigation, index navigation, sample point reads, and a full list read. It writes Git objects and
-GitDB refs only; it does not touch the worktree, `HEAD`, the Git index, or normal branches.
+navigation, sample point reads, and a full list read. It writes Git objects and GitDB refs only; it
+does not touch the worktree, `HEAD`, the Git index, or normal branches.
 
 Useful flags:
 
@@ -287,14 +285,14 @@ Example result:
 ### Get a collection handle
 
 ```ts
-const providers = yield* store.collection<{
-  readonly enabled: boolean;
-  readonly name: string;
-  readonly tags?: ReadonlyArray<string>;
-  readonly type: string;
-}>("providers", {
-  indexes: ["type", "tags"],
-});
+const providers =
+  yield *
+  store.collection<{
+    readonly enabled: boolean;
+    readonly name: string;
+    readonly tags?: ReadonlyArray<string>;
+    readonly type: string;
+  }>("providers");
 ```
 
 Result:
@@ -308,7 +306,6 @@ Result:
   delete: Function,
   list: Function,
   document: Function,
-  index: Function,
   meta: Function,
   setMeta: Function
 }
@@ -319,18 +316,20 @@ Collection names must be safe path segments like `providers`, `tickets`, or `wor
 ### Put one document
 
 ```ts
-const snapshot = yield* providers.put(
-  "stripe",
-  {
-    enabled: true,
-    name: "Stripe",
-    tags: ["payment", "card", "live"],
-    type: "payment",
-  },
-  {
-    message: "Add Stripe provider",
-  },
-);
+const snapshot =
+  yield *
+  providers.put(
+    "stripe",
+    {
+      enabled: true,
+      name: "Stripe",
+      tags: ["payment", "card", "live"],
+      type: "payment",
+    },
+    {
+      message: "Add Stripe provider",
+    },
+  );
 ```
 
 Example result:
@@ -351,16 +350,10 @@ With the default `shardLength: 2`, document ID `stripe` is stored at:
 collections/providers/2f/stripe.json
 ```
 
-The index entry is stored at:
-
-```txt
-indexes/providers/type/payment/stripe
-```
-
 ### Get one document value
 
 ```ts
-const stripe = yield* providers.get("stripe");
+const stripe = yield * providers.get("stripe");
 ```
 
 Result:
@@ -376,14 +369,14 @@ Result:
 Missing documents return `null`:
 
 ```ts
-const missing = yield* providers.get("paypal");
+const missing = yield * providers.get("paypal");
 // null
 ```
 
 ### Get the raw document
 
 ```ts
-const document = yield* providers.document("stripe");
+const document = yield * providers.document("stripe");
 ```
 
 Example result:
@@ -404,13 +397,14 @@ The actual `Document` instance contains `bytes`, `objectId`, `path`, plus `size`
 ### List collection entries
 
 ```ts
-yield* providers.put("adyen", {
-  enabled: false,
-  name: "Adyen",
-  type: "payment",
-});
+yield *
+  providers.put("adyen", {
+    enabled: false,
+    name: "Adyen",
+    type: "payment",
+  });
 
-const entries = yield* providers.list();
+const entries = yield * providers.list();
 ```
 
 Example result:
@@ -423,9 +417,9 @@ Example result:
     value: {
       enabled: true,
       name: "Stripe",
-      type: "payment"
+      type: "payment",
     },
-    document: Document
+    document: Document,
   },
   {
     id: "adyen",
@@ -433,11 +427,11 @@ Example result:
     value: {
       enabled: false,
       name: "Adyen",
-      type: "payment"
+      type: "payment",
     },
-    document: Document
-  }
-]
+    document: Document,
+  },
+];
 ```
 
 ### Page collection entries
@@ -446,11 +440,13 @@ Use `page` when a collection may contain many documents. GitDB walks the tree en
 next document paths, then reads and parses only the blobs in the returned page.
 
 ```ts
-const firstPage = yield* providers.page({ limit: 2 });
-const secondPage = yield* providers.page({
-  cursor: firstPage.nextCursor,
-  limit: 2,
-});
+const firstPage = yield * providers.page({ limit: 2 });
+const secondPage =
+  yield *
+  providers.page({
+    cursor: firstPage.nextCursor,
+    limit: 2,
+  });
 ```
 
 Example first page:
@@ -486,30 +482,36 @@ Example first page:
 The cursor is exclusive. To page a stable historical view, keep passing the same `from` value:
 
 ```ts
-const page = yield* providers.page({
-  from: snapshot.id,
-  cursor: previous.nextCursor,
-  limit: 100,
-});
+const page =
+  yield *
+  providers.page({
+    from: snapshot.id,
+    cursor: previous.nextCursor,
+    limit: 100,
+  });
 ```
 
 ### Collection metadata
 
 ```ts
-const snapshot = yield* providers.setMeta(
-  {
-    label: "Payment providers",
-    owner: "platform",
-  },
-  {
-    message: "Label provider collection",
-  },
-);
+const snapshot =
+  yield *
+  providers.setMeta(
+    {
+      label: "Payment providers",
+      owner: "platform",
+    },
+    {
+      message: "Label provider collection",
+    },
+  );
 
-const meta = yield* providers.meta<{
-  readonly label: string;
-  readonly owner: string;
-}>();
+const meta =
+  yield *
+  providers.meta<{
+    readonly label: string;
+    readonly owner: string;
+  }>();
 ```
 
 Result:
@@ -530,10 +532,12 @@ collections/providers/.meta.json
 ### List collections
 
 ```ts
-const collections = yield* store.collections<{
-  readonly label: string;
-  readonly owner: string;
-}>();
+const collections =
+  yield *
+  store.collections<{
+    readonly label: string;
+    readonly owner: string;
+  }>();
 ```
 
 Result:
@@ -545,135 +549,25 @@ Result:
     path: "collections/providers",
     meta: {
       label: "Payment providers",
-      owner: "platform"
-    }
-  }
-]
+      owner: "platform",
+    },
+  },
+];
 ```
 
 GitDB v0.2 does not require a global manifest. A missing `.store/manifest.json` is normal:
 
 ```ts
-const manifest = yield* store.get(".store/manifest.json");
+const manifest = yield * store.get(".store/manifest.json");
 // null
 ```
-
-### Query an index
-
-Indexes are explicit. Index fields are declared on the collection handle and automatically updated
-when documents are written or deleted. The definitions are code-level collection options, not
-persisted collection manifests.
-
-```ts
-const providers = yield* store.collection<{
-  readonly enabled: boolean;
-  readonly name: string;
-  readonly tags?: ReadonlyArray<string>;
-  readonly type: string;
-}>("providers", {
-  indexes: ["type", "tags"],
-});
-
-yield* providers.put(
-  "stripe",
-  { enabled: true, name: "Stripe", tags: ["payment", "card", "live"], type: "payment" },
-);
-
-yield* providers.put(
-  "adyen",
-  { enabled: false, name: "Adyen", type: "payment" },
-);
-
-const byType = yield* providers.index("type");
-const paymentProviders = yield* byType.get("payment");
-```
-
-Result:
-
-```ts
-[
-  {
-    id: "adyen",
-    path: "collections/providers/85/adyen.json",
-    value: {
-      enabled: false,
-      name: "Adyen",
-      type: "payment"
-    },
-    document: Document
-  },
-  {
-    id: "stripe",
-    path: "collections/providers/2f/stripe.json",
-    value: {
-      enabled: true,
-      name: "Stripe",
-      type: "payment"
-    },
-    document: Document
-  }
-]
-```
-
-Index results can also be paged. The index page cursor is the index entry path, so it may differ
-from the returned document paths.
-
-```ts
-const firstOpenPage = yield* byType.page("payment", { limit: 1 });
-const nextOpenPage = yield* byType.page("payment", {
-  cursor: firstOpenPage.nextCursor,
-  limit: 1,
-});
-```
-
-Example:
-
-```ts
-{
-  entries: [
-    {
-      id: "adyen",
-      path: "collections/providers/85/adyen.json",
-      value: {
-        enabled: false,
-        name: "Adyen",
-        type: "payment"
-      },
-      document: Document
-    }
-  ],
-  nextCursor: "indexes/providers/type/payment/adyen"
-}
-```
-
-Multi-value indexes are supported:
-
-```ts
-yield* providers.put(
-  "stripe",
-  { enabled: true, name: "Stripe", tags: ["payment", "card", "live"], type: "payment" },
-);
-
-const taggedForCards = yield* (yield* providers.index("tags")).get("card");
-```
-
-To remove index entries when deleting a document:
-
-```ts
-yield* providers.delete("stripe", {
-  message: "Remove Stripe provider",
-});
-```
-
-GitDB derives old index values from the previous document before updating or deleting it, so callers
-do not need to pass previous index values.
 
 ## Store reads
 
 ### Read a raw path
 
 ```ts
-const document = yield* store.get("collections/providers/2f/stripe.json");
+const document = yield * store.get("collections/providers/2f/stripe.json");
 ```
 
 Result:
@@ -689,7 +583,7 @@ Document {
 ### List a raw tree path
 
 ```ts
-const entries = yield* store.list("collections/providers");
+const entries = yield * store.list("collections/providers");
 ```
 
 Example result:
@@ -701,23 +595,23 @@ Example result:
     path: "collections/providers/.meta.json",
     type: "blob",
     mode: "100644",
-    objectId: "5b10c7d4b4c9f0db24b75dd5c2d625ff2707a8a7"
+    objectId: "5b10c7d4b4c9f0db24b75dd5c2d625ff2707a8a7",
   },
   {
     name: "2f",
     path: "collections/providers/2f",
     type: "tree",
     mode: "040000",
-    objectId: "9a68e15e7aa31d3ff028f6ebf4a2d9edfe410f16"
+    objectId: "9a68e15e7aa31d3ff028f6ebf4a2d9edfe410f16",
   },
   {
     name: "85",
     path: "collections/providers/85",
     type: "tree",
     mode: "040000",
-    objectId: "29f4d37f2bff64fdbb6c547f5d31eba8795e0123"
-  }
-]
+    objectId: "29f4d37f2bff64fdbb6c547f5d31eba8795e0123",
+  },
+];
 ```
 
 Missing paths return an empty array from `list` and `null` from `get`.
@@ -727,30 +621,34 @@ Missing paths return an empty array from `list` and `null` from `get`.
 Every read accepts `{ from }`. The value can be a pointer name or a snapshot id.
 
 ```ts
-const openSnapshot = yield* tickets.put(
-  "ticket-1",
-  {
-    status: "open",
-    title: "Safety test",
-  },
-  {
-    message: "Create ticket",
-  },
-);
+const openSnapshot =
+  yield *
+  tickets.put(
+    "ticket-1",
+    {
+      status: "open",
+      title: "Safety test",
+    },
+    {
+      message: "Create ticket",
+    },
+  );
 
-const closedSnapshot = yield* tickets.put(
-  "ticket-1",
-  {
-    status: "closed",
-    title: "Safety test",
-  },
-  {
-    message: "Close ticket",
-  },
-);
+const closedSnapshot =
+  yield *
+  tickets.put(
+    "ticket-1",
+    {
+      status: "closed",
+      title: "Safety test",
+    },
+    {
+      message: "Close ticket",
+    },
+  );
 
-const before = yield* tickets.get("ticket-1", { from: openSnapshot.id });
-const after = yield* tickets.get("ticket-1", { from: closedSnapshot.id });
+const before = yield * tickets.get("ticket-1", { from: openSnapshot.id });
+const after = yield * tickets.get("ticket-1", { from: closedSnapshot.id });
 ```
 
 Result:
@@ -773,40 +671,39 @@ Result:
 Use transactions when multiple writes should become one snapshot.
 
 ```ts
-const tx = yield* store.begin();
-const providers = yield* tx.collection<{
-  readonly enabled: boolean;
-  readonly name: string;
-  readonly type: string;
-}>("providers", {
-  indexes: ["type"],
-});
+const tx = yield * store.begin();
+const providers =
+  yield *
+  tx.collection<{
+    readonly enabled: boolean;
+    readonly name: string;
+    readonly type: string;
+  }>("providers");
 
-yield* providers.setMeta({
-  label: "Payment providers",
-});
+yield *
+  providers.setMeta({
+    label: "Payment providers",
+  });
 
-yield* providers.put(
-  "stripe",
-  {
+yield *
+  providers.put("stripe", {
     enabled: true,
     name: "Stripe",
     type: "payment",
-  },
-);
+  });
 
-yield* providers.put(
-  "adyen",
-  {
+yield *
+  providers.put("adyen", {
     enabled: false,
     name: "Adyen",
     type: "payment",
-  },
-);
+  });
 
-const snapshot = yield* tx.commit({
-  message: "Add payment provider configuration",
-});
+const snapshot =
+  yield *
+  tx.commit({
+    message: "Add payment provider configuration",
+  });
 ```
 
 Example result:
@@ -823,16 +720,18 @@ Example result:
 After commit:
 
 ```ts
-const committedProviders = yield* store.collection<{
-  readonly enabled: boolean;
-  readonly name: string;
-  readonly type: string;
-}>("providers");
+const committedProviders =
+  yield *
+  store.collection<{
+    readonly enabled: boolean;
+    readonly name: string;
+    readonly type: string;
+  }>("providers");
 
-yield* committedProviders.get("stripe");
+yield * committedProviders.get("stripe");
 // { enabled: true, name: "Stripe", type: "payment" }
 
-yield* committedProviders.meta();
+yield * committedProviders.meta();
 // { label: "Payment providers" }
 ```
 
@@ -842,17 +741,19 @@ Transactions participate in Effect transactions through `TxRef`. If an `Effect.t
 staged mutations are rolled back.
 
 ```ts
-const tx = yield* store.begin();
-const providers = yield* tx.collection<{ readonly enabled: boolean }>("providers");
+const tx = yield * store.begin();
+const providers = yield * tx.collection<{ readonly enabled: boolean }>("providers");
 
-const failure = yield* Effect.tx(
-  Effect.gen(function* () {
-    yield* providers.put("stripe", { enabled: true });
-    return yield* Effect.fail("rollback");
-  }),
-).pipe(Effect.flip);
+const failure =
+  yield *
+  Effect.tx(
+    Effect.gen(function* () {
+      yield* providers.put("stripe", { enabled: true });
+      return yield* Effect.fail("rollback");
+    }),
+  ).pipe(Effect.flip);
 
-const stagedValue = yield* providers.get("stripe");
+const stagedValue = yield * providers.get("stripe");
 ```
 
 Result:
@@ -867,11 +768,11 @@ Result:
 ### Abort a transaction
 
 ```ts
-const tx = yield* store.begin();
-yield* tx.put("scratch/provider.json", { enabled: true });
-yield* tx.abort();
+const tx = yield * store.begin();
+yield * tx.put("scratch/provider.json", { enabled: true });
+yield * tx.abort();
 
-const result = yield* Effect.flip(tx.commit({ message: "Will not commit" }));
+const result = yield * Effect.flip(tx.commit({ message: "Will not commit" }));
 ```
 
 Result:
@@ -889,15 +790,15 @@ Each transaction records the pointer snapshot it started from. Commit fails if a
 the same pointer first.
 
 ```ts
-const first = yield* store.begin();
-const second = yield* store.begin();
+const first = yield * store.begin();
+const second = yield * store.begin();
 
-yield* (yield* first.collection("providers")).put("stripe", { enabled: true });
-yield* (yield* second.collection("providers")).put("adyen", { enabled: true });
+yield * (yield * first.collection("providers")).put("stripe", { enabled: true });
+yield * (yield * second.collection("providers")).put("adyen", { enabled: true });
 
-yield* first.commit({ message: "Add Stripe" });
+yield * first.commit({ message: "Add Stripe" });
 
-const conflict = yield* Effect.flip(second.commit({ message: "Add Adyen" }));
+const conflict = yield * Effect.flip(second.commit({ message: "Add Adyen" }));
 ```
 
 Example result:
@@ -919,8 +820,8 @@ Pointers are named mutable refs to immutable snapshots.
 ### Get the current snapshot
 
 ```ts
-const main = yield* store.pointer("main");
-const current = yield* main.current();
+const main = yield * store.pointer("main");
+const current = yield * main.current();
 ```
 
 Example result:
@@ -939,21 +840,21 @@ If the pointer has never been written, `current()` returns `null`.
 ### Begin from a specific pointer
 
 ```ts
-const draft = yield* store.pointer("draft");
-const tx = yield* draft.begin();
+const draft = yield * store.pointer("draft");
+const tx = yield * draft.begin();
 ```
 
 Same as:
 
 ```ts
-const tx = yield* store.begin("draft");
+const tx = yield * store.begin("draft");
 ```
 
 ### Fork a pointer
 
 ```ts
-const main = yield* store.pointer("main");
-const review = yield* main.fork("review/provider-rollout");
+const main = yield * store.pointer("main");
+const review = yield * main.fork("review/provider-rollout");
 ```
 
 Result:
@@ -976,8 +877,8 @@ The new pointer now resolves to the same snapshot as `main`.
 ### Create a pointer from a source
 
 ```ts
-const release = yield* store.pointer("release/v1");
-yield* release.forkFrom("main");
+const release = yield * store.pointer("release/v1");
+yield * release.forkFrom("main");
 ```
 
 `forkFrom` accepts a pointer name or a snapshot id. It fails with `PointerNotFoundError` if the
@@ -986,17 +887,18 @@ source cannot be resolved, and with `PointerConflictError` if the target pointer
 ### Move a pointer
 
 ```ts
-const main = yield* store.pointer("main");
+const main = yield * store.pointer("main");
 
-yield* main.move("9aa17f743827462619bf802d73fc52d535f3f8f0", {
-  expectedSnapshot: "f6a865e0b1c94a847ba6450c58f542d0cdb6a56d",
-});
+yield *
+  main.move("9aa17f743827462619bf802d73fc52d535f3f8f0", {
+    expectedSnapshot: "f6a865e0b1c94a847ba6450c58f542d0cdb6a56d",
+  });
 ```
 
 Result:
 
 ```ts
-undefined
+undefined;
 ```
 
 If `expectedSnapshot` does not match the current pointer target, the result fails with
@@ -1005,37 +907,38 @@ If `expectedSnapshot` does not match the current pointer target, the result fail
 ### Delete a pointer
 
 ```ts
-const draft = yield* store.pointer("draft");
+const draft = yield * store.pointer("draft");
 
-yield* draft.delete({
-  expectedSnapshot: "6d9bbd3632dfdb9dcbe790177989ac63f6d7c9f9",
-});
+yield *
+  draft.delete({
+    expectedSnapshot: "6d9bbd3632dfdb9dcbe790177989ac63f6d7c9f9",
+  });
 ```
 
 Result:
 
 ```ts
-undefined
+undefined;
 ```
 
 ### List local pointer names
 
 ```ts
-const pointers = yield* store.localPointers();
+const pointers = yield * store.localPointers();
 ```
 
 Result:
 
 ```ts
-["main", "release/v1", "review/provider-rollout"]
+["main", "release/v1", "review/provider-rollout"];
 ```
 
 ### Build ref names
 
 ```ts
-const localRef = yield* store.pointerRef("main");
-const remotePrefix = yield* store.remoteRefPrefix("origin");
-const remoteRef = yield* store.remotePointerRef("origin", "main");
+const localRef = yield * store.pointerRef("main");
+const remotePrefix = yield * store.remoteRefPrefix("origin");
+const remoteRef = yield * store.remotePointerRef("origin", "main");
 ```
 
 Result:
@@ -1053,26 +956,26 @@ Result:
 ### Resolve a pointer or snapshot id
 
 ```ts
-const id = yield* store.resolveSnapshotId("main");
+const id = yield * store.resolveSnapshotId("main");
 ```
 
 Example result:
 
 ```ts
-"9aa17f743827462619bf802d73fc52d535f3f8f0"
+"9aa17f743827462619bf802d73fc52d535f3f8f0";
 ```
 
 Unknown pointers or invalid ids resolve to `null`:
 
 ```ts
-yield* store.resolveSnapshotId("missing");
+yield * store.resolveSnapshotId("missing");
 // null
 ```
 
 ### Get a snapshot
 
 ```ts
-const snapshot = yield* store.snapshot("9aa17f743827462619bf802d73fc52d535f3f8f0");
+const snapshot = yield * store.snapshot("9aa17f743827462619bf802d73fc52d535f3f8f0");
 ```
 
 Example result:
@@ -1092,9 +995,11 @@ If the id is not a Git commit, the call fails with `SnapshotNotFoundError`.
 ### History
 
 ```ts
-const history = yield* store.history("main", {
-  max: 2,
-});
+const history =
+  yield *
+  store.history("main", {
+    max: 2,
+  });
 ```
 
 Result:
@@ -1104,14 +1009,14 @@ Result:
   {
     id: "9aa17f743827462619bf802d73fc52d535f3f8f0",
     message: "Close ticket",
-    parents: ["f6a865e0b1c94a847ba6450c58f542d0cdb6a56d"]
+    parents: ["f6a865e0b1c94a847ba6450c58f542d0cdb6a56d"],
   },
   {
     id: "f6a865e0b1c94a847ba6450c58f542d0cdb6a56d",
     message: "Create ticket",
-    parents: []
-  }
-]
+    parents: [],
+  },
+];
 ```
 
 History options:
@@ -1128,14 +1033,14 @@ History options:
 `pointer.history(options)` is the pointer-scoped equivalent:
 
 ```ts
-const main = yield* store.pointer("main");
-const history = yield* main.history({ max: 5 });
+const main = yield * store.pointer("main");
+const history = yield * main.history({ max: 5 });
 ```
 
 ### Diff two snapshots or pointers
 
 ```ts
-const diff = yield* store.diff(openSnapshot.id, closedSnapshot.id);
+const diff = yield * store.diff(openSnapshot.id, closedSnapshot.id);
 ```
 
 Example result:
@@ -1157,7 +1062,7 @@ Example result:
 You can also compare pointers:
 
 ```ts
-const diff = yield* store.diff("main", "release/v1");
+const diff = yield * store.diff("main", "release/v1");
 ```
 
 ## Sync
@@ -1168,11 +1073,13 @@ working tree.
 ### Push local pointers
 
 ```ts
-const result = yield* store.sync({
-  mode: "push",
-  remote: "origin",
-  pointers: ["main"],
-});
+const result =
+  yield *
+  store.sync({
+    mode: "push",
+    remote: "origin",
+    pointers: ["main"],
+  });
 ```
 
 Example result:
@@ -1196,10 +1103,12 @@ Example result:
 ### Fetch remote pointers
 
 ```ts
-const result = yield* store.sync({
-  mode: "fetch",
-  remote: "origin",
-});
+const result =
+  yield *
+  store.sync({
+    mode: "fetch",
+    remote: "origin",
+  });
 ```
 
 Example result:
@@ -1231,11 +1140,13 @@ It does not move the local pointer.
 ### Pull or full sync
 
 ```ts
-const result = yield* store.sync({
-  mode: "full",
-  remote: "origin",
-  pointers: ["main"],
-});
+const result =
+  yield *
+  store.sync({
+    mode: "full",
+    remote: "origin",
+    pointers: ["main"],
+  });
 ```
 
 If the remote is ahead and the local pointer can fast-forward:
@@ -1279,13 +1190,15 @@ If the local pointer is ahead and the remote can fast-forward:
 By default, diverged pointers fail with `SyncConflictError`.
 
 ```ts
-const conflict = yield* Effect.flip(
-  store.sync({
-    mode: "full",
-    remote: "origin",
-    pointers: ["main"],
-  }),
-);
+const conflict =
+  yield *
+  Effect.flip(
+    store.sync({
+      mode: "full",
+      remote: "origin",
+      pointers: ["main"],
+    }),
+  );
 ```
 
 Example result:
@@ -1304,19 +1217,21 @@ SyncConflictError {
 You can choose a side explicitly:
 
 ```ts
-yield* store.sync({
-  mode: "full",
-  remote: "origin",
-  pointers: ["main"],
-  onDiverged: "keep-local",
-});
+yield *
+  store.sync({
+    mode: "full",
+    remote: "origin",
+    pointers: ["main"],
+    onDiverged: "keep-local",
+  });
 
-yield* store.sync({
-  mode: "full",
-  remote: "origin",
-  pointers: ["main"],
-  onDiverged: "keep-remote",
-});
+yield *
+  store.sync({
+    mode: "full",
+    remote: "origin",
+    pointers: ["main"],
+    onDiverged: "keep-remote",
+  });
 ```
 
 ## Module-first helper APIs
@@ -1324,36 +1239,31 @@ yield* store.sync({
 The package also exports small helper modules that delegate to the store objects.
 
 ```ts
-import {
-  Collection,
-  Pointer,
-  Snapshot,
-  Store,
-  Sync,
-  Transaction,
-} from "@cycle/git-db";
+import { Collection, Pointer, Snapshot, Store, Sync, Transaction } from "@cycle/git-db";
 ```
 
 Example:
 
 ```ts
-const store = yield* Store.StoreService;
-const providers = yield* Collection.get<{ readonly enabled: boolean }>(store, "providers");
+const store = yield * Store.StoreService;
+const providers = yield * Collection.get<{ readonly enabled: boolean }>(store, "providers");
 
-const snapshot = yield* Collection.put(
-  providers,
-  "stripe",
-  {
-    enabled: true,
-  },
-  {
-    message: "Add provider through module API",
-  },
-);
+const snapshot =
+  yield *
+  Collection.put(
+    providers,
+    "stripe",
+    {
+      enabled: true,
+    },
+    {
+      message: "Add provider through module API",
+    },
+  );
 
-const pointer = yield* Pointer.get(store, "main");
-const current = yield* Pointer.current(pointer);
-const fetched = yield* Snapshot.get(store, snapshot.id);
+const pointer = yield * Pointer.get(store, "main");
+const current = yield * Pointer.current(pointer);
+const fetched = yield * Snapshot.get(store, snapshot.id);
 ```
 
 Result:
@@ -1368,26 +1278,26 @@ Result:
 
 Helper mapping:
 
-| Helper | Equivalent |
-| --- | --- |
-| `Collection.get(store, name, options)` | `store.collection(name, options)` |
-| `Collection.list(store, options)` | `store.collections(options)` |
-| `Collection.entries(collection, options)` | `collection.list(options)` |
-| `Collection.page(collection, options)` | `collection.page(options)` |
+| Helper                                           | Equivalent                           |
+| ------------------------------------------------ | ------------------------------------ |
+| `Collection.get(store, name, options)`           | `store.collection(name, options)`    |
+| `Collection.list(store, options)`                | `store.collections(options)`         |
+| `Collection.entries(collection, options)`        | `collection.list(options)`           |
+| `Collection.page(collection, options)`           | `collection.page(options)`           |
 | `Collection.put(collection, id, value, options)` | `collection.put(id, value, options)` |
-| `Pointer.get(store, name)` | `store.pointer(name)` |
-| `Pointer.localNames(store)` | `store.localPointers()` |
-| `Pointer.current(pointer)` | `pointer.current()` |
-| `Pointer.begin(pointer)` | `pointer.begin()` |
-| `Pointer.move(pointer, target, options)` | `pointer.move(target, options)` |
-| `Snapshot.get(store, id)` | `store.snapshot(id)` |
-| `Snapshot.history(store, from, options)` | `store.history(from, options)` |
-| `Snapshot.diff(store, a, b)` | `store.diff(a, b)` |
-| `Snapshot.resolveId(store, from)` | `store.resolveSnapshotId(from)` |
-| `Transaction.begin(store, pointer)` | `store.begin(pointer)` |
-| `Transaction.commit(tx, options)` | `tx.commit(options)` |
-| `Transaction.abort(tx)` | `tx.abort()` |
-| `Sync.run(store, options)` | `store.sync(options)` |
+| `Pointer.get(store, name)`                       | `store.pointer(name)`                |
+| `Pointer.localNames(store)`                      | `store.localPointers()`              |
+| `Pointer.current(pointer)`                       | `pointer.current()`                  |
+| `Pointer.begin(pointer)`                         | `pointer.begin()`                    |
+| `Pointer.move(pointer, target, options)`         | `pointer.move(target, options)`      |
+| `Snapshot.get(store, id)`                        | `store.snapshot(id)`                 |
+| `Snapshot.history(store, from, options)`         | `store.history(from, options)`       |
+| `Snapshot.diff(store, a, b)`                     | `store.diff(a, b)`                   |
+| `Snapshot.resolveId(store, from)`                | `store.resolveSnapshotId(from)`      |
+| `Transaction.begin(store, pointer)`              | `store.begin(pointer)`               |
+| `Transaction.commit(tx, options)`                | `tx.commit(options)`                 |
+| `Transaction.abort(tx)`                          | `tx.abort()`                         |
+| `Sync.run(store, options)`                       | `store.sync(options)`                |
 
 ## Validation and expected failures
 
@@ -1418,22 +1328,22 @@ remote: ../origin
 
 Common typed failures:
 
-| Error | When it happens |
-| --- | --- |
-| `StoreNotFoundError` | `verifyGitDir` is true and the Git directory does not exist |
-| `InvalidNamespaceError` | namespace is not a valid ref namespace, or uses `refs/heads` without the escape hatch |
-| `InvalidIdentifierError` | database, collection, document, index, key, or remote name is invalid |
-| `InvalidPathError` | raw store path is absolute, empty for mutation, or contains traversal |
-| `InvalidPointerNameError` | pointer name is not a valid relative ref name |
-| `PointerNotFoundError` | fork source pointer or snapshot cannot be resolved |
-| `SnapshotNotFoundError` | requested snapshot id is not a Git commit |
-| `PointerConflictError` | optimistic pointer update expected one snapshot but found another |
-| `SyncConflictError` | local and remote pointers diverged and `onDiverged` is `error` |
-| `InvalidJsonDocumentError` | a stored blob cannot be parsed as JSON |
-| `TransactionInactiveError` | a transaction was committed or aborted and then used again |
-| `GitAdapterError` | local Git object/ref command failed |
-| `RemoteFetchError` | `git fetch` failed |
-| `RemotePushError` | `git push` failed |
+| Error                      | When it happens                                                                       |
+| -------------------------- | ------------------------------------------------------------------------------------- |
+| `StoreNotFoundError`       | `verifyGitDir` is true and the Git directory does not exist                           |
+| `InvalidNamespaceError`    | namespace is not a valid ref namespace, or uses `refs/heads` without the escape hatch |
+| `InvalidIdentifierError`   | database, collection, document, index, key, or remote name is invalid                 |
+| `InvalidPathError`         | raw store path is absolute, empty for mutation, or contains traversal                 |
+| `InvalidPointerNameError`  | pointer name is not a valid relative ref name                                         |
+| `PointerNotFoundError`     | fork source pointer or snapshot cannot be resolved                                    |
+| `SnapshotNotFoundError`    | requested snapshot id is not a Git commit                                             |
+| `PointerConflictError`     | optimistic pointer update expected one snapshot but found another                     |
+| `SyncConflictError`        | local and remote pointers diverged and `onDiverged` is `error`                        |
+| `InvalidJsonDocumentError` | a stored blob cannot be parsed as JSON                                                |
+| `TransactionInactiveError` | a transaction was committed or aborted and then used again                            |
+| `GitAdapterError`          | local Git object/ref command failed                                                   |
+| `RemoteFetchError`         | `git fetch` failed                                                                    |
+| `RemotePushError`          | `git push` failed                                                                     |
 
 ## Real Git safety properties
 

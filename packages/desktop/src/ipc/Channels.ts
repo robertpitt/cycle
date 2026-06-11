@@ -1,5 +1,7 @@
+import type { TicketRpcMethod, TicketRpcResponse } from "@cycle/rpc/protocol";
 import type { AppConfigState, ThemePreference } from "../shared/AppConfig.ts";
 import type { AgentProviderId, DetectedAgentProvider } from "../shared/AgentProviders.ts";
+import type { BootstrapStatus } from "../shared/Bootstrap.ts";
 import type { CompleteOnboardingInput, ProfileUpdateInput } from "../shared/Profile.ts";
 import type {
   InitializeRepositoryPathInput,
@@ -24,6 +26,9 @@ export const upsertRepositoryPathChannel = "cycle:desktop:local-workspace/upsert
 export const removeRepositoryChannel = "cycle:desktop:local-workspace/remove-repository";
 export const detectAgentProvidersChannel = "cycle:desktop:agent-providers/detect";
 export const openExternalChannel = "cycle:desktop:shell/open-external";
+export const ticketRpcChannel = "cycle:desktop:ticket-rpc/invoke";
+export const getBootstrapStatusChannel = "cycle:desktop:bootstrap/status";
+export const getBackendLogPathChannel = "cycle:desktop:logs/path";
 
 export type OpenExternalRequest = {
   readonly targetUrl: string;
@@ -37,9 +42,17 @@ export type RemoveRepositoryRequest = {
   readonly id: string;
 };
 
+export type TicketRpcBridgeRequest = {
+  readonly id: string;
+  readonly method: TicketRpcMethod;
+  readonly payload: unknown;
+};
+
 export type CycleDesktopBridge = {
   readonly completeOnboarding: (input: CompleteOnboardingInput) => Promise<AppConfigState>;
   readonly detectAgentProviders: () => Promise<ReadonlyArray<DetectedAgentProvider>>;
+  readonly getBackendLogPath: () => Promise<string>;
+  readonly getBootstrapStatus: () => Promise<BootstrapStatus>;
   readonly getAppConfig: () => Promise<AppConfigState>;
   readonly initializeRepositoryPath: (
     input: InitializeRepositoryPathInput,
@@ -50,6 +63,7 @@ export type CycleDesktopBridge = {
   readonly removeRepository: (id: string) => Promise<ReadonlyArray<RepositoryRecord>>;
   readonly selectRepositoryFolder: () => Promise<SelectRepositoryFolderResult>;
   readonly setThemePreference: (preference: ThemePreference) => Promise<AppConfigState>;
+  readonly ticketRpc: (request: TicketRpcBridgeRequest) => Promise<TicketRpcResponse>;
   readonly updateRepositoryPreferences: (
     input: UpdateRepositoryPreferencesInput,
   ) => Promise<RepositoryRecord | null>;
@@ -120,3 +134,6 @@ export const isUpdateRepositoryPreferencesInput = (
 
 export const isRemoveRepositoryRequest = (value: unknown): value is RemoveRepositoryRequest =>
   isRecord(value) && typeof value.id === "string";
+
+export const isTicketRpcBridgeRequest = (value: unknown): value is TicketRpcBridgeRequest =>
+  isRecord(value) && typeof value.id === "string" && typeof value.method === "string";

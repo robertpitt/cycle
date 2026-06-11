@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { Diamond, Euro, Smartphone } from "lucide-react";
+import { Circle, CircleCheck, CircleDashed, Diamond, Euro, Smartphone } from "lucide-react";
 import { IssuesList } from "./index.ts";
 const meta = {
   args: {
@@ -60,4 +60,94 @@ export const Default: Story = {
       <IssuesList {...args} />
     </div>
   ),
+};
+
+export const Loading: Story = {
+  args: {
+    loading: true,
+    rows: [],
+  },
+  render: (args) => (
+    <div className="overflow-hidden rounded-lg border border-border bg-surface">
+      <IssuesList {...args} />
+    </div>
+  ),
+};
+
+export const Empty: Story = {
+  args: {
+    count: "0",
+    emptyState: "No issues in this view.",
+    rows: [],
+  },
+  render: (args) => (
+    <div className="overflow-hidden rounded-lg border border-border bg-surface">
+      <IssuesList {...args} />
+    </div>
+  ),
+};
+
+export const Error: Story = {
+  args: {
+    error: "Unable to load issues.",
+    rows: [],
+  },
+  render: (args) => (
+    <div className="overflow-hidden rounded-lg border border-border bg-surface">
+      <IssuesList {...args} />
+    </div>
+  ),
+};
+
+export const CompactSelected: Story = {
+  args: {
+    density: "compact",
+    selectedRowId: "ENG-811",
+  },
+  render: (args) => (
+    <div className="overflow-hidden rounded-lg border border-border bg-surface">
+      <IssuesList {...args} />
+    </div>
+  ),
+};
+
+export const GroupedByStatus: Story = {
+  args: {
+    showHeader: false,
+  },
+  render: (args) => {
+    const rows = meta.args.rows;
+    return (
+      <div className="bg-background p-3">
+        <IssuesList
+          {...args}
+          groups={[
+            {
+              count: 1,
+              icon: <Circle aria-hidden className="size-4 text-warning" />,
+              id: "status:in-progress",
+              rows: [rows[0]],
+              title: "In Progress",
+            },
+            {
+              count: 1,
+              icon: <CircleDashed aria-hidden className="size-4 text-muted-foreground" />,
+              id: "status:backlog",
+              rows: [rows[1]],
+              title: "Backlog",
+            },
+            {
+              count: 1,
+              icon: <CircleCheck aria-hidden className="size-4 text-primary" />,
+              id: "status:done",
+              rows: [rows[2]],
+              title: "Done",
+            },
+          ]}
+          rows={rows}
+          rowsClassName="grid gap-1"
+        />
+      </div>
+    );
+  },
 };

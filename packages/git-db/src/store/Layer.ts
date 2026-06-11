@@ -1,8 +1,8 @@
 import { NodeCrypto, NodeServices } from "@effect/platform-node";
+import * as GitCli from "@cycle/git/object-store/GitCli";
+import * as GitFilesystem from "@cycle/git/object-store/GitFilesystem";
+import * as GitInMemory from "@cycle/git/object-store/GitInMemory";
 import { Effect, FileSystem, Layer, Path } from "effect";
-import * as GitCli from "../git/GitCli.ts";
-import * as GitFilesystem from "../git/GitFilesystem.ts";
-import * as GitInMemory from "../git/GitInMemory.ts";
 import * as Store from "./Store.ts";
 
 export type Options = Store.Options;

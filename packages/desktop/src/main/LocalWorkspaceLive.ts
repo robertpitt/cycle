@@ -1,8 +1,6 @@
-import { execFile } from "node:child_process";
+import { GitRepository, type GitRepositoryServiceShape } from "@cycle/git";
 import { createHash } from "node:crypto";
-import { stat } from "node:fs/promises";
 import { basename, resolve } from "node:path";
-import { promisify } from "node:util";
 import { Effect, Layer } from "effect";
 import {
   AppConfig,
@@ -17,8 +15,6 @@ import {
   type UpsertRepositoryPathInput,
 } from "../shared/LocalWorkspace.ts";
 
-const execFileAsync = promisify(execFile);
-
 const repositoryId = (repositoryPath: string): string =>
   `repo_${createHash("sha256").update(repositoryPath).digest("hex").slice(0, 16)}`;
 
@@ -27,42 +23,36 @@ const normalizeRepositoryPath = (repositoryPath: string): string => resolve(repo
 const displayNameForPath = (repositoryPath: string): string =>
   basename(repositoryPath) === "" ? repositoryPath : basename(repositoryPath);
 
-const ensureGitRepository = (repositoryPath: string) =>
-  Effect.tryPromise({
-    try: async () => {
-      const gitEntry = await stat(resolve(repositoryPath, ".git"));
-      if (!gitEntry.isDirectory() && !gitEntry.isFile()) {
-        throw new Error(".git exists but is not a file or directory.");
-      }
-    },
-    catch: (cause) =>
-      appConfigError(
-        "LocalWorkspace.git",
-        "This project is not git initialised. Initialise it to import.",
-        cause,
+const ensureGitRepository = (gitRepository: GitRepositoryServiceShape, repositoryPath: string) =>
+  gitRepository
+    .ensure(repositoryPath)
+    .pipe(
+      Effect.mapError((cause) =>
+        appConfigError(
+          "LocalWorkspace.git",
+          "This project is not git initialised. Initialise it to import.",
+          cause,
+        ),
       ),
-  });
+    );
 
-const initializeGitRepository = (repositoryPath: string) =>
-  Effect.tryPromise({
-    try: async () => {
-      const entry = await stat(repositoryPath);
-      if (!entry.isDirectory()) {
-        throw new Error("Selected path is not a directory.");
-      }
-
-      await execFileAsync("git", ["init"], {
-        cwd: repositoryPath,
-      });
-    },
-    catch: (cause) =>
-      appConfigError("LocalWorkspace.gitInit", "Unable to initialise Git repository.", cause),
-  });
+const initializeGitRepository = (
+  gitRepository: GitRepositoryServiceShape,
+  repositoryPath: string,
+) =>
+  gitRepository
+    .init(repositoryPath)
+    .pipe(
+      Effect.mapError((cause) =>
+        appConfigError("LocalWorkspace.gitInit", "Unable to initialise Git repository.", cause),
+      ),
+    );
 
 export const LocalWorkspaceLive = Layer.effect(
   LocalWorkspace,
   Effect.gen(function* () {
     const appConfig = yield* AppConfig;
+    const gitRepository = yield* GitRepository;
 
     const listRepositories = () =>
       appConfig.read().pipe(Effect.map((config) => config.localWorkspace.repositories));
@@ -70,7 +60,7 @@ export const LocalWorkspaceLive = Layer.effect(
     const upsertRepositoryPath = (input: UpsertRepositoryPathInput) =>
       Effect.gen(function* () {
         const normalizedPath = normalizeRepositoryPath(input.path);
-        yield* ensureGitRepository(normalizedPath);
+        yield* ensureGitRepository(gitRepository, normalizedPath);
         const id = repositoryId(normalizedPath);
         const now = new Date().toISOString();
         const existing = (yield* listRepositories()).find(
@@ -113,7 +103,7 @@ export const LocalWorkspaceLive = Layer.effect(
       initializeRepositoryPath: (input: InitializeRepositoryPathInput) =>
         Effect.gen(function* () {
           const normalizedPath = normalizeRepositoryPath(input.path);
-          yield* initializeGitRepository(normalizedPath);
+          yield* initializeGitRepository(gitRepository, normalizedPath);
           return yield* upsertRepositoryPath({
             displayName: input.displayName,
             path: normalizedPath,

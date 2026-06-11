@@ -10,7 +10,7 @@ const meta = {
     },
     layout: "fullscreen",
   },
-  title: "Pages/Workspace Settings",
+  title: "Examples/Workspace Settings",
 } satisfies Meta<typeof WorkspaceSettingsPage>;
 export default meta;
 type Story = StoryObj<typeof meta>;

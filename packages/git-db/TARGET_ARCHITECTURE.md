@@ -29,18 +29,18 @@ The target design is module-first:
 
 ## Effect Package Mapping
 
-| Package concern                | Effect-backed approach                                                                                                             |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| dynamic store configuration    | `Store.make(options)` validates schema-backed options with `Path.Path` and `FileSystem.FileSystem`.                                |
+| Package concern                | Effect-backed approach                                                                                                              |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| dynamic store configuration    | `Store.make(options)` validates schema-backed options with `Path.Path` and `FileSystem.FileSystem`.                                 |
 | entity and identifier rules    | `schemas/` owns `Schema` values for store options, refs, paths, identifiers, Git objects, snapshots, collections, and sync results. |
-| Git storage boundary           | Narrow `Git` service with Git object, ref, ancestry, and transport primitives.                                                     |
-| local git command backend      | `GitCli.layer`, implemented with `ChildProcess.make` and `ChildProcessSpawner` from `effect/unstable/process`.                     |
-| direct object/ref access       | `GitFilesystem.layer`, implemented with `FileSystem`, `Path`, `Crypto`, Git object codecs, pack reads, and ref lockfile semantics. |
-| mutable transaction maps       | `HashMap` for staged mutations, with `SynchronizedRef` only if the public transaction API remains mutable.                         |
-| ad hoc object wrappers         | `Schema.Class`, `Schema.TaggedClass`, `Schema.TaggedErrorClass`, and `Data` for typed values and errors.                           |
-| repeated tree and commit reads | Scoped `Cache` instances inside high-read operations such as diff, history, and collection listing.                                |
-| hidden runtime concerns        | `FileSystem`, `Path`, `Crypto`, `Clock`, `ChildProcessSpawner`, logging, spans, and test clock remain visible Effect requirements. |
-| manual observability           | `Effect.withSpan`, `Effect.annotateLogs`, `Effect.logDebug`, and typed errors at GitDB boundaries.                                 |
+| Git storage boundary           | Narrow `Git` service with Git object, ref, ancestry, and transport primitives.                                                      |
+| local git command backend      | `GitCli.layer`, implemented with `ChildProcess.make` and `ChildProcessSpawner` from `effect/unstable/process`.                      |
+| direct object/ref access       | `GitFilesystem.layer`, implemented with `FileSystem`, `Path`, `Crypto`, Git object codecs, pack reads, and ref lockfile semantics.  |
+| mutable transaction maps       | `HashMap` for staged mutations, with `SynchronizedRef` only if the public transaction API remains mutable.                          |
+| ad hoc object wrappers         | `Schema.Class`, `Schema.TaggedClass`, `Schema.TaggedErrorClass`, and `Data` for typed values and errors.                            |
+| repeated tree and commit reads | Scoped `Cache` instances inside high-read operations such as diff, history, and collection listing.                                 |
+| hidden runtime concerns        | `FileSystem`, `Path`, `Crypto`, `Clock`, `ChildProcessSpawner`, logging, spans, and test clock remain visible Effect requirements.  |
+| manual observability           | `Effect.withSpan`, `Effect.annotateLogs`, `Effect.logDebug`, and typed errors at GitDB boundaries.                                  |
 
 `effect/unstable/persistence/KeyValueStore` is not a good core abstraction for GitDB. It models a
 mutable key/value store, while GitDB's core model is immutable snapshots, Git trees, refs, history,
@@ -576,15 +576,12 @@ Collections should be thin typed path helpers over transactions and reads.
 ```ts
 const tickets = Collection.of<Ticket>(store, "tickets");
 
-yield *
-  Collection.put(tickets, "ticket-1", ticket, {
-    indexes: { "by-status": ticket.status },
-  });
+yield * Collection.put(tickets, "ticket-1", ticket);
 
 const open =
   yield *
-  Collection.index(tickets, "by-status").pipe(
-    Effect.flatMap((index) => CollectionIndex.get(index, "open")),
+  Collection.list(tickets).pipe(
+    Effect.map((entries) => entries.filter((entry) => entry.value.status === "open")),
   );
 ```
 

@@ -5,7 +5,8 @@ const filter = (expected: string, predicate: (value: string) => boolean) =>
   Schema.makeFilter<string>((value) => predicate(value) || expected, { expected });
 
 export const isValidStorePath = (path: string): boolean =>
-  path === "" || (!path.includes("\\") && !path.includes("\0") && path.split("/").every(isValidPathSegment));
+  path === "" ||
+  (!path.includes("\\") && !path.includes("\0") && path.split("/").every(isValidPathSegment));
 
 export const StorePath = Schema.String.check(filter("a normalized store path", isValidStorePath));
 export type StorePath = typeof StorePath.Type;

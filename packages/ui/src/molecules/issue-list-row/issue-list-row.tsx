@@ -8,6 +8,7 @@ import { focusRing } from "../../lib/styles.ts";
 import { IssueMetaChip, type IssueMetaChipProps } from "../issue-meta-chip/index.ts";
 export type IssueListRowMeta = Pick<IssueMetaChipProps, "icon" | "label" | "tone">;
 export type IssueListRowProps = Omit<React.HTMLAttributes<HTMLDivElement>, "onSelect" | "title"> & {
+  readonly assigneeControl?: React.ReactNode;
   readonly assigneeImage?: string;
   readonly assigneeInitials?: string;
   readonly date?: React.ReactNode;
@@ -17,8 +18,10 @@ export type IssueListRowProps = Omit<React.HTMLAttributes<HTMLDivElement>, "onSe
   readonly meta?: readonly IssueListRowMeta[];
   readonly metaLimit?: number;
   readonly onSelect?: (id: string) => void;
+  readonly priorityControl?: React.ReactNode;
   readonly priorityTone?: StatusIndicatorProps["tone"];
   readonly selected?: boolean;
+  readonly statusControl?: React.ReactNode;
   readonly statusTone?: StatusIndicatorProps["tone"];
   readonly title: React.ReactNode;
   readonly updateCount?: React.ReactNode;
@@ -30,6 +33,7 @@ const densityClassName = {
 export const IssueListRow = React.forwardRef<HTMLDivElement, IssueListRowProps>(
   function IssueListRow(
     {
+      assigneeControl,
       assigneeImage,
       assigneeInitials,
       className,
@@ -42,8 +46,10 @@ export const IssueListRow = React.forwardRef<HTMLDivElement, IssueListRowProps>(
       onClick,
       onKeyDown,
       onSelect,
+      priorityControl,
       priorityTone = "neutral",
       selected = false,
+      statusControl,
       statusTone = "success",
       title,
       updateCount,
@@ -66,7 +72,7 @@ export const IssueListRow = React.forwardRef<HTMLDivElement, IssueListRowProps>(
         aria-disabled={disabled ? true : undefined}
         aria-selected={selected || undefined}
         className={cn(
-          "grid grid-cols-[28px_86px_minmax(220px,1fr)_minmax(260px,0.9fr)_68px_40px] items-center gap-3 border-b border-border px-7 text-sm last:border-b-0 hover:bg-subtle/45",
+          "grid grid-cols-[28px_86px_28px_minmax(220px,1fr)_minmax(180px,0.75fr)_68px_40px] items-center gap-2 border-b border-border px-5 text-sm last:border-b-0 hover:bg-subtle/45",
           densityClassName[density],
           isInteractive && focusRing,
           selected && "bg-subtle/70",
@@ -95,12 +101,20 @@ export const IssueListRow = React.forwardRef<HTMLDivElement, IssueListRowProps>(
         role={props.role ?? (isInteractive ? "button" : undefined)}
         tabIndex={props.tabIndex ?? (isInteractive && !disabled ? 0 : undefined)}
       >
-        <StatusIndicator label="Priority" shape="bar" tone={priorityTone} />
-        <span className="font-medium text-muted-foreground">{id}</span>
-        <div className="flex min-w-0 items-center gap-3">
-          <StatusIndicator label="Issue status" shape="ring" tone={statusTone} />
-          <span className="truncate font-semibold text-foreground">{title}</span>
-        </div>
+        <span className="grid size-7 place-items-center justify-self-start">
+          {priorityControl ?? (
+            <StatusIndicator label="Priority" shape="bar" tone={priorityTone} />
+          )}
+        </span>
+        <span className="min-w-0 truncate font-medium text-muted-foreground" title={id}>
+          {id}
+        </span>
+        <span className="grid size-7 place-items-center justify-self-start">
+          {statusControl ?? (
+            <StatusIndicator label="Issue status" shape="ring" tone={statusTone} />
+          )}
+        </span>
+        <span className="min-w-0 truncate font-semibold text-foreground">{title}</span>
         <div className="flex min-w-0 items-center justify-end gap-1.5 overflow-hidden">
           {visibleMeta.map((item, index) => (
             <IssueMetaChip
@@ -123,10 +137,14 @@ export const IssueListRow = React.forwardRef<HTMLDivElement, IssueListRowProps>(
           ) : null}
         </div>
         <span className="justify-self-end text-muted-foreground">{date}</span>
-        <Avatar className="size-6 justify-self-end">
-          {assigneeImage ? <AvatarImage alt="" src={assigneeImage} /> : null}
-          <AvatarFallback className="text-[10px]">{assigneeInitials ?? ""}</AvatarFallback>
-        </Avatar>
+        <span className="grid size-7 place-items-center justify-self-end">
+          {assigneeControl ?? (
+            <Avatar className="size-6">
+              {assigneeImage ? <AvatarImage alt="" src={assigneeImage} /> : null}
+              <AvatarFallback className="text-[10px]">{assigneeInitials ?? ""}</AvatarFallback>
+            </Avatar>
+          )}
+        </span>
       </div>
     );
   },

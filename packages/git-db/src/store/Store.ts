@@ -11,22 +11,32 @@ import {
   Schema,
   TxRef,
 } from "effect";
-import { Git, type GitService } from "../git/Git.ts";
+import { Git, type GitService } from "@cycle/git/object-store/Git";
+import type { GitAdapterError, RemoteFetchError, RemotePushError } from "@cycle/git/errors";
+import type {
+  CommitObject,
+  DeleteRefInput,
+  FetchInput,
+  ObjectId,
+  PushInput,
+  Ref as GitRef,
+  TreeEntry,
+  UpdateRefInput,
+  WriteCommitInput,
+} from "@cycle/git/schemas";
 import { Document, parseDocumentJson } from "./Document.ts";
 import { encodeValue } from "./Json.ts";
 import * as Tree from "./Tree.ts";
 import {
   invalidIdentifier,
+  invalidJsonDocument,
   pointerConflict,
   pointerNotFound,
   snapshotNotFound,
   storeNotFound,
   syncConflict,
   transactionInactive,
-  type GitAdapterError,
   type GitDbError,
-  type RemoteFetchError,
-  type RemotePushError,
 } from "../errors/index.ts";
 import { Options as OptionsSchema, Store, type Options as StoreOptions } from "../schemas/Store.ts";
 import {
@@ -34,7 +44,6 @@ import {
   collectionRootPath,
   documentPath,
   idFromDocumentPath,
-  indexEntryPath,
   isPotentialObjectId,
   isValidPointerName,
   joinStorePath,
@@ -43,8 +52,6 @@ import {
   rejectEmptyMutationPath,
   validateCollectionName,
   validateDatabaseName,
-  validateIndexKey,
-  validateIndexName,
   validatePointerName,
   validateRemoteName,
 } from "./Path.ts";
@@ -57,24 +64,15 @@ import type {
   CollectionOptions,
   CollectionPage,
   CollectionPageOptions,
-  CommitObject,
   CommitOptions,
-  DeleteRefInput,
   Entry,
-  FetchInput,
   HistoryOptions,
   MovePointerOptions,
-  ObjectId,
   PointerSyncResult,
-  PushInput,
   ReadOptions,
-  Ref as GitRef,
   Snapshot,
   SyncOptions,
   SyncResult,
-  TreeEntry,
-  UpdateRefInput,
-  WriteCommitInput,
 } from "../domain/index.ts";
 import { ShardLength } from "../schemas/Identifier.ts";
 
@@ -180,9 +178,6 @@ export type StoreCollection<T = unknown> = {
     options?: ReadOptions,
   ) => Effect.Effect<Document | null, GitDbError>;
   readonly get: (id: string, options?: ReadOptions) => Effect.Effect<T | null, GitDbError>;
-  readonly index: <TValue = T>(
-    name: string,
-  ) => Effect.Effect<StoreCollectionIndex<TValue>, GitDbError>;
   readonly list: (
     options?: CollectionListOptions,
   ) => Effect.Effect<ReadonlyArray<CollectionEntry<T>>, GitDbError>;
@@ -206,30 +201,11 @@ export type StoreCollection<T = unknown> = {
 export type TransactionCollection<T = unknown> = {
   readonly delete: (id: string) => Effect.Effect<void, GitDbError>;
   readonly get: (id: string) => Effect.Effect<T | null, GitDbError>;
-  readonly index: (name: string) => Effect.Effect<TransactionCollectionIndex, GitDbError>;
   readonly meta: <TMeta = unknown>() => Effect.Effect<TMeta | null, GitDbError>;
   readonly name: string;
   readonly path: string;
   readonly put: (id: string, value: T) => Effect.Effect<void, GitDbError>;
   readonly setMeta: <TMeta = unknown>(meta: TMeta) => Effect.Effect<void, GitDbError>;
-};
-
-export type StoreCollectionIndex<T = unknown> = {
-  readonly get: (
-    key: string,
-    options?: ReadOptions,
-  ) => Effect.Effect<ReadonlyArray<CollectionEntry<T>>, GitDbError>;
-  readonly name: string;
-  readonly page: (
-    key: string,
-    options?: CollectionPageOptions,
-  ) => Effect.Effect<CollectionPage<T>, GitDbError>;
-};
-
-export type TransactionCollectionIndex = {
-  readonly delete: (key: string, id: string) => Effect.Effect<void, GitDbError>;
-  readonly name: string;
-  readonly put: (key: string, id: string, value?: object) => Effect.Effect<void, GitDbError>;
 };
 
 export class StoreService extends Context.Service<StoreService, StoreServiceShape>()(
@@ -249,6 +225,7 @@ type StoreRuntime = {
     collection: string,
     id: string,
     shardLength?: number,
+    extension?: string,
   ) => Effect.Effect<string, GitDbError>;
 };
 
@@ -260,12 +237,11 @@ type StoreRuntimeCache = {
 };
 
 type NormalizedCollectionOptions = {
-  readonly indexes: ReadonlyArray<string>;
-};
-
-type DerivedIndexEntry = {
-  readonly key: string;
-  readonly name: string;
+  readonly codec: {
+    readonly decode: <T>(document: Document) => Effect.Effect<T, GitDbError>;
+    readonly encode: (value: unknown) => Effect.Effect<Uint8Array, GitDbError>;
+  };
+  readonly extension: string;
 };
 
 const defaultCollectionPageLimit = 100;
@@ -343,8 +319,10 @@ export const live = Layer.effect(
 
 const makeDocumentPath =
   (config: Store, crypto: Crypto.Crypto) =>
-  (collection: string, id: string, shardLength = config.shardLength) =>
-    documentPath(collection, id, shardLength).pipe(Effect.provideService(Crypto.Crypto, crypto));
+  (collection: string, id: string, shardLength = config.shardLength, extension = "json") =>
+    documentPath(collection, id, shardLength, extension).pipe(
+      Effect.provideService(Crypto.Crypto, crypto),
+    );
 
 const bindGitAdapter = (git: GitService, config: Store): StoreGit => ({
   deleteRef: (input) => git.deleteRef(config, input),
@@ -379,9 +357,9 @@ const makeStoreRuntimeCache = (
     const trees = yield* Cache.make<ObjectId, ReadonlyArray<TreeEntry>, GitAdapterError>({
       capacity: 8192,
       lookup: (id) =>
-        adapter.readTree(id).pipe(
-          Effect.map((entries) => [...entries].sort((a, b) => a.name.localeCompare(b.name))),
-        ),
+        adapter
+          .readTree(id)
+          .pipe(Effect.map((entries) => [...entries].sort((a, b) => a.name.localeCompare(b.name)))),
     });
 
     return {
@@ -879,31 +857,35 @@ const makeStoreCollection = <T>(
   delete: (id, options = {}) =>
     Effect.gen(function* () {
       const tx = yield* store.begin(options.pointer ?? store.config.defaultPointer);
-      const collection = yield* tx.collection<T>(name, collectionOptions as CollectionOptions<T>);
+      const collection = makeTransactionCollection<T>(tx, runtime, name, path, collectionOptions);
 
       yield* collection.delete(id);
 
       return yield* tx.commit(options);
     }),
   document: (id, options: ReadOptions = {}) =>
-    runtime.documentPath(name, id).pipe(Effect.flatMap((path) => store.get(path, options))),
+    runtime
+      .documentPath(name, id, undefined, collectionOptions.extension)
+      .pipe(Effect.flatMap((path) => store.get(path, options))),
   get: (id, options: ReadOptions = {}) =>
     Effect.gen(function* () {
       const document = yield* runtime
-        .documentPath(name, id)
+        .documentPath(name, id, undefined, collectionOptions.extension)
         .pipe(Effect.flatMap((documentPath) => store.get(documentPath, options)));
 
-      return document === null ? null : yield* parseDocumentJson<T>(document);
+      return document === null ? null : yield* collectionOptions.codec.decode<T>(document);
     }),
-  index: <TValue = T>(indexName: string) =>
-    validateIndexName(indexName).pipe(
-      Effect.map((validName) => makeStoreCollectionIndex<TValue>(store, name, validName)),
-    ),
   list: (options: CollectionListOptions = {}) =>
     Effect.gen(function* () {
-      const entries = yield* collectionDocumentEntries(store, runtime, path, options);
+      const entries = yield* collectionDocumentEntries(
+        store,
+        runtime,
+        path,
+        collectionOptions.extension,
+        options,
+      );
 
-      return yield* readCollectionEntries<T>(store, entries, options);
+      return yield* readCollectionEntries<T>(store, entries, collectionOptions, options);
     }),
   meta: <TMeta = unknown>(options: ReadOptions = {}) =>
     Effect.gen(function* () {
@@ -915,15 +897,27 @@ const makeStoreCollection = <T>(
   name,
   page: (options: CollectionPageOptions = {}) =>
     Effect.gen(function* () {
-      const entries = yield* collectionDocumentEntries(store, runtime, path, options);
+      const entries = yield* collectionDocumentEntries(
+        store,
+        runtime,
+        path,
+        collectionOptions.extension,
+        options,
+      );
 
-      return yield* pageCollectionEntries<T>(store, entries, options, defaultCollectionPageLimit);
+      return yield* pageCollectionEntries<T>(
+        store,
+        entries,
+        collectionOptions,
+        options,
+        defaultCollectionPageLimit,
+      );
     }),
   path,
   put: (id, value, options: CommitOptions = {}) =>
     Effect.gen(function* () {
       const tx = yield* store.begin(options.pointer ?? store.config.defaultPointer);
-      const collection = yield* tx.collection<T>(name, collectionOptions as CollectionOptions<T>);
+      const collection = makeTransactionCollection<T>(tx, runtime, name, path, collectionOptions);
 
       yield* collection.put(id, value);
 
@@ -932,7 +926,7 @@ const makeStoreCollection = <T>(
   setMeta: <TMeta = unknown>(meta: TMeta, options: CommitOptions = {}) =>
     Effect.gen(function* () {
       const tx = yield* store.begin(options.pointer ?? store.config.defaultPointer);
-      const collection = yield* tx.collection<T>(name, collectionOptions as CollectionOptions<T>);
+      const collection = makeTransactionCollection<T>(tx, runtime, name, path, collectionOptions);
 
       yield* collection.setMeta(meta);
 
@@ -950,25 +944,27 @@ const makeTransactionCollection = <T>(
   const collection: TransactionCollection<T> = {
     delete: (id) =>
       Effect.gen(function* () {
-        const targetPath = yield* runtime.documentPath(name, id);
-        const previous = yield* collection.get(id);
-        const previousEntries =
-          previous === null ? [] : yield* deriveIndexEntries(collectionOptions, previous);
+        const targetPath = yield* runtime.documentPath(
+          name,
+          id,
+          undefined,
+          collectionOptions.extension,
+        );
 
-        yield* deleteDerivedIndexEntries(collection, id, previousEntries);
         yield* tx.delete(targetPath);
       }),
     get: (id) =>
       Effect.gen(function* () {
-        const targetPath = yield* runtime.documentPath(name, id);
+        const targetPath = yield* runtime.documentPath(
+          name,
+          id,
+          undefined,
+          collectionOptions.extension,
+        );
         const document = yield* tx.get(targetPath);
 
-        return document === null ? null : yield* parseDocumentJson<T>(document);
+        return document === null ? null : yield* collectionOptions.codec.decode<T>(document);
       }),
-    index: (indexName) =>
-      validateIndexName(indexName).pipe(
-        Effect.map((validName) => makeTransactionCollectionIndex(tx, runtime, name, validName)),
-      ),
     meta: <TMeta = unknown>() =>
       Effect.gen(function* () {
         const metaPath = yield* collectionMetaPath(name);
@@ -980,15 +976,14 @@ const makeTransactionCollection = <T>(
     path,
     put: (id, value) =>
       Effect.gen(function* () {
-        const targetPath = yield* runtime.documentPath(name, id);
-        const previous = yield* collection.get(id);
-        const previousEntries =
-          previous === null ? [] : yield* deriveIndexEntries(collectionOptions, previous);
-        const nextEntries = yield* deriveIndexEntries(collectionOptions, value);
+        const targetPath = yield* runtime.documentPath(
+          name,
+          id,
+          undefined,
+          collectionOptions.extension,
+        );
 
-        yield* deleteDerivedIndexEntries(collection, id, previousEntries);
-        yield* tx.put(targetPath, value);
-        yield* putDerivedIndexEntries(collection, id, targetPath, nextEntries);
+        yield* tx.put(targetPath, yield* collectionOptions.codec.encode(value));
       }),
     setMeta: <TMeta = unknown>(meta: TMeta) =>
       Effect.gen(function* () {
@@ -1000,63 +995,6 @@ const makeTransactionCollection = <T>(
 
   return collection;
 };
-
-const makeStoreCollectionIndex = <T>(
-  store: StoreServiceShape,
-  collection: string,
-  name: string,
-): StoreCollectionIndex<T> => ({
-  get: (key, options: ReadOptions = {}) =>
-    Effect.gen(function* () {
-      const indexKey = yield* validateIndexKey(key);
-      const root = joinStorePath("indexes", collection, name, indexKey);
-      const entries = yield* store.list(root, options);
-
-      return yield* readIndexEntries<T>(
-        store,
-        entries.filter((item) => item.type === "blob").sort(compareEntriesByPath),
-        options,
-      );
-    }),
-  name,
-  page: (key, options: CollectionPageOptions = {}) =>
-    Effect.gen(function* () {
-      const indexKey = yield* validateIndexKey(key);
-      const root = joinStorePath("indexes", collection, name, indexKey);
-      const entries = yield* store.list(root, options);
-
-      return yield* pageIndexEntries<T>(
-        store,
-        entries.filter((item) => item.type === "blob").sort(compareEntriesByPath),
-        options,
-        defaultCollectionPageLimit,
-      );
-    }),
-});
-
-const makeTransactionCollectionIndex = (
-  tx: Transaction,
-  runtime: StoreRuntime,
-  collection: string,
-  name: string,
-): TransactionCollectionIndex => ({
-  delete: (key, id) =>
-    indexEntryPath(collection, name, String(key), id).pipe(
-      Effect.flatMap((path) => tx.delete(path)),
-    ),
-  name,
-  put: (key, id, value) =>
-    Effect.gen(function* () {
-      const path = yield* indexEntryPath(collection, name, String(key), id);
-      const pointer = value ?? {
-        collection,
-        id,
-        path: yield* runtime.documentPath(collection, id),
-      };
-
-      yield* tx.put(path, pointer);
-    }),
-});
 
 const sync = (
   store: StoreServiceShape,
@@ -1475,11 +1413,14 @@ const collectionDocumentEntries = (
   store: StoreServiceShape,
   runtime: StoreRuntime,
   path: string,
+  extension: string,
   options: ReadOptions,
 ): Effect.Effect<ReadonlyArray<Entry>, GitDbError> =>
   walkStore(store, runtime, path, options).pipe(
     Effect.map((entries) =>
-      entries.filter((entry) => idFromDocumentPath(entry.path) !== null).sort(compareEntriesByPath),
+      entries
+        .filter((entry) => idFromDocumentPath(entry.path, extension) !== null)
+        .sort(compareEntriesByPath),
     ),
   );
 
@@ -1499,13 +1440,14 @@ const decodeStructureCacheKey = (
 const readCollectionEntries = <T>(
   store: StoreServiceShape,
   entries: ReadonlyArray<Entry>,
+  collectionOptions: NormalizedCollectionOptions,
   options: ReadOptions,
 ): Effect.Effect<ReadonlyArray<CollectionEntry<T>>, GitDbError> =>
   Effect.gen(function* () {
     const output: Array<CollectionEntry<T>> = [];
 
     for (const entry of entries) {
-      const id = idFromDocumentPath(entry.path);
+      const id = idFromDocumentPath(entry.path, collectionOptions.extension);
 
       if (id === null) continue;
 
@@ -1516,7 +1458,7 @@ const readCollectionEntries = <T>(
           document,
           id,
           path: entry.path,
-          value: yield* parseDocumentJson<T>(document),
+          value: yield* collectionOptions.codec.decode<T>(document),
         });
       }
     }
@@ -1527,60 +1469,19 @@ const readCollectionEntries = <T>(
 const pageCollectionEntries = <T>(
   store: StoreServiceShape,
   entries: ReadonlyArray<Entry>,
+  collectionOptions: NormalizedCollectionOptions,
   options: CollectionPageOptions,
   defaultLimit: number,
 ): Effect.Effect<CollectionPage<T>, GitDbError> =>
   Effect.gen(function* () {
     const limit = yield* normalizePageLimit(options.limit, defaultLimit);
     const selected = pageEntries(entries, options.cursor, limit);
-    const hydrated = yield* readCollectionEntries<T>(store, selected.entries, options);
-
-    return {
-      entries: hydrated,
-      nextCursor: selected.nextCursor,
-    };
-  });
-
-const readIndexEntries = <T>(
-  store: StoreServiceShape,
-  entries: ReadonlyArray<Entry>,
-  options: ReadOptions,
-): Effect.Effect<ReadonlyArray<CollectionEntry<T>>, GitDbError> =>
-  Effect.gen(function* () {
-    const output: Array<CollectionEntry<T>> = [];
-
-    for (const entry of entries) {
-      const pointerDocument = yield* store.get(entry.path, options);
-      const pointer = pointerDocument
-        ? yield* parseDocumentJson<{ readonly id?: string; readonly path?: string }>(
-            pointerDocument,
-          )
-        : undefined;
-      const target = pointer?.path ? yield* store.get(pointer.path, options) : null;
-
-      if (target !== null && pointer?.id !== undefined && pointer.path !== undefined) {
-        output.push({
-          document: target,
-          id: pointer.id,
-          path: pointer.path,
-          value: yield* parseDocumentJson<T>(target),
-        });
-      }
-    }
-
-    return output;
-  });
-
-const pageIndexEntries = <T>(
-  store: StoreServiceShape,
-  entries: ReadonlyArray<Entry>,
-  options: CollectionPageOptions,
-  defaultLimit: number,
-): Effect.Effect<CollectionPage<T>, GitDbError> =>
-  Effect.gen(function* () {
-    const limit = yield* normalizePageLimit(options.limit, defaultLimit);
-    const selected = pageEntries(entries, options.cursor, limit);
-    const hydrated = yield* readIndexEntries<T>(store, selected.entries, options);
+    const hydrated = yield* readCollectionEntries<T>(
+      store,
+      selected.entries,
+      collectionOptions,
+      options,
+    );
 
     return {
       entries: hydrated,
@@ -1636,80 +1537,45 @@ const normalizeCollectionOptions = <T>(
   options: CollectionOptions<T> = {},
 ): Effect.Effect<NormalizedCollectionOptions, GitDbError> =>
   Effect.gen(function* () {
-    const indexes = yield* Effect.forEach(options.indexes ?? [], validateIndexName);
+    const extension = options.extension ?? "json";
 
-    return { indexes: [...new Set(indexes)] };
-  });
-
-const deriveIndexEntries = (
-  options: NormalizedCollectionOptions,
-  value: unknown,
-): Effect.Effect<ReadonlyArray<DerivedIndexEntry>, GitDbError> =>
-  Effect.gen(function* () {
-    if (options.indexes.length === 0 || value === null || typeof value !== "object") {
-      return [];
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/u.test(extension)) {
+      return yield* Effect.fail(invalidIdentifier("document extension", extension));
     }
 
-    const record = value as Record<string, unknown>;
-    const entries: Array<DerivedIndexEntry> = [];
-
-    for (const name of options.indexes) {
-      const rawValue = record[name];
-
-      if (rawValue === undefined) continue;
-
-      const values = Array.isArray(rawValue) ? rawValue : [rawValue];
-
-      for (const item of values) {
-        const key = yield* indexKeyFromValue(name, item);
-
-        entries.push({ key, name });
-      }
-    }
-
-    return entries;
+    return {
+      codec: normalizeCollectionCodec(options),
+      extension,
+    };
   });
 
-const indexKeyFromValue = (name: string, value: unknown): Effect.Effect<string, GitDbError> => {
-  if (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    value === null
-  ) {
-    return validateIndexKey(String(value));
+const normalizeCollectionCodec = <T>(
+  options: CollectionOptions<T>,
+): NormalizedCollectionOptions["codec"] => {
+  if (options.codec === undefined) {
+    return {
+      decode: <A>(document: Document) => parseDocumentJson<A>(document),
+      encode: (value: unknown) => encodeValue(value),
+    };
   }
 
-  return Effect.fail(invalidIdentifier(`index value for ${name}`, String(value)));
+  return {
+    decode: <A>(document: Document) =>
+      Effect.try({
+        catch: (cause) =>
+          invalidJsonDocument(`Invalid document at ${document.path}`, {
+            cause,
+            path: document.path,
+          }),
+        try: () => options.codec!.decode(document) as unknown as A,
+      }),
+    encode: (value: unknown) =>
+      Effect.try({
+        catch: (cause) =>
+          invalidJsonDocument(cause instanceof Error ? cause.message : "Cannot encode document", {
+            cause,
+          }),
+        try: () => options.codec!.encode(value as T),
+      }).pipe(Effect.flatMap(encodeValue)),
+  };
 };
-
-const putDerivedIndexEntries = <T>(
-  collection: TransactionCollection<T>,
-  id: string,
-  targetPath: string,
-  entries: ReadonlyArray<DerivedIndexEntry>,
-): Effect.Effect<void, GitDbError> =>
-  Effect.gen(function* () {
-    for (const entry of entries) {
-      const index = yield* collection.index(entry.name);
-
-      yield* index.put(entry.key, id, {
-        collection: collection.name,
-        id,
-        path: targetPath,
-      });
-    }
-  });
-
-const deleteDerivedIndexEntries = <T>(
-  collection: TransactionCollection<T>,
-  id: string,
-  entries: ReadonlyArray<DerivedIndexEntry>,
-): Effect.Effect<void, GitDbError> =>
-  Effect.gen(function* () {
-    for (const entry of entries) {
-      const index = yield* collection.index(entry.name);
-
-      yield* index.delete(entry.key, id);
-    }
-  });

@@ -1,15 +1,19 @@
+import { TicketRpcService } from "@cycle/rpc/server";
 import { dialog, ipcMain, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron";
 import { Effect } from "effect";
 import {
   completeOnboardingChannel,
   detectAgentProvidersChannel,
   getAppConfigChannel,
+  getBackendLogPathChannel,
+  getBootstrapStatusChannel,
   isCompleteOnboardingInput,
   isInitializeRepositoryPathInput,
   isOpenExternalRequest,
   isProfileUpdateInput,
   isRemoveRepositoryRequest,
   isSetThemePreferenceRequest,
+  isTicketRpcBridgeRequest,
   isUpdateRepositoryPreferencesInput,
   isUpsertRepositoryPathInput,
   initializeRepositoryPathChannel,
@@ -18,16 +22,19 @@ import {
   removeRepositoryChannel,
   selectRepositoryFolderChannel,
   setThemePreferenceChannel,
+  ticketRpcChannel,
   updateRepositoryPreferencesChannel,
   updateProfileChannel,
   upsertRepositoryPathChannel,
   type OpenExternalRequest,
+  type TicketRpcBridgeRequest,
 } from "../ipc/index.ts";
 import { electronSecurityError, type ElectronError } from "../platform/ElectronError.ts";
 import { ElectronShell } from "../platform/ElectronShell.ts";
 import { AppConfigError } from "../shared/AppConfig.ts";
 import { AgentProviderDetector } from "../shared/AgentProviders.ts";
-import { AppConfig, type ThemePreference } from "../shared/AppConfig.ts";
+import { AppConfig, type RepositoryRecord, type ThemePreference } from "../shared/AppConfig.ts";
+import { DesktopBootstrap } from "../shared/Bootstrap.ts";
 import {
   LocalWorkspace,
   type InitializeRepositoryPathInput,
@@ -42,6 +49,7 @@ import {
   type ProfileUpdateInput,
 } from "../shared/Profile.ts";
 import { currentDesktopWindow } from "./DesktopWindowLive.ts";
+import { DesktopLogger } from "./DesktopLoggerLive.ts";
 
 type SetThemePreferenceRequest = {
   readonly preference: ThemePreference;
@@ -50,6 +58,9 @@ type SetThemePreferenceRequest = {
 type RemoveRepositoryRequest = {
   readonly id: string;
 };
+
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const validateInvokeSender = (
   event: IpcMainInvokeEvent,
@@ -185,6 +196,31 @@ const decodeEmptyRequest = (value: unknown): Effect.Effect<void, ElectronError> 
     ? Effect.void
     : Effect.fail(electronSecurityError("ipc.request", "Expected empty renderer request."));
 
+const decodeTicketRpcRequest = (
+  value: unknown,
+): Effect.Effect<TicketRpcBridgeRequest, ElectronError> =>
+  isTicketRpcBridgeRequest(value)
+    ? Effect.succeed(value)
+    : Effect.fail(electronSecurityError("ipc.ticketRpc", "Expected ticket RPC request envelope."));
+
+const ticketRpcRepositoryId = (request: TicketRpcBridgeRequest) =>
+  Effect.gen(function* () {
+    const payload = request.payload;
+    const repository = isRecord(payload) ? payload.repository : undefined;
+    const repositoryId = isRecord(repository) ? repository.id : undefined;
+
+    if (typeof repositoryId === "string" && repositoryId.length > 0) {
+      return repositoryId;
+    }
+
+    return yield* Effect.fail(
+      electronSecurityError(
+        "ipc.ticketRpc.repository",
+        "Expected ticket RPC payload to include repository.id.",
+      ),
+    );
+  });
+
 const selectRepositoryFolder = (
   localWorkspace: LocalWorkspaceService,
 ): Effect.Effect<SelectRepositoryFolderResult, ElectronError | AppConfigError> =>
@@ -260,14 +296,21 @@ const registerIpcHandler = <A, B>(
 export const registerDesktopIpc = Effect.fnUntraced(function* () {
   const shell = yield* ElectronShell;
   const appConfig = yield* AppConfig;
+  const bootstrap = yield* DesktopBootstrap;
+  const logger = yield* DesktopLogger;
   const profile = yield* Profile;
   const localWorkspace = yield* LocalWorkspace;
   const agentProviderDetector = yield* AgentProviderDetector;
+  const ticketRpc = yield* TicketRpcService;
 
   yield* registerIpcHandler(openExternalChannel, decodeOpenExternalRequest, (request) =>
     shell.openExternal(request.targetUrl),
   );
   yield* registerIpcHandler(getAppConfigChannel, decodeEmptyRequest, () => appConfig.read());
+  yield* registerIpcHandler(getBackendLogPathChannel, decodeEmptyRequest, () => logger.path);
+  yield* registerIpcHandler(getBootstrapStatusChannel, decodeEmptyRequest, () =>
+    bootstrap.status(),
+  );
   yield* registerIpcHandler(updateProfileChannel, decodeProfileUpdateInput, (request) =>
     profile.updateProfile(request),
   );
@@ -303,5 +346,39 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
   );
   yield* registerIpcHandler(detectAgentProvidersChannel, decodeEmptyRequest, () =>
     agentProviderDetector.detect(),
+  );
+  yield* registerIpcHandler(ticketRpcChannel, decodeTicketRpcRequest, (request) =>
+    Effect.gen(function* () {
+      if (request.method === "repository.status.list") {
+        return yield* ticketRpc.handle(request);
+      }
+
+      const repositoryId = yield* ticketRpcRepositoryId(request);
+      const config = yield* appConfig.read();
+      const repository = config.localWorkspace.repositories.find(
+        (candidate) => candidate.id === repositoryId,
+      );
+
+      if (!repository) {
+        return yield* Effect.fail(
+          electronSecurityError(
+            "ipc.ticketRpc.repository",
+            `Repository is not registered: ${repositoryId}`,
+          ),
+        );
+      }
+
+      yield* bootstrap.ensureRepositoryOpened(repository.id);
+
+      if (request.method === "repository.push") {
+        return {
+          id: request.id,
+          ok: true as const,
+          value: yield* bootstrap.pushRepositoryToRemote(repository.id),
+        };
+      }
+
+      return yield* ticketRpc.handle(request);
+    }),
   );
 });

@@ -1,0 +1,12 @@
+export * from "./errors/index.ts";
+export * from "./schemas/index.ts";
+export * as GitCommand from "./command/GitCommand.ts";
+export * as Git from "./object-store/Git.ts";
+export * as GitCli from "./object-store/GitCli.ts";
+export * as GitFilesystem from "./object-store/GitFilesystem.ts";
+export * as GitInMemory from "./object-store/GitInMemory.ts";
+export * as GitObjectCodec from "./object-store/GitObjectCodec.ts";
+export * as GitPack from "./object-store/GitPack.ts";
+export * as GitRepositoryLive from "./repository/GitRepositoryLive.ts";
+export { Git as GitService } from "./object-store/Git.ts";
+export { GitRepository, type GitRepositoryServiceShape } from "./repository/GitRepository.ts";

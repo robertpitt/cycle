@@ -2,11 +2,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { Effect } from "effect";
-import {
-  GitDbFilesystem,
-  GitDbLive,
-  Store,
-} from "../src/index.ts";
+import { GitDbFilesystem, GitDbLive, Store } from "../src/index.ts";
 import type { StoreCollection, StoreServiceShape } from "../src/store/Store.ts";
 
 type Backend = "cli" | "filesystem";
@@ -90,13 +86,6 @@ const gitString = (args: ReadonlyArray<string>): string =>
 const documentPath = (collection: string, id: string): string =>
   `collections/${collection}/${createHash("sha1").update(id).digest("hex").slice(0, 2)}/${id}.json`;
 
-const indexEntryPath = (
-  collection: string,
-  index: string,
-  key: string,
-  id: string,
-): string => `indexes/${collection}/${index}/${key}/${id}`;
-
 const issueId = (index: number): string => `issue-${String(index).padStart(6, "0")}`;
 
 const issueAt = (index: number): Issue => ({
@@ -109,9 +98,7 @@ const issueAt = (index: number): Issue => ({
   updatedAt: new Date(Date.UTC(2026, 0, 1, 12, 0, index % 60)).toISOString(),
 });
 
-const timeEffect = <A, E, R>(
-  effect: Effect.Effect<A, E, R>,
-): Effect.Effect<Timed<A>, E, R> =>
+const timeEffect = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<Timed<A>, E, R> =>
   Effect.gen(function* () {
     const started = performance.now();
     const result = yield* effect;
@@ -127,14 +114,22 @@ const logPhase = (message: string): void => {
 };
 
 const collectPages = <T, E, R>(
-  page: (cursor: string | undefined) => Effect.Effect<{
-    readonly entries: ReadonlyArray<T>;
-    readonly nextCursor?: string;
-  }, E, R>,
-): Effect.Effect<{
-  readonly pages: number;
-  readonly rows: number;
-}, E, R> =>
+  page: (cursor: string | undefined) => Effect.Effect<
+    {
+      readonly entries: ReadonlyArray<T>;
+      readonly nextCursor?: string;
+    },
+    E,
+    R
+  >,
+): Effect.Effect<
+  {
+    readonly pages: number;
+    readonly rows: number;
+  },
+  E,
+  R
+> =>
   Effect.gen(function* () {
     let cursor: string | undefined;
     let pages = 0;
@@ -164,7 +159,7 @@ const seed = (store: StoreServiceShape, options: Options) =>
     let writes = 0;
     const reportEvery = Math.max(1000, Math.floor(options.count / 10));
 
-    logPhase(`staging ${options.count} issues and ${options.count * 3} index entries`);
+    logPhase(`staging ${options.count} issues`);
 
     for (let index = 0; index < options.count; index += 1) {
       const id = issueId(index);
@@ -173,15 +168,6 @@ const seed = (store: StoreServiceShape, options: Options) =>
 
       yield* tx.put(path, value);
       writes += 1;
-
-      for (const field of ["status", "assignee", "project"] as const) {
-        yield* tx.put(indexEntryPath("issues", field, value[field], id), {
-          collection: "issues",
-          id,
-          path,
-        });
-        writes += 1;
-      }
 
       if ((index + 1) % reportEvery === 0 || index + 1 === options.count) {
         logPhase(`staged ${index + 1}/${options.count} issues`);
@@ -203,52 +189,27 @@ const seed = (store: StoreServiceShape, options: Options) =>
 const benchmark = (store: StoreServiceShape, options: Options) =>
   Effect.gen(function* () {
     const issues = yield* store.collection<Issue>("issues");
-    const byStatus = yield* issues.index("status");
-    const openStatus = "open";
 
     logPhase("benchmarking cold first collection page");
 
     const coldFirstPage: Timed<ReadonlyArray<string>> = yield* timeEffect(
-      issues.page({ limit: options.pageSize }).pipe(
-        Effect.map((page) => page.entries.map((entry) => entry.id)),
-      ),
+      issues
+        .page({ limit: options.pageSize })
+        .pipe(Effect.map((page) => page.entries.map((entry) => entry.id))),
     );
 
     logPhase("benchmarking warm first collection page");
 
     const warmFirstPage: Timed<ReadonlyArray<string>> = yield* timeEffect(
-      issues.page({ limit: options.pageSize }).pipe(
-        Effect.map((page) => page.entries.map((entry) => entry.id)),
-      ),
+      issues
+        .page({ limit: options.pageSize })
+        .pipe(Effect.map((page) => page.entries.map((entry) => entry.id))),
     );
 
     logPhase("benchmarking cached collection page navigation");
 
-    const pageNavigation: Timed<{ readonly pages: number; readonly rows: number }> = yield* timeEffect(
-      collectPages((cursor) => issues.page({ cursor, limit: options.pageSize })),
-    );
-
-    logPhase("benchmarking cold first status index page");
-
-    const coldIndexPage: Timed<ReadonlyArray<string>> = yield* timeEffect(
-      byStatus.page(openStatus, { limit: options.pageSize }).pipe(
-        Effect.map((page) => page.entries.map((entry) => entry.id)),
-      ),
-    );
-
-    logPhase("benchmarking warm first status index page");
-
-    const warmIndexPage: Timed<ReadonlyArray<string>> = yield* timeEffect(
-      byStatus.page(openStatus, { limit: options.pageSize }).pipe(
-        Effect.map((page) => page.entries.map((entry) => entry.id)),
-      ),
-    );
-
-    logPhase("benchmarking cached status index navigation");
-
-    const indexNavigation: Timed<{ readonly pages: number; readonly rows: number }> = yield* timeEffect(
-      collectPages((cursor) => byStatus.page(openStatus, { cursor, limit: options.pageSize })),
-    );
+    const pageNavigation: Timed<{ readonly pages: number; readonly rows: number }> =
+      yield* timeEffect(collectPages((cursor) => issues.page({ cursor, limit: options.pageSize })));
 
     logPhase("benchmarking sample point reads");
 
@@ -264,13 +225,10 @@ const benchmark = (store: StoreServiceShape, options: Options) =>
 
     return {
       coldFirstPage,
-      coldIndexPage,
       fullCollectionList,
-      indexNavigation,
       pageNavigation,
       randomReads,
       warmFirstPage,
-      warmIndexPage,
     };
   });
 
@@ -307,10 +265,7 @@ const printMemory = (): void => {
   const memory = process.memoryUsage();
   const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 
-  console.log(
-    `memory`.padEnd(28),
-    `${mb(memory.rss)} rss, ${mb(memory.heapUsed)} heap used`,
-  );
+  console.log(`memory`.padEnd(28), `${mb(memory.rss)} rss, ${mb(memory.heapUsed)} heap used`);
 };
 
 const options = parseOptions(process.argv.slice(2));
@@ -348,7 +303,7 @@ const program = Effect.gen(function* () {
   printTimed(
     "seed transaction",
     seeded,
-    `${seeded.result.writes} documents/index entries, snapshot ${seeded.result.snapshotId}`,
+    `${seeded.result.writes} documents, snapshot ${seeded.result.snapshotId}`,
   );
   printTimed(
     "cold collection page",
@@ -364,21 +319,6 @@ const program = Effect.gen(function* () {
     "cached collection pages",
     results.pageNavigation,
     `${results.pageNavigation.result.rows} rows over ${results.pageNavigation.result.pages} pages`,
-  );
-  printTimed(
-    "cold status=open page",
-    results.coldIndexPage,
-    `${results.coldIndexPage.result.length} ids: ${results.coldIndexPage.result.slice(0, 5).join(", ")}`,
-  );
-  printTimed(
-    "warm status=open page",
-    results.warmIndexPage,
-    `${results.warmIndexPage.result.length} ids: ${results.warmIndexPage.result.slice(0, 5).join(", ")}`,
-  );
-  printTimed(
-    "cached status=open pages",
-    results.indexNavigation,
-    `${results.indexNavigation.result.rows} rows over ${results.indexNavigation.result.pages} pages`,
   );
   printTimed(
     "sample point reads",

@@ -219,12 +219,12 @@ Current routes:
 `DesktopConfigLive` derives runtime configuration from the built main-process file location and the
 optional `ELECTRON_RENDERER_URL` environment variable.
 
-| Field | Description |
-| --- | --- |
-| `mode` | `development` when `ELECTRON_RENDERER_URL` is set, otherwise `production` |
-| `preloadScript` | path to the built preload script |
-| `rendererIndexHtml` | path to the built renderer HTML file |
-| `rendererUrl` | development server URL, if configured |
+| Field               | Description                                                               |
+| ------------------- | ------------------------------------------------------------------------- |
+| `mode`              | `development` when `ELECTRON_RENDERER_URL` is set, otherwise `production` |
+| `preloadScript`     | path to the built preload script                                          |
+| `rendererIndexHtml` | path to the built renderer HTML file                                      |
+| `rendererUrl`       | development server URL, if configured                                     |
 
 `electron-vite` provides `ELECTRON_RENDERER_URL` during development. When it is absent, the window
 loads the built renderer HTML file.

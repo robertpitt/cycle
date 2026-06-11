@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@cycle/git": "workspace:*",
     "@effect/platform-node": "beta",
     "effect": "beta"
   },

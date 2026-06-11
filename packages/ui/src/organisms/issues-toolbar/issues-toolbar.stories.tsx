@@ -42,3 +42,31 @@ export const Default: Story = {
     </div>
   ),
 };
+
+export const FilterActive: Story = {
+  args: {
+    displayActive: true,
+    displayLabel: "Compact",
+    filterActive: true,
+    filterControls: <span className="text-sm text-muted-foreground">8 shown</span>,
+    filterLabel: "High signal",
+    layersActive: true,
+  },
+  render: (args) => (
+    <div className="overflow-hidden rounded-lg border border-border bg-surface">
+      <IssuesToolbar {...args} />
+    </div>
+  ),
+};
+
+export const MinimalActions: Story = {
+  args: {
+    moreCount: 0,
+    showSecondaryActions: false,
+  },
+  render: (args) => (
+    <div className="overflow-hidden rounded-lg border border-border bg-surface">
+      <IssuesToolbar {...args} />
+    </div>
+  ),
+};

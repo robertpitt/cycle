@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { ObjectId } from "./ObjectId.ts";
+import { ObjectId } from "@cycle/git/schemas";
 
 export const Change = Schema.Struct({
   newObjectId: Schema.optional(ObjectId),

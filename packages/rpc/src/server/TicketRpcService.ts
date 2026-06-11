@@ -1,17 +1,17 @@
-import type { TicketDbService } from "@cycle/ticket-db";
+import { DatabaseService, type DatabaseServiceShape } from "@cycle/database";
 import { Context, Effect, Layer, Result, Schema } from "effect";
 import { invalidRpcRequest, TicketRpcRequest, type TicketRpcResponse } from "../protocol/index.ts";
 import { invokeTicketRpc } from "./TicketRpcHandlers.ts";
 
 export type TicketRpcServiceShape = {
-  readonly handle: (request: unknown) => Effect.Effect<TicketRpcResponse, never, TicketDbService>;
+  readonly handle: (request: unknown) => Effect.Effect<TicketRpcResponse, never>;
 };
 
 export class TicketRpcService extends Context.Service<TicketRpcService, TicketRpcServiceShape>()(
   "@cycle/rpc/TicketRpcService",
 ) {}
 
-export const makeTicketRpcService = (): TicketRpcServiceShape => ({
+export const makeTicketRpcService = (database: DatabaseServiceShape): TicketRpcServiceShape => ({
   handle: (request) =>
     Effect.gen(function* () {
       const decoded = yield* Schema.decodeUnknownEffect(TicketRpcRequest)(request).pipe(
@@ -32,7 +32,7 @@ export const makeTicketRpcService = (): TicketRpcServiceShape => ({
       }
 
       const rpcRequest = decoded.success;
-      const result = yield* invokeTicketRpc(rpcRequest.method, rpcRequest.payload).pipe(
+      const result = yield* invokeTicketRpc(database, rpcRequest.method, rpcRequest.payload).pipe(
         Effect.result,
       );
 
@@ -52,4 +52,11 @@ export const makeTicketRpcService = (): TicketRpcServiceShape => ({
     }),
 });
 
-export const TicketRpcLive = Layer.succeed(TicketRpcService, makeTicketRpcService());
+export const TicketRpcLive = Layer.effect(
+  TicketRpcService,
+  Effect.gen(function* () {
+    const database = yield* DatabaseService;
+
+    return makeTicketRpcService(database);
+  }),
+);

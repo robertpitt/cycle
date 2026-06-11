@@ -58,21 +58,21 @@ export const unknownRpcMethod = (method: string) =>
     message: `Unknown RPC method: ${method}`,
   });
 
-export const ticketDbFailureToRpcError = (error: unknown): TicketRpcError => {
+export const databaseFailureToRpcError = (error: unknown): TicketRpcError => {
   if (!isRecord(error)) {
     return ticketRpcError({
-      code: "TICKET_DB_FAILURE",
-      message: "TicketDB request failed.",
+      code: "DATABASE_FAILURE",
+      message: "Database request failed.",
     });
   }
 
   const sourceTag = typeof error["_tag"] === "string" ? error["_tag"] : undefined;
   const message =
-    typeof error["message"] === "string" ? error["message"] : "TicketDB request failed.";
+    typeof error["message"] === "string" ? error["message"] : "Database request failed.";
   const details = detailsFrom(error);
 
   return ticketRpcError({
-    code: sourceTag ?? "TICKET_DB_FAILURE",
+    code: sourceTag ?? "DATABASE_FAILURE",
     details: Object.keys(details).length === 0 ? undefined : details,
     message,
     sourceTag,

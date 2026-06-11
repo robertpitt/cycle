@@ -1,0 +1,21 @@
+{
+  "name": "@cycle/database",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "seed:cycle": "node scripts/seed-cycle-database.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@cycle/git-db": "workspace:*",
+    "effect": "beta"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.8"
+  }
+}

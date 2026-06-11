@@ -11,7 +11,7 @@ const meta = {
     },
     layout: "fullscreen",
   },
-  title: "Pages/Git Repository Dialog",
+  title: "Examples/Git Repository Dialog",
 } satisfies Meta<typeof WorkspaceGitRepositoryDialogPage>;
 
 export default meta;

@@ -136,7 +136,7 @@ export const AppShellSidebar = React.forwardRef<HTMLElement, AppShellSidebarProp
         {...props}
         ref={ref}
         className={cn(
-          "grid h-full min-h-0 grid-rows-[auto_1fr_auto] text-sidebar-foreground",
+          "grid h-full min-h-0 grid-rows-[auto_1fr_auto] border-r border-border bg-sidebar text-sidebar-foreground",
           collapsed ? "p-3" : "p-4",
           className,
         )}
@@ -258,7 +258,7 @@ export const AppShellHeader = React.forwardRef<HTMLElement, AppShellHeaderProps>
         {...props}
         ref={ref}
         className={cn(
-          "flex min-h-16 items-center justify-between gap-4 border-b border-border bg-surface px-4",
+          "flex min-h-14 items-center justify-between gap-4 border-b border-border bg-surface px-5",
           className,
         )}
       >
@@ -312,7 +312,7 @@ export const AppShellMain = React.forwardRef<HTMLElement, AppShellMainProps>(fun
   { className, ...props },
   ref,
 ) {
-  return <main {...props} ref={ref} className={cn("min-h-0 overflow-hidden", className)} />;
+  return <main {...props} ref={ref} className={cn("min-h-0 overflow-auto", className)} />;
 });
 
 export const AppShellFooter = React.forwardRef<HTMLElement, AppShellFooterProps>(

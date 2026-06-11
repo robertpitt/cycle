@@ -1,6 +1,5 @@
 import { Schema } from "effect";
-import { Identity } from "../domain/Identity.ts";
-import { ObjectId } from "./ObjectId.ts";
+import { Identity, ObjectId } from "@cycle/git/schemas";
 
 export const Snapshot = Schema.Struct({
   author: Schema.optional(Identity),

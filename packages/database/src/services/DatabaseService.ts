@@ -1,0 +1,2166 @@
+import { type CollectionOptions, type Store as GitDbStore } from "@cycle/git-db";
+import { Context, Effect, Layer, Result } from "effect";
+import {
+  CURRENT_SCHEMA_VERSION,
+  defaultIssueBody,
+  makeFrontmatter,
+  makeTicketDocument,
+  normalizeKey,
+  parseIssueMarkdown,
+  parseLegacyIssueJson,
+  protectedSectionsChanged,
+  serializeIssueMarkdown,
+  stripUndefined,
+  updatedDateKey,
+  updateTicketDocument,
+  type Actor,
+  type AddCommentInput,
+  type AddRecordInput,
+  type ArchiveTicketInput,
+  type CommitOptions,
+  type CreateTicketDraftInput,
+  type CreateTicketInput,
+  type DeleteTicketInput,
+  type HistoryPage,
+  type IssueRelation,
+  type LinkedRecord,
+  type MaterializationWarning,
+  type RecordPage,
+  type RecordQuery,
+  type RepositoryHistoryQuery,
+  type RepositoryInput,
+  type RepositoryStatus,
+  type RestoreTicketInput,
+  type SearchTicketsQuery,
+  type TicketDraftDocument,
+  type TicketDocument,
+  type TicketPage,
+  type TicketQuery,
+  type TicketRevisionDiff,
+  type TicketRevisionMetadataChange,
+  type TicketSearchPage,
+  type TransitionTicketInput,
+  type UpdateTicketDraftInput,
+  type UpdateTicketPatch,
+} from "../domain/index.ts";
+import {
+  ConsistencyError,
+  MaterializationError,
+  RepositoryNotFoundError,
+  type DatabaseFailure,
+  sqliteError,
+  storageError,
+  validationError,
+  workflowError,
+} from "../errors.ts";
+import { Projection } from "../store/Projection.ts";
+import { DatabaseIdGenerator, type DatabaseIdGeneratorShape } from "./DatabaseIdGenerator.ts";
+import {
+  DatabaseIdentity,
+  DatabaseIdentityTest,
+  type DatabaseIdentityShape,
+} from "./DatabaseIdentity.ts";
+import { DatabaseIdGeneratorDeterministic } from "./DatabaseIdGenerator.ts";
+
+type RepositoryRuntime = {
+  readonly displayName: string;
+  readonly gitDir?: string;
+  readonly poller?: ReturnType<typeof setInterval>;
+  readonly repositoryId: string;
+  readonly store: GitDbStore.StoreServiceShape;
+  readonly worktreePath?: string;
+};
+
+type SourceDocument = {
+  readonly bytes: string;
+  readonly id: string;
+  readonly path: string;
+};
+
+type CommitChange = {
+  readonly changeType: "added" | "deleted" | "modified";
+  readonly objectId?: string;
+  readonly objectType: string;
+  readonly path: string;
+  readonly ticketId?: string;
+};
+
+export type DatabaseServiceOptions = {
+  readonly logger?: (event: DatabaseLogEvent) => void;
+  readonly projectionPath?: string;
+};
+
+export type DatabaseLogEvent = {
+  readonly data?: Readonly<Record<string, unknown>>;
+  readonly message: string;
+  readonly repositoryId?: string;
+  readonly scope: "database";
+};
+
+export type DatabaseServiceShape = {
+  readonly addComment: (
+    repositoryId: string,
+    ticketId: string,
+    input: AddCommentInput,
+    options?: CommitOptions,
+  ) => Effect.Effect<LinkedRecord, DatabaseFailure>;
+  readonly addIssueRelation: (
+    repositoryId: string,
+    ticketId: string,
+    relation: IssueRelation,
+    options?: CommitOptions,
+  ) => Effect.Effect<TicketDocument, DatabaseFailure>;
+  readonly addRecord: <TPayload = unknown>(
+    repositoryId: string,
+    ticketId: string,
+    input: AddRecordInput<TPayload>,
+    options?: CommitOptions,
+  ) => Effect.Effect<LinkedRecord, DatabaseFailure>;
+  readonly archiveTicket: (
+    repositoryId: string,
+    ticketId: string,
+    input?: ArchiveTicketInput,
+    options?: CommitOptions,
+  ) => Effect.Effect<TicketDocument, DatabaseFailure>;
+  readonly close: () => Effect.Effect<void>;
+  readonly commitDraft: (
+    repositoryId: string,
+    draftId: string,
+    options?: CommitOptions,
+  ) => Effect.Effect<TicketDocument, DatabaseFailure>;
+  readonly createDraft: (
+    repositoryId: string,
+    input: CreateTicketDraftInput,
+    options?: CommitOptions,
+  ) => Effect.Effect<TicketDraftDocument, DatabaseFailure>;
+  readonly createTicket: (
+    repositoryId: string,
+    input: CreateTicketInput,
+    options?: CommitOptions,
+  ) => Effect.Effect<TicketDocument, DatabaseFailure>;
+  readonly deleteTicket: (
+    repositoryId: string,
+    ticketId: string,
+    input?: DeleteTicketInput,
+    options?: CommitOptions,
+  ) => Effect.Effect<TicketDocument, DatabaseFailure>;
+  readonly getTicket: (
+    repositoryId: string,
+    ticketId: string,
+  ) => Effect.Effect<TicketDocument | null, DatabaseFailure>;
+  readonly listRepositories: () => Effect.Effect<ReadonlyArray<RepositoryStatus>, DatabaseFailure>;
+  readonly listTickets: (query?: TicketQuery) => Effect.Effect<TicketPage, DatabaseFailure>;
+  readonly materializationWarnings: (
+    repositoryId: string,
+  ) => Effect.Effect<ReadonlyArray<MaterializationWarning>, DatabaseFailure>;
+  readonly openRepository: (
+    input: RepositoryInput,
+  ) => Effect.Effect<RepositoryStatus, DatabaseFailure>;
+  readonly repositoryHistory: (
+    repositoryId: string,
+    query?: RepositoryHistoryQuery,
+  ) => Effect.Effect<HistoryPage, DatabaseFailure>;
+  readonly repositoryStatus: (
+    repositoryId: string,
+  ) => Effect.Effect<RepositoryStatus, DatabaseFailure>;
+  readonly removeIssueRelation: (
+    repositoryId: string,
+    ticketId: string,
+    relation: IssueRelation,
+    options?: CommitOptions,
+  ) => Effect.Effect<TicketDocument, DatabaseFailure>;
+  readonly restoreTicket: (
+    repositoryId: string,
+    ticketId: string,
+    input?: RestoreTicketInput,
+    options?: CommitOptions,
+  ) => Effect.Effect<TicketDocument, DatabaseFailure>;
+  readonly searchTickets: (
+    query: SearchTicketsQuery,
+  ) => Effect.Effect<TicketSearchPage, DatabaseFailure>;
+  readonly syncRepository: (
+    repositoryId: string,
+  ) => Effect.Effect<RepositoryStatus, DatabaseFailure>;
+  readonly ticketComments: (
+    repositoryId: string,
+    ticketId: string,
+    query?: RecordQuery,
+  ) => Effect.Effect<RecordPage, DatabaseFailure>;
+  readonly ticketHistory: (
+    repositoryId: string,
+    ticketId: string,
+    query?: RepositoryHistoryQuery,
+  ) => Effect.Effect<HistoryPage, DatabaseFailure>;
+  readonly ticketDiff: (
+    repositoryId: string,
+    ticketId: string,
+    fromSnapshotId: string,
+    toSnapshotId: string,
+  ) => Effect.Effect<TicketRevisionDiff, DatabaseFailure>;
+  readonly ticketRevision: (
+    repositoryId: string,
+    ticketId: string,
+    snapshotId: string,
+  ) => Effect.Effect<TicketDocument | null, DatabaseFailure>;
+  readonly ticketRecords: (
+    repositoryId: string,
+    ticketId: string,
+    query?: RecordQuery,
+  ) => Effect.Effect<RecordPage, DatabaseFailure>;
+  readonly transitionTicket: (
+    repositoryId: string,
+    ticketId: string,
+    input: TransitionTicketInput,
+    options?: CommitOptions,
+  ) => Effect.Effect<TicketDocument, DatabaseFailure>;
+  readonly updateDraft: (
+    repositoryId: string,
+    draftId: string,
+    input: UpdateTicketDraftInput,
+    options?: CommitOptions,
+  ) => Effect.Effect<TicketDraftDocument, DatabaseFailure>;
+  readonly updateTicket: (
+    repositoryId: string,
+    ticketId: string,
+    patch: UpdateTicketPatch,
+  ) => Effect.Effect<TicketDocument, DatabaseFailure>;
+};
+
+export class DatabaseService extends Context.Service<DatabaseService, DatabaseServiceShape>()(
+  "@cycle/database/DatabaseService",
+) {}
+
+const ISSUE_COLLECTION = "issues";
+const RECORD_COLLECTION = "records";
+const DRAFT_COLLECTION = "drafts";
+const DEFAULT_POINTER = "main";
+const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;
+
+const issueCollectionOptions: CollectionOptions<TicketDocument> = {
+  codec: {
+    decode: (document) => parseIssueMarkdown(document.text()),
+    encode: serializeIssueMarkdown,
+  },
+  extension: "md",
+};
+
+const legacyIssueCollectionOptions: CollectionOptions<TicketDocument> = {
+  extension: "json",
+};
+
+export const makeDatabaseService = (
+  identity: DatabaseIdentityShape,
+  ids: DatabaseIdGeneratorShape,
+  options: DatabaseServiceOptions = {},
+): DatabaseServiceShape => {
+  const projection = new Projection(options.projectionPath);
+  const repositories = new Map<string, RepositoryRuntime>();
+  const log = (
+    repositoryId: string | undefined,
+    message: string,
+    data?: Readonly<Record<string, unknown>>,
+  ): void => {
+    try {
+      options.logger?.({
+        ...(data === undefined ? {} : { data }),
+        message,
+        ...(repositoryId === undefined ? {} : { repositoryId }),
+        scope: "database",
+      });
+    } catch {
+      // Logging must never affect database behavior.
+    }
+  };
+
+  const getRepository = (repositoryId: string): Effect.Effect<RepositoryRuntime, DatabaseFailure> =>
+    Effect.sync(() => repositories.get(repositoryId)).pipe(
+      Effect.flatMap((repository) =>
+        repository === undefined
+          ? Effect.fail(new RepositoryNotFoundError(repositoryId))
+          : Effect.succeed(repository),
+      ),
+    );
+
+  const syncRepository = (repositoryId: string): Effect.Effect<RepositoryStatus, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const repository = yield* getRepository(repositoryId);
+      const now = nowIso();
+
+      yield* sqlite("mark sync started", () => projection.markSyncStarted(repositoryId, now));
+      log(repositoryId, "sync started", {
+        displayName: repository.displayName,
+        gitDir: repository.gitDir,
+        worktreePath: repository.worktreePath,
+      });
+
+      return yield* Effect.gen(function* () {
+        const current = yield* storage(
+          "read current snapshot",
+          repository.store.currentSnapshotForPointer(DEFAULT_POINTER),
+        );
+        const previous = projection.repositoryStatus(repositoryId).activeSnapshotId;
+
+        if (current === null) {
+          log(repositoryId, "sync found no current GitDB snapshot", {
+            previousSnapshotId: previous,
+          });
+          const status = yield* sqlite("clear projection for missing GitDB snapshot", () =>
+            projection.transaction(() => {
+              projection.clearRepositoryProjection(repositoryId);
+              return projection.activateSnapshot({
+                completedAt: nowIso(),
+                repositoryId,
+                snapshotId: null,
+              });
+            }),
+          );
+          log(repositoryId, "sync cleared projection for missing GitDB snapshot", {
+            activeGeneration: status.activeGeneration,
+            activeSnapshotId: status.activeSnapshotId,
+            status: status.status,
+          });
+          return status;
+        }
+
+        if (previous === current.id) {
+          log(repositoryId, "sync snapshot unchanged", {
+            snapshotId: current.id,
+          });
+          return yield* sqlite("refresh active snapshot", () =>
+            projection.activateSnapshot({
+              completedAt: nowIso(),
+              repositoryId,
+              snapshotId: current.id,
+            }),
+          );
+        }
+
+        const materializationResult = yield* buildMaterialization(
+          repository,
+          previous,
+          current.id,
+        ).pipe(
+          Effect.mapError(
+            (error) =>
+              new MaterializationError(repositoryId, "failed to build materialization plan", error),
+          ),
+          Effect.result,
+        );
+
+        if (Result.isFailure(materializationResult)) {
+          yield* sqlite("mark sync failed", () =>
+            projection.markSyncFailed(repositoryId, materializationResult.failure.message),
+          );
+          log(repositoryId, "sync materialization plan failed", {
+            error: materializationResult.failure.message,
+          });
+          return yield* Effect.fail(materializationResult.failure);
+        }
+
+        const materialization = materializationResult.success;
+        log(repositoryId, "sync materialization plan built", {
+          commitChanges: materialization.commitChanges.length,
+          commits: materialization.commits.length,
+          deletedRecords: materialization.deletedRecords.length,
+          deletedTickets: materialization.deletedTickets.length,
+          fullRebuild: materialization.fullRebuild,
+          previousSnapshotId: previous,
+          records: materialization.records.length,
+          snapshotId: current.id,
+          tickets: materialization.tickets.length,
+          warnings: materialization.warnings.length,
+        });
+
+        return yield* sqlite("apply materialization", () =>
+          projection.transaction(() => {
+            if (materialization.fullRebuild) {
+              projection.clearRepositoryProjection(repositoryId);
+            }
+
+            for (const ticketId of materialization.deletedTickets) {
+              projection.deleteTicket(repositoryId, ticketId);
+            }
+            for (const recordId of materialization.deletedRecords) {
+              projection.deleteRecord(repositoryId, recordId);
+            }
+            for (const ticket of materialization.tickets) {
+              projection.upsertTicket({
+                path: ticket.path,
+                repositoryId,
+                snapshotId: current.id,
+                ticket: ticket.value,
+              });
+            }
+            for (const record of materialization.records) {
+              if (projection.ticketVisible(repositoryId, record.value.issueId)) {
+                projection.upsertRecord({
+                  record: record.value,
+                  repositoryId,
+                  snapshotId: current.id,
+                });
+              }
+            }
+            for (const commit of materialization.commits) {
+              projection.upsertCommit(commit);
+            }
+            for (const commitChange of materialization.commitChanges) {
+              projection.replaceCommitChanges(commitChange);
+            }
+            for (const warning of materialization.warnings) {
+              projection.addWarning(warning);
+            }
+
+            const status = projection.activateSnapshot({
+              completedAt: nowIso(),
+              repositoryId,
+              snapshotId: current.id,
+            });
+            log(repositoryId, "sync completed", {
+              activeGeneration: status.activeGeneration,
+              snapshotId: status.activeSnapshotId,
+              status: status.status,
+              warningCount: status.warningCount,
+            });
+            return status;
+          }),
+        );
+      }).pipe(
+        Effect.catch((error) =>
+          sqlite("mark sync failed", () => projection.markSyncFailed(repositoryId, error.message))
+            .pipe(
+              Effect.andThen(
+                Effect.sync(() => {
+                  log(repositoryId, "sync failed", {
+                    error: error.message,
+                  });
+                }),
+              ),
+              Effect.andThen(Effect.fail(error)),
+            ),
+        ),
+      );
+    });
+
+  const writeAndSync = <A>(
+    repositoryId: string,
+    command: string,
+    objectId: string | undefined,
+    write: (repository: RepositoryRuntime) => Effect.Effect<
+      {
+        readonly result: A;
+        readonly snapshotId: string;
+      },
+      DatabaseFailure
+    >,
+    visible: () => boolean,
+  ): Effect.Effect<A, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const repository = yield* getRepository(repositoryId);
+      const previous = projection.repositoryStatus(repositoryId).activeSnapshotId;
+      const written = yield* write(repository);
+
+      yield* syncRepository(repositoryId).pipe(
+        Effect.mapError(
+          (error) =>
+            new ConsistencyError(
+              repositoryId,
+              written.snapshotId,
+              previous,
+              command,
+              objectId,
+              `write committed but SQLite resync failed for ${command}`,
+              error,
+            ),
+        ),
+      );
+
+      if (!visible()) {
+        return yield* Effect.fail(
+          new ConsistencyError(
+            repositoryId,
+            written.snapshotId,
+            previous,
+            command,
+            objectId,
+            `write committed but ${objectId ?? "object"} is not visible in SQLite`,
+          ),
+        );
+      }
+
+      return written.result;
+    });
+
+  const createTicket = (
+    repositoryId: string,
+    input: CreateTicketInput,
+    options: CommitOptions = {},
+  ): Effect.Effect<TicketDocument, DatabaseFailure> =>
+    Effect.gen(function* () {
+      yield* assertNoUnsafeContent("create ticket input", input);
+
+      const actor = yield* identity.currentActor;
+      const id = yield* ids.ticketId;
+      const now = nowIso();
+      const body = input.body ?? defaultIssueBody();
+      const ticket = makeTicketDocument(makeFrontmatter(input, id, actor, now), body);
+
+      yield* validateTicket(ticket);
+
+      return yield* writeAndSync(
+        repositoryId,
+        "createTicket",
+        id,
+        (repository) =>
+          Effect.gen(function* () {
+            const recordId = yield* ids.recordId;
+            const statusRecordId = yield* ids.recordId;
+            const tx = yield* storage("begin create ticket", repository.store.begin());
+            const issues = yield* storage(
+              "open issue transaction collection",
+              tx.collection<TicketDocument>(ISSUE_COLLECTION, issueCollectionOptions),
+            );
+            const records = yield* storage(
+              "open record transaction collection",
+              tx.collection<LinkedRecord>(RECORD_COLLECTION),
+            );
+            const provenance = initialProvenanceRecord(
+              id,
+              makeRecordId(id, "provenance", recordId),
+              actor,
+              now,
+            );
+            const status = statusChangeRecord(
+              id,
+              makeRecordId(id, "status-change", statusRecordId),
+              actor,
+              now,
+              null,
+              ticket.status,
+            );
+
+            yield* storage("put ticket", issues.put(id, ticket));
+            yield* storage("put provenance record", records.put(provenance.id, provenance));
+            yield* storage("put status-change record", records.put(status.id, status));
+
+            const snapshot = yield* storage(
+              "commit create ticket",
+              tx.commit({
+                author: gitIdentity(actor),
+                committer: gitIdentity(actor),
+                message: options.message ?? createdTicketMessage(actor, ticket),
+              }),
+            );
+
+            return { result: ticket, snapshotId: snapshot.id };
+          }),
+        () => projection.ticketVisible(repositoryId, id),
+      );
+    });
+
+  const updateTicket = (
+    repositoryId: string,
+    ticketId: string,
+    patch: UpdateTicketPatch,
+  ): Effect.Effect<TicketDocument, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const current = projection.getTicket(repositoryId, ticketId);
+
+      if (current === null)
+        return yield* Effect.fail(validationError("ticketId", "ticket not found"));
+
+      yield* assertNoUnsafeContent("update ticket patch", patch);
+
+      const actor = yield* identity.currentActor;
+      const now = nowIso();
+      const next = updateTicketDocument(
+        current,
+        {
+          ...current.frontmatter,
+          ...patch.frontmatter,
+          createdAt: current.frontmatter.createdAt,
+          createdBy: current.frontmatter.createdBy,
+          id: ticketId,
+          updatedAt: now,
+        },
+        patch.body ?? current.body,
+      );
+
+      if (current.status === "in-progress" && patch.body !== undefined) {
+        const changed = protectedSectionsChanged(current.body, patch.body);
+
+        if (changed.length > 0) {
+          return yield* Effect.fail(
+            workflowError(`protected sections changed: ${changed.join(", ")}`, ticketId),
+          );
+        }
+      }
+
+      if (next.status !== current.status) {
+        yield* assertTransitionAllowed(current.status, next.status, actor, current);
+      }
+
+      yield* validateTicket(next);
+
+      return yield* writeAndSync(
+        repositoryId,
+        "updateTicket",
+        ticketId,
+        (repository) =>
+          Effect.gen(function* () {
+            const tx = yield* storage("begin update ticket", repository.store.begin());
+            const issues = yield* storage(
+              "open issue transaction collection",
+              tx.collection<TicketDocument>(ISSUE_COLLECTION, issueCollectionOptions),
+            );
+            const legacyIssues = yield* storage(
+              "open legacy issue transaction collection",
+              tx.collection<TicketDocument>(ISSUE_COLLECTION, legacyIssueCollectionOptions),
+            );
+            const records = yield* storage(
+              "open record transaction collection",
+              tx.collection<LinkedRecord>(RECORD_COLLECTION),
+            );
+
+            yield* storage("put updated ticket", issues.put(ticketId, next));
+            yield* storage("delete legacy issue", legacyIssues.delete(ticketId));
+
+            if (next.status !== current.status) {
+              const recordId = makeRecordId(ticketId, "status-change", yield* ids.recordId);
+              yield* storage(
+                "put status-change record",
+                records.put(
+                  recordId,
+                  statusChangeRecord(ticketId, recordId, actor, now, current.status, next.status),
+                ),
+              );
+            }
+
+            const snapshot = yield* storage(
+              "commit update ticket",
+              tx.commit({
+                author: gitIdentity(actor),
+                committer: gitIdentity(actor),
+                message: patch.message ?? updatedTicketMessage(actor, current, next),
+              }),
+            );
+
+            return { result: next, snapshotId: snapshot.id };
+          }),
+        () => projection.ticketVisible(repositoryId, ticketId),
+      );
+    });
+
+  const writeTicketUpdates = <A>(
+    repositoryId: string,
+    command: string,
+    objectId: string | undefined,
+    result: A,
+    tickets: ReadonlyArray<TicketDocument>,
+    linkedRecords: ReadonlyArray<LinkedRecord>,
+    message: string,
+    visible: () => boolean,
+  ): Effect.Effect<A, DatabaseFailure> =>
+    writeAndSync(
+      repositoryId,
+      command,
+      objectId,
+      (repository) =>
+        Effect.gen(function* () {
+          const tx = yield* storage(`begin ${command}`, repository.store.begin());
+          const issues = yield* storage(
+            `open issue transaction collection for ${command}`,
+            tx.collection<TicketDocument>(ISSUE_COLLECTION, issueCollectionOptions),
+          );
+          const legacyIssues = yield* storage(
+            `open legacy issue transaction collection for ${command}`,
+            tx.collection<TicketDocument>(ISSUE_COLLECTION, legacyIssueCollectionOptions),
+          );
+          const records = yield* storage(
+            `open record transaction collection for ${command}`,
+            tx.collection<LinkedRecord>(RECORD_COLLECTION),
+          );
+
+          for (const ticket of tickets) {
+            yield* storage(`put ticket for ${command}`, issues.put(ticket.id, ticket));
+            yield* storage(`delete legacy issue for ${command}`, legacyIssues.delete(ticket.id));
+          }
+          for (const record of linkedRecords) {
+            yield* storage(`put record for ${command}`, records.put(record.id, record));
+          }
+
+          const snapshot = yield* storage(
+            `commit ${command}`,
+            tx.commit({
+              message,
+            }),
+          );
+
+          return { result, snapshotId: snapshot.id };
+        }),
+      visible,
+    );
+
+  const archiveTicket = (
+    repositoryId: string,
+    ticketId: string,
+    input: ArchiveTicketInput = {},
+    options: CommitOptions = {},
+  ): Effect.Effect<TicketDocument, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const current = projection.getTicket(repositoryId, ticketId);
+
+      if (current === null)
+        return yield* Effect.fail(validationError("ticketId", "ticket not found"));
+
+      const actor = yield* identity.currentActor;
+      const now = nowIso();
+      const next = updateTicketDocument(current, {
+        ...current.frontmatter,
+        archivedAt: now,
+        archivedBy: actor,
+        updatedAt: now,
+      });
+      const recordId = makeRecordId(ticketId, "archive", yield* ids.recordId);
+      const record = makeRecord(
+        {
+          payload: stripUndefined({
+            archivedAt: now,
+            reason: input.reason,
+          }),
+          recordType: "archive",
+          ticketId,
+        },
+        recordId,
+        actor,
+        now,
+      );
+
+      yield* validateTicket(next);
+
+      return yield* writeTicketUpdates(
+        repositoryId,
+        "archiveTicket",
+        ticketId,
+        next,
+        [next],
+        [record],
+        options.message ?? `${actor.name} archived ${quotedTicketTitle(next)} ticket`,
+        () => projection.ticketVisible(repositoryId, ticketId),
+      );
+    });
+
+  const deleteTicket = (
+    repositoryId: string,
+    ticketId: string,
+    input: DeleteTicketInput = {},
+    options: CommitOptions = {},
+  ): Effect.Effect<TicketDocument, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const current = projection.getTicket(repositoryId, ticketId);
+
+      if (current === null)
+        return yield* Effect.fail(validationError("ticketId", "ticket not found"));
+
+      const actor = yield* identity.currentActor;
+      const now = nowIso();
+      const next = updateTicketDocument(current, {
+        ...current.frontmatter,
+        deletedAt: now,
+        deletedBy: actor,
+        updatedAt: now,
+      });
+      const recordId = makeRecordId(ticketId, "delete", yield* ids.recordId);
+      const record = makeRecord(
+        {
+          payload: stripUndefined({
+            deletedAt: now,
+            reason: input.reason,
+          }),
+          recordType: "delete",
+          ticketId,
+        },
+        recordId,
+        actor,
+        now,
+      );
+
+      yield* validateTicket(next);
+
+      return yield* writeTicketUpdates(
+        repositoryId,
+        "deleteTicket",
+        ticketId,
+        next,
+        [next],
+        [record],
+        options.message ?? `${actor.name} deleted ${quotedTicketTitle(next)} ticket`,
+        () => projection.ticketVisible(repositoryId, ticketId),
+      );
+    });
+
+  const restoreTicket = (
+    repositoryId: string,
+    ticketId: string,
+    input: RestoreTicketInput = {},
+    options: CommitOptions = {},
+  ): Effect.Effect<TicketDocument, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const current = projection.getTicket(repositoryId, ticketId);
+
+      if (current === null)
+        return yield* Effect.fail(validationError("ticketId", "ticket not found"));
+
+      const actor = yield* identity.currentActor;
+      const now = nowIso();
+      const next = updateTicketDocument(current, {
+        ...current.frontmatter,
+        archivedAt: undefined,
+        archivedBy: undefined,
+        deletedAt: undefined,
+        deletedBy: undefined,
+        updatedAt: now,
+      });
+      const recordId = makeRecordId(ticketId, "restore", yield* ids.recordId);
+      const record = makeRecord(
+        {
+          payload: stripUndefined({
+            reason: input.reason,
+            restoredAt: now,
+          }),
+          recordType: "restore",
+          ticketId,
+        },
+        recordId,
+        actor,
+        now,
+      );
+
+      yield* validateTicket(next);
+
+      return yield* writeTicketUpdates(
+        repositoryId,
+        "restoreTicket",
+        ticketId,
+        next,
+        [next],
+        [record],
+        options.message ?? `${actor.name} restored ${quotedTicketTitle(next)} ticket`,
+        () => projection.ticketVisible(repositoryId, ticketId),
+      );
+    });
+
+  const mutateIssueRelation = (
+    repositoryId: string,
+    ticketId: string,
+    relation: IssueRelation,
+    action: "add" | "remove",
+    options: CommitOptions = {},
+  ): Effect.Effect<TicketDocument, DatabaseFailure> =>
+    Effect.gen(function* () {
+      validateSafeSegment("ticket id", ticketId);
+      validateSafeSegment("relation issue id", relation.issueId);
+
+      if (!isIssueRelationType(relation.type)) {
+        return yield* Effect.fail(validationError("relation.type", "invalid issue relation type"));
+      }
+      if (relation.issueId === ticketId) {
+        return yield* Effect.fail(
+          validationError("relation.issueId", "ticket cannot relate to itself"),
+        );
+      }
+
+      const current = projection.getTicket(repositoryId, ticketId);
+      const related = projection.getTicket(repositoryId, relation.issueId);
+
+      if (current === null)
+        return yield* Effect.fail(validationError("ticketId", "ticket not found"));
+      if (related === null)
+        return yield* Effect.fail(validationError("relation.issueId", "related ticket not found"));
+
+      const actor = yield* identity.currentActor;
+      const now = nowIso();
+      const normalizedRelation = {
+        issueId: relation.issueId,
+        type: relation.type,
+      } satisfies IssueRelation;
+      const inverse = inverseRelation(normalizedRelation, ticketId);
+      const next = updateTicketDocument(current, {
+        ...current.frontmatter,
+        duplicateOf:
+          action === "add" && normalizedRelation.type === "duplicate"
+            ? normalizedRelation.issueId
+            : action === "remove" && normalizedRelation.type === "duplicate"
+              ? undefined
+              : current.frontmatter.duplicateOf,
+        relations:
+          action === "add"
+            ? addRelation(current.frontmatter.relations, normalizedRelation)
+            : removeRelation(current.frontmatter.relations, normalizedRelation),
+        updatedAt: now,
+      });
+      const nextRelated = updateTicketDocument(related, {
+        ...related.frontmatter,
+        relations:
+          action === "add"
+            ? addRelation(related.frontmatter.relations, inverse)
+            : removeRelation(related.frontmatter.relations, inverse),
+        updatedAt: now,
+      });
+      const sourceRecordId = makeRecordId(ticketId, "relation-change", yield* ids.recordId);
+      const relatedRecordId = makeRecordId(
+        relation.issueId,
+        "relation-change",
+        yield* ids.recordId,
+      );
+      const payload = {
+        action,
+        relation: normalizedRelation,
+      };
+      const sourceRecord = makeRecord(
+        {
+          payload,
+          recordType: "relation-change",
+          ticketId,
+        },
+        sourceRecordId,
+        actor,
+        now,
+      );
+      const relatedRecord = makeRecord(
+        {
+          payload: {
+            action,
+            relation: inverse,
+          },
+          recordType: "relation-change",
+          ticketId: relation.issueId,
+        },
+        relatedRecordId,
+        actor,
+        now,
+      );
+
+      yield* validateTicket(next);
+      yield* validateTicket(nextRelated);
+
+      return yield* writeTicketUpdates(
+        repositoryId,
+        action === "add" ? "addIssueRelation" : "removeIssueRelation",
+        ticketId,
+        next,
+        [next, nextRelated],
+        [sourceRecord, relatedRecord],
+        options.message ??
+          relationMessage(actor, action, normalizedRelation.type, current, related),
+        () => projection.ticketVisible(repositoryId, ticketId),
+      );
+    });
+
+  const addRecord = <TPayload = unknown>(
+    repositoryId: string,
+    ticketId: string,
+    input: AddRecordInput<TPayload>,
+    options: CommitOptions = {},
+  ): Effect.Effect<LinkedRecord, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const ticket = projection.getTicket(repositoryId, ticketId);
+
+      if (ticket === null)
+        return yield* Effect.fail(validationError("ticketId", "ticket not found"));
+
+      yield* assertNoUnsafeContent("record payload", input.payload);
+
+      if (
+        normalizeKey(input.recordType) === "comment" &&
+        commentPayloadBody(input.payload).trim().length === 0
+      ) {
+        return yield* Effect.fail(
+          validationError("comment.body", "comment body must not be empty"),
+        );
+      }
+
+      const actor = yield* identity.currentActor;
+      const now = nowIso();
+      const recordId = makeRecordId(ticketId, input.recordType, yield* ids.recordId);
+      const record = makeRecord(
+        {
+          payload: input.payload,
+          recordType: input.recordType,
+          ticketId,
+        },
+        recordId,
+        actor,
+        now,
+      );
+      const nextTicket =
+        input.userVisible === false
+          ? ticket
+          : updateTicketDocument(ticket, {
+              ...ticket.frontmatter,
+              updatedAt: now,
+            });
+
+      return yield* writeAndSync(
+        repositoryId,
+        "addRecord",
+        recordId,
+        (repository) =>
+          Effect.gen(function* () {
+            const tx = yield* storage("begin add record", repository.store.begin());
+            const issues = yield* storage(
+              "open issue transaction collection",
+              tx.collection<TicketDocument>(ISSUE_COLLECTION, issueCollectionOptions),
+            );
+            const records = yield* storage(
+              "open record transaction collection",
+              tx.collection<LinkedRecord>(RECORD_COLLECTION),
+            );
+
+            if (input.userVisible !== false) {
+              yield* storage("put ticket activity timestamp", issues.put(ticketId, nextTicket));
+            }
+
+            yield* storage("put linked record", records.put(record.id, record));
+
+            const snapshot = yield* storage(
+              "commit add record",
+              tx.commit({
+                author: gitIdentity(actor),
+                committer: gitIdentity(actor),
+                message:
+                  options.message ??
+                  recordMessage(actor, record.recordType, ticket),
+              }),
+            );
+
+            return { result: record, snapshotId: snapshot.id };
+          }),
+        () => projection.recordVisible(repositoryId, recordId),
+      );
+    });
+
+  const ticketRevision = (
+    repositoryId: string,
+    ticketId: string,
+    snapshotId: string,
+  ): Effect.Effect<TicketDocument | null, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const repository = yield* getRepository(repositoryId);
+      const issues = yield* storage(
+        "open issue collection for revision read",
+        repository.store.collection<TicketDocument>(ISSUE_COLLECTION, issueCollectionOptions),
+      );
+      const ticket = yield* storage(
+        "read ticket revision",
+        issues.get(ticketId, { from: snapshotId }),
+      );
+
+      if (ticket !== null) return ticket;
+
+      const legacyIssues = yield* storage(
+        "open legacy issue collection for revision read",
+        repository.store.collection<TicketDocument>(ISSUE_COLLECTION, legacyIssueCollectionOptions),
+      );
+
+      return yield* storage(
+        "read legacy ticket revision",
+        legacyIssues.get(ticketId, { from: snapshotId }),
+      );
+    });
+
+  const ticketDiff = (
+    repositoryId: string,
+    ticketId: string,
+    fromSnapshotId: string,
+    toSnapshotId: string,
+  ): Effect.Effect<TicketRevisionDiff, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const fromTicket = yield* ticketRevision(repositoryId, ticketId, fromSnapshotId);
+      const toTicket = yield* ticketRevision(repositoryId, ticketId, toSnapshotId);
+
+      if (fromTicket === null && toTicket === null) {
+        return yield* Effect.fail(
+          validationError("ticketId", "ticket not found in either revision"),
+        );
+      }
+
+      return {
+        files: [
+          {
+            language: "markdown",
+            newContent: toTicket?.body ?? "",
+            newPath: `${ticketId}.md`,
+            oldContent: fromTicket?.body ?? "",
+            oldPath: `${ticketId}.md`,
+          },
+        ],
+        fromSnapshotId,
+        metadataChanges: metadataChanges(fromTicket, toTicket),
+        ticketId,
+        toSnapshotId,
+      };
+    });
+
+  const createDraft = (
+    repositoryId: string,
+    input: CreateTicketDraftInput,
+    options: CommitOptions = {},
+  ): Effect.Effect<TicketDraftDocument, DatabaseFailure> =>
+    Effect.gen(function* () {
+      yield* assertNoUnsafeContent("draft input", input);
+
+      const actor = yield* identity.currentActor;
+      const now = nowIso();
+      const draftId = yield* ids.draftId;
+      const draft: TicketDraftDocument = {
+        createdAt: now,
+        createdBy: actor,
+        id: draftId,
+        input,
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        status: "open",
+        updatedAt: now,
+      };
+
+      return yield* writeAndSync(
+        repositoryId,
+        "createDraft",
+        draftId,
+        (repository) =>
+          Effect.gen(function* () {
+            const tx = yield* storage("begin create draft", repository.store.begin());
+            const drafts = yield* storage(
+              "open draft transaction collection",
+              tx.collection<TicketDraftDocument>(DRAFT_COLLECTION),
+            );
+
+            yield* storage("put draft", drafts.put(draftId, draft));
+
+            const snapshot = yield* storage(
+              "commit create draft",
+              tx.commit({
+                author: gitIdentity(actor),
+                committer: gitIdentity(actor),
+                message: options.message ?? draftCreatedMessage(actor, draft),
+              }),
+            );
+
+            return { result: draft, snapshotId: snapshot.id };
+          }),
+        () => true,
+      );
+    });
+
+  const updateDraft = (
+    repositoryId: string,
+    draftId: string,
+    input: UpdateTicketDraftInput,
+    options: CommitOptions = {},
+  ): Effect.Effect<TicketDraftDocument, DatabaseFailure> =>
+    Effect.gen(function* () {
+      yield* assertNoUnsafeContent("draft patch", input);
+
+      const actor = yield* identity.currentActor;
+      const now = nowIso();
+
+      return yield* writeAndSync(
+        repositoryId,
+        "updateDraft",
+        draftId,
+        (repository) =>
+          Effect.gen(function* () {
+            const tx = yield* storage("begin update draft", repository.store.begin());
+            const drafts = yield* storage(
+              "open draft transaction collection",
+              tx.collection<TicketDraftDocument>(DRAFT_COLLECTION),
+            );
+            const current = yield* storage("read draft", drafts.get(draftId));
+
+            if (current === null) {
+              return yield* Effect.fail(validationError("draftId", "draft not found"));
+            }
+
+            const next: TicketDraftDocument = {
+              ...current,
+              input: mergeDraftInput(current.input, input),
+              updatedAt: now,
+            };
+
+            yield* storage("put updated draft", drafts.put(draftId, next));
+
+            const snapshot = yield* storage(
+              "commit update draft",
+              tx.commit({
+                author: gitIdentity(actor),
+                committer: gitIdentity(actor),
+                message: options.message ?? draftUpdatedMessage(actor, next),
+              }),
+            );
+
+            return { result: next, snapshotId: snapshot.id };
+          }),
+        () => true,
+      );
+    });
+
+  const commitDraft = (
+    repositoryId: string,
+    draftId: string,
+    options: CommitOptions = {},
+  ): Effect.Effect<TicketDocument, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const actor = yield* identity.currentActor;
+      const ticketId = yield* ids.ticketId;
+      const now = nowIso();
+
+      return yield* writeAndSync(
+        repositoryId,
+        "commitDraft",
+        draftId,
+        (repository) =>
+          Effect.gen(function* () {
+            const tx = yield* storage("begin commit draft", repository.store.begin());
+            const drafts = yield* storage(
+              "open draft transaction collection",
+              tx.collection<TicketDraftDocument>(DRAFT_COLLECTION),
+            );
+            const issues = yield* storage(
+              "open issue transaction collection",
+              tx.collection<TicketDocument>(ISSUE_COLLECTION, issueCollectionOptions),
+            );
+            const records = yield* storage(
+              "open record transaction collection",
+              tx.collection<LinkedRecord>(RECORD_COLLECTION),
+            );
+            const draft = yield* storage("read draft", drafts.get(draftId));
+
+            if (draft === null) {
+              return yield* Effect.fail(validationError("draftId", "draft not found"));
+            }
+
+            const ticket = makeTicketDocument(
+              makeFrontmatter(draft.input, ticketId, actor, now),
+              draft.input.body ?? defaultIssueBody(),
+            );
+            const provenanceRecordId = yield* ids.recordId;
+            const statusRecordId = yield* ids.recordId;
+            const provenance = initialProvenanceRecord(
+              ticketId,
+              makeRecordId(ticketId, "provenance", provenanceRecordId),
+              actor,
+              now,
+            );
+            const status = statusChangeRecord(
+              ticketId,
+              makeRecordId(ticketId, "status-change", statusRecordId),
+              actor,
+              now,
+              null,
+              ticket.status,
+            );
+
+            yield* validateTicket(ticket);
+            yield* storage("put ticket from draft", issues.put(ticketId, ticket));
+            yield* storage("put provenance record", records.put(provenance.id, provenance));
+            yield* storage("put status-change record", records.put(status.id, status));
+            yield* storage("delete committed draft", drafts.delete(draftId));
+
+            const snapshot = yield* storage(
+              "commit draft",
+              tx.commit({
+                author: gitIdentity(actor),
+                committer: gitIdentity(actor),
+                message: options.message ?? `${actor.name} created ${quotedTicketTitle(ticket)} ticket from draft`,
+              }),
+            );
+
+            return { result: ticket, snapshotId: snapshot.id };
+          }),
+        () => projection.ticketVisible(repositoryId, ticketId),
+      );
+    });
+
+  return {
+    addComment: (repositoryId, ticketId, input, options) =>
+      addRecord(
+        repositoryId,
+        ticketId,
+        {
+          payload: { body: input.body },
+          recordType: "comment",
+        },
+        options,
+      ),
+    addIssueRelation: (repositoryId, ticketId, relation, options) =>
+      mutateIssueRelation(repositoryId, ticketId, relation, "add", options),
+    addRecord,
+    archiveTicket,
+    close: () =>
+      Effect.sync(() => {
+        for (const repository of repositories.values()) {
+          if (repository.poller !== undefined) clearInterval(repository.poller);
+        }
+        repositories.clear();
+        projection.close();
+      }),
+    commitDraft,
+    createDraft,
+    createTicket,
+    deleteTicket,
+    getTicket: (repositoryId, ticketId) =>
+      sqlite("get ticket", () => projection.getTicket(repositoryId, ticketId)),
+    listRepositories: () => sqlite("list repositories", () => projection.listRepositories()),
+    listTickets: (query = {}) => sqlite("list tickets", () => projection.listTickets(query)),
+    materializationWarnings: (repositoryId) =>
+      sqlite("list materialization warnings", () => projection.warnings(repositoryId)),
+    openRepository: (input) =>
+      Effect.gen(function* () {
+        const existing = repositories.get(input.repositoryId);
+
+        if (existing?.poller !== undefined) clearInterval(existing.poller);
+
+        const poller =
+          input.pollIntervalMs === false
+            ? undefined
+            : setInterval(() => {
+                Effect.runPromise(syncRepository(input.repositoryId)).catch(() => {
+                  // repositoryStatus exposes the failure; polling should not crash the process.
+                });
+              }, input.pollIntervalMs ?? 1000);
+
+        poller?.unref?.();
+
+        repositories.set(input.repositoryId, {
+          displayName: input.displayName ?? input.repositoryId,
+          gitDir: input.gitDir,
+          poller,
+          repositoryId: input.repositoryId,
+          store: input.store,
+          worktreePath: input.worktreePath,
+        });
+        yield* sqlite("register repository", () => projection.registerRepository(input));
+
+        if (input.syncOnOpen === false) {
+          return yield* sqlite("repository status", () =>
+            projection.repositoryStatus(input.repositoryId),
+          );
+        }
+
+        return yield* syncRepository(input.repositoryId);
+      }),
+    repositoryHistory: (repositoryId, query = {}) =>
+      sqlite("repository history", () => projection.repositoryHistory(repositoryId, query)),
+    repositoryStatus: (repositoryId) =>
+      sqlite("repository status", () => projection.repositoryStatus(repositoryId)),
+    removeIssueRelation: (repositoryId, ticketId, relation, options) =>
+      mutateIssueRelation(repositoryId, ticketId, relation, "remove", options),
+    restoreTicket,
+    searchTickets: (query) => sqlite("search tickets", () => projection.searchTickets(query)),
+    syncRepository,
+    ticketComments: (repositoryId, ticketId, query = {}) =>
+      sqlite("ticket comments", () =>
+        projection.getTicket(repositoryId, ticketId) === null
+          ? { entries: [] }
+          : projection.ticketComments(repositoryId, ticketId, query),
+      ),
+    ticketHistory: (repositoryId, ticketId, query = {}) =>
+      sqlite("ticket history", () =>
+        projection.repositoryHistory(repositoryId, {
+          ...query,
+          ticketId,
+        }),
+      ),
+    ticketDiff,
+    ticketRevision,
+    ticketRecords: (repositoryId, ticketId, query = {}) =>
+      sqlite("ticket records", () =>
+        projection.getTicket(repositoryId, ticketId) === null
+          ? { entries: [] }
+          : projection.ticketRecords(repositoryId, ticketId, query),
+      ),
+    transitionTicket: (repositoryId, ticketId, input, options) =>
+      updateTicket(repositoryId, ticketId, {
+        frontmatter: {
+          status: input.status,
+        },
+        message: options?.message,
+      }),
+    updateDraft,
+    updateTicket,
+  };
+};
+
+export const DatabaseLive = Layer.effect(
+  DatabaseService,
+  Effect.gen(function* () {
+    const identity = yield* DatabaseIdentity;
+    const ids = yield* DatabaseIdGenerator;
+
+    return DatabaseService.of(makeDatabaseService(identity, ids));
+  }),
+);
+
+export const DatabaseLiveWithOptions = (options: DatabaseServiceOptions) =>
+  Layer.effect(
+    DatabaseService,
+    Effect.gen(function* () {
+      const identity = yield* DatabaseIdentity;
+      const ids = yield* DatabaseIdGenerator;
+
+      return DatabaseService.of(makeDatabaseService(identity, ids, options));
+    }),
+  );
+
+export const DatabaseTest = (prefix?: string) =>
+  DatabaseLive.pipe(
+    Layer.provide(Layer.mergeAll(DatabaseIdentityTest(), DatabaseIdGeneratorDeterministic(prefix))),
+  );
+
+export const DatabaseInMemory = DatabaseTest;
+
+const buildMaterialization = (
+  repository: RepositoryRuntime,
+  previousSnapshotId: string | null,
+  currentSnapshotId: string,
+) =>
+  Effect.gen(function* () {
+    const fullRebuild = previousSnapshotId === null;
+    const issueDocs = fullRebuild
+      ? yield* listSourceDocuments(repository.store, "collections/issues", currentSnapshotId, [
+          ".md",
+          ".json",
+        ])
+      : yield* changedDocuments(repository.store, previousSnapshotId, currentSnapshotId, "issues");
+    const recordDocs = fullRebuild
+      ? yield* listSourceDocuments(repository.store, "collections/records", currentSnapshotId, [
+          ".json",
+        ])
+      : yield* changedDocuments(repository.store, previousSnapshotId, currentSnapshotId, "records");
+    const warnings: Array<MaterializationWarning> = [];
+    const tickets: Array<{ readonly path: string; readonly value: TicketDocument }> = [];
+    const records: Array<{ readonly path: string; readonly value: LinkedRecord }> = [];
+    const deletedTickets: Array<string> = [];
+    const deletedRecords: Array<string> = [];
+    const now = nowIso();
+
+    for (const doc of issueDocs.documents) {
+      try {
+        const ticket = doc.path.endsWith(".json")
+          ? parseLegacyIssueJson(JSON.parse(doc.bytes))
+          : parseIssueMarkdown(doc.bytes);
+
+        validateTicketSync(ticket);
+        tickets.push({ path: doc.path, value: ticket });
+      } catch (error) {
+        deletedTickets.push(doc.id);
+        warnings.push(
+          warning(
+            repository.repositoryId,
+            currentSnapshotId,
+            doc.path,
+            "ticket",
+            doc.id,
+            error,
+            now,
+          ),
+        );
+      }
+    }
+
+    for (const doc of recordDocs.documents) {
+      try {
+        const record = parseRecord(JSON.parse(doc.bytes));
+
+        records.push({ path: doc.path, value: record });
+      } catch (error) {
+        deletedRecords.push(doc.id);
+        warnings.push(
+          warning(
+            repository.repositoryId,
+            currentSnapshotId,
+            doc.path,
+            "record",
+            doc.id,
+            error,
+            now,
+          ),
+        );
+      }
+    }
+
+    const ticketIds = new Set(tickets.map((ticket) => ticket.value.id));
+    for (const ticket of tickets) {
+      for (const childId of ticket.value.frontmatter.children ?? []) {
+        if (ticketIds.has(childId)) continue;
+
+        warnings.push(
+          warning(
+            repository.repositoryId,
+            currentSnapshotId,
+            ticket.path,
+            "ticket",
+            ticket.value.id,
+            new Error(`unknown child issue id: ${childId}`),
+            now,
+            "unknown-child-issue",
+          ),
+        );
+      }
+    }
+
+    deletedTickets.push(...issueDocs.deletedIds);
+    deletedRecords.push(...recordDocs.deletedIds);
+
+    const commits = yield* buildCommitRows(repository, currentSnapshotId);
+    const commitChanges = yield* buildCommitChanges(repository, currentSnapshotId);
+
+    return {
+      commitChanges,
+      commits,
+      deletedRecords,
+      deletedTickets,
+      fullRebuild,
+      records,
+      tickets,
+      warnings,
+    };
+  });
+
+const changedDocuments = (
+  store: GitDbStore.StoreServiceShape,
+  previousSnapshotId: string,
+  currentSnapshotId: string,
+  collection: "issues" | "records",
+) =>
+  Effect.gen(function* () {
+    const diff = yield* storage(
+      "diff snapshots",
+      store.diff(previousSnapshotId, currentSnapshotId),
+    );
+    const changes = [...diff.added, ...diff.modified, ...diff.deleted].filter((change) =>
+      change.path.startsWith(`collections/${collection}/`),
+    );
+    const documents: Array<SourceDocument> = [];
+    const deletedIds: Array<string> = [];
+
+    for (const change of changes) {
+      if (!isDocumentPath(change.path)) continue;
+
+      const id = idFromPath(change.path);
+
+      if (change.newObjectId === undefined) {
+        deletedIds.push(id);
+        continue;
+      }
+
+      const document = yield* storage(
+        "read changed document",
+        store.get(change.path, { from: currentSnapshotId }),
+      );
+
+      if (document !== null) {
+        documents.push({
+          bytes: document.text(),
+          id,
+          path: change.path,
+        });
+      }
+    }
+
+    return { deletedIds, documents };
+  });
+
+const listSourceDocuments = (
+  store: GitDbStore.StoreServiceShape,
+  root: string,
+  snapshotId: string,
+  extensions: ReadonlyArray<string>,
+): Effect.Effect<
+  {
+    readonly deletedIds: ReadonlyArray<string>;
+    readonly documents: ReadonlyArray<SourceDocument>;
+  },
+  DatabaseFailure
+> =>
+  Effect.gen(function* () {
+    const documents: Array<SourceDocument> = [];
+
+    const visit = (path: string): Effect.Effect<void, DatabaseFailure> =>
+      Effect.gen(function* () {
+        const entries = yield* storage(
+          "list source documents",
+          store.list(path, { from: snapshotId }),
+        );
+
+        for (const entry of entries) {
+          if (entry.type === "tree") {
+            yield* visit(entry.path);
+          } else if (extensions.some((extension) => entry.path.endsWith(extension))) {
+            const document = yield* storage(
+              "read source document",
+              store.get(entry.path, { from: snapshotId }),
+            );
+
+            if (document !== null) {
+              documents.push({
+                bytes: document.text(),
+                id: idFromPath(entry.path),
+                path: entry.path,
+              });
+            }
+          }
+        }
+      });
+
+    yield* visit(root).pipe(Effect.orElseSucceed(() => undefined));
+
+    return { deletedIds: [], documents };
+  });
+
+const buildCommitRows = (repository: RepositoryRuntime, snapshotId: string) =>
+  Effect.gen(function* () {
+    const history = yield* storage("read repository history", repository.store.history(snapshotId));
+
+    return history
+      .slice()
+      .reverse()
+      .map((snapshot, index) => ({
+        authorEmail: snapshot.author?.email,
+        authorName: snapshot.author?.name,
+        committedAt: snapshot.createdAt,
+        committerEmail: snapshot.committer?.email,
+        committerName: snapshot.committer?.name,
+        message: snapshot.message,
+        parentIds: snapshot.parents,
+        repositoryId: repository.repositoryId,
+        rootTreeId: snapshot.root,
+        sequence: index + 1,
+        snapshotId: snapshot.id,
+      }));
+  });
+
+const buildCommitChanges = (repository: RepositoryRuntime, snapshotId: string) =>
+  Effect.gen(function* () {
+    const history = yield* storage(
+      "read history for changes",
+      repository.store.history(snapshotId),
+    );
+    const rows: Array<{
+      readonly changes: ReadonlyArray<CommitChange>;
+      readonly repositoryId: string;
+      readonly snapshotId: string;
+    }> = [];
+
+    for (const snapshot of history) {
+      const changes =
+        snapshot.parents[0] === undefined
+          ? yield* initialCommitChanges(repository.store, snapshot.id)
+          : yield* diffCommitChanges(repository.store, snapshot.parents[0], snapshot.id);
+
+      rows.push({
+        changes,
+        repositoryId: repository.repositoryId,
+        snapshotId: snapshot.id,
+      });
+    }
+
+    return rows;
+  });
+
+const initialCommitChanges = (store: GitDbStore.StoreServiceShape, snapshotId: string) =>
+  Effect.gen(function* () {
+    const issueDocs = yield* listSourceDocuments(store, "collections/issues", snapshotId, [
+      ".md",
+      ".json",
+    ]);
+    const recordDocs = yield* listSourceDocuments(store, "collections/records", snapshotId, [
+      ".json",
+    ]);
+
+    return [
+      ...issueDocs.documents.map((doc) => pathChange("added" as const, doc.path, doc.id)),
+      ...recordDocs.documents.map((doc) => pathChange("added" as const, doc.path, doc.id)),
+    ];
+  });
+
+const diffCommitChanges = (
+  store: GitDbStore.StoreServiceShape,
+  previousSnapshotId: string,
+  snapshotId: string,
+) =>
+  Effect.gen(function* () {
+    const diff = yield* storage("diff commit changes", store.diff(previousSnapshotId, snapshotId));
+    const changes = [
+      ...diff.added.map((change) => pathChange("added" as const, change.path)),
+      ...diff.modified.map((change) => pathChange("modified" as const, change.path)),
+      ...diff.deleted.map((change) => pathChange("deleted" as const, change.path)),
+    ].filter((change) => change.objectType !== "unknown");
+
+    return changes;
+  });
+
+const pathChange = (
+  changeType: "added" | "deleted" | "modified",
+  path: string,
+  id = idFromPath(path),
+): CommitChange => {
+  const isIssue = path.startsWith("collections/issues/");
+  const isRecord = path.startsWith("collections/records/");
+
+  return {
+    changeType,
+    objectId: id,
+    objectType: isIssue ? "ticket" : isRecord ? "record" : "unknown",
+    path,
+    ticketId: isIssue ? id : isRecord ? ticketIdFromRecordId(id) : undefined,
+  };
+};
+
+const validateTicket = (ticket: TicketDocument): Effect.Effect<void, DatabaseFailure> =>
+  Effect.try({
+    catch: (cause) =>
+      cause instanceof Error
+        ? validationError("ticket", cause.message, cause)
+        : validationError("ticket", "invalid ticket", cause),
+    try: () => validateTicketSync(ticket),
+  }).pipe(
+    Effect.mapError((error) =>
+      error instanceof Error
+        ? validationError("ticket", error.message, error)
+        : validationError("ticket", "invalid ticket", error),
+    ),
+  );
+
+const validateTicketSync = (ticket: TicketDocument): void => {
+  validateSafeSegment("ticket id", ticket.id);
+  validateRequiredString("title", ticket.frontmatter.title);
+  validateRequiredString("status", ticket.frontmatter.status);
+  validateRequiredString("priority", ticket.frontmatter.priority);
+  validateRequiredString("type", ticket.frontmatter.type);
+  validateRequiredString("createdAt", ticket.frontmatter.createdAt);
+  validateRequiredString("updatedAt", ticket.frontmatter.updatedAt);
+  validateRequiredString("createdBy.name", ticket.frontmatter.createdBy.name);
+};
+
+const validateSafeSegment = (field: string, value: string): void => {
+  if (!SAFE_SEGMENT.test(value) || value.endsWith(".lock") || value === "." || value === "..") {
+    throw new Error(`${field} must be a safe segment`);
+  }
+};
+
+const validateRequiredString = (field: string, value: string): void => {
+  if (value.trim().length === 0) throw new Error(`${field} must not be empty`);
+};
+
+const assertNoUnsafeContent = (
+  field: string,
+  value: unknown,
+): Effect.Effect<void, DatabaseFailure> => {
+  const unsafeKey = findUnsafeKey(value);
+
+  return unsafeKey === null
+    ? Effect.void
+    : Effect.fail(
+        validationError(field, `unsafe secret-bearing field is not allowed: ${unsafeKey}`),
+      );
+};
+
+const findUnsafeKey = (value: unknown, path = ""): string | null => {
+  if (value === null || typeof value !== "object") return null;
+
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      const found = findUnsafeKey(value[index], `${path}[${index}]`);
+
+      if (found !== null) return found;
+    }
+
+    return null;
+  }
+
+  for (const [key, nested] of Object.entries(value)) {
+    const nestedPath = path.length === 0 ? key : `${path}.${key}`;
+
+    if (/(api[_-]?key|token|secret|password|private[_-]?key)/iu.test(key)) {
+      return nestedPath;
+    }
+
+    const found = findUnsafeKey(nested, nestedPath);
+
+    if (found !== null) return found;
+  }
+
+  return null;
+};
+
+const defaultTransitions: Readonly<Record<string, ReadonlyArray<string>>> = {
+  backlog: ["todo", "ready", "canceled"],
+  canceled: ["backlog", "todo"],
+  done: ["in-review"],
+  "in-progress": ["needs-review", "in-review", "canceled"],
+  "in-review": ["needs-review", "done", "in-progress", "canceled"],
+  "needs-review": ["todo", "ready", "in-progress", "in-review", "canceled"],
+  ready: ["in-progress", "todo", "canceled"],
+  todo: ["backlog", "ready", "canceled"],
+};
+
+const maxCommitTitleLength = 72;
+
+const compactText = (value: string): string => value.replace(/\s+/gu, " ").trim();
+
+const titleForCommitMessage = (title: string): string => {
+  const compact = compactText(title);
+
+  if (compact.length <= maxCommitTitleLength) return compact;
+
+  return `${compact.slice(0, maxCommitTitleLength - 3).trimEnd()}...`;
+};
+
+const quoteCommitTitle = (title: string): string =>
+  `"${titleForCommitMessage(title).replaceAll('"', "'")}"`;
+
+const quotedTicketTitle = (ticket: TicketDocument): string => quoteCommitTitle(ticket.title);
+
+const humanizeKey = (value: string): string =>
+  compactText(value)
+    .split(/[-_\s]+/u)
+    .filter(Boolean)
+    .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1).toLowerCase()}`)
+    .join(" ");
+
+const createdTicketMessage = (actor: Actor, ticket: TicketDocument): string =>
+  `${actor.name} created ${quotedTicketTitle(ticket)} ticket`;
+
+const updatedTicketMessage = (
+  actor: Actor,
+  current: TicketDocument,
+  next: TicketDocument,
+): string => {
+  if (next.status !== current.status) {
+    return `${actor.name} updated the status of ${quotedTicketTitle(next)} to ${humanizeKey(next.status)}`;
+  }
+
+  if (next.title !== current.title) {
+    return `${actor.name} renamed ${quotedTicketTitle(current)} ticket to ${quotedTicketTitle(next)}`;
+  }
+
+  return `${actor.name} updated ${quotedTicketTitle(next)} ticket`;
+};
+
+const relationMessage = (
+  actor: Actor,
+  action: "add" | "remove",
+  relationType: IssueRelation["type"],
+  source: TicketDocument,
+  target: TicketDocument,
+): string =>
+  `${actor.name} ${action === "add" ? "added" : "removed"} ${humanizeKey(
+    relationType,
+  ).toLowerCase()} relation between ${quotedTicketTitle(source)} and ${quotedTicketTitle(target)}`;
+
+const recordMessage = (actor: Actor, recordType: string, ticket: TicketDocument): string =>
+  normalizeKey(recordType) === "comment"
+    ? `${actor.name} commented on ${quotedTicketTitle(ticket)} ticket`
+    : `${actor.name} added ${humanizeKey(recordType).toLowerCase()} to ${quotedTicketTitle(
+        ticket,
+      )} ticket`;
+
+const draftTitle = (draft: TicketDraftDocument): string =>
+  quoteCommitTitle(draft.input.title ?? "Untitled ticket");
+
+const draftCreatedMessage = (actor: Actor, draft: TicketDraftDocument): string =>
+  `${actor.name} drafted ${draftTitle(draft)} ticket`;
+
+const draftUpdatedMessage = (actor: Actor, draft: TicketDraftDocument): string =>
+  `${actor.name} updated draft for ${draftTitle(draft)} ticket`;
+
+const assertTransitionAllowed = (
+  from: string,
+  to: string,
+  actor: Actor,
+  ticket: TicketDocument,
+): Effect.Effect<void, DatabaseFailure> => {
+  const fromKey = normalizeKey(from);
+  const toKey = normalizeKey(to);
+  const allowed = defaultTransitions[fromKey] ?? [];
+
+  if (!allowed.includes(toKey)) {
+    return Effect.fail(
+      workflowError(`Transition from ${fromKey} to ${toKey} is not allowed`, ticket.id),
+    );
+  }
+
+  if (toKey === "done" && actor.type !== "human") {
+    return Effect.fail(
+      workflowError(`Only a human actor can mark ticket ${ticket.id} done`, ticket.id),
+    );
+  }
+
+  return Effect.void;
+};
+
+const makeRecord = (
+  input: {
+    readonly payload: unknown;
+    readonly recordType: string;
+    readonly ticketId: string;
+  },
+  id: string,
+  actor: Actor,
+  now: string,
+): LinkedRecord => ({
+  createdAt: now,
+  createdBy: actor,
+  createdDate: updatedDateKey(now),
+  id,
+  issueId: input.ticketId,
+  payload: input.payload,
+  recordType: normalizeKey(input.recordType),
+  schemaVersion: CURRENT_SCHEMA_VERSION,
+});
+
+const initialProvenanceRecord = (
+  ticketId: string,
+  id: string,
+  actor: Actor,
+  now: string,
+): LinkedRecord =>
+  makeRecord(
+    {
+      payload: {
+        actor,
+        timestamp: now,
+      },
+      recordType: "provenance",
+      ticketId,
+    },
+    id,
+    actor,
+    now,
+  );
+
+const statusChangeRecord = (
+  ticketId: string,
+  id: string,
+  actor: Actor,
+  now: string,
+  from: string | null,
+  to: string,
+  reason?: string,
+): LinkedRecord =>
+  makeRecord(
+    {
+      payload: stripUndefined({
+        from,
+        reason,
+        to,
+      }),
+      recordType: "status-change",
+      ticketId,
+    },
+    id,
+    actor,
+    now,
+  );
+
+const issueRelationTypes = new Set(["blocked-by", "blocking", "duplicate", "related"]);
+
+const isIssueRelationType = (value: string): value is IssueRelation["type"] =>
+  issueRelationTypes.has(value);
+
+const inverseRelation = (relation: IssueRelation, issueId: string): IssueRelation => ({
+  issueId,
+  type:
+    relation.type === "blocking"
+      ? "blocked-by"
+      : relation.type === "blocked-by"
+        ? "blocking"
+        : relation.type,
+});
+
+const relationKey = (relation: IssueRelation): string => `${relation.type}:${relation.issueId}`;
+
+const addRelation = (
+  current: ReadonlyArray<IssueRelation> | undefined,
+  relation: IssueRelation,
+): ReadonlyArray<IssueRelation> => {
+  const relations = new Map((current ?? []).map((entry) => [relationKey(entry), entry]));
+
+  relations.set(relationKey(relation), relation);
+
+  return [...relations.values()].sort((a, b) => relationKey(a).localeCompare(relationKey(b)));
+};
+
+const removeRelation = (
+  current: ReadonlyArray<IssueRelation> | undefined,
+  relation: IssueRelation,
+): ReadonlyArray<IssueRelation> | undefined => {
+  const next = (current ?? []).filter((entry) => relationKey(entry) !== relationKey(relation));
+
+  return next.length === 0 ? undefined : next;
+};
+
+const commentPayloadBody = (payload: unknown): string => {
+  if (typeof payload === "string") return payload;
+  if (payload !== null && typeof payload === "object") {
+    const record = payload as Readonly<Record<string, unknown>>;
+
+    if (typeof record.body === "string") return record.body;
+    if (typeof record.text === "string") return record.text;
+    if (typeof record.markdown === "string") return record.markdown;
+    if (typeof record.comment === "string") return record.comment;
+  }
+
+  return "";
+};
+
+const metadataFields = [
+  "title",
+  "status",
+  "priority",
+  "assignee",
+  "labels",
+  "parent",
+  "children",
+  "dueDate",
+  "estimate",
+  "archivedAt",
+  "deletedAt",
+  "duplicateOf",
+  "relations",
+] as const;
+
+const metadataChanges = (
+  before: TicketDocument | null,
+  after: TicketDocument | null,
+): ReadonlyArray<TicketRevisionMetadataChange> => {
+  const changes: Array<TicketRevisionMetadataChange> = [];
+
+  for (const field of metadataFields) {
+    const beforeValue = before?.frontmatter[field] ?? null;
+    const afterValue = after?.frontmatter[field] ?? null;
+
+    if (JSON.stringify(beforeValue) !== JSON.stringify(afterValue)) {
+      changes.push({
+        after: afterValue,
+        before: beforeValue,
+        field,
+      });
+    }
+  }
+
+  return changes;
+};
+
+const mergeDraftInput = (
+  current: CreateTicketDraftInput,
+  patch: UpdateTicketDraftInput,
+): CreateTicketDraftInput => {
+  const frontmatter = patch.frontmatter ?? {};
+
+  return stripUndefined({
+    ...current,
+    assignee: frontmatter["assignee"] ?? current.assignee,
+    body: patch.body ?? current.body,
+    dueDate: frontmatter["dueDate"] ?? current.dueDate,
+    estimate: frontmatter["estimate"] ?? current.estimate,
+    externalLinks: frontmatter["externalLinks"] ?? current.externalLinks,
+    labels: frontmatter["labels"] ?? current.labels,
+    parent: frontmatter["parent"] ?? current.parent,
+    planningNotRequired: frontmatter["planningNotRequired"] ?? current.planningNotRequired,
+    priority: frontmatter["priority"] ?? current.priority,
+    repository: frontmatter["repository"] ?? current.repository,
+    status: patch.status ?? frontmatter["status"] ?? current.status,
+    title: frontmatter["title"] ?? current.title,
+    type: frontmatter["type"] ?? current.type,
+  }) as CreateTicketDraftInput;
+};
+
+const parseRecord = (input: unknown): LinkedRecord => {
+  if (input === null || typeof input !== "object") throw new Error("record must be an object");
+
+  const value = input as Partial<LinkedRecord>;
+
+  if (
+    typeof value.id !== "string" ||
+    typeof value.issueId !== "string" ||
+    typeof value.recordType !== "string" ||
+    typeof value.createdAt !== "string" ||
+    value.createdBy === undefined
+  ) {
+    throw new Error("record is missing required fields");
+  }
+
+  return {
+    createdAt: value.createdAt,
+    createdBy: value.createdBy,
+    createdDate: value.createdDate ?? updatedDateKey(value.createdAt),
+    id: value.id,
+    issueId: value.issueId,
+    payload: value.payload,
+    recordType: normalizeKey(value.recordType),
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+  };
+};
+
+const makeRecordId = (ticketId: string, recordType: string, recordId: string): string =>
+  `${ticketId}_${normalizeKey(recordType)}_${recordId}`;
+
+const ticketIdFromRecordId = (recordId: string): string | undefined => {
+  const marker = recordId.indexOf("_");
+
+  if (marker === -1) return undefined;
+
+  const second = recordId.indexOf("_", marker + 1);
+
+  return second === -1
+    ? undefined
+    : recordId.slice(0, marker + (recordId.startsWith("iss_") ? 10 : 0));
+};
+
+const idFromPath = (path: string): string => {
+  const file = path.split("/").at(-1) ?? path;
+
+  return file.replace(/\.(json|md)$/u, "");
+};
+
+const isDocumentPath = (path: string): boolean => /\.(json|md)$/u.test(path);
+
+const warning = (
+  repositoryId: string,
+  snapshotId: string,
+  path: string,
+  objectType: string,
+  objectId: string | undefined,
+  cause: unknown,
+  createdAt: string,
+  reason = "invalid-source-object",
+): MaterializationWarning => ({
+  createdAt,
+  message: cause instanceof Error ? cause.message : String(cause),
+  objectId,
+  objectType,
+  path,
+  reason,
+  repositoryId,
+  snapshotId,
+});
+
+const gitIdentity = (actor: Actor) => ({
+  email: actor.email,
+  name: actor.name,
+});
+
+const nowIso = (): string => new Date().toISOString();
+
+const storage = <A, E>(
+  operation: string,
+  effect: Effect.Effect<A, E>,
+): Effect.Effect<A, DatabaseFailure> =>
+  effect.pipe(Effect.mapError((cause) => storageError(operation, cause)));
+
+const sqlite = <A>(operation: string, f: () => A): Effect.Effect<A, DatabaseFailure> =>
+  Effect.try({
+    catch: (cause) => sqliteError(operation, cause),
+    try: f,
+  });

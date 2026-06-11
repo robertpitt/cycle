@@ -96,8 +96,8 @@ const hashFile = (file: string): Effect.Effect<string, unknown> =>
     Effect.map((bytes) => createHash("sha1").update(bytes).digest("hex")),
   );
 
-const documentStorePath = (collection: string, id: string): string =>
-  `collections/${collection}/${createHash("sha1").update(id).digest("hex").slice(0, 2)}/${id}.json`;
+const documentStorePath = (collection: string, id: string, extension = "json"): string =>
+  `collections/${collection}/${createHash("sha1").update(id).digest("hex").slice(0, 2)}/${id}.${extension}`;
 
 describe("@cycle/git-db", () => {
   it.effect("stores collection documents through replaceable Effect services", () =>
@@ -108,27 +108,21 @@ describe("@cycle/git-db", () => {
         readonly enabled: boolean;
         readonly name: string;
         readonly type: string;
-      }>("providers", { indexes: ["type"] });
+      }>("providers");
 
       yield* providers.setMeta({
         label: "Payment providers",
       });
-      yield* providers.put(
-        "stripe",
-        {
-          enabled: true,
-          name: "Stripe",
-          type: "payment",
-        },
-      );
-      yield* providers.put(
-        "adyen",
-        {
-          enabled: false,
-          name: "Adyen",
-          type: "payment",
-        },
-      );
+      yield* providers.put("stripe", {
+        enabled: true,
+        name: "Stripe",
+        type: "payment",
+      });
+      yield* providers.put("adyen", {
+        enabled: false,
+        name: "Adyen",
+        type: "payment",
+      });
 
       const snapshot = yield* tx.commit({
         message: "Add payment provider configuration",
@@ -137,8 +131,7 @@ describe("@cycle/git-db", () => {
         readonly enabled: boolean;
         readonly name: string;
         readonly type: string;
-      }>("providers", { indexes: ["type"] });
-      const byType = yield* collection.index("type");
+      }>("providers");
 
       assert.deepStrictEqual(snapshot.parents, []);
       assert.deepStrictEqual(yield* collection.get("stripe"), {
@@ -159,14 +152,11 @@ describe("@cycle/git-db", () => {
         },
       ]);
       assert.strictEqual(yield* store.get(".store/manifest.json"), null);
-      assert.deepStrictEqual((yield* byType.get("payment")).map((entry) => entry.id).sort(), [
-        "adyen",
-        "stripe",
-      ]);
+      assert.deepStrictEqual(yield* store.list("indexes"), []);
     }).pipe(Effect.provide(GitDbInMemory())),
   );
 
-  it.effect("reads raw documents, raw trees, metadata, indexes, and deleted index entries", () =>
+  it.effect("reads raw documents, raw trees, metadata, and deletes collection entries", () =>
     Effect.gen(function* () {
       const store = yield* StoreApi.StoreService;
       const providers = yield* store.collection<{
@@ -174,7 +164,7 @@ describe("@cycle/git-db", () => {
         readonly name: string;
         readonly tags?: ReadonlyArray<string>;
         readonly type: string;
-      }>("providers", { indexes: ["type", "tags"] });
+      }>("providers");
       const stripePath = documentStorePath("providers", "stripe");
       const adyenPath = documentStorePath("providers", "adyen");
 
@@ -215,8 +205,6 @@ describe("@cycle/git-db", () => {
       const rawDocument = yield* store.get(stripePath);
       const providerTree = yield* store.list("collections/providers");
       const entries = yield* providers.list();
-      const byType = yield* providers.index("type");
-      const tags = yield* providers.index("tags");
 
       assert.ok(stripeDocument !== null);
       assert.ok(rawDocument !== null);
@@ -238,18 +226,8 @@ describe("@cycle/git-db", () => {
         providerTree.map((entry) => entry.name).sort(),
         [".meta.json", adyenPath.split("/")[2], stripePath.split("/")[2]].sort(),
       );
-      assert.deepStrictEqual(
-        entries.map((entry) => entry.id).sort(),
-        ["adyen", "stripe"],
-      );
-      assert.deepStrictEqual(
-        (yield* byType.get("payment")).map((entry) => entry.id).sort(),
-        ["adyen", "stripe"],
-      );
-      assert.deepStrictEqual(
-        (yield* tags.get("card")).map((entry) => entry.id),
-        ["stripe"],
-      );
+      assert.deepStrictEqual(entries.map((entry) => entry.id).sort(), ["adyen", "stripe"]);
+      assert.deepStrictEqual(yield* store.list("indexes"), []);
       assert.deepStrictEqual(yield* providers.meta(), {
         label: "Payment providers",
         owner: "platform",
@@ -262,14 +240,59 @@ describe("@cycle/git-db", () => {
       assert.strictEqual(yield* providers.get("stripe"), null);
       assert.strictEqual(yield* store.get(stripePath), null);
       assert.deepStrictEqual(
-        (yield* byType.get("payment")).map((entry) => entry.id),
+        (yield* providers.list()).map((entry) => entry.id),
         ["adyen"],
       );
-      assert.deepStrictEqual(yield* tags.get("card"), []);
+      assert.deepStrictEqual(yield* store.list("indexes"), []);
     }).pipe(Effect.provide(GitDbInMemory())),
   );
 
-  it.effect("pages collection and index results by cursor before hydrating blobs", () =>
+  it.effect("supports custom collection document codecs and extensions", () =>
+    Effect.gen(function* () {
+      type Note = {
+        readonly status: string;
+        readonly title: string;
+      };
+
+      const store = yield* StoreApi.StoreService;
+      const notes = yield* store.collection<Note>("notes", {
+        codec: {
+          decode: (document) => {
+            const [statusLine, titleLine] = document.text().trimEnd().split("\n");
+
+            return {
+              status: statusLine!.slice("status: ".length),
+              title: titleLine!.slice("# ".length),
+            };
+          },
+          encode: (note) => `status: ${note.status}\n# ${note.title}\n`,
+        },
+        extension: "md",
+      });
+
+      yield* notes.put("note-1", {
+        status: "open",
+        title: "Markdown note",
+      });
+
+      const path = documentStorePath("notes", "note-1", "md");
+      const rawDocument = yield* store.get(path);
+
+      assert.ok(rawDocument !== null);
+      assert.deepStrictEqual(yield* store.list("indexes"), []);
+      assert.strictEqual(rawDocument.text(), "status: open\n# Markdown note\n");
+      assert.deepStrictEqual(yield* notes.get("note-1"), {
+        status: "open",
+        title: "Markdown note",
+      });
+      assert.deepStrictEqual(
+        (yield* notes.list()).map((entry) => entry.id),
+        ["note-1"],
+      );
+    }).pipe(Effect.provide(GitDbInMemory())),
+  );
+
+  it.effect("pages collection results by cursor before hydrating blobs", () =>
     Effect.gen(function* () {
       const store = yield* StoreApi.StoreService;
       const candidates = ["item-1", "item-2", "item-3", "item-4"]
@@ -326,7 +349,13 @@ describe("@cycle/git-db", () => {
       const tickets = yield* store.collection<{
         readonly status: string;
         readonly title: string;
-      }>("tickets", { indexes: ["status"] });
+      }>("tickets");
+      const ticketCandidates = ["ticket-1", "ticket-2", "ticket-3"]
+        .map((id) => ({
+          id,
+          path: documentStorePath("tickets", id),
+        }))
+        .sort((a, b) => a.path.localeCompare(b.path));
 
       yield* tickets.put("ticket-1", {
         status: "open",
@@ -341,27 +370,26 @@ describe("@cycle/git-db", () => {
         title: "Third",
       });
 
-      const byStatus = yield* tickets.index("status");
-      const openFirstPage = yield* byStatus.page("open", { limit: 2 });
-      const openSecondPage = yield* byStatus.page("open", {
+      const openFirstPage = yield* tickets.page({ limit: 2 });
+      const openSecondPage = yield* tickets.page({
         cursor: openFirstPage.nextCursor,
         limit: 2,
       });
 
       assert.deepStrictEqual(
         openFirstPage.entries.map((entry) => entry.id),
-        ["ticket-1", "ticket-2"],
+        ticketCandidates.slice(0, 2).map((entry) => entry.id),
       );
-      assert.strictEqual(openFirstPage.nextCursor, "indexes/tickets/status/open/ticket-2");
+      assert.strictEqual(openFirstPage.nextCursor, ticketCandidates[1]?.path);
       assert.deepStrictEqual(
         openSecondPage.entries.map((entry) => entry.id),
-        ["ticket-3"],
+        ticketCandidates.slice(2).map((entry) => entry.id),
       );
       assert.strictEqual(openSecondPage.nextCursor, undefined);
     }).pipe(Effect.provide(GitDbInMemory())),
   );
 
-  it.effect("maintains declarative indexes across updates, deletes, and index value boundaries", () =>
+  it.effect("keeps collection writes free of derived index entries", () =>
     Effect.gen(function* () {
       type Ticket = {
         readonly assignee?: string | null | undefined;
@@ -372,13 +400,7 @@ describe("@cycle/git-db", () => {
       };
 
       const store = yield* StoreApi.StoreService;
-      const tickets = yield* store.collection<Ticket>("tickets", {
-        indexes: ["assignee", "author", "status", "tags"],
-      });
-      const byAssignee = yield* tickets.index("assignee");
-      const byAuthor = yield* tickets.index("author");
-      const byStatus = yield* tickets.index("status");
-      const byTag = yield* tickets.index("tags");
+      const tickets = yield* store.collection<Ticket>("tickets");
 
       yield* tickets.put(
         "ticket-1",
@@ -388,16 +410,11 @@ describe("@cycle/git-db", () => {
           tags: ["bug", "urgent"],
         },
         {
-          message: "Create indexed ticket",
+          message: "Create ticket",
         },
       );
 
-      assert.deepStrictEqual((yield* byStatus.get("open")).map((entry) => entry.id), ["ticket-1"]);
-      assert.deepStrictEqual((yield* byTag.get("bug")).map((entry) => entry.id), ["ticket-1"]);
-      assert.deepStrictEqual((yield* byAssignee.get("null")).map((entry) => entry.id), [
-        "ticket-1",
-      ]);
-      assert.deepStrictEqual(yield* byAuthor.get("robert"), []);
+      assert.deepStrictEqual(yield* store.list("indexes"), []);
 
       yield* tickets.put(
         "ticket-1",
@@ -408,96 +425,89 @@ describe("@cycle/git-db", () => {
           tags: ["done"],
         },
         {
-          message: "Reindex ticket",
+          message: "Update ticket",
         },
       );
 
-      assert.deepStrictEqual(yield* byStatus.get("open"), []);
-      assert.deepStrictEqual((yield* byStatus.get("closed")).map((entry) => entry.id), [
-        "ticket-1",
-      ]);
-      assert.deepStrictEqual(yield* byTag.get("bug"), []);
-      assert.deepStrictEqual((yield* byTag.get("done")).map((entry) => entry.id), ["ticket-1"]);
-      assert.deepStrictEqual(yield* byAssignee.get("null"), []);
-      assert.deepStrictEqual((yield* byAuthor.get("robert")).map((entry) => entry.id), [
-        "ticket-1",
-      ]);
+      assert.deepStrictEqual(yield* tickets.get("ticket-1"), {
+        author: "robert",
+        status: "closed",
+        tags: ["done"],
+      });
+      assert.deepStrictEqual(yield* store.list("indexes"), []);
 
       yield* tickets.put("ticket-2", {
         assignee: null,
         status: "open",
       });
 
-      assert.deepStrictEqual((yield* byAssignee.get("null")).map((entry) => entry.id), [
-        "ticket-2",
-      ]);
-
       yield* tickets.delete("ticket-2");
 
-      assert.deepStrictEqual(yield* byAssignee.get("null"), []);
+      assert.strictEqual(yield* tickets.get("ticket-2"), null);
+      assert.deepStrictEqual(yield* store.list("indexes"), []);
 
-      const badTickets = yield* store.collection<Ticket>("bad-tickets", {
-        indexes: ["metadata"],
+      yield* tickets.put("ticket-3", {
+        metadata: { nested: true },
+        status: "open",
       });
-      const invalid = yield* Effect.flip(
-        badTickets.put("bad", {
-          metadata: { nested: true },
-          status: "open",
-        }),
-      );
 
-      assert.ok(invalid instanceof InvalidIdentifierError);
-      assert.strictEqual(yield* badTickets.get("bad"), null);
+      assert.deepStrictEqual(yield* tickets.get("ticket-3"), {
+        metadata: { nested: true },
+        status: "open",
+      });
+      assert.deepStrictEqual(yield* store.list("indexes"), []);
     }).pipe(Effect.provide(GitDbInMemory())),
   );
 
-  it.effect("supports transaction raw paths, delete, abort, and inactive transaction failures", () =>
-    Effect.gen(function* () {
-      const store = yield* StoreApi.StoreService;
-      const aborted = yield* store.begin();
+  it.effect(
+    "supports transaction raw paths, delete, abort, and inactive transaction failures",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* StoreApi.StoreService;
+        const aborted = yield* store.begin();
 
-      yield* aborted.put("scratch/provider.json", { enabled: true });
-      assert.deepStrictEqual((yield* aborted.get("scratch/provider.json"))?.json(), {
-        enabled: true,
-      });
-      assert.deepStrictEqual(
-        (yield* aborted.list("scratch")).map((entry) => ({
-          name: entry.name,
-          path: entry.path,
-          type: entry.type,
-        })),
-        [
-          {
-            name: "provider.json",
-            path: "scratch/provider.json",
-            type: "blob",
-          },
-        ],
-      );
+        yield* aborted.put("scratch/provider.json", { enabled: true });
+        assert.deepStrictEqual((yield* aborted.get("scratch/provider.json"))?.json(), {
+          enabled: true,
+        });
+        assert.deepStrictEqual(
+          (yield* aborted.list("scratch")).map((entry) => ({
+            name: entry.name,
+            path: entry.path,
+            type: entry.type,
+          })),
+          [
+            {
+              name: "provider.json",
+              path: "scratch/provider.json",
+              type: "blob",
+            },
+          ],
+        );
 
-      yield* aborted.delete("scratch/provider.json");
-      assert.strictEqual(yield* aborted.get("scratch/provider.json"), null);
-      assert.deepStrictEqual(yield* aborted.list("scratch"), []);
+        yield* aborted.delete("scratch/provider.json");
+        assert.strictEqual(yield* aborted.get("scratch/provider.json"), null);
+        assert.deepStrictEqual(yield* aborted.list("scratch"), []);
 
-      yield* aborted.abort();
-      const abortedCommit = yield* Effect.flip(aborted.commit({ message: "Will not commit" }));
+        yield* aborted.abort();
+        const abortedCommit = yield* Effect.flip(aborted.commit({ message: "Will not commit" }));
 
-      assert.ok(abortedCommit instanceof TransactionInactiveError);
+        assert.ok(abortedCommit instanceof TransactionInactiveError);
 
-      const committed = yield* store.begin();
+        const committed = yield* store.begin();
 
-      yield* committed.put("scratch/provider.json", { enabled: true });
-      yield* committed.commit({ message: "Commit scratch document" });
+        yield* committed.put("scratch/provider.json", { enabled: true });
+        yield* committed.commit({ message: "Commit scratch document" });
 
-      const committedWrite = yield* Effect.flip(
-        committed.put("scratch/after-commit.json", { enabled: false }),
-      );
+        const committedWrite = yield* Effect.flip(
+          committed.put("scratch/after-commit.json", { enabled: false }),
+        );
 
-      assert.ok(committedWrite instanceof TransactionInactiveError);
-      assert.deepStrictEqual((yield* store.get("scratch/provider.json"))?.json(), {
-        enabled: true,
-      });
-    }).pipe(Effect.provide(GitDbInMemory())),
+        assert.ok(committedWrite instanceof TransactionInactiveError);
+        assert.deepStrictEqual((yield* store.get("scratch/provider.json"))?.json(), {
+          enabled: true,
+        });
+      }).pipe(Effect.provide(GitDbInMemory())),
   );
 
   it.effect("resolves snapshots, historical reads, history filters, and path-level diffs", () =>
@@ -623,10 +633,9 @@ describe("@cycle/git-db", () => {
       assert.strictEqual((yield* main.current())?.id, initial.id);
       assert.strictEqual((yield* review.current())?.id, reviewSnapshot.id);
       assert.deepStrictEqual(yield* providers.get("adyen"), null);
-      assert.deepStrictEqual(
-        yield* providers.get("adyen", { from: "review/provider-rollout" }),
-        { enabled: false },
-      );
+      assert.deepStrictEqual(yield* providers.get("adyen", { from: "review/provider-rollout" }), {
+        enabled: false,
+      });
       assert.ok(duplicateRelease instanceof PointerConflictError);
       assert.ok(missingFork instanceof PointerNotFoundError);
       assert.deepStrictEqual(yield* store.localPointers(), [
@@ -654,9 +663,7 @@ describe("@cycle/git-db", () => {
       assert.strictEqual(staleMove.expected, initial.id);
       assert.strictEqual(staleMove.actual, reviewSnapshot.id);
 
-      const badMove = yield* Effect.flip(
-        release.move("0000000000000000000000000000000000000000"),
-      );
+      const badMove = yield* Effect.flip(release.move("0000000000000000000000000000000000000000"));
 
       assert.ok(badMove instanceof SnapshotNotFoundError);
 
@@ -684,10 +691,7 @@ describe("@cycle/git-db", () => {
       const invalidJson = yield* Effect.flip(providers.get("stripe"));
       const invalidNamespace = yield* Effect.gen(function* () {
         yield* StoreApi.StoreService;
-      }).pipe(
-        Effect.provide(GitDbInMemory({ namespace: "refs/heads/main" })),
-        Effect.flip,
-      );
+      }).pipe(Effect.provide(GitDbInMemory({ namespace: "refs/heads/main" })), Effect.flip);
 
       assert.ok(invalidCollection instanceof InvalidIdentifierError);
       assert.ok(invalidPointer instanceof InvalidPointerNameError);
@@ -699,81 +703,83 @@ describe("@cycle/git-db", () => {
     }).pipe(Effect.provide(GitDbInMemory())),
   );
 
-  it.effect("supports the module-first helper APIs for transactions, pointers, snapshots, and sync", () =>
-    Effect.gen(function* () {
-      const store = yield* StoreApi.StoreService;
-      const tx = yield* TransactionApi.begin(store);
-      const txProviders = yield* tx.collection<{ readonly enabled: boolean }>("providers");
+  it.effect(
+    "supports the module-first helper APIs for transactions, pointers, snapshots, and sync",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* StoreApi.StoreService;
+        const tx = yield* TransactionApi.begin(store);
+        const txProviders = yield* tx.collection<{ readonly enabled: boolean }>("providers");
 
-      yield* txProviders.put("stripe", { enabled: true });
+        yield* txProviders.put("stripe", { enabled: true });
 
-      const snapshot = yield* TransactionApi.commit(tx, {
-        message: "Commit through transaction helper",
-      });
-      const providers = yield* CollectionApi.get<{ readonly enabled: boolean }>(
-        store,
-        "providers",
-      );
-      const collectionList = yield* CollectionApi.list(store);
-      const entries = yield* CollectionApi.entries(providers);
-      const pointer = yield* PointerApi.get(store, "main");
-      const localNames = yield* PointerApi.localNames(store);
-      const resolved = yield* SnapshotApi.resolveId(store, "main");
-      const history = yield* SnapshotApi.history(store, "main");
-      const diff = yield* SnapshotApi.diff(store, snapshot.id, snapshot.id);
-      const sync = yield* SyncApi.run(store, {
-        mode: "fetch",
-        pointers: ["main"],
-        remote: "origin",
-      });
+        const snapshot = yield* TransactionApi.commit(tx, {
+          message: "Commit through transaction helper",
+        });
+        const providers = yield* CollectionApi.get<{ readonly enabled: boolean }>(
+          store,
+          "providers",
+        );
+        const collectionList = yield* CollectionApi.list(store);
+        const entries = yield* CollectionApi.entries(providers);
+        const pointer = yield* PointerApi.get(store, "main");
+        const localNames = yield* PointerApi.localNames(store);
+        const resolved = yield* SnapshotApi.resolveId(store, "main");
+        const history = yield* SnapshotApi.history(store, "main");
+        const diff = yield* SnapshotApi.diff(store, snapshot.id, snapshot.id);
+        const sync = yield* SyncApi.run(store, {
+          mode: "fetch",
+          pointers: ["main"],
+          remote: "origin",
+        });
 
-      yield* PointerApi.move(pointer, snapshot.id, { expectedSnapshot: snapshot.id });
+        yield* PointerApi.move(pointer, snapshot.id, { expectedSnapshot: snapshot.id });
 
-      const pointerTx = yield* PointerApi.begin(pointer);
+        const pointerTx = yield* PointerApi.begin(pointer);
 
-      yield* TransactionApi.abort(pointerTx);
+        yield* TransactionApi.abort(pointerTx);
 
-      const inactiveCommit = yield* Effect.flip(TransactionApi.commit(pointerTx));
+        const inactiveCommit = yield* Effect.flip(TransactionApi.commit(pointerTx));
 
-      assert.deepStrictEqual(collectionList, [
-        {
-          meta: undefined,
-          name: "providers",
-          path: "collections/providers",
-        },
-      ]);
-      assert.deepStrictEqual(
-        entries.map((entry) => entry.id),
-        ["stripe"],
-      );
-      assert.deepStrictEqual(yield* providers.get("stripe"), { enabled: true });
-      assert.strictEqual((yield* PointerApi.current(pointer))?.id, snapshot.id);
-      assert.deepStrictEqual(localNames, ["main"]);
-      assert.strictEqual(resolved, snapshot.id);
-      assert.deepStrictEqual(
-        history.map((item) => item.id),
-        [snapshot.id],
-      );
-      assert.deepStrictEqual(diff, {
-        added: [],
-        deleted: [],
-        modified: [],
-      });
-      assert.deepStrictEqual(sync, {
-        pointers: [
+        assert.deepStrictEqual(collectionList, [
           {
-            localAfter: snapshot.id,
-            localBefore: snapshot.id,
-            pointer: "main",
-            remoteAfter: undefined,
-            remoteBefore: undefined,
-            status: "up-to-date",
+            meta: undefined,
+            name: "providers",
+            path: "collections/providers",
           },
-        ],
-        remote: "origin",
-      });
-      assert.ok(inactiveCommit instanceof TransactionInactiveError);
-    }).pipe(Effect.provide(GitDbInMemory())),
+        ]);
+        assert.deepStrictEqual(
+          entries.map((entry) => entry.id),
+          ["stripe"],
+        );
+        assert.deepStrictEqual(yield* providers.get("stripe"), { enabled: true });
+        assert.strictEqual((yield* PointerApi.current(pointer))?.id, snapshot.id);
+        assert.deepStrictEqual(localNames, ["main"]);
+        assert.strictEqual(resolved, snapshot.id);
+        assert.deepStrictEqual(
+          history.map((item) => item.id),
+          [snapshot.id],
+        );
+        assert.deepStrictEqual(diff, {
+          added: [],
+          deleted: [],
+          modified: [],
+        });
+        assert.deepStrictEqual(sync, {
+          pointers: [
+            {
+              localAfter: snapshot.id,
+              localBefore: snapshot.id,
+              pointer: "main",
+              remoteAfter: undefined,
+              remoteBefore: undefined,
+              status: "up-to-date",
+            },
+          ],
+          remote: "origin",
+        });
+        assert.ok(inactiveCommit instanceof TransactionInactiveError);
+      }).pipe(Effect.provide(GitDbInMemory())),
   );
 
   it.effect("detects optimistic pointer conflicts", () =>
@@ -800,10 +806,7 @@ describe("@cycle/git-db", () => {
   it.effect("supports module-first collection, pointer, and snapshot helpers", () =>
     Effect.gen(function* () {
       const store = yield* StoreApi.StoreService;
-      const providers = yield* CollectionApi.get<{ readonly enabled: boolean }>(
-        store,
-        "providers",
-      );
+      const providers = yield* CollectionApi.get<{ readonly enabled: boolean }>(store, "providers");
       const snapshot = yield* CollectionApi.put(
         providers,
         "stripe",
@@ -1155,7 +1158,10 @@ describe("@cycle/git-db", () => {
             assert.strictEqual(clonedFetch.pointers[0]?.localBefore, base.snapshot.id);
             assert.strictEqual(clonedFetch.pointers[0]?.remoteBefore, base.snapshot.id);
             assert.strictEqual(clonedUpdate.sync.pointers[0]?.status, "pushed");
-            assert.strictEqual(clonedUpdate.sync.pointers[0]?.localBefore, clonedUpdate.snapshot.id);
+            assert.strictEqual(
+              clonedUpdate.sync.pointers[0]?.localBefore,
+              clonedUpdate.snapshot.id,
+            );
             assert.strictEqual(localPull.sync.pointers[0]?.status, "fast-forwarded");
             assert.strictEqual(localPull.sync.pointers[0]?.localAfter, clonedUpdate.snapshot.id);
             assert.deepStrictEqual(localPull.value, {

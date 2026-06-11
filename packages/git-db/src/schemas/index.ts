@@ -1,11 +1,7 @@
 export * as Collection from "./Collection.ts";
-export * as Commit from "./Commit.ts";
 export * as Document from "./Document.ts";
 export * as Identifier from "./Identifier.ts";
-export * as ObjectId from "./ObjectId.ts";
 export * as Path from "./Path.ts";
-export * as Ref from "./Ref.ts";
 export * as Snapshot from "./Snapshot.ts";
 export * as Store from "./Store.ts";
 export * as Sync from "./Sync.ts";
-export * as Tree from "./Tree.ts";

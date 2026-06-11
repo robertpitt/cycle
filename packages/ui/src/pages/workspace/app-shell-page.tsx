@@ -26,6 +26,7 @@ import { Button } from "../../atoms/button/index.ts";
 import { IconButton } from "../../atoms/icon-button/index.ts";
 import { Separator } from "../../atoms/separator/index.ts";
 import { cn } from "../../lib/index.ts";
+import { CreateIssueDialog } from "../../organisms/create-issue-dialog/index.ts";
 import {
   WorkspaceShell,
   WorkspaceSidebar,
@@ -374,6 +375,29 @@ export const WorkspaceAppShellPage = ({ className }: WorkspaceAppShellPageProps)
           <AppShellFrame compact menuOpen title="Header menu" />
         </div>
       </main>
+    </WorkspaceShell>
+  );
+};
+
+export const WorkspaceCreateTicketPage = ({ className }: WorkspaceAppShellPageProps) => {
+  const [collapsed, setCollapsed] = React.useState(false);
+  const [createMore, setCreateMore] = React.useState(false);
+
+  return (
+    <WorkspaceShell className={cn("min-h-screen p-6", className)}>
+      <main className="mx-auto w-full max-w-7xl">
+        <AppShellFrame
+          collapsed={collapsed}
+          onToggleSidebar={() => setCollapsed((value) => !value)}
+          title="Issues"
+        />
+      </main>
+      <CreateIssueDialog
+        createMore={createMore}
+        defaultOpenChip="status"
+        onCreate={(event) => event.preventDefault()}
+        onCreateMoreChange={setCreateMore}
+      />
     </WorkspaceShell>
   );
 };

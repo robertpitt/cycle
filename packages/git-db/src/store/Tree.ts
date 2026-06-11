@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import type { ObjectId, TreeEntry } from "../domain/index.ts";
+import type { ObjectId, TreeEntry } from "@cycle/git/schemas";
 import type { GitDbError } from "../errors/index.ts";
 import { joinStorePath } from "./Path.ts";
 
@@ -91,11 +91,7 @@ export const writeMutableTree = (
     return yield* git.writeTree(entries);
   });
 
-export const applyMutation = (
-  root: MutableTree,
-  path: string,
-  mutation: PendingMutation,
-): void => {
+export const applyMutation = (root: MutableTree, path: string, mutation: PendingMutation): void => {
   const segments = path.split("/");
 
   if (mutation.kind === "delete") {

@@ -11,7 +11,7 @@ const meta = {
     },
     layout: "fullscreen",
   },
-  title: "Pages/No Projects",
+  title: "Examples/No Projects",
 } satisfies Meta<typeof WorkspaceNoProjectsPage>;
 
 export default meta;

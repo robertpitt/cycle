@@ -1,8 +1,11 @@
 import { strict as assert } from "node:assert";
+import { execFile } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { promisify } from "node:util";
 import { Effect, Layer } from "effect";
+import { GitRepositoryLive } from "@cycle/git";
 import { afterEach, describe, it } from "vitest";
 import { ElectronApp } from "../src/platform/ElectronApp.ts";
 import {
@@ -19,6 +22,7 @@ import { LocalWorkspaceLive } from "../src/main/LocalWorkspaceLive.ts";
 import { ProfileLive } from "../src/main/ProfileLive.ts";
 
 const temporaryDirectories: Array<string> = [];
+const execFileAsync = promisify(execFile);
 
 const makeTempDir = async (): Promise<string> => {
   const directory = await mkdtemp(join(tmpdir(), "cycle-desktop-"));
@@ -50,10 +54,12 @@ const makeConfigLayer = (userData: string) =>
 
 const makeServicesLayer = (userData: string) => {
   const appConfig = makeConfigLayer(userData);
+  const gitRepository = GitRepositoryLive.NodeLive;
   return Layer.mergeAll(
     appConfig,
     ProfileLive.pipe(Layer.provide(appConfig)),
-    LocalWorkspaceLive.pipe(Layer.provide(appConfig)),
+    gitRepository,
+    LocalWorkspaceLive.pipe(Layer.provide(Layer.mergeAll(appConfig, gitRepository))),
   );
 };
 
@@ -188,9 +194,8 @@ describe("desktop app config", () => {
   it("persists repository add, dedupe, mark opened, and removal", async () => {
     const userData = await makeTempDir();
     const repositoryPath = join(userData, "project");
-    await mkdir(join(repositoryPath, ".git"), {
-      recursive: true,
-    });
+    await mkdir(repositoryPath);
+    await execFileAsync("git", ["init"], { cwd: repositoryPath });
 
     const result = await runServices(
       userData,

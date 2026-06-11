@@ -1,8 +1,7 @@
 import { Schema } from "effect";
+import { ObjectId, PointerName } from "@cycle/git/schemas";
 import { PointerSyncStatus } from "../domain/PointerSyncStatus.ts";
 import { RemoteName } from "./Identifier.ts";
-import { ObjectId } from "./ObjectId.ts";
-import { PointerName } from "./Ref.ts";
 
 export const PointerSyncResult = Schema.Struct({
   localAfter: Schema.optional(ObjectId),

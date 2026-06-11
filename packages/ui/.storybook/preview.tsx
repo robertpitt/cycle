@@ -3,7 +3,7 @@ import "../src/styles.css";
 import { ThemeProvider, type ThemeMode } from "../src/theme/index.ts";
 const withTheme: Decorator = (Story, context) => {
   const mode = context.globals["theme"] as ThemeMode;
-  if (context.title.startsWith("Pages/")) {
+  if (context.title.startsWith("Examples/")) {
     return <Story />;
   }
   return (

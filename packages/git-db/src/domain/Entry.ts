@@ -1,6 +1,5 @@
 import { Schema } from "effect";
-import { ObjectId } from "./ObjectId.ts";
-import { TreeEntryType } from "./TreeEntry.ts";
+import { ObjectId, TreeEntryType } from "@cycle/git/schemas";
 
 export const Entry = Schema.Struct({
   mode: Schema.String,

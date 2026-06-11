@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { IdentityInput } from "./Identity.ts";
+import { IdentityInput } from "@cycle/git/schemas";
 
 export const CommitOptions = Schema.Struct({
   author: Schema.optional(IdentityInput),

@@ -167,6 +167,7 @@ Atoms:
 - `BrandMark`
 - `Button`
 - `Checkbox`
+- `ChipTrigger`
 - `IconButton`
 - `Input`
 - `Kbd`
@@ -184,22 +185,30 @@ Molecules:
 
 - `Alert`
 - `Card`
+- `ChipSelect`
 - `CommandField`
+- `Dialog`
 - `Field`
 - `IssueGroupHeader`
 - `IssueListRow`
 - `IssueMetaChip`
 - `NavigationItem`
 - `OtpCodeField`
+- `PropertyPicker`
 - `SettingRow`
+- `ShellSidebarSection`
 - `ViewTab`
 - `WorkItemRow`
 
 Organisms:
 
+- `AppShell`
+- `CreateIssueDialog`
+- `InitialSetupCard`
 - `IssuesList`
 - `IssuesSidebar`
 - `IssuesToolbar`
+- `RepositoryInitialiseDialog`
 - `WorkspaceShell`
 
 Pages and workspace kits:

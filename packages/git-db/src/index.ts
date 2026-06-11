@@ -1,7 +1,10 @@
 export * from "./errors/index.ts";
-export * from "./git/index.ts";
-export * from "./git/GitCommand.ts";
-export type { CollectionOptions } from "./domain/index.ts";
+export type {
+  CollectionDocumentCodec,
+  CollectionOptions,
+  PointerSyncResult,
+  SyncResult,
+} from "./domain/index.ts";
 export { GitDbFilesystem, GitDbInMemory, GitDbLive } from "./store/Layer.ts";
 export * as Schemas from "./schemas/index.ts";
 export * as Collection from "./store/Collection.ts";

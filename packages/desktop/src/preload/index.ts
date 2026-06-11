@@ -3,9 +3,12 @@ import {
   completeOnboardingChannel,
   detectAgentProvidersChannel,
   getAppConfigChannel,
+  getBackendLogPathChannel,
+  getBootstrapStatusChannel,
   isCompleteOnboardingInput,
   isInitializeRepositoryPathInput,
   isProfileUpdateInput,
+  isTicketRpcBridgeRequest,
   isThemePreferenceValue,
   isUpdateRepositoryPreferencesInput,
   isUpsertRepositoryPathInput,
@@ -15,6 +18,7 @@ import {
   removeRepositoryChannel,
   selectRepositoryFolderChannel,
   setThemePreferenceChannel,
+  ticketRpcChannel,
   updateRepositoryPreferencesChannel,
   updateProfileChannel,
   upsertRepositoryPathChannel,
@@ -30,6 +34,8 @@ const desktopBridge: CycleDesktopBridge = {
     return ipcRenderer.invoke(completeOnboardingChannel, input);
   },
   detectAgentProviders: async () => ipcRenderer.invoke(detectAgentProvidersChannel),
+  getBackendLogPath: async () => ipcRenderer.invoke(getBackendLogPathChannel),
+  getBootstrapStatus: async () => ipcRenderer.invoke(getBootstrapStatusChannel),
   getAppConfig: async () => ipcRenderer.invoke(getAppConfigChannel),
   initializeRepositoryPath: async (input) => {
     if (!isInitializeRepositoryPathInput(input)) {
@@ -61,6 +67,13 @@ const desktopBridge: CycleDesktopBridge = {
     }
 
     return ipcRenderer.invoke(setThemePreferenceChannel, { preference });
+  },
+  ticketRpc: async (request) => {
+    if (!isTicketRpcBridgeRequest(request)) {
+      throw new TypeError("request must include id and method.");
+    }
+
+    return ipcRenderer.invoke(ticketRpcChannel, request);
   },
   updateRepositoryPreferences: async (input) => {
     if (!isUpdateRepositoryPreferencesInput(input)) {

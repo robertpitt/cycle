@@ -83,7 +83,6 @@ requirements in this specification.
 | Snapshot      | Commit                                            |
 | Pointer       | Ref under `refs/gitdb/{database}/`                |
 | Transaction   | In-memory or implementation-private tree mutation |
-| Index         | Optional tree-backed lookup structure             |
 | Sync          | Explicit fetch and push of GitDB refs             |
 
 ### 6.2 Components
@@ -510,36 +509,7 @@ either side. It MUST report a sync conflict that includes:
 Implementations MAY expose explicit non-core policies such as `keep-local` or `keep-remote`, but
 such policies MUST be opt-in and MUST be documented as destructive or conflict-resolving behavior.
 
-## 19. Optional Index Extension
-
-Indexes are optional materialized lookup structures stored inside the same snapshot tree as
-documents.
-
-The recommended index layout is:
-
-```text
-indexes/{collection}/{index}/{key}/{documentId}
-```
-
-An index entry SHOULD be a JSON blob containing:
-
-```json
-{
-  "collection": "tickets",
-  "id": "ticket-123",
-  "path": "collections/tickets/a3/ticket-123.json"
-}
-```
-
-If an implementation supports indexes, it MUST update index entries in the same transaction and
-snapshot as the corresponding document mutation.
-
-Index names, keys, and document IDs MUST use safe segments.
-
-Index consistency is application-owned unless an implementation defines declarative index rules.
-GitDB v0.2 does not require declarative index definitions.
-
-## 20. Git Adapter Contract
+## 19. Git Adapter Contract
 
 A conforming implementation MUST provide or depend on a Git adapter capable of:
 
@@ -739,8 +709,6 @@ Staging a document put inside a transaction MUST follow this workflow:
 3. Derive the document path.
 4. Encode the document bytes.
 5. Stage a `put` mutation for the path.
-6. If indexes are enabled for the collection, stage deletion of index entries derived from the
-   previous document value and stage insertion of index entries derived from the new value.
 
 Staging a put MUST NOT move a pointer. Implementations MAY write Git blobs eagerly, but those blobs
 MUST NOT be considered committed database state until the target pointer is moved successfully.
@@ -752,12 +720,9 @@ Staging a document delete inside a transaction MUST follow this workflow:
 1. Verify the transaction is active.
 2. Validate the collection name and document ID, or validate the explicit store path.
 3. Derive the document path.
-4. If indexes are enabled for the collection, stage deletion of index entries derived from the
-   previous document value.
-5. Stage a delete mutation for the document path.
+4. Stage a delete mutation for the document path.
 
-Deleting a missing document MAY be treated as a no-op, but index cleanup MUST still be consistent
-with the previous visible document value when one exists.
+Deleting a missing document MAY be treated as a no-op.
 
 ### 24.8 Commit Transaction Workflow
 
@@ -855,21 +820,6 @@ Syncing a pointer with a remote MUST follow this workflow:
 Sync MUST NOT rely on normal branch checkout state. Conflict-resolution policies such as
 `keep-local` or `keep-remote` MUST be explicit because they overwrite one side's pointer state.
 
-### 24.14 Index Maintenance Workflow
-
-If an implementation supports indexes, index maintenance MUST be part of the same transaction as
-document mutation:
-
-1. Determine the complete set of index definitions that apply to the collection.
-2. Read the previous document value from the transaction view.
-3. Derive previous index entries and stage their deletion.
-4. Derive new index entries and stage their insertion.
-5. Commit document and index mutations in one snapshot.
-
-An implementation that exposes declarative indexes MUST ensure every writer for that collection
-uses the same index definition set. If index definitions are supplied ad hoc by each caller, the
-implementation MUST document that index consistency is caller-owned.
-
 ## 25. Reference Algorithms
 
 ### 25.1 Document Path
@@ -960,7 +910,6 @@ A GitDB v0.2 core implementation is conforming if it passes tests for:
 | Fetch           | Fetches GitDB refs into remote-tracking GitDB refs                                   |
 | Push            | Pushes selected GitDB refs explicitly                                                |
 | Divergence      | Reports sync conflict and does not auto-merge                                        |
-| Index extension | If implemented, updates index entries transactionally with documents                 |
 
 ## 27. Definition of Done
 
@@ -980,7 +929,6 @@ An implementation of this specification is done when:
 Future or non-core specifications MAY define:
 
 - schema documents
-- declarative indexes
 - merge strategies
 - retention refs
 - transaction anchoring refs

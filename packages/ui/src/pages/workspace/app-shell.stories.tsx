@@ -11,7 +11,7 @@ const meta = {
     },
     layout: "fullscreen",
   },
-  title: "Pages/App Shell",
+  title: "Examples/App Shell",
 } satisfies Meta<typeof WorkspaceAppShellPage>;
 
 export default meta;

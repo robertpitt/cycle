@@ -4,307 +4,64 @@ import {
   AppShellMain,
   AppShellRoot,
   AppShellSidebar,
-  InitialSetupCard,
+  CreateIssueDialog,
   RepositoryInitialiseDialog,
   type AppShellNavSection,
-  type InitialSetupHarness,
   type InitialSetupStep,
 } from "@cycle/ui/organisms";
-import { BrandMark, Button, IconButton } from "@cycle/ui/atoms";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Bell,
-  CircleDot,
-  FolderPlus,
-  History,
-  Inbox,
-  LoaderCircle,
-  ListTodo,
-  PanelsTopLeft,
-  Settings,
-  SquareKanban,
-} from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Button, IconButton, StatusIndicator } from "@cycle/ui/atoms";
+import { ArrowLeft, FolderPlus, History, Plus, RefreshCw, Upload } from "lucide-react";
 import * as React from "react";
 import {
-  defaultRepositoryPreferences,
-  defaultAppConfig,
-  type AppConfigState,
-  type RepositoryRecord,
-} from "../../shared/AppConfig.ts";
+  AddRepositoryStep,
+  BootloaderScreen,
+  IssuesPanel,
+  PageBodyPlaceholder,
+  RepositoryHistoryPanel,
+  SetupScreen,
+  ViewIssuePanel,
+} from "../components/index.ts";
+import { fallbackAgentProviders, toSetupHarnesses } from "../lib/agentProviders.ts";
+import { getDesktopBridge } from "../lib/desktopBridge.ts";
 import {
-  supportedAgentProviders,
-  type AgentProviderId,
-  type DetectedAgentProvider,
-} from "../../shared/AgentProviders.ts";
-import type {
-  InitializeRepositoryPathInput,
-  UpdateRepositoryPreferencesInput,
-} from "../../shared/LocalWorkspace.ts";
-
-const createRepositoryNavItems = (repositories: readonly RepositoryRecord[]) =>
-  repositories.flatMap((repository) => {
-    const expanded = repository.preferences.sidebarExpanded;
-    const repositoryItem = {
-      className: "h-7 px-2 text-xs font-medium text-muted-foreground",
-      expanded,
-      id: `repository:${repository.id}`,
-      label: repository.displayName,
-      showDisclosure: true,
-    };
-
-    if (!expanded) return [repositoryItem];
-
-    return [
-      repositoryItem,
-      {
-        className: "h-7 text-xs",
-        depth: 1 as const,
-        icon: <ListTodo aria-hidden className="size-3.5" />,
-        id: `repository:${repository.id}:issues`,
-        label: "Issues",
-      },
-      {
-        className: "h-7 text-xs",
-        depth: 1 as const,
-        icon: <PanelsTopLeft aria-hidden className="size-3.5" />,
-        id: `repository:${repository.id}:views`,
-        label: "Views",
-      },
-      {
-        className: "h-7 text-xs",
-        depth: 1 as const,
-        icon: <Settings aria-hidden className="size-3.5" />,
-        id: `repository:${repository.id}:settings`,
-        label: "Settings",
-      },
-    ];
-  });
-
-const createRendererNavSections = (repositories: readonly RepositoryRecord[]) =>
-  [
-    {
-      id: "workspace",
-      items: [
-        {
-          badge: "3",
-          icon: <Inbox aria-hidden className="size-4" />,
-          id: "inbox",
-          label: "Inbox",
-        },
-        {
-          icon: <ListTodo aria-hidden className="size-4" />,
-          id: "issues",
-          label: "Issues",
-        },
-        {
-          icon: <SquareKanban aria-hidden className="size-4" />,
-          id: "projects",
-          label: "Projects",
-        },
-        {
-          icon: <PanelsTopLeft aria-hidden className="size-4" />,
-          id: "views",
-          label: "Views",
-        },
-      ],
-      title: "Workspace",
-    },
-    {
-      id: "repositories",
-      items: createRepositoryNavItems(repositories),
-      title: "Repositories",
-    },
-  ] satisfies readonly AppShellNavSection[];
-
-const repositoryIdFromNavItem = (itemId: string): string | undefined => {
-  const [scope, repositoryId, child] = itemId.split(":");
-  if (scope !== "repository" || !repositoryId || child !== undefined) {
-    return undefined;
-  }
-
-  return repositoryId;
-};
-
-const fallbackAgentProviders = (): ReadonlyArray<DetectedAgentProvider> =>
-  supportedAgentProviders.map((provider) => ({
-    detectedAt: new Date().toISOString(),
-    executable: provider.executable,
-    id: provider.id,
-    name: provider.name,
-    status: "missing",
-  }));
-
-const getDesktopBridge = () => window.cycleDesktop;
-
-const detectAgentProvidersForRenderer = async (): Promise<ReadonlyArray<DetectedAgentProvider>> => {
-  const bridge = getDesktopBridge();
-
-  if (!bridge) {
-    console.warn(
-      "Cycle desktop bridge is unavailable; harness detection only works in the Electron renderer.",
-    );
-    return fallbackAgentProviders();
-  }
-
-  const providers = await bridge.detectAgentProviders();
-  console.info("Cycle detected agent providers", providers);
-  return providers;
-};
-
-const bootloaderDurationMs = 2200;
-
-const isAgentProviderId = (value: string): value is AgentProviderId =>
-  value === "codex" || value === "claude" || value === "opencode";
-
-const toSetupHarnesses = (
-  providers: ReadonlyArray<DetectedAgentProvider>,
-): readonly InitialSetupHarness[] =>
-  providers.map((provider) => ({
-    description: provider.executable,
-    executablePath: provider.executablePath,
-    id: provider.id,
-    name: provider.name,
-    status: provider.status,
-  }));
-
-const makeFallbackRepository = (path: string): RepositoryRecord => {
-  const trimmed = path.trim();
-  const displayName = trimmed.split(/[\\/]/u).filter(Boolean).at(-1) ?? trimmed;
-
-  return {
-    addedAt: new Date().toISOString(),
-    displayName,
-    id: `repo_${Math.abs(
-      Array.from(trimmed).reduce((hash, char) => hash * 31 + char.charCodeAt(0), 7),
-    )}`,
-    path: trimmed,
-    preferences: defaultRepositoryPreferences(),
-  };
-};
-
-const BootloaderScreen = () => (
-  <AppShellRoot className="grid place-items-center">
-    <div className="grid justify-items-center gap-4">
-      <BrandMark showLabel={false} />
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <LoaderCircle aria-hidden className="size-4 animate-spin" />
-        Loading
-      </div>
-    </div>
-  </AppShellRoot>
-);
-
-type SetupScreenProps = {
-  readonly agentProvidersQuery: ReturnType<typeof useQuery<ReadonlyArray<DetectedAgentProvider>>>;
-  readonly completeOnboarding: ReturnType<typeof useMutation<AppConfigState, Error, void>>;
-  readonly email: string;
-  readonly enabledHarnessIds: ReadonlySet<AgentProviderId>;
-  readonly fullName: string;
-  readonly harnessNotice?: React.ReactNode;
-  readonly harnesses: readonly InitialSetupHarness[];
-  readonly setEmail: (value: string) => void;
-  readonly setEnabledHarnessIds: React.Dispatch<React.SetStateAction<ReadonlySet<AgentProviderId>>>;
-  readonly setFullName: (value: string) => void;
-  readonly setSetupStep: (step: InitialSetupStep) => void;
-  readonly setupStep: InitialSetupStep;
-};
-
-const SetupScreen = ({
-  agentProvidersQuery,
-  completeOnboarding,
-  email,
-  enabledHarnessIds,
-  fullName,
-  harnessNotice,
-  harnesses,
-  setEmail,
-  setEnabledHarnessIds,
-  setFullName,
-  setSetupStep,
-  setupStep,
-}: SetupScreenProps) => (
-  <AppShellRoot className="grid min-h-screen place-items-center p-6">
-    <div className="grid w-full justify-items-center gap-6">
-      <BrandMark />
-      <InitialSetupCard
-        detectingHarnesses={agentProvidersQuery.isLoading}
-        email={email}
-        enabledHarnessIds={enabledHarnessIds}
-        error={
-          completeOnboarding.error instanceof Error ? completeOnboarding.error.message : undefined
-        }
-        fullName={fullName}
-        harnessNotice={harnessNotice}
-        harnesses={harnesses}
-        onBack={() => setSetupStep("profile")}
-        onEmailChange={setEmail}
-        onFinish={() => completeOnboarding.mutate()}
-        onFullNameChange={setFullName}
-        onHarnessEnabledChange={(id, enabled) => {
-          if (!isAgentProviderId(id)) return;
-          setEnabledHarnessIds((current) => {
-            const next = new Set(current);
-            if (enabled) next.add(id);
-            else next.delete(id);
-            return next;
-          });
-        }}
-        onNext={() => setSetupStep("harnesses")}
-        saving={completeOnboarding.isPending}
-        step={setupStep}
-      />
-    </div>
-  </AppShellRoot>
-);
-
-type AddRepositoryStepProps = {
-  readonly error?: React.ReactNode;
-  readonly onSubmit: () => void;
-  readonly saving?: boolean;
-};
-
-const AddRepositoryStep = ({ error, onSubmit, saving = false }: AddRepositoryStepProps) => (
-  <div className="grid h-full place-items-center">
-    <section className="grid w-full max-w-[520px] gap-5 rounded-lg border border-border bg-surface p-6 shadow-card">
-      <div className="grid size-10 place-items-center rounded-md bg-primary/10 text-primary">
-        <FolderPlus aria-hidden className="size-5" />
-      </div>
-      <div className="grid gap-2">
-        <h2 className="text-xl font-semibold tracking-normal">Add Repository</h2>
-        <p className="text-sm leading-6 text-muted-foreground">
-          Connect a local repository so Cycle can read project context and start tracking tickets.
-        </p>
-      </div>
-      {error ? (
-        <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm leading-5 text-warning">
-          {error}
-        </div>
-      ) : null}
-      <Button
-        disabled={saving}
-        leftIcon={
-          saving ? (
-            <LoaderCircle aria-hidden className="size-4 animate-spin" />
-          ) : (
-            <FolderPlus aria-hidden className="size-4" />
-          )
-        }
-        onClick={onSubmit}
-      >
-        Choose Folder
-      </Button>
-    </section>
-  </div>
-);
+  useAddRepositoryMutation,
+  useCompleteOnboardingMutation,
+  useCreateIssueMutation,
+  useInitialiseRepositoryMutation,
+  usePushRepositoryMutation,
+  useSyncRepositoryMutation,
+  useUpdateRepositoryPreferencesMutation,
+} from "../mutations/index.ts";
+import {
+  useAgentProvidersQuery,
+  useAppConfigQuery,
+  useBootstrapStatusQuery,
+  issueListQueryKey,
+  repositoryHistoryRepositoryQueryKey,
+  useMaterializationWarningsQuery,
+  useRepositoryStatusQuery,
+} from "../queries/index.ts";
+import { getCreateIssueFormDraft, useCreateIssueForm } from "./workspace/createIssueForm.ts";
+import {
+  createIssueDialogOptionSections,
+  defaultCreateIssueMoreActionMessage,
+} from "./workspace/createIssueOptions.tsx";
+import {
+  activePageTitleForNavItem,
+  createRendererNavSections,
+  repositoryIdFromNavItem,
+  repositoryPageFromNavItem,
+} from "./workspace/navigation.tsx";
+import type { AgentProviderId } from "../../shared/AgentProviders.ts";
 
 export const WorkspaceScreen = () => {
-  const queryClient = useQueryClient();
-  const [bootComplete, setBootComplete] = React.useState(false);
-  const [collapsed, setCollapsed] = React.useState(false);
+  const collapsed = false;
   const [activeItemId, setActiveItemId] = React.useState("inbox");
   const [setupStep, setSetupStep] = React.useState<InitialSetupStep>("profile");
   const [fullName, setFullName] = React.useState("");
   const [email, setEmail] = React.useState("");
+  const [selectedIssueId, setSelectedIssueId] = React.useState<string>();
   const [repositoryImportError, setRepositoryImportError] = React.useState<React.ReactNode>();
   const [repositoryInitialiseRequest, setRepositoryInitialiseRequest] = React.useState<{
     readonly message?: string;
@@ -316,187 +73,78 @@ export const WorkspaceScreen = () => {
     () => new Set(),
   );
   const hydratedProfile = React.useRef(false);
+  const createIssueForm = useCreateIssueForm();
+  const queryClient = useQueryClient();
 
-  const appConfigQuery = useQuery({
-    queryFn: async () => getDesktopBridge()?.getAppConfig() ?? defaultAppConfig(),
-    queryKey: ["desktop", "appConfig"],
+  const bootstrapStatusQuery = useBootstrapStatusQuery();
+  const appConfigQuery = useAppConfigQuery();
+  const agentProvidersQuery = useAgentProvidersQuery();
+  const repositories = appConfigQuery.data?.localWorkspace.repositories ?? [];
+  const selectedRepositoryPage = repositoryPageFromNavItem(activeItemId, repositories);
+  const isIssuesPage = activeItemId === "issues" || selectedRepositoryPage?.kind === "issues";
+  const activeRepository =
+    selectedRepositoryPage?.repository ?? (activeItemId === "issues" ? repositories[0] : undefined);
+  const issueRepository = isIssuesPage ? activeRepository : undefined;
+  const selectedIssueRepositoryId = issueRepository?.id;
+  const isIssueDetailPage = isIssuesPage && selectedIssueId !== undefined;
+  const isRepositoryHistoryPage = selectedRepositoryPage?.kind === "history";
+
+  const completeOnboarding = useCompleteOnboardingMutation({
+    appConfig: appConfigQuery.data,
+    email,
+    enabledHarnessIds,
+    fullName,
+    onCompleted: () => setActiveItemId("inbox"),
   });
 
-  const agentProvidersQuery = useQuery({
-    queryFn: detectAgentProvidersForRenderer,
-    queryKey: ["desktop", "agentProviders"],
+  const addRepository = useAddRepositoryMutation({
+    appConfig: appConfigQuery.data,
+    onImportError: setRepositoryImportError,
+    onInitialiseError: setRepositoryInitialiseError,
+    onInitialiseRequest: setRepositoryInitialiseRequest,
   });
 
-  const completeOnboarding = useMutation({
-    mutationFn: async () => {
-      const current = appConfigQuery.data ?? defaultAppConfig();
-      const input = {
-        displayName: fullName,
-        email,
-        enabledAgentProviderIds: [...enabledHarnessIds],
-        themePreference: current.theme.preference,
-      } as const;
-
-      const bridge = getDesktopBridge();
-      if (bridge) return bridge.completeOnboarding(input);
-
-      return {
-        ...current,
-        onboarding: {
-          completed: true,
-          completedAt: new Date().toISOString(),
-        },
-        agentProviders: {
-          preferences: supportedAgentProviders.map((provider) => ({
-            enabled: enabledHarnessIds.has(provider.id),
-            id: provider.id,
-          })),
-        },
-        profile: {
-          displayName: fullName.trim(),
-          email: email.trim(),
-        },
-      } satisfies AppConfigState;
-    },
-    onSuccess: (next) => {
-      queryClient.setQueryData(["desktop", "appConfig"], next);
-      setActiveItemId("inbox");
-    },
+  const initialiseRepository = useInitialiseRepositoryMutation({
+    appConfig: appConfigQuery.data,
+    onErrorMessage: setRepositoryInitialiseError,
+    onInitialised: () => setRepositoryInitialiseRequest(null),
   });
 
-  const addRepository = useMutation({
-    mutationFn: async () => {
-      const bridge = getDesktopBridge();
-
-      if (bridge) return bridge.selectRepositoryFolder();
-      return {
-        repository: makeFallbackRepository("/Users/robertpitt/Projects/cycle"),
-        status: "added" as const,
-      };
-    },
-    onMutate: () => {
-      setRepositoryImportError(undefined);
-      setRepositoryInitialiseError(undefined);
-    },
-    onSuccess: async (result) => {
-      if (result.status === "cancelled") return;
-
-      if (result.status === "not-git") {
-        setRepositoryInitialiseRequest({
-          message: result.message,
-          path: result.path,
-        });
-        return;
-      }
-
-      const bridge = getDesktopBridge();
-      if (bridge) {
-        queryClient.setQueryData(["desktop", "appConfig"], await bridge.getAppConfig());
-        return;
-      }
-
-      const current = appConfigQuery.data ?? defaultAppConfig();
-      queryClient.setQueryData(["desktop", "appConfig"], {
-        ...current,
-        localWorkspace: {
-          repositories: [
-            ...current.localWorkspace.repositories.filter(
-              (repository) => repository.id !== result.repository.id,
-            ),
-            result.repository,
-          ],
-        },
-      } satisfies AppConfigState);
-    },
-    onError: (error) => {
-      setRepositoryImportError(
-        error instanceof Error ? error.message : "Unable to add repository.",
-      );
-    },
+  const updateRepositoryPreferences = useUpdateRepositoryPreferencesMutation({
+    appConfig: appConfigQuery.data,
   });
 
-  const initialiseRepository = useMutation({
-    mutationFn: async (input: InitializeRepositoryPathInput) => {
-      const bridge = getDesktopBridge();
-      if (bridge) return bridge.initializeRepositoryPath(input);
-      return makeFallbackRepository(input.path);
-    },
-    onMutate: () => {
-      setRepositoryInitialiseError(undefined);
-    },
-    onSuccess: async (repository) => {
-      setRepositoryInitialiseRequest(null);
-
-      const bridge = getDesktopBridge();
-      if (bridge) {
-        queryClient.setQueryData(["desktop", "appConfig"], await bridge.getAppConfig());
-        return;
-      }
-
-      const current = appConfigQuery.data ?? defaultAppConfig();
-      queryClient.setQueryData(["desktop", "appConfig"], {
-        ...current,
-        localWorkspace: {
-          repositories: [
-            ...current.localWorkspace.repositories.filter(
-              (candidate) => candidate.id !== repository.id,
-            ),
-            repository,
-          ],
-        },
-      } satisfies AppConfigState);
-    },
-    onError: (error) => {
-      setRepositoryInitialiseError(
-        error instanceof Error ? error.message : "Unable to initialise repository.",
-      );
-    },
+  const createIssue = useCreateIssueMutation({
+    repositoryId: issueRepository?.id,
   });
-
-  const updateRepositoryPreferences = useMutation({
-    mutationFn: async (input: UpdateRepositoryPreferencesInput) => {
-      const bridge = getDesktopBridge();
-      if (bridge) return bridge.updateRepositoryPreferences(input);
-
-      const current = appConfigQuery.data ?? defaultAppConfig();
-      const repository = current.localWorkspace.repositories.find(({ id }) => id === input.id);
-      if (!repository) return null;
-
-      return {
-        ...repository,
-        preferences: {
-          ...repository.preferences,
-          ...input.preferences,
-        },
-      } satisfies RepositoryRecord;
-    },
-    onSuccess: async (repository, input) => {
-      const bridge = getDesktopBridge();
-      if (bridge) {
-        queryClient.setQueryData(["desktop", "appConfig"], await bridge.getAppConfig());
-        return;
-      }
-
-      if (!repository) return;
-
-      queryClient.setQueryData<AppConfigState>(["desktop", "appConfig"], (current) => {
-        const state = current ?? appConfigQuery.data ?? defaultAppConfig();
-        return {
-          ...state,
-          localWorkspace: {
-            repositories: state.localWorkspace.repositories.map((candidate) =>
-              candidate.id === input.id ? repository : candidate,
-            ),
-          },
-        };
-      });
-    },
+  const repositoryStatusQuery = useRepositoryStatusQuery(activeRepository?.id);
+  const materializationWarningsQuery = useMaterializationWarningsQuery(activeRepository?.id);
+  const syncRepository = useSyncRepositoryMutation({
+    repositoryId: activeRepository?.id,
   });
-
-  React.useEffect(() => {
-    const timeout = window.setTimeout(() => setBootComplete(true), bootloaderDurationMs);
-    return () => window.clearTimeout(timeout);
-  }, []);
+  const pushRepository = usePushRepositoryMutation({
+    repositoryId: activeRepository?.id,
+  });
+  const repositoryStatus = repositoryStatusQuery.data;
+  const repositoryDefaultRemote = repositoryStatus?.metadata?.defaultRemote;
+  const repositoryRemoteBusy = syncRepository.isPending || pushRepository.isPending;
+  const repositoryActionError = pushRepository.error ?? syncRepository.error;
+  const repositoryActionErrorMessage =
+    repositoryActionError instanceof Error
+      ? repositoryActionError.message
+      : repositoryActionError === null
+        ? undefined
+        : String(repositoryActionError);
+  const repositoryColdSyncing =
+    repositoryStatus?.status === "syncing" && repositoryStatus.activeSnapshotId === null;
+  const createIssueOptions = React.useMemo(
+    () =>
+      createIssueDialogOptionSections({
+        profile: appConfigQuery.data?.profile,
+        repository: issueRepository,
+      }),
+    [appConfigQuery.data?.profile, issueRepository],
+  );
 
   React.useEffect(() => {
     const profile = appConfigQuery.data?.profile;
@@ -520,11 +168,43 @@ export const WorkspaceScreen = () => {
     );
   }, [agentProvidersQuery.data]);
 
-  if (!bootComplete || appConfigQuery.isLoading) return <BootloaderScreen />;
+  React.useEffect(() => {
+    setSelectedIssueId(undefined);
+  }, [selectedIssueRepositoryId]);
+
+  React.useEffect(() => {
+    if (!isIssuesPage) {
+      setSelectedIssueId(undefined);
+    }
+  }, [isIssuesPage]);
+
+  React.useEffect(() => {
+    if (!activeRepository?.id || repositoryStatus === undefined) return;
+    if (repositoryStatus.status === "syncing") return;
+
+    void queryClient.invalidateQueries({
+      queryKey: repositoryHistoryRepositoryQueryKey(activeRepository.id),
+    });
+
+    if (!issueRepository?.id) return;
+
+    void queryClient.invalidateQueries({
+      queryKey: issueListQueryKey(issueRepository.id),
+    });
+  }, [
+    activeRepository?.id,
+    issueRepository?.id,
+    queryClient,
+    repositoryStatus?.activeGeneration,
+    repositoryStatus?.status,
+  ]);
+
+  if (bootstrapStatusQuery.data?.blocking !== false || appConfigQuery.isLoading) {
+    return <BootloaderScreen status={bootstrapStatusQuery.data} />;
+  }
 
   const onboardingCompleted = appConfigQuery.data?.onboarding.completed ?? false;
   const setupHarnesses = toSetupHarnesses(agentProvidersQuery.data ?? fallbackAgentProviders());
-  const repositories = appConfigQuery.data?.localWorkspace.repositories ?? [];
   const hasRepositories = repositories.length > 0;
   const harnessNotice = !getDesktopBridge()
     ? "Harness detection is only available in the Electron desktop renderer. Open the desktop app window to detect local tools."
@@ -551,25 +231,187 @@ export const WorkspaceScreen = () => {
     );
   }
 
-  const activeSection =
-    activeItemId === "settings"
-      ? "Settings"
-      : activeItemId.startsWith("repository:") || !hasRepositories
-        ? "Repositories"
-        : "Workspace";
   const chooseRepositoryFolder = () => addRepository.mutate();
+  const closeCreateIssueDialog = () => {
+    if (createIssue.isPending) return;
+
+    createIssueForm.closeDialog();
+  };
+  const submitCreateIssue = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!issueRepository) {
+      createIssueForm.setError("Choose a repository before creating an issue.");
+      return;
+    }
+
+    const draft = getCreateIssueFormDraft(createIssueForm.values);
+
+    if (!draft) {
+      createIssueForm.setError("Enter an issue title before creating the issue.");
+      return;
+    }
+
+    createIssueForm.setError(undefined);
+    createIssue.mutate(
+      {
+        assignee: createIssueForm.values.assignee,
+        body: draft.body,
+        dueDate: draft.dueDate,
+        estimate: draft.estimate,
+        labels: createIssueForm.values.labels,
+        priority: createIssueForm.values.priority,
+        status: createIssueForm.values.status,
+        title: draft.title,
+        type: "issue",
+      },
+      {
+        onError: (error) => {
+          createIssueForm.setError(
+            error instanceof Error ? error.message : "Unable to create issue.",
+          );
+        },
+        onSuccess: () => {
+          if (createIssueForm.values.createMore) {
+            createIssueForm.reset({
+              createMore: true,
+            });
+            return;
+          }
+
+          createIssueForm.closeDialog();
+        },
+      },
+    );
+  };
   const chooseRepositoryFolderFromDialog = () => {
     setRepositoryInitialiseRequest(null);
     setRepositoryInitialiseError(undefined);
     chooseRepositoryFolder();
   };
   const rendererNavSections = createRendererNavSections(repositories);
+  const activePageTitle = isIssueDetailPage
+    ? (selectedIssueId ?? "Issue")
+    : activePageTitleForNavItem(activeItemId, repositories);
+  const warningCount =
+    repositoryStatus?.warningCount ?? materializationWarningsQuery.data?.length ?? 0;
+  const repositoryStatusTone =
+    repositoryActionError !== null ||
+    repositoryStatusQuery.error !== null ||
+    repositoryStatus?.status === "failed" ||
+    repositoryStatus?.status === "degraded"
+      ? "warning"
+      : repositoryStatus?.status === "syncing" || repositoryRemoteBusy
+        ? "info"
+        : repositoryStatus?.status === "ready"
+          ? "success"
+          : "neutral";
+  const repositoryStatusText = (() => {
+    if (pushRepository.error !== null) return "Push failed";
+    if (syncRepository.error !== null) return "Sync failed";
+    if (repositoryStatusQuery.error instanceof Error) return "Status unavailable";
+    if (pushRepository.isPending) return "Pushing";
+    if (repositoryStatus?.status === "syncing" || syncRepository.isPending) return "Syncing";
+    if (repositoryStatus?.status === "failed") return "Failed";
+    if (repositoryStatus?.status === "degraded") return `Warnings ${warningCount}`;
+    if (repositoryStatus?.status === "ready") return "Ready";
+    if (repositoryStatus?.status === "empty") return "Empty";
+    return undefined;
+  })();
+  const repositoryStatusTitle =
+    repositoryActionErrorMessage ??
+    repositoryStatus?.lastSyncError ??
+    (warningCount > 0
+      ? `${warningCount} materialization warning${warningCount === 1 ? "" : "s"}`
+      : undefined) ??
+    repositoryStatusText;
+  const pageHeaderActions = (
+    <>
+      {activeRepository ? (
+        <div
+          className="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-subtle px-2 text-xs font-medium text-muted-foreground"
+          title={repositoryStatusTitle}
+        >
+          <StatusIndicator label={repositoryStatusText} tone={repositoryStatusTone} />
+          {repositoryStatusText}
+        </div>
+      ) : null}
+      {activeRepository ? (
+        <IconButton
+          disabled={repositoryRemoteBusy}
+          icon={
+            <RefreshCw
+              aria-hidden
+              className={syncRepository.isPending ? "size-4 animate-spin" : "size-4"}
+            />
+          }
+          label="Sync repository"
+          onClick={() => syncRepository.mutate()}
+          size="sm"
+          title="Sync repository"
+          variant="outline"
+        />
+      ) : null}
+      {activeRepository ? (
+        <Button
+          disabled={repositoryRemoteBusy || !repositoryDefaultRemote}
+          leftIcon={<Upload aria-hidden className="size-4" />}
+          loading={pushRepository.isPending}
+          loadingLabel="Pushing repository"
+          onClick={() => pushRepository.mutate()}
+          size="sm"
+          title={
+            repositoryDefaultRemote
+              ? `Push GitDB refs to ${repositoryDefaultRemote}`
+              : "Repository has no default remote"
+          }
+          variant="outline"
+        >
+          Push
+        </Button>
+      ) : null}
+      {isIssueDetailPage ? (
+        <IconButton
+          icon={<ArrowLeft aria-hidden className="size-4" />}
+          label="Back to issues"
+          onClick={() => setSelectedIssueId(undefined)}
+          size="sm"
+          title="Back to issues"
+          variant="outline"
+        />
+      ) : null}
+      {!hasRepositories ? (
+        <IconButton
+          icon={<FolderPlus aria-hidden className="size-4" />}
+          label="Add repository"
+          onClick={chooseRepositoryFolder}
+          size="sm"
+          title="Add repository"
+          variant="outline"
+        />
+      ) : null}
+      {isIssuesPage ? (
+        <IconButton
+          disabled={createIssue.isPending || !issueRepository}
+          icon={<Plus aria-hidden className="size-4" />}
+          label="Create issue"
+          onClick={createIssueForm.openDialog}
+          size="sm"
+          title="Create issue"
+          variant="outline"
+        />
+      ) : null}
+    </>
+  );
   const handleNavItemSelect = (item: AppShellNavSection["items"][number]) => {
     const repositoryId = repositoryIdFromNavItem(item.id);
     if (repositoryId) {
       const repository = repositories.find((candidate) => candidate.id === repositoryId);
       if (repository) {
-        setActiveItemId(item.id);
+        const nextActiveItemId = activeItemId.startsWith(`repository:${repository.id}:`)
+          ? activeItemId
+          : `repository:${repository.id}:issues`;
+        setActiveItemId(nextActiveItemId);
         updateRepositoryPreferences.mutate({
           id: repository.id,
           preferences: {
@@ -585,8 +427,8 @@ export const WorkspaceScreen = () => {
 
   return (
     <>
-      <AppShellRoot className="p-3">
-        <AppShellFrame className="min-h-[calc(100vh-1.5rem)] gap-3" collapsed={collapsed}>
+      <AppShellRoot className="h-full overflow-hidden">
+        <AppShellFrame className="h-full !min-h-0" collapsed={collapsed}>
           <AppShellSidebar
             activeItemId={activeItemId}
             collapsed={collapsed}
@@ -597,38 +439,38 @@ export const WorkspaceScreen = () => {
             onSettingsSelect={() => setActiveItemId("settings")}
             settingsActive={activeItemId === "settings"}
           />
-          <div className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-lg border border-border bg-surface shadow-card">
-            <AppShellHeader
-              breadcrumb="Cycle"
-              collapsed={collapsed}
-              onToggleSidebar={() => setCollapsed((value) => !value)}
-              subtitle={
-                hasRepositories ? "Desktop workspace" : "Add a repository to finish preparing Cycle"
+          <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-surface">
+            <AppShellHeader title={activePageTitle} actions={pageHeaderActions} />
+            <AppShellMain
+              className={
+                isIssueDetailPage || isRepositoryHistoryPage
+                  ? "relative bg-background p-0"
+                  : "relative bg-background/70 p-3"
               }
-              title={activeSection}
-              actions={
-                <>
-                  <IconButton
-                    icon={<Bell aria-hidden className="size-4" />}
-                    label="Notifications"
-                    size="sm"
-                    title="Notifications"
-                  />
-                  <IconButton
-                    icon={<CircleDot aria-hidden className="size-4" />}
-                    label="Status"
-                    size="sm"
-                    title="Status"
-                  />
-                </>
-              }
-            />
-            <AppShellMain className="relative bg-background/60 p-4">
-              {hasRepositories ? (
-                <div
-                  aria-label="Workspace content"
-                  className="h-full rounded-md border border-border bg-surface"
+            >
+              {hasRepositories && isIssueDetailPage ? (
+                <ViewIssuePanel issueId={selectedIssueId} repositoryId={issueRepository?.id} />
+              ) : hasRepositories && isIssuesPage ? (
+                <IssuesPanel
+                  loadingRepository={repositoryColdSyncing}
+                  onCreateIssue={createIssueForm.openDialog}
+                  onIssueSelect={setSelectedIssueId}
+                  profile={appConfigQuery.data?.profile}
+                  repositoryId={issueRepository?.id}
+                  selectedIssueId={selectedIssueId}
                 />
+              ) : hasRepositories && isRepositoryHistoryPage ? (
+                <RepositoryHistoryPanel
+                  onIssueSelect={(issueId) => {
+                    if (!activeRepository) return;
+
+                    setActiveItemId(`repository:${activeRepository.id}:issues`);
+                    setSelectedIssueId(issueId);
+                  }}
+                  repositoryId={activeRepository?.id}
+                />
+              ) : hasRepositories ? (
+                <PageBodyPlaceholder label={`${activePageTitle} content`} />
               ) : (
                 <AddRepositoryStep
                   error={repositoryImportError}
@@ -636,14 +478,17 @@ export const WorkspaceScreen = () => {
                   saving={addRepository.isPending}
                 />
               )}
-              <IconButton
-                className="absolute bottom-3 right-3 shadow-card"
-                icon={<History aria-hidden className="size-4" />}
-                label="History"
-                size="sm"
-                title="History"
-                variant="outline"
-              />
+              {activeRepository && !isIssueDetailPage && !isRepositoryHistoryPage ? (
+                <IconButton
+                  className="absolute bottom-3 right-3 shadow-card"
+                  icon={<History aria-hidden className="size-4" />}
+                  label="History"
+                  onClick={() => setActiveItemId(`repository:${activeRepository.id}:history`)}
+                  size="sm"
+                  title="History"
+                  variant="outline"
+                />
+              ) : null}
             </AppShellMain>
           </div>
         </AppShellFrame>
@@ -663,6 +508,45 @@ export const WorkspaceScreen = () => {
           }
           path={repositoryInitialiseRequest.path}
           saving={initialiseRepository.isPending}
+        />
+      ) : null}
+      {createIssueForm.open ? (
+        <CreateIssueDialog
+          assignee={createIssueForm.values.assignee}
+          assigneeSections={createIssueOptions.assigneeSections}
+          createDisabled={createIssueForm.createDisabled}
+          createMore={createIssueForm.values.createMore}
+          description={createIssueForm.values.description}
+          dueDate={createIssueForm.values.dueDate}
+          error={createIssueForm.values.error}
+          estimate={createIssueForm.values.estimate}
+          labelSections={createIssueOptions.labelSections}
+          labels={createIssueForm.values.labels}
+          moreSections={createIssueOptions.moreSections}
+          onAssigneeChange={createIssueForm.setAssignee}
+          onClose={closeCreateIssueDialog}
+          onCreate={submitCreateIssue}
+          onCreateMoreChange={createIssueForm.setCreateMore}
+          onDescriptionChange={createIssueForm.setDescription}
+          onDueDateChange={createIssueForm.setDueDate}
+          onEstimateChange={createIssueForm.setEstimate}
+          onLabelsChange={createIssueForm.setLabels}
+          onMoreAction={(actionId) =>
+            createIssueForm.setError(defaultCreateIssueMoreActionMessage(actionId))
+          }
+          onPriorityChange={createIssueForm.setPriority}
+          onProjectChange={createIssueForm.setProject}
+          onStatusChange={createIssueForm.setStatus}
+          onTitleChange={createIssueForm.setTitle}
+          priority={createIssueForm.values.priority}
+          prioritySections={createIssueOptions.prioritySections}
+          project={createIssueForm.values.project}
+          projectSections={createIssueOptions.projectSections}
+          saving={createIssue.isPending}
+          status={createIssueForm.values.status}
+          statusSections={createIssueOptions.statusSections}
+          teamLabel={issueRepository?.displayName ?? "Repository"}
+          title={createIssueForm.values.title}
         />
       ) : null}
     </>
