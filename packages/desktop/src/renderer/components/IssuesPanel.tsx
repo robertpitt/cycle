@@ -140,8 +140,7 @@ const formatIssueDate = (issue: TicketDocument) => {
 };
 
 const PriorityBars = ({ priority }: { readonly priority: string }) => {
-  const level =
-    priority === "urgent" ? 4 : priority === "high" ? 3 : priority === "medium" ? 2 : 1;
+  const level = priority === "urgent" ? 4 : priority === "high" ? 3 : priority === "medium" ? 2 : 1;
 
   if (priority === "none") {
     return <span className="text-sm font-semibold leading-none text-muted-foreground">--</span>;
@@ -491,9 +490,7 @@ const ViewOptionsMenu = ({
           className="absolute right-0 top-full z-50 mt-2 w-[240px] overflow-hidden rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-elevated"
           role="menu"
         >
-          <div className="px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">
-            Grouping
-          </div>
+          <div className="px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">Grouping</div>
           {groupingOptions.map((option) => {
             const selected = option.id === grouping;
             return (
@@ -774,10 +771,7 @@ export const IssuesPanel = ({
       ),
     [assigneeOptions, issues, priorityOptions, repositoryId, statusOptions],
   );
-  const rowById = React.useMemo(
-    () => new Map(rows.map((row) => [row.id, row] as const)),
-    [rows],
-  );
+  const rowById = React.useMemo(() => new Map(rows.map((row) => [row.id, row] as const)), [rows]);
   const createGroupAction = React.useCallback(
     (label: string) =>
       onCreateIssue ? (

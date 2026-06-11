@@ -33,7 +33,7 @@ import { electronSecurityError, type ElectronError } from "../platform/ElectronE
 import { ElectronShell } from "../platform/ElectronShell.ts";
 import { AppConfigError } from "../shared/AppConfig.ts";
 import { AgentProviderDetector } from "../shared/AgentProviders.ts";
-import { AppConfig, type RepositoryRecord, type ThemePreference } from "../shared/AppConfig.ts";
+import { AppConfig, type ThemePreference } from "../shared/AppConfig.ts";
 import { DesktopBootstrap } from "../shared/Bootstrap.ts";
 import {
   LocalWorkspace,

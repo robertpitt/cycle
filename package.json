@@ -10,30 +10,25 @@
     "packages/*"
   ],
   "type": "module",
-  "exports": "./src/index.ts",
   "scripts": {
-    "dev": "node src/index.ts",
     "desktop:build": "pnpm --filter @cycle/desktop build",
     "desktop:dev": "pnpm --filter @cycle/desktop dev",
     "desktop:start": "pnpm --filter @cycle/desktop start",
     "desktop:typecheck": "pnpm --filter @cycle/desktop typecheck",
-    "start": "node src/index.ts",
-    "storybook": "npm run storybook -w @cycle/ui",
-    "storybook:build": "npm run storybook:build -w @cycle/ui",
+    "storybook": "pnpm --filter @cycle/ui storybook",
+    "storybook:build": "pnpm --filter @cycle/ui storybook:build",
     "typecheck": "tsc -p tsconfig.json",
-    "lint": "oxlint --deny-warnings src packages",
-    "lint:fix": "oxlint --fix src packages",
+    "lint": "oxlint --deny-warnings packages",
+    "lint:fix": "oxlint --fix packages",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
-    "check": "npm run typecheck && npm run lint && npm run format:check"
-  },
-  "dependencies": {
-    "@cycle/core": "workspace:*"
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check"
   },
   "devDependencies": {
     "@types/node": "^25.9.2",
     "oxfmt": "^0.53.0",
     "oxlint": "^1.68.0",
     "typescript": "^6.0.3"
-  }
+  },
+  "packageManager": "pnpm@10.33.3"
 }

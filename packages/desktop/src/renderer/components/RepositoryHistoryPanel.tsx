@@ -171,11 +171,7 @@ const HistoryRow = ({
         {entry.changedTicketIds.length > 0 ? (
           <>
             {entry.changedTicketIds.slice(0, 8).map((issueId) => (
-              <ChangedTicketActions
-                issueId={issueId}
-                key={issueId}
-                onIssueSelect={onIssueSelect}
-              />
+              <ChangedTicketActions issueId={issueId} key={issueId} onIssueSelect={onIssueSelect} />
             ))}
             {entry.changedTicketIds.length > 8 ? (
               <Badge appearance="outline">+{entry.changedTicketIds.length - 8}</Badge>
@@ -222,11 +218,7 @@ export const RepositoryHistoryPanel = ({
   }
 
   if (historyQuery.error instanceof Error) {
-    return renderPanelState(
-      "History unavailable",
-      historyQuery.error.message,
-      "error",
-    );
+    return renderPanelState("History unavailable", historyQuery.error.message, "error");
   }
 
   const history = historyQuery.data;

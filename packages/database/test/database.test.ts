@@ -321,8 +321,7 @@ describe("@cycle/database", () => {
       );
       assert.ok(
         repositoryHistory.entries.some(
-          (entry) =>
-            entry.message === 'Test User updated the status of "History ticket" to Todo',
+          (entry) => entry.message === 'Test User updated the status of "History ticket" to Todo',
         ),
       );
       assert.ok(repositoryHistory.entries.every((entry) => !entry.message?.includes(ticket.id)));

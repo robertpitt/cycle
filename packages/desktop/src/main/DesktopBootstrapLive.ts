@@ -317,7 +317,10 @@ export const DesktopBootstrapLive = Layer.effect(
           );
         }
 
-        const transportStore = yield* makeTransportStore(runtime.record.path, runtime.metadata.gitDir);
+        const transportStore = yield* makeTransportStore(
+          runtime.record.path,
+          runtime.metadata.gitDir,
+        );
         const remoteResult = yield* transportStore.sync({
           mode: "pull",
           onDiverged: "error",
@@ -345,32 +348,30 @@ export const DesktopBootstrapLive = Layer.effect(
       });
 
     const syncRepositoryFromRemote = (repositoryId: string): Effect.Effect<void, unknown> =>
-      runRemoteOperation(
-        repositoryId,
-        () =>
-          syncRepositoryFromRemoteUnsafe(repositoryId).pipe(
-            Effect.catch((error) =>
-              logger
-                .error("bootstrap repository sync failed", {
-                  error: errorMessage(error),
-                  repositoryId,
-                })
-                .pipe(
-                  Effect.andThen(
-                    Effect.sync(() => {
-                      const runtime = opened.get(repositoryId);
-                      if (runtime !== undefined) {
-                        setRepositoryStatus(runtime.record, {
-                          error: errorMessage(error),
-                          stage: "ready",
-                        });
-                      }
-                    }),
-                  ),
-                  Effect.andThen(Effect.fail(error)),
+      runRemoteOperation(repositoryId, () =>
+        syncRepositoryFromRemoteUnsafe(repositoryId).pipe(
+          Effect.catch((error) =>
+            logger
+              .error("bootstrap repository sync failed", {
+                error: errorMessage(error),
+                repositoryId,
+              })
+              .pipe(
+                Effect.andThen(
+                  Effect.sync(() => {
+                    const runtime = opened.get(repositoryId);
+                    if (runtime !== undefined) {
+                      setRepositoryStatus(runtime.record, {
+                        error: errorMessage(error),
+                        stage: "ready",
+                      });
+                    }
+                  }),
                 ),
-            ),
+                Effect.andThen(Effect.fail(error)),
+              ),
           ),
+        ),
       );
 
     const pushRepositoryToRemoteUnsafe = (
@@ -417,7 +418,10 @@ export const DesktopBootstrapLive = Layer.effect(
           warningCount: localProjection.warningCount,
         });
 
-        const transportStore = yield* makeTransportStore(runtime.record.path, runtime.metadata.gitDir);
+        const transportStore = yield* makeTransportStore(
+          runtime.record.path,
+          runtime.metadata.gitDir,
+        );
         const pushResult = yield* transportStore.sync({
           mode: "full",
           onDiverged: "error",
@@ -447,32 +451,30 @@ export const DesktopBootstrapLive = Layer.effect(
       });
 
     const pushRepositoryToRemote = (repositoryId: string): Effect.Effect<SyncResult, unknown> =>
-      runRemoteOperation(
-        repositoryId,
-        () =>
-          pushRepositoryToRemoteUnsafe(repositoryId).pipe(
-            Effect.catch((error) =>
-              logger
-                .error("bootstrap repository push failed", {
-                  error: errorMessage(error),
-                  repositoryId,
-                })
-                .pipe(
-                  Effect.andThen(
-                    Effect.sync(() => {
-                      const runtime = opened.get(repositoryId);
-                      if (runtime !== undefined) {
-                        setRepositoryStatus(runtime.record, {
-                          error: errorMessage(error),
-                          stage: "ready",
-                        });
-                      }
-                    }),
-                  ),
-                  Effect.andThen(Effect.fail(error)),
+      runRemoteOperation(repositoryId, () =>
+        pushRepositoryToRemoteUnsafe(repositoryId).pipe(
+          Effect.catch((error) =>
+            logger
+              .error("bootstrap repository push failed", {
+                error: errorMessage(error),
+                repositoryId,
+              })
+              .pipe(
+                Effect.andThen(
+                  Effect.sync(() => {
+                    const runtime = opened.get(repositoryId);
+                    if (runtime !== undefined) {
+                      setRepositoryStatus(runtime.record, {
+                        error: errorMessage(error),
+                        stage: "ready",
+                      });
+                    }
+                  }),
                 ),
-            ),
+                Effect.andThen(Effect.fail(error)),
+              ),
           ),
+        ),
       );
 
     const startBackgroundSync = (repositoryId: string): void => {

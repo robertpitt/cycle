@@ -402,11 +402,11 @@ describe("@cycle/rpc", () => {
     const sourceIssueId = "sourceIssueId" in result ? result.sourceIssueId : undefined;
     assert.ok(sourceIssueId);
     assert.ok(
-      ((result.repositoryHistory?.ok
-        ? result.repositoryHistory.value
-        : { entries: [] }) as HistoryPage).entries.some((entry) =>
-        entry.changedTicketIds.includes(sourceIssueId),
-      ),
+      (
+        (result.repositoryHistory?.ok
+          ? result.repositoryHistory.value
+          : { entries: [] }) as HistoryPage
+      ).entries.some((entry) => entry.changedTicketIds.includes(sourceIssueId)),
     );
     assert.equal(result.relation?.ok, true);
     assert.equal(result.search?.ok, true);

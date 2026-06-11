@@ -10,12 +10,7 @@ export type BootstrapPhase =
   | "ready-with-background-sync"
   | "failed";
 
-export type BootstrapRepositoryStage =
-  | "pending"
-  | "opening"
-  | "ready"
-  | "syncing"
-  | "failed";
+export type BootstrapRepositoryStage = "pending" | "opening" | "ready" | "syncing" | "failed";
 
 export type BootstrapRepositoryStatus = {
   readonly activeSnapshotId?: string | null;
@@ -49,7 +44,6 @@ export type DesktopBootstrapService = {
   readonly syncRepositoryFromRemote: (repositoryId: string) => Effect.Effect<void, unknown>;
 };
 
-export class DesktopBootstrap extends Context.Service<
-  DesktopBootstrap,
-  DesktopBootstrapService
->()("@cycle/desktop/DesktopBootstrap") {}
+export class DesktopBootstrap extends Context.Service<DesktopBootstrap, DesktopBootstrapService>()(
+  "@cycle/desktop/DesktopBootstrap",
+) {}

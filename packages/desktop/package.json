@@ -25,7 +25,6 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@cycle/core": "workspace:*",
     "@cycle/database": "workspace:*",
     "@cycle/git": "workspace:*",
     "@cycle/git-db": "workspace:*",
@@ -33,6 +32,7 @@
     "@cycle/ui": "workspace:*",
     "@tanstack/react-query": "^5.101.0",
     "effect": "beta",
+    "lucide-react": "^1.17.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router": "^7.17.0"

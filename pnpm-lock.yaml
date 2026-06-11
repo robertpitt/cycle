@@ -7,10 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      '@cycle/core':
-        specifier: workspace:*
-        version: link:packages/core
     devDependencies:
       '@types/node':
         specifier: ^25.9.2
@@ -24,12 +20,6 @@ importers:
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
-
-  packages/core:
-    dependencies:
-      effect:
-        specifier: beta
-        version: 4.0.0-beta.78
 
   packages/database:
     dependencies:
@@ -46,9 +36,6 @@ importers:
 
   packages/desktop:
     dependencies:
-      '@cycle/core':
-        specifier: workspace:*
-        version: link:../core
       '@cycle/database':
         specifier: workspace:*
         version: link:../database
@@ -70,6 +57,9 @@ importers:
       effect:
         specifier: beta
         version: 4.0.0-beta.78
+      lucide-react:
+        specifier: ^1.17.0
+        version: 1.17.0(react@19.2.7)
       react:
         specifier: ^19.2.7
         version: 19.2.7

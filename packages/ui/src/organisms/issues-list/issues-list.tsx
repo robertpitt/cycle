@@ -133,9 +133,7 @@ export const IssuesList = React.forwardRef<HTMLDivElement, IssuesListProps>(func
       {...props}
       ref={ref}
       className={cn("min-w-0 bg-surface", className)}
-      data-state={
-        loading ? "loading" : error ? "error" : hasRows || hasGroups ? "ready" : "empty"
-      }
+      data-state={loading ? "loading" : error ? "error" : hasRows || hasGroups ? "ready" : "empty"}
     >
       {showHeader ? (
         <IssueGroupHeader

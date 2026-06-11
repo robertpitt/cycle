@@ -36,7 +36,9 @@ const LocalWorkspaceServiceLive = LocalWorkspaceLive.pipe(
 );
 
 const DesktopDatabaseServiceLive = DesktopDatabaseLive.pipe(
-  Layer.provide(Layer.mergeAll(ProfileServiceLive, ElectronAppServiceLive, DesktopLoggerServiceLive)),
+  Layer.provide(
+    Layer.mergeAll(ProfileServiceLive, ElectronAppServiceLive, DesktopLoggerServiceLive),
+  ),
 );
 
 const DatabaseConsumerDependenciesLive = Layer.mergeAll(

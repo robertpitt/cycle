@@ -426,17 +426,18 @@ export const makeDatabaseService = (
         );
       }).pipe(
         Effect.catch((error) =>
-          sqlite("mark sync failed", () => projection.markSyncFailed(repositoryId, error.message))
-            .pipe(
-              Effect.andThen(
-                Effect.sync(() => {
-                  log(repositoryId, "sync failed", {
-                    error: error.message,
-                  });
-                }),
-              ),
-              Effect.andThen(Effect.fail(error)),
+          sqlite("mark sync failed", () =>
+            projection.markSyncFailed(repositoryId, error.message),
+          ).pipe(
+            Effect.andThen(
+              Effect.sync(() => {
+                log(repositoryId, "sync failed", {
+                  error: error.message,
+                });
+              }),
             ),
+            Effect.andThen(Effect.fail(error)),
+          ),
         ),
       );
     });
@@ -1027,9 +1028,7 @@ export const makeDatabaseService = (
               tx.commit({
                 author: gitIdentity(actor),
                 committer: gitIdentity(actor),
-                message:
-                  options.message ??
-                  recordMessage(actor, record.recordType, ticket),
+                message: options.message ?? recordMessage(actor, record.recordType, ticket),
               }),
             );
 
@@ -1270,7 +1269,9 @@ export const makeDatabaseService = (
               tx.commit({
                 author: gitIdentity(actor),
                 committer: gitIdentity(actor),
-                message: options.message ?? `${actor.name} created ${quotedTicketTitle(ticket)} ticket from draft`,
+                message:
+                  options.message ??
+                  `${actor.name} created ${quotedTicketTitle(ticket)} ticket from draft`,
               }),
             );
 

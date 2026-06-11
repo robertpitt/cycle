@@ -102,17 +102,13 @@ export const IssueListRow = React.forwardRef<HTMLDivElement, IssueListRowProps>(
         tabIndex={props.tabIndex ?? (isInteractive && !disabled ? 0 : undefined)}
       >
         <span className="grid size-7 place-items-center justify-self-start">
-          {priorityControl ?? (
-            <StatusIndicator label="Priority" shape="bar" tone={priorityTone} />
-          )}
+          {priorityControl ?? <StatusIndicator label="Priority" shape="bar" tone={priorityTone} />}
         </span>
         <span className="min-w-0 truncate font-medium text-muted-foreground" title={id}>
           {id}
         </span>
         <span className="grid size-7 place-items-center justify-self-start">
-          {statusControl ?? (
-            <StatusIndicator label="Issue status" shape="ring" tone={statusTone} />
-          )}
+          {statusControl ?? <StatusIndicator label="Issue status" shape="ring" tone={statusTone} />}
         </span>
         <span className="min-w-0 truncate font-semibold text-foreground">{title}</span>
         <div className="flex min-w-0 items-center justify-end gap-1.5 overflow-hidden">
