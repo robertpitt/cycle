@@ -17,6 +17,20 @@ export const componentSizes = ["sm", "md", "lg"] as const;
 
 export type ComponentSize = (typeof componentSizes)[number];
 
+export const componentAppearances = ["soft", "solid", "outline"] as const;
+
+export type ComponentAppearance = (typeof componentAppearances)[number];
+
+export const componentActionVariants = [
+  "primary",
+  "secondary",
+  "outline",
+  "ghost",
+  "link",
+] as const;
+
+export type ComponentActionVariant = (typeof componentActionVariants)[number];
+
 export type LegacySemanticVariant = "destructive" | "neutral" | "primary" | "success" | "warning";
 
 export const normalizeTone = (

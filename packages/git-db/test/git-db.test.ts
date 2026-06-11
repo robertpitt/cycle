@@ -1159,6 +1159,27 @@ describe("@cycle/git-db", () => {
               return { snapshot, sync };
             }).pipe(Effect.provide(GitDbLive({ gitDir: path.join(clone, ".git") })));
 
+            const localBehindPush = yield* Effect.gen(function* () {
+              const store = yield* StoreApi.StoreService;
+              const tickets = yield* store.collection<{
+                readonly status: string;
+                readonly title: string;
+              }>("tickets");
+              yield* store.sync({
+                mode: "fetch",
+                pointers: ["main"],
+                remote: "origin",
+              });
+              const sync = yield* store.sync({
+                mode: "push",
+                pointers: ["main"],
+                remote: "origin",
+              });
+              const value = yield* tickets.get("ticket-1");
+
+              return { sync, value };
+            }).pipe(Effect.provide(GitDbLive({ gitDir: path.join(repo, ".git") })));
+
             const localPull = yield* Effect.gen(function* () {
               const store = yield* StoreApi.StoreService;
               const tickets = yield* store.collection<{
@@ -1173,6 +1194,32 @@ describe("@cycle/git-db", () => {
               const value = yield* tickets.get("ticket-1");
 
               return { sync, value };
+            }).pipe(Effect.provide(GitDbLive({ gitDir: path.join(repo, ".git") })));
+
+            const localAheadPull = yield* Effect.gen(function* () {
+              const store = yield* StoreApi.StoreService;
+              const tickets = yield* store.collection<{
+                readonly status: string;
+                readonly title: string;
+              }>("tickets");
+              const snapshot = yield* tickets.put(
+                "ticket-1",
+                {
+                  status: "verified",
+                  title: "Sync status test",
+                },
+                {
+                  message: "Verify sync ticket locally",
+                },
+              );
+              const sync = yield* store.sync({
+                mode: "pull",
+                pointers: ["main"],
+                remote: "origin",
+              });
+              const value = yield* tickets.get("ticket-1");
+
+              return { snapshot, sync, value };
             }).pipe(Effect.provide(GitDbLive({ gitDir: path.join(repo, ".git") })));
 
             assert.strictEqual(base.sync.pointers[0]?.status, "pushed");
@@ -1192,10 +1239,37 @@ describe("@cycle/git-db", () => {
               clonedUpdate.sync.pointers[0]?.localBefore,
               clonedUpdate.snapshot.id,
             );
+            assert.strictEqual(localBehindPush.sync.pointers[0]?.status, "rejected");
+            assert.strictEqual(localBehindPush.sync.pointers[0]?.localBefore, base.snapshot.id);
+            assert.strictEqual(
+              localBehindPush.sync.pointers[0]?.remoteBefore,
+              clonedUpdate.snapshot.id,
+            );
+            assert.deepStrictEqual(localBehindPush.value, {
+              status: "open",
+              title: "Sync status test",
+            });
             assert.strictEqual(localPull.sync.pointers[0]?.status, "fast-forwarded");
             assert.strictEqual(localPull.sync.pointers[0]?.localAfter, clonedUpdate.snapshot.id);
             assert.deepStrictEqual(localPull.value, {
               status: "closed",
+              title: "Sync status test",
+            });
+            assert.strictEqual(localAheadPull.sync.pointers[0]?.status, "up-to-date");
+            assert.strictEqual(
+              localAheadPull.sync.pointers[0]?.localBefore,
+              localAheadPull.snapshot.id,
+            );
+            assert.strictEqual(
+              localAheadPull.sync.pointers[0]?.remoteBefore,
+              clonedUpdate.snapshot.id,
+            );
+            assert.strictEqual(
+              localAheadPull.sync.pointers[0]?.localAfter,
+              localAheadPull.snapshot.id,
+            );
+            assert.deepStrictEqual(localAheadPull.value, {
+              status: "verified",
               title: "Sync status test",
             });
           }),

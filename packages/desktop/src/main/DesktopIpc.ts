@@ -1,3 +1,5 @@
+import { contractFor, useCaseNameForAlias } from "@cycle/contracts/contracts";
+import { ticketRpcError, type TicketRpcResponse } from "@cycle/rpc/protocol";
 import { TicketRpcService } from "@cycle/rpc/server";
 import { dialog, ipcMain, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron";
 import { Effect } from "effect";
@@ -63,6 +65,48 @@ type RemoveRepositoryRequest = {
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+const errorMessage = (error: unknown): string =>
+  isRecord(error) && typeof error.message === "string"
+    ? error.message
+    : error instanceof Error
+      ? error.message
+      : String(error);
+
+const errorTag = (error: unknown): string | undefined =>
+  isRecord(error) && typeof error._tag === "string" ? error._tag : undefined;
+
+const errorCategory = (error: unknown): string | undefined =>
+  isRecord(error) && typeof error.category === "string" ? error.category : undefined;
+
+const normalizeIpcError = (channel: string, error: unknown): Error => {
+  const normalized = new Error(errorMessage(error));
+  normalized.name = "CycleDesktopIpcError";
+  Object.assign(normalized, {
+    category: errorCategory(error),
+    channel,
+    sourceTag: errorTag(error),
+  });
+  return normalized;
+};
+
+const ticketRpcFailureResponse = (
+  id: string,
+  error: unknown,
+  code = "DESKTOP_IPC_FAILURE",
+): TicketRpcResponse => ({
+  error: ticketRpcError({
+    code,
+    details: {
+      ...(errorCategory(error) === undefined ? {} : { category: errorCategory(error) }),
+      ...(errorTag(error) === undefined ? {} : { sourceTag: errorTag(error) }),
+    },
+    message: errorMessage(error),
+    sourceTag: errorTag(error),
+  }),
+  id,
+  ok: false,
+});
 
 const validateInvokeSender = (
   event: IpcMainInvokeEvent,
@@ -284,14 +328,18 @@ const registerIpcHandler = <A, B>(
   Effect.acquireRelease(
     Effect.sync(() => {
       ipcMain.handle(channel, async (event, payload: unknown) =>
-        runtime.runPromise(
-          `ipc.${channel}`,
-          Effect.gen(function* () {
-            yield* validateInvokeSender(event, channel);
-            const request = yield* decode(payload);
-            return yield* handle(request);
+        runtime
+          .runPromise(
+            `ipc.${channel}`,
+            Effect.gen(function* () {
+              yield* validateInvokeSender(event, channel);
+              const request = yield* decode(payload);
+              return yield* handle(request);
+            }),
+          )
+          .catch((error: unknown) => {
+            throw normalizeIpcError(channel, error);
           }),
-        ),
       );
     }),
     () => Effect.sync(() => ipcMain.removeHandler(channel)),
@@ -403,7 +451,10 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
   );
   yield* registerIpcHandler(runtime, ticketRpcChannel, decodeTicketRpcRequest, (request) =>
     Effect.gen(function* () {
-      if (request.method === "repository.status.list") {
+      const useCaseName = useCaseNameForAlias(request.method);
+      const contract = useCaseName === null ? null : contractFor(useCaseName);
+
+      if (contract === null || contract.repositoryScope === "none") {
         return yield* ticketRpc.handle(request);
       }
 
@@ -424,6 +475,11 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
 
       yield* bootstrap.ensureRepositoryOpened(repository.id);
 
+      if (request.method === "repository.sync") {
+        yield* bootstrap.syncRepositoryFromRemote(repository.id);
+        return yield* ticketRpc.handle(request);
+      }
+
       if (request.method === "repository.push") {
         return {
           id: request.id,
@@ -433,6 +489,18 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
       }
 
       return yield* ticketRpc.handle(request);
-    }),
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.succeed(
+          ticketRpcFailureResponse(
+            request.id,
+            error,
+            errorCategory(error) === "security"
+              ? "DESKTOP_REPOSITORY_UNAUTHORIZED"
+              : "DESKTOP_TICKET_RPC_FAILURE",
+          ),
+        ),
+      ),
+    ),
   );
 });

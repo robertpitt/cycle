@@ -1,7 +1,7 @@
 import { DatabaseService, type RepositoryMetadata, type RepositoryStatus } from "@cycle/database";
 import { GitRepository, type GitRepositoryMetadata } from "@cycle/git";
 import { GitDb, Store as GitDbStore, type SyncResult } from "@cycle/git-db";
-import { Effect, Layer } from "effect";
+import { Cause, Deferred, Effect, Layer, Queue } from "effect";
 import { DesktopRuntime } from "../platform/DesktopRuntime.ts";
 import type { RepositoryRecord } from "../shared/AppConfig.ts";
 import {
@@ -19,6 +19,12 @@ type RuntimeRepository = {
   readonly metadata: RepositoryMetadata;
   readonly record: RepositoryRecord;
   readonly store: GitDbStore.StoreServiceShape;
+};
+
+type RepositoryOperationTask = {
+  readonly effect: Effect.Effect<unknown, unknown>;
+  readonly label: string;
+  readonly result: Deferred.Deferred<unknown, unknown>;
 };
 
 const nowIso = (): string => new Date().toISOString();
@@ -63,8 +69,7 @@ export const DesktopBootstrapLive = Layer.effect(
     const logger = yield* DesktopLogger;
     const runtime = yield* DesktopRuntime;
     const opened = new Map<string, RuntimeRepository>();
-    const opening = new Map<string, Promise<void>>();
-    const remoteOperations = new Map<string, Promise<unknown>>();
+    const repositoryQueues = new Map<string, Queue.Queue<RepositoryOperationTask>>();
     const repositoryStatuses = new Map<string, BootstrapRepositoryStatus>();
     let status: Omit<BootstrapStatus, "repositories"> = {
       blocking: true,
@@ -85,6 +90,28 @@ export const DesktopBootstrapLive = Layer.effect(
       };
     };
 
+    const completeOpenPhaseIfTerminal = (): void => {
+      if (!status.blocking) return;
+      if (status.phase !== "loading-repositories" && status.phase !== "opening-repository") return;
+
+      const repositories = [...repositoryStatuses.values()];
+      if (repositories.length === 0) return;
+      if (
+        !repositories.every(
+          (repository) => repository.stage === "ready" || repository.stage === "failed",
+        )
+      ) {
+        return;
+      }
+
+      setStatus({
+        blocking: false,
+        completedAt: nowIso(),
+        message: "Repository projections are ready",
+        phase: "ready-with-background-sync",
+      });
+    };
+
     const setRepositoryStatus = (
       repository: RepositoryRecord,
       next: Partial<BootstrapRepositoryStatus>,
@@ -100,6 +127,7 @@ export const DesktopBootstrapLive = Layer.effect(
         ...current,
         ...next,
       });
+      completeOpenPhaseIfTerminal();
     };
 
     const makeLocalStore = (
@@ -133,6 +161,70 @@ export const DesktopBootstrapLive = Layer.effect(
           }),
         ),
       );
+
+    const runRepositoryQueue = (
+      repositoryId: string,
+      queue: Queue.Queue<RepositoryOperationTask>,
+    ): Effect.Effect<void> =>
+      Queue.take(queue).pipe(
+        Effect.flatMap((task) =>
+          task.effect.pipe(
+            Effect.matchCauseEffect({
+              onFailure: (cause) =>
+                logger
+                  .error("bootstrap repository operation failed", {
+                    cause: Cause.pretty(cause),
+                    operation: task.label,
+                    repositoryId,
+                  })
+                  .pipe(Effect.andThen(Deferred.failCause(task.result, cause))),
+              onSuccess: (value) => Deferred.succeed(task.result, value),
+            }),
+          ),
+        ),
+        Effect.forever,
+      );
+
+    const repositoryQueue = (
+      repositoryId: string,
+    ): Effect.Effect<Queue.Queue<RepositoryOperationTask>> =>
+      Effect.gen(function* () {
+        const existing = repositoryQueues.get(repositoryId);
+        if (existing !== undefined) return existing;
+
+        const queue = yield* Queue.unbounded<RepositoryOperationTask>();
+        repositoryQueues.set(repositoryId, queue);
+        runtime.run(
+          `bootstrap.repositoryQueue.${repositoryId}`,
+          runRepositoryQueue(repositoryId, queue),
+        );
+        return queue;
+      });
+
+    const runRepositoryOperation = <A>(
+      repositoryId: string,
+      label: string,
+      effect: Effect.Effect<A, unknown>,
+    ): Effect.Effect<A, unknown> =>
+      Effect.gen(function* () {
+        const queue = yield* repositoryQueue(repositoryId);
+        const result = yield* Deferred.make<unknown, unknown>();
+
+        yield* Queue.offer(queue, {
+          effect: effect.pipe(
+            Effect.withSpan(`desktop.bootstrap.${label}`, {
+              attributes: {
+                "desktop.repositoryId": repositoryId,
+                "desktop.repositoryOperation": label,
+              },
+            }),
+          ),
+          label,
+          result,
+        });
+
+        return (yield* Deferred.await(result)) as A;
+      });
 
     const openRepositoryUnsafe = (repository: RepositoryRecord): Effect.Effect<void, unknown> =>
       Effect.gen(function* () {
@@ -207,29 +299,19 @@ export const DesktopBootstrapLive = Layer.effect(
         ),
       );
 
+    const ensureRepositoryOpenedUnsafe = (
+      repository: RepositoryRecord,
+    ): Effect.Effect<void, unknown> =>
+      opened.has(repository.id) ? Effect.void : openRepositoryUnsafe(repository);
+
     const openRepository = (repository: RepositoryRecord): Effect.Effect<void, unknown> => {
       if (opened.has(repository.id)) return Effect.void;
 
-      const existing = opening.get(repository.id);
-      if (existing !== undefined) {
-        return Effect.tryPromise({
-          catch: (cause) => cause,
-          try: () => existing,
-        });
-      }
-
-      const promise = runtime
-        .runPromise(`bootstrap.openRepository.${repository.id}`, openRepositoryUnsafe(repository))
-        .finally(() => {
-          opening.delete(repository.id);
-        });
-
-      opening.set(repository.id, promise);
-
-      return Effect.tryPromise({
-        catch: (cause) => cause,
-        try: () => promise,
-      });
+      return runRepositoryOperation(
+        repository.id,
+        "openRepository",
+        ensureRepositoryOpenedUnsafe(repository),
+      ).pipe(Effect.asVoid);
     };
 
     const repositoryById = (repositoryId: string): Effect.Effect<RepositoryRecord, unknown> =>
@@ -248,35 +330,13 @@ export const DesktopBootstrapLive = Layer.effect(
     const runRemoteOperation = <A>(
       repositoryId: string,
       operation: () => Effect.Effect<A, unknown>,
-    ): Effect.Effect<A, unknown> => {
-      const existing = remoteOperations.get(repositoryId);
-      if (existing !== undefined) {
-        return Effect.tryPromise({
-          catch: (cause) => cause,
-          try: async () => {
-            await existing.catch(() => undefined);
-          },
-        }).pipe(Effect.flatMap(() => runRemoteOperation(repositoryId, operation)));
-      }
-
-      const promise = runtime
-        .runPromise(`bootstrap.remoteOperation.${repositoryId}`, operation())
-        .finally(() => {
-          remoteOperations.delete(repositoryId);
-        });
-
-      remoteOperations.set(repositoryId, promise);
-
-      return Effect.tryPromise({
-        catch: (cause) => cause,
-        try: () => promise,
-      });
-    };
+    ): Effect.Effect<A, unknown> =>
+      runRepositoryOperation(repositoryId, "remoteOperation", operation());
 
     const syncRepositoryFromRemoteUnsafe = (repositoryId: string): Effect.Effect<void, unknown> =>
       Effect.gen(function* () {
         const repository = yield* repositoryById(repositoryId);
-        yield* openRepository(repository);
+        yield* ensureRepositoryOpenedUnsafe(repository);
         const runtime = opened.get(repositoryId);
         if (runtime === undefined) return;
 
@@ -386,7 +446,7 @@ export const DesktopBootstrapLive = Layer.effect(
     ): Effect.Effect<SyncResult, unknown> =>
       Effect.gen(function* () {
         const repository = yield* repositoryById(repositoryId);
-        yield* openRepository(repository);
+        yield* ensureRepositoryOpenedUnsafe(repository);
         const runtime = opened.get(repositoryId);
         if (runtime === undefined) {
           return yield* Effect.fail(new Error(`Repository is not open: ${repositoryId}`));

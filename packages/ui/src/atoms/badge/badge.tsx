@@ -1,7 +1,8 @@
-import { cva, type VariantProps } from "class-variance-authority";
+import { cva } from "class-variance-authority";
 import * as React from "react";
 import { cn } from "../../lib/cn.ts";
 import {
+  type ComponentAppearance,
   normalizeTone,
   type ComponentTone,
   type LegacySemanticVariant,
@@ -61,7 +62,7 @@ export const badgeVariants = cva(
     ],
   },
 );
-export type BadgeAppearance = NonNullable<VariantProps<typeof badgeVariants>["appearance"]>;
+export type BadgeAppearance = ComponentAppearance;
 export type BadgeLegacyVariant = LegacySemanticVariant | "outline";
 export type BadgeProps = React.HTMLAttributes<HTMLSpanElement> & {
   readonly appearance?: BadgeAppearance;

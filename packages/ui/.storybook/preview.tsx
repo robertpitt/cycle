@@ -37,7 +37,6 @@ const preview: Preview = {
             value: "dark",
           },
         ],
-        showName: true,
       },
     },
   },

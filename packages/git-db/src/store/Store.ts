@@ -1181,6 +1181,16 @@ const sync = (
         continue;
       }
 
+      if (remoteDescendsFromLocal && mode === "push") {
+        results.push({
+          ...resultBase,
+          localAfter: localBefore,
+          remoteAfter: remoteBefore,
+          status: "rejected",
+        });
+        continue;
+      }
+
       if (localDescendsFromRemote && (mode === "push" || mode === "full")) {
         yield* runtime.adapter.push({
           refspecs: [`${localRef}:${localRef}`],
@@ -1191,6 +1201,16 @@ const sync = (
           localAfter: localBefore,
           remoteAfter: localBefore,
           status: "pushed",
+        });
+        continue;
+      }
+
+      if (localDescendsFromRemote && mode === "pull") {
+        results.push({
+          ...resultBase,
+          localAfter: localBefore,
+          remoteAfter: remoteBefore,
+          status: "up-to-date",
         });
         continue;
       }

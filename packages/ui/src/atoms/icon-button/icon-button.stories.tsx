@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Bell, MoreHorizontal, Plus, Search } from "lucide-react";
+import { componentActionVariants, componentTones } from "../../lib/contracts.ts";
 import { IconButton } from "./index.ts";
 const meta = {
   args: {
@@ -13,9 +14,13 @@ const meta = {
       control: "select",
       options: ["sm", "md"],
     },
+    tone: {
+      control: "select",
+      options: componentTones,
+    },
     variant: {
       control: "select",
-      options: ["primary", "secondary", "outline", "ghost", "destructive"],
+      options: componentActionVariants,
     },
   },
   component: IconButton,

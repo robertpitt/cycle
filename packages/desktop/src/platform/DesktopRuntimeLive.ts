@@ -2,7 +2,7 @@ import { Cause, Effect, Layer, Queue } from "effect";
 import { DesktopRuntime } from "./DesktopRuntime.ts";
 
 type DesktopRuntimeTask = {
-  readonly effect: Effect.Effect<void, unknown>;
+  readonly effect: Effect.Effect<void>;
   readonly label: string;
 };
 
@@ -21,19 +21,33 @@ export const DesktopRuntimeLive = Layer.effect(
     const queue = yield* Queue.unbounded<DesktopRuntimeTask>();
 
     yield* Queue.take(queue).pipe(
-      Effect.flatMap((task) =>
-        task.effect.pipe(Effect.catchCause((cause) => logTaskFailure(task.label, cause))),
-      ),
+      Effect.flatMap((task) => task.effect.pipe(Effect.forkScoped)),
       Effect.forever,
       Effect.forkScoped,
     );
 
     return {
-      run: (label, effect) => {
-        Queue.offerUnsafe(queue, { effect, label });
+      run: (label: string, effect: Effect.Effect<void, unknown>): void => {
+        Queue.offerUnsafe(queue, {
+          effect: effect.pipe(Effect.catchCause((cause) => logTaskFailure(label, cause))),
+          label,
+        });
       },
-      // Used only for framework callbacks that must return a Promise to the caller.
-      runPromise: (_label, effect) => Effect.runPromise(effect),
+      runPromise: <A>(label: string, effect: Effect.Effect<A, unknown>): Promise<A> =>
+        new Promise<A>((resolve, reject) => {
+          Queue.offerUnsafe(queue, {
+            effect: effect.pipe(
+              Effect.matchCauseEffect({
+                onFailure: (cause) =>
+                  logTaskFailure(label, cause).pipe(
+                    Effect.andThen(Effect.sync(() => reject(Cause.squash(cause)))),
+                  ),
+                onSuccess: (value) => Effect.sync(() => resolve(value)),
+              }),
+            ),
+            label,
+          });
+        }),
     };
   }),
 );

@@ -1,7 +1,7 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
 import { cn } from "../../lib/cn.ts";
-import { normalizeTone, type ComponentTone } from "../../lib/contracts.ts";
+import type { ComponentTone } from "../../lib/contracts.ts";
 export const statusIndicatorVariants = cva("inline-flex shrink-0", {
   defaultVariants: {
     shape: "dot",
@@ -26,11 +26,11 @@ export const statusIndicatorVariants = cva("inline-flex shrink-0", {
 export type StatusIndicatorProps = React.HTMLAttributes<HTMLSpanElement> &
   Omit<VariantProps<typeof statusIndicatorVariants>, "tone"> & {
     readonly label?: string;
-    readonly tone?: ComponentTone | "destructive";
+    readonly tone?: ComponentTone;
   };
 export const StatusIndicator = React.forwardRef<HTMLSpanElement, StatusIndicatorProps>(
   function StatusIndicator({ className, label, shape, tone, ...props }, ref) {
-    const resolvedTone = normalizeTone(tone) ?? "neutral";
+    const resolvedTone = tone ?? "neutral";
     return (
       <span
         {...props}

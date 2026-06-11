@@ -1,7 +1,7 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
 import { cn } from "../../lib/cn.ts";
-import { normalizeTone, type ComponentTone } from "../../lib/contracts.ts";
+import type { ComponentTone } from "../../lib/contracts.ts";
 export const issueMetaChipVariants = cva(
   "inline-flex h-7 min-w-0 items-center gap-2 rounded-full border px-2.5 text-sm font-medium",
   {
@@ -24,11 +24,11 @@ export type IssueMetaChipProps = React.HTMLAttributes<HTMLSpanElement> &
   Omit<VariantProps<typeof issueMetaChipVariants>, "tone"> & {
     readonly icon?: React.ReactNode;
     readonly label: React.ReactNode;
-    readonly tone?: ComponentTone | "destructive";
+    readonly tone?: ComponentTone;
   };
 export const IssueMetaChip = React.forwardRef<HTMLSpanElement, IssueMetaChipProps>(
   function IssueMetaChip({ className, icon, label, tone, ...props }, ref) {
-    const resolvedTone = normalizeTone(tone) ?? "neutral";
+    const resolvedTone = tone ?? "neutral";
     return (
       <span
         {...props}

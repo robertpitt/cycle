@@ -378,11 +378,7 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
     ];
 
     return items.sort((first, second) => {
-      if (
-        first.time !== undefined &&
-        second.time !== undefined &&
-        first.time !== second.time
-      ) {
+      if (first.time !== undefined && second.time !== undefined && first.time !== second.time) {
         return first.time - second.time;
       }
 

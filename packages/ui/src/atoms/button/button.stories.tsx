@@ -1,11 +1,13 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Badge } from "../badge/index.ts";
 import { Stack } from "../layout/index.ts";
+import { componentActionVariants, componentTones } from "../../lib/contracts.ts";
 import { Button } from "./index.ts";
 const meta = {
   args: {
     children: "Create cycle",
     size: "md",
+    tone: "info",
     variant: "primary",
   },
   argTypes: {
@@ -13,9 +15,13 @@ const meta = {
       control: "select",
       options: ["sm", "md", "lg", "icon"],
     },
+    tone: {
+      control: "select",
+      options: componentTones,
+    },
     variant: {
       control: "select",
-      options: ["primary", "secondary", "outline", "ghost", "destructive", "link"],
+      options: componentActionVariants,
     },
   },
   component: Button,
@@ -24,23 +30,31 @@ const meta = {
 } satisfies Meta<typeof Button>;
 export default meta;
 type Story = StoryObj<typeof meta>;
-const variants = ["primary", "secondary", "outline", "ghost", "destructive", "link"] as const;
 const sizes = ["sm", "md", "lg", "icon"] as const;
 export const Playground: Story = {};
 export const Variants: Story = {
   render: () => (
     <Stack gap="lg">
       <div className="flex flex-wrap items-center gap-3">
-        {variants.map((variant) => (
+        {componentActionVariants.map((variant) => (
           <Button key={variant} variant={variant}>
             {variant[0]?.toUpperCase() + variant.slice(1)}
           </Button>
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <Badge tone="info">Default</Badge>
+        {componentTones.map((tone) => (
+          <Button key={tone} tone={tone}>
+            {tone[0]?.toUpperCase() + tone.slice(1)}
+          </Button>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <Badge tone="info">States</Badge>
         <Button loading>Saving</Button>
-        <Button disabled>Disabled</Button>
+        <Button disabled tone="danger">
+          Disabled
+        </Button>
       </div>
     </Stack>
   ),
