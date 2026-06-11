@@ -1,4 +1,8 @@
-import { ViewIssue, type ViewIssueComment } from "@cycle/ui/organisms";
+import {
+  ViewIssue,
+  type ViewIssueActivityEvent,
+  type ViewIssueComment,
+} from "@cycle/ui/organisms";
 import {
   AlertTriangle,
   BarChart3,
@@ -8,7 +12,12 @@ import {
   LoaderCircle,
   UserRound,
 } from "lucide-react";
-import type { CreateTicketInput, LinkedRecord, TicketDocument } from "@cycle/database";
+import type {
+  CreateTicketInput,
+  HistoryCommit,
+  LinkedRecord,
+  TicketDocument,
+} from "@cycle/database";
 import {
   useAddIssueCommentMutation,
   useCreateIssueMutation,
@@ -17,6 +26,7 @@ import {
 import {
   useInitiativeProgressQuery,
   useIssueDetailQuery,
+  useIssueHistoryQuery,
   useIssueRecordsQuery,
   useLabelListQuery,
   useUserListQuery,
@@ -49,6 +59,21 @@ const formatDate = (value: string | undefined): string | undefined => {
   }).format(date);
 };
 
+const formatActivityTimestamp = (value: string | undefined): string | undefined => {
+  if (!value) return undefined;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+
+  return new Intl.DateTimeFormat(undefined, {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+};
+
 const getCommentBody = (record: LinkedRecord): string => {
   if (
     record.payload !== null &&
@@ -62,14 +87,17 @@ const getCommentBody = (record: LinkedRecord): string => {
   return "";
 };
 
+const authorFromName = (name: string) => ({
+  initials: initialsForName(name),
+  name,
+});
+
 const commentFromRecord = (record: LinkedRecord): ViewIssueComment => ({
-  author: {
-    initials: initialsForName(record.createdBy.name),
-    name: record.createdBy.name,
-  },
+  author: authorFromName(record.createdBy.name),
   body: getCommentBody(record),
   id: record.id,
-  timestamp: "just now",
+  occurredAt: record.createdAt,
+  timestamp: formatActivityTimestamp(record.createdAt),
 });
 
 const externalLinkTitle = (url: string): string => {
@@ -88,17 +116,68 @@ const issueResources = (issue: TicketDocument) =>
     title: link.title ?? link.source ?? externalLinkTitle(link.url),
   }));
 
-const issueActivity = (issue: TicketDocument) => [
-  {
-    author: {
-      initials: initialsForName(issue.frontmatter.createdBy.name),
-      name: issue.frontmatter.createdBy.name,
-    },
-    body: "created the issue",
-    id: `${issue.id}:created`,
-    timestamp: formatDate(issue.frontmatter.createdAt),
-  },
-];
+const sentenceFragment = (value: string): string => {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return trimmed;
+
+  return `${trimmed[0]?.toLowerCase() ?? ""}${trimmed.slice(1)}`;
+};
+
+const historyMessageFragment = (entry: HistoryCommit): string => {
+  const message = entry.message?.trim();
+  if (!message) return "updated the issue";
+
+  if (entry.authorName) {
+    const prefix = `${entry.authorName} `;
+    if (message.startsWith(prefix)) {
+      return message.slice(prefix.length);
+    }
+  }
+
+  return sentenceFragment(message);
+};
+
+const isCommentHistoryEntry = (entry: HistoryCommit): boolean => {
+  const fragment = historyMessageFragment(entry).toLowerCase();
+  return fragment.startsWith("commented on ") || fragment.includes(" commented on ");
+};
+
+const isCreatedHistoryEntry = (entry: HistoryCommit): boolean =>
+  historyMessageFragment(entry).toLowerCase().startsWith("created ");
+
+const issueCreatedActivity = (issue: TicketDocument): ViewIssueActivityEvent => ({
+  author: authorFromName(issue.frontmatter.createdBy.name),
+  body: "created the issue",
+  id: `${issue.id}:created`,
+  occurredAt: issue.frontmatter.createdAt,
+  timestamp: formatActivityTimestamp(issue.frontmatter.createdAt),
+});
+
+const issueActivity = (
+  issue: TicketDocument,
+  historyEntries: readonly HistoryCommit[],
+): readonly ViewIssueActivityEvent[] => {
+  const historyEvents = historyEntries
+    .filter((entry) => !isCommentHistoryEntry(entry))
+    .map((entry) => {
+      const authorName =
+        entry.authorName ?? entry.authorEmail ?? issue.frontmatter.createdBy.name;
+
+      return {
+        author: authorFromName(authorName),
+        body: historyMessageFragment(entry),
+        id: entry.snapshotId,
+        occurredAt: entry.committedAt,
+        timestamp: formatActivityTimestamp(entry.committedAt),
+      } satisfies ViewIssueActivityEvent;
+    });
+
+  return historyEntries.some(isCreatedHistoryEntry)
+    ? historyEvents
+    : [issueCreatedActivity(issue), ...historyEvents];
+};
+
+const issueHistoryPageLimit = 100;
 
 const renderPanelState = (message: string, icon: "error" | "loading") => (
   <div className="grid min-h-full place-items-center p-8">
@@ -123,6 +202,9 @@ const statusOptions = ["backlog", "todo", "in-progress", "done", "canceled"] as 
 
 export const ViewIssuePanel = ({ issueId, repositoryId }: ViewIssuePanelProps) => {
   const issueQuery = useIssueDetailQuery(repositoryId, issueId);
+  const issueHistoryQuery = useIssueHistoryQuery(repositoryId, issueId, {
+    limit: issueHistoryPageLimit,
+  });
   const recordsQuery = useIssueRecordsQuery(repositoryId, issueId);
   const usersQuery = useUserListQuery(repositoryId, {
     disabled: false,
@@ -364,7 +446,7 @@ export const ViewIssuePanel = ({ issueId, repositoryId }: ViewIssuePanelProps) =
 
   return (
     <ViewIssue
-      activityEvents={issueActivity(issue)}
+      activityEvents={issueActivity(issue, issueHistoryQuery.data?.entries ?? [])}
       assignee={
         assigneeName
           ? {

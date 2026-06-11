@@ -1,7 +1,9 @@
 import { TicketRpcLive } from "@cycle/rpc/server";
+import { UseCaseRunnerLive } from "@cycle/usecases";
 import { GitRepositoryLive } from "@cycle/git";
 import { Layer } from "effect";
 import { BrowserWindowsLive } from "../platform/BrowserWindowsLive.ts";
+import { DesktopRuntimeLive } from "../platform/DesktopRuntimeLive.ts";
 import { ElectronAppLive } from "../platform/ElectronAppLive.ts";
 import { ElectronShellLive } from "../platform/ElectronShellLive.ts";
 import { ElectronThemeLive } from "../platform/ElectronThemeLive.ts";
@@ -17,9 +19,17 @@ import { ElectronPreferences } from "./ElectronPreferences.ts";
 import { LocalWorkspaceLive } from "./LocalWorkspaceLive.ts";
 import { ProfileLive } from "./ProfileLive.ts";
 
-const ElectronAppServiceLive = ElectronAppLive.pipe(Layer.provide(ProcessLifecycleLive));
+const ElectronAppServiceLive = ElectronAppLive.pipe(
+  Layer.provide(Layer.mergeAll(ProcessLifecycleLive, DesktopRuntimeLive)),
+);
 
-const DesktopWindowDependenciesLive = Layer.mergeAll(BrowserWindowsLive, DesktopConfigLive);
+const ElectronThemeServiceLive = ElectronThemeLive.pipe(Layer.provide(DesktopRuntimeLive));
+
+const DesktopWindowDependenciesLive = Layer.mergeAll(
+  BrowserWindowsLive,
+  DesktopConfigLive,
+  DesktopRuntimeLive,
+);
 
 const DesktopWindowServiceLive = DesktopWindowLive.pipe(
   Layer.provide(DesktopWindowDependenciesLive),
@@ -41,7 +51,7 @@ const ElectronPreferencesServiceLive = ElectronPreferences.defaultLayer.pipe(
   Layer.provide(
     Layer.mergeAll(
       AppConfigServiceLive,
-      ElectronThemeLive,
+      ElectronThemeServiceLive,
       LocalWorkspaceServiceLive,
       ProfileServiceLive,
     ),
@@ -50,13 +60,20 @@ const ElectronPreferencesServiceLive = ElectronPreferences.defaultLayer.pipe(
 
 const DesktopDatabaseServiceLive = DesktopDatabaseLive.pipe(
   Layer.provide(
-    Layer.mergeAll(ProfileServiceLive, ElectronAppServiceLive, DesktopLoggerServiceLive),
+    Layer.mergeAll(
+      ProfileServiceLive,
+      ElectronAppServiceLive,
+      DesktopLoggerServiceLive,
+      DesktopRuntimeLive,
+    ),
   ),
 );
 
 const DatabaseConsumerDependenciesLive = Layer.mergeAll(
   DesktopDatabaseServiceLive,
+  UseCaseRunnerLive.pipe(Layer.provide(DesktopDatabaseServiceLive)),
   DesktopLoggerServiceLive,
+  DesktopRuntimeLive,
   ElectronPreferencesServiceLive,
   GitRepositoryServiceLive,
 );
@@ -66,8 +83,9 @@ const DatabaseConsumersLive = Layer.mergeAll(TicketRpcLive, DesktopBootstrapLive
 );
 
 export const DesktopLive = Layer.mergeAll(
+  DesktopRuntimeLive,
   ElectronAppServiceLive,
-  ElectronThemeLive,
+  ElectronThemeServiceLive,
   DesktopWindowServiceLive,
   ElectronShellLive,
   AppConfigServiceLive,

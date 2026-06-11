@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
+import { issueHistoryQueryKey } from "../queries/issueHistory.ts";
 import {
   issueDetailQueryKey,
   issueListRootQueryKey,
@@ -49,6 +50,9 @@ export const useAddIssueCommentMutation = ({
         }),
         queryClient.invalidateQueries({
           queryKey: issueListRootQueryKey,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: issueHistoryQueryKey(repositoryId, issueId),
         }),
       ]);
     },

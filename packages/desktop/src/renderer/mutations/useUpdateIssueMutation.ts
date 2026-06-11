@@ -1,11 +1,13 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { UpdateTicketPatch } from "@cycle/database";
 import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
+import { issueHistoryQueryKey } from "../queries/issueHistory.ts";
 import {
   issueDetailQueryKey,
   issueListRootQueryKey,
   issueRecordsQueryKey,
 } from "../queries/issues.ts";
+import { useNotifications } from "../notifications/NotificationProvider.tsx";
 
 type UseUpdateIssueMutationOptions = {
   readonly issueId?: string;
@@ -17,6 +19,7 @@ export const useUpdateIssueMutation = ({
   repositoryId,
 }: UseUpdateIssueMutationOptions) => {
   const queryClient = useQueryClient();
+  const notifications = useNotifications();
 
   return useMutation({
     mutationFn: async (patch: UpdateTicketPatch) => {
@@ -34,6 +37,15 @@ export const useUpdateIssueMutation = ({
         },
       });
     },
+    onError: (error) => {
+      notifications.notify({
+        description:
+          error instanceof Error ? error.message : "Cycle could not save the issue update.",
+        durationMs: 9000,
+        title: "Issue update failed",
+        tone: "danger",
+      });
+    },
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({
@@ -44,6 +56,9 @@ export const useUpdateIssueMutation = ({
         }),
         queryClient.invalidateQueries({
           queryKey: issueRecordsQueryKey(repositoryId, issueId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: issueHistoryQueryKey(repositoryId, issueId),
         }),
       ]);
     },

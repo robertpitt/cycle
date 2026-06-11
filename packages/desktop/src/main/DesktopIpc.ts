@@ -33,6 +33,7 @@ import {
   type ElectronThemeState,
   type TicketRpcBridgeRequest,
 } from "../ipc/index.ts";
+import { DesktopRuntime, type DesktopRuntimeService } from "../platform/DesktopRuntime.ts";
 import { electronSecurityError, type ElectronError } from "../platform/ElectronError.ts";
 import { ElectronShell } from "../platform/ElectronShell.ts";
 import { AppConfigError } from "../shared/AppConfig.ts";
@@ -275,6 +276,7 @@ const selectRepositoryFolder = (
   });
 
 const registerIpcHandler = <A, B>(
+  runtime: DesktopRuntimeService,
   channel: string,
   decode: (value: unknown) => Effect.Effect<A, ElectronError>,
   handle: (request: A) => Effect.Effect<B, unknown>,
@@ -282,7 +284,8 @@ const registerIpcHandler = <A, B>(
   Effect.acquireRelease(
     Effect.sync(() => {
       ipcMain.handle(channel, async (event, payload: unknown) =>
-        Effect.runPromise(
+        runtime.runPromise(
+          `ipc.${channel}`,
           Effect.gen(function* () {
             yield* validateInvokeSender(event, channel);
             const request = yield* decode(payload);
@@ -302,6 +305,7 @@ const broadcastThemeState = (state: ElectronThemeState): Effect.Effect<void> =>
   });
 
 export const registerDesktopIpc = Effect.fnUntraced(function* () {
+  const runtime = yield* DesktopRuntime;
   const shell = yield* ElectronShell;
   const preferences = yield* ElectronPreferences;
   const bootstrap = yield* DesktopBootstrap;
@@ -310,66 +314,94 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
   const agentProviderDetector = yield* AgentProviderDetector;
   const ticketRpc = yield* TicketRpcService;
 
-  yield* registerIpcHandler(openExternalChannel, decodeOpenExternalRequest, (request) =>
+  yield* registerIpcHandler(runtime, openExternalChannel, decodeOpenExternalRequest, (request) =>
     shell.openExternal(request.targetUrl),
   );
-  yield* registerIpcHandler(getAppConfigChannel, decodeEmptyRequest, () => preferences.read());
-  yield* registerIpcHandler(getThemeStateChannel, decodeEmptyRequest, () => preferences.themeState);
-  yield* registerIpcHandler(getBackendLogPathChannel, decodeEmptyRequest, () => logger.path);
-  yield* registerIpcHandler(getBootstrapStatusChannel, decodeEmptyRequest, () =>
+  yield* registerIpcHandler(runtime, getAppConfigChannel, decodeEmptyRequest, () =>
+    preferences.read(),
+  );
+  yield* registerIpcHandler(
+    runtime,
+    getThemeStateChannel,
+    decodeEmptyRequest,
+    () => preferences.themeState,
+  );
+  yield* registerIpcHandler(
+    runtime,
+    getBackendLogPathChannel,
+    decodeEmptyRequest,
+    () => logger.path,
+  );
+  yield* registerIpcHandler(runtime, getBootstrapStatusChannel, decodeEmptyRequest, () =>
     bootstrap.status(),
   );
-  yield* registerIpcHandler(updateProfileChannel, decodeProfileUpdateInput, (request) =>
+  yield* registerIpcHandler(runtime, updateProfileChannel, decodeProfileUpdateInput, (request) =>
     preferences.updateProfile(request),
   );
-  yield* registerIpcHandler(completeOnboardingChannel, decodeCompleteOnboardingInput, (request) =>
-    Effect.gen(function* () {
-      const next = yield* preferences.completeOnboarding(request);
-      const state = yield* preferences.themeState;
-      yield* broadcastThemeState(state);
-      return next;
-    }),
+  yield* registerIpcHandler(
+    runtime,
+    completeOnboardingChannel,
+    decodeCompleteOnboardingInput,
+    (request) =>
+      Effect.gen(function* () {
+        const next = yield* preferences.completeOnboarding(request);
+        const state = yield* preferences.themeState;
+        yield* broadcastThemeState(state);
+        return next;
+      }),
   );
-  yield* registerIpcHandler(setThemePreferenceChannel, decodeSetThemePreferenceRequest, (request) =>
-    Effect.gen(function* () {
-      const next = yield* preferences.setThemePreference(request.preference);
-      const state = yield* preferences.themeState;
-      yield* broadcastThemeState(state);
-      return next;
-    }),
+  yield* registerIpcHandler(
+    runtime,
+    setThemePreferenceChannel,
+    decodeSetThemePreferenceRequest,
+    (request) =>
+      Effect.gen(function* () {
+        const next = yield* preferences.setThemePreference(request.preference);
+        const state = yield* preferences.themeState;
+        yield* broadcastThemeState(state);
+        return next;
+      }),
   );
-  yield* registerIpcHandler(clearCacheChannel, decodeEmptyRequest, () => preferences.clearCache());
+  yield* registerIpcHandler(runtime, clearCacheChannel, decodeEmptyRequest, () =>
+    preferences.clearCache(),
+  );
   yield* preferences.startThemeLifecycleSupervision({
     onUpdated: broadcastThemeState,
   });
-  yield* registerIpcHandler(listRepositoriesChannel, decodeEmptyRequest, () =>
+  yield* registerIpcHandler(runtime, listRepositoriesChannel, decodeEmptyRequest, () =>
     localWorkspace.listRepositories(),
   );
-  yield* registerIpcHandler(selectRepositoryFolderChannel, decodeEmptyRequest, () =>
+  yield* registerIpcHandler(runtime, selectRepositoryFolderChannel, decodeEmptyRequest, () =>
     selectRepositoryFolder(localWorkspace),
   );
   yield* registerIpcHandler(
+    runtime,
     upsertRepositoryPathChannel,
     decodeUpsertRepositoryPathInput,
     (request) => localWorkspace.upsertRepositoryPath(request),
   );
   yield* registerIpcHandler(
+    runtime,
     initializeRepositoryPathChannel,
     decodeInitializeRepositoryPathInput,
     (request) => localWorkspace.initializeRepositoryPath(request),
   );
-  yield* registerIpcHandler(removeRepositoryChannel, decodeRemoveRepositoryRequest, (request) =>
-    localWorkspace.removeRepository(request.id),
+  yield* registerIpcHandler(
+    runtime,
+    removeRepositoryChannel,
+    decodeRemoveRepositoryRequest,
+    (request) => localWorkspace.removeRepository(request.id),
   );
   yield* registerIpcHandler(
+    runtime,
     updateRepositoryPreferencesChannel,
     decodeUpdateRepositoryPreferencesInput,
     (request) => preferences.updateRepositoryPreferences(request),
   );
-  yield* registerIpcHandler(detectAgentProvidersChannel, decodeEmptyRequest, () =>
+  yield* registerIpcHandler(runtime, detectAgentProvidersChannel, decodeEmptyRequest, () =>
     agentProviderDetector.detect(),
   );
-  yield* registerIpcHandler(ticketRpcChannel, decodeTicketRpcRequest, (request) =>
+  yield* registerIpcHandler(runtime, ticketRpcChannel, decodeTicketRpcRequest, (request) =>
     Effect.gen(function* () {
       if (request.method === "repository.status.list") {
         return yield* ticketRpc.handle(request);

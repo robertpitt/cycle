@@ -21,6 +21,7 @@ import {
   type UserProfilePage,
 } from "@cycle/database";
 import { GitDbInMemory, Store as GitDbStore } from "@cycle/git-db";
+import { UseCaseRunner, UseCaseRunnerLive } from "@cycle/usecases";
 import { Effect, Layer } from "effect";
 import {
   makeTicketRpcClient,
@@ -32,9 +33,12 @@ import { describe, it } from "vitest";
 
 const repository = { id: "test-repository" };
 
-const TestLayer = TicketRpcLive.pipe(Layer.provideMerge(DatabaseTest()));
+const UseCaseTestLayer = UseCaseRunnerLive.pipe(Layer.provideMerge(DatabaseTest()));
+const TestLayer = TicketRpcLive.pipe(Layer.provideMerge(UseCaseTestLayer));
 
-const runRpc = <A>(effect: Effect.Effect<A, never, DatabaseService | TicketRpcService>) =>
+const runRpc = <A>(
+  effect: Effect.Effect<A, never, DatabaseService | TicketRpcService | UseCaseRunner>,
+) =>
   Effect.runPromise(
     Effect.gen(function* () {
       const database = yield* DatabaseService;

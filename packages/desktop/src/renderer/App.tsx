@@ -6,6 +6,8 @@ import * as React from "react";
 import { RouterProvider } from "react-router";
 import { rendererRouter } from "./Router.tsx";
 import { getDesktopBridge } from "./lib/desktopBridge.ts";
+import { NotificationProvider } from "./notifications/NotificationProvider.tsx";
+import { ShortcutProvider } from "./shortcuts/ShortcutProvider.tsx";
 
 export const rendererQueryClient = new QueryClient();
 
@@ -45,7 +47,11 @@ export const DesktopRendererApp = () => {
   return (
     <QueryClientProvider client={rendererQueryClient}>
       <ThemeProvider className="h-dvh overflow-hidden" mode={themeMode}>
-        <RouterProvider router={rendererRouter} />
+        <NotificationProvider>
+          <ShortcutProvider>
+            <RouterProvider router={rendererRouter} />
+          </ShortcutProvider>
+        </NotificationProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

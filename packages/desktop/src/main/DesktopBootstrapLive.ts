@@ -2,6 +2,7 @@ import { DatabaseService, type RepositoryMetadata, type RepositoryStatus } from 
 import { GitRepository, type GitRepositoryMetadata } from "@cycle/git";
 import { GitDb, Store as GitDbStore, type SyncResult } from "@cycle/git-db";
 import { Effect, Layer } from "effect";
+import { DesktopRuntime } from "../platform/DesktopRuntime.ts";
 import type { RepositoryRecord } from "../shared/AppConfig.ts";
 import {
   DesktopBootstrap,
@@ -60,6 +61,7 @@ export const DesktopBootstrapLive = Layer.effect(
     const database = yield* DatabaseService;
     const gitRepository = yield* GitRepository;
     const logger = yield* DesktopLogger;
+    const runtime = yield* DesktopRuntime;
     const opened = new Map<string, RuntimeRepository>();
     const opening = new Map<string, Promise<void>>();
     const remoteOperations = new Map<string, Promise<unknown>>();
@@ -216,9 +218,11 @@ export const DesktopBootstrapLive = Layer.effect(
         });
       }
 
-      const promise = Effect.runPromise(openRepositoryUnsafe(repository)).finally(() => {
-        opening.delete(repository.id);
-      });
+      const promise = runtime
+        .runPromise(`bootstrap.openRepository.${repository.id}`, openRepositoryUnsafe(repository))
+        .finally(() => {
+          opening.delete(repository.id);
+        });
 
       opening.set(repository.id, promise);
 
@@ -255,9 +259,11 @@ export const DesktopBootstrapLive = Layer.effect(
         }).pipe(Effect.flatMap(() => runRemoteOperation(repositoryId, operation)));
       }
 
-      const promise = Effect.runPromise(operation()).finally(() => {
-        remoteOperations.delete(repositoryId);
-      });
+      const promise = runtime
+        .runPromise(`bootstrap.remoteOperation.${repositoryId}`, operation())
+        .finally(() => {
+          remoteOperations.delete(repositoryId);
+        });
 
       remoteOperations.set(repositoryId, promise);
 
@@ -479,9 +485,10 @@ export const DesktopBootstrapLive = Layer.effect(
       );
 
     const startBackgroundSync = (repositoryId: string): void => {
-      void Effect.runPromise(syncRepositoryFromRemote(repositoryId)).catch(() => {
-        // Repository-level bootstrap status carries the failure.
-      });
+      runtime.run(
+        `bootstrap.backgroundSync.${repositoryId}`,
+        syncRepositoryFromRemote(repositoryId),
+      );
     };
 
     const runBootstrap = Effect.gen(function* () {
@@ -569,7 +576,7 @@ export const DesktopBootstrapLive = Layer.effect(
       started = true;
 
       return Effect.sync(() => {
-        void Effect.runPromise(runBootstrap);
+        runtime.run("bootstrap.start", runBootstrap);
       });
     };
 

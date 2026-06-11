@@ -1,13 +1,40 @@
-import { createHashRouter, type RouteObject } from "react-router";
+import { createHashRouter, Navigate, type RouteObject } from "react-router";
 import { NotFoundScreen, RouteErrorScreen, WorkspaceScreen } from "./screens/index.ts";
+import { readStoredWorkspacePath } from "./screens/workspace/workspaceRoute.ts";
+
+export const WorkspaceRouteRedirect = () => {
+  const fallbackPath =
+    typeof window === "undefined" ? undefined : readStoredWorkspacePath(window.localStorage);
+
+  return <Navigate replace to={fallbackPath ?? "/inbox"} />;
+};
+
+const workspaceRoutePaths = [
+  "inbox",
+  "issues",
+  "initiatives",
+  "views",
+  "settings",
+  "repositories/:repositoryId/issues",
+  "repositories/:repositoryId/issues/:issueId",
+  "repositories/:repositoryId/views",
+  "repositories/:repositoryId/views/:viewId",
+  "repositories/:repositoryId/views/:viewId/issues/:issueId",
+  "repositories/:repositoryId/history",
+  "repositories/:repositoryId/settings",
+] as const;
 
 export const rendererRoutes = [
   {
     children: [
       {
-        element: <WorkspaceScreen />,
+        element: <WorkspaceRouteRedirect />,
         index: true,
       },
+      ...workspaceRoutePaths.map((path) => ({
+        element: <WorkspaceScreen />,
+        path,
+      })),
       {
         element: <NotFoundScreen />,
         path: "*",

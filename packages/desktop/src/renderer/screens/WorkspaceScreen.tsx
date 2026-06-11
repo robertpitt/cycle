@@ -13,7 +13,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button, IconButton, StatusIndicator } from "@cycle/ui/atoms";
 import { ArrowLeft, FolderPlus, History, Plus, RefreshCw, Upload } from "lucide-react";
 import * as React from "react";
-import type { SavedViewDocument } from "@cycle/database";
+import { useLocation, useNavigate, type NavigateOptions } from "react-router";
 import {
   AddRepositoryStep,
   ApplicationSettingsPanel,
@@ -48,8 +48,10 @@ import {
   useLabelListQuery,
   useMaterializationWarningsQuery,
   useRepositoryStatusQuery,
+  useSavedViewDetailQuery,
   useUserListQuery,
 } from "../queries/index.ts";
+import { useShortcutAction } from "../shortcuts/ShortcutProvider.tsx";
 import { getCreateIssueFormDraft, useCreateIssueForm } from "./workspace/createIssueForm.ts";
 import {
   createIssueDialogOptionSections,
@@ -59,21 +61,79 @@ import {
   activePageTitleForNavItem,
   createRendererNavSections,
   repositoryIdFromNavItem,
-  repositoryPageFromNavItem,
 } from "./workspace/navigation.tsx";
+import {
+  invalidRepositoryFallbackPath,
+  parentWorkspacePath,
+  parseWorkspacePath,
+  toWorkspacePath,
+  writeStoredWorkspacePath,
+  type WorkspaceLocation,
+} from "./workspace/workspaceRoute.ts";
 import type { AgentProviderId } from "../../shared/AgentProviders.ts";
+
+const defaultWorkspaceLocation: WorkspaceLocation = {
+  page: "inbox",
+  scope: "workspace",
+};
+
+const activeItemIdForWorkspaceLocation = (location: WorkspaceLocation): string => {
+  if (location.scope === "workspace") {
+    return location.page === "initiatives" ? "projects" : location.page;
+  }
+
+  return `repository:${location.repositoryId}:${location.page}`;
+};
+
+const workspaceLocationForNavItemId = (itemId: string): WorkspaceLocation | undefined => {
+  switch (itemId) {
+    case "inbox":
+    case "issues":
+    case "settings":
+    case "views":
+      return {
+        page: itemId,
+        scope: "workspace",
+      };
+    case "projects":
+      return {
+        page: "initiatives",
+        scope: "workspace",
+      };
+    default:
+      break;
+  }
+
+  const [scope, repositoryId, page] = itemId.split(":");
+  if (scope !== "repository" || !repositoryId) return undefined;
+
+  if (page === "history" || page === "issues" || page === "settings" || page === "views") {
+    return {
+      page,
+      repositoryId,
+      scope: "repository",
+    };
+  }
+
+  return {
+    page: "issues",
+    repositoryId,
+    scope: "repository",
+  };
+};
 
 export const WorkspaceScreen = () => {
   const collapsed = false;
-  const [activeItemId, setActiveItemId] = React.useState("inbox");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const workspaceLocation = parseWorkspacePath(location.pathname) ?? defaultWorkspaceLocation;
+  const currentWorkspacePath = toWorkspacePath(workspaceLocation);
+  const activeItemId = activeItemIdForWorkspaceLocation(workspaceLocation);
+  const routeHistoryRef = React.useRef<string[]>([]);
+  const skipNextRouteHistoryPush = React.useRef(false);
   const [setupStep, setSetupStep] = React.useState<InitialSetupStep>("profile");
   const [fullName, setFullName] = React.useState("");
   const [email, setEmail] = React.useState("");
-  const [selectedIssue, setSelectedIssue] = React.useState<{
-    readonly issueId: string;
-    readonly repositoryId?: string;
-  }>();
-  const [selectedSavedView, setSelectedSavedView] = React.useState<SavedViewDocument>();
   const [repositoryImportError, setRepositoryImportError] = React.useState<React.ReactNode>();
   const [repositoryInitialiseRequest, setRepositoryInitialiseRequest] = React.useState<{
     readonly message?: string;
@@ -87,6 +147,12 @@ export const WorkspaceScreen = () => {
   const hydratedProfile = React.useRef(false);
   const createIssueForm = useCreateIssueForm();
   const queryClient = useQueryClient();
+  const navigateWorkspace = React.useCallback(
+    (next: WorkspaceLocation | string, options?: NavigateOptions) => {
+      navigate(typeof next === "string" ? next : toWorkspacePath(next), options);
+    },
+    [navigate],
+  );
 
   const bootstrapStatusQuery = useBootstrapStatusQuery();
   const appConfigQuery = useAppConfigQuery();
@@ -96,31 +162,53 @@ export const WorkspaceScreen = () => {
     () => repositories.map((repository) => repository.id),
     [repositories],
   );
-  const selectedRepositoryPage = repositoryPageFromNavItem(activeItemId, repositories);
-  const isGlobalIssuesPage = activeItemId === "issues";
-  const isIssuesPage = activeItemId === "issues" || selectedRepositoryPage?.kind === "issues";
-  const isInitiativesPage = activeItemId === "projects";
-  const isViewsPage = activeItemId === "views" || selectedRepositoryPage?.kind === "views";
-  const isSavedViewDetailPage = isViewsPage && selectedSavedView !== undefined;
+  const routeRepositoryId =
+    workspaceLocation.scope === "repository" ? workspaceLocation.repositoryId : undefined;
+  const isGlobalIssuesPage =
+    workspaceLocation.scope === "workspace" && workspaceLocation.page === "issues";
+  const isIssuesPage =
+    isGlobalIssuesPage ||
+    (workspaceLocation.scope === "repository" && workspaceLocation.page === "issues");
+  const isInitiativesPage =
+    workspaceLocation.scope === "workspace" && workspaceLocation.page === "initiatives";
+  const isViewsPage =
+    workspaceLocation.page === "views" &&
+    (workspaceLocation.scope === "workspace" || workspaceLocation.scope === "repository");
+  const selectedSavedViewId =
+    workspaceLocation.scope === "repository" && workspaceLocation.page === "views"
+      ? workspaceLocation.viewId
+      : undefined;
+  const isSavedViewDetailPage = isViewsPage && selectedSavedViewId !== undefined;
   const isWorkItemsPage = isIssuesPage || isInitiativesPage || isSavedViewDetailPage;
   const activeRepository =
-    selectedRepositoryPage?.repository ??
-    (activeItemId === "projects" || activeItemId === "views" ? repositories[0] : undefined);
+    routeRepositoryId === undefined
+      ? workspaceLocation.scope === "workspace" &&
+        (workspaceLocation.page === "initiatives" || workspaceLocation.page === "views")
+        ? repositories[0]
+        : undefined
+      : repositories.find((repository) => repository.id === routeRepositoryId);
   const issueRepository =
     isIssuesPage || isInitiativesPage || isViewsPage ? activeRepository : undefined;
-  const selectedIssueId = selectedIssue?.issueId;
-  const selectedIssueRepositoryId = selectedIssue?.repositoryId ?? issueRepository?.id;
+  const selectedIssueId =
+    workspaceLocation.scope === "repository" &&
+    (workspaceLocation.page === "issues" || workspaceLocation.page === "views")
+      ? workspaceLocation.issueId
+      : undefined;
+  const selectedIssueRepositoryId = activeRepository?.id;
   const isIssueDetailPage = isWorkItemsPage && selectedIssueId !== undefined;
-  const isRepositoryHistoryPage = selectedRepositoryPage?.kind === "history";
-  const isRepositorySettingsPage = selectedRepositoryPage?.kind === "settings";
-  const isApplicationSettingsPage = activeItemId === "settings";
+  const isRepositoryHistoryPage =
+    workspaceLocation.scope === "repository" && workspaceLocation.page === "history";
+  const isRepositorySettingsPage =
+    workspaceLocation.scope === "repository" && workspaceLocation.page === "settings";
+  const isApplicationSettingsPage =
+    workspaceLocation.scope === "workspace" && workspaceLocation.page === "settings";
 
   const completeOnboarding = useCompleteOnboardingMutation({
     appConfig: appConfigQuery.data,
     email,
     enabledHarnessIds,
     fullName,
-    onCompleted: () => setActiveItemId("inbox"),
+    onCompleted: () => navigateWorkspace(defaultWorkspaceLocation, { replace: true }),
   });
 
   const addRepository = useAddRepositoryMutation({
@@ -154,6 +242,8 @@ export const WorkspaceScreen = () => {
   const templateListQuery = useIssueTemplateListQuery(issueRepository?.id, {
     active: true,
   });
+  const selectedSavedViewQuery = useSavedViewDetailQuery(issueRepository?.id, selectedSavedViewId);
+  const selectedSavedView = selectedSavedViewQuery.data ?? undefined;
   const syncRepository = useSyncRepositoryMutation({
     repositoryId: activeRepository?.id,
   });
@@ -172,6 +262,7 @@ export const WorkspaceScreen = () => {
         : String(repositoryActionError);
   const repositoryColdSyncing =
     repositoryStatus?.status === "syncing" && repositoryStatus.activeSnapshotId === null;
+  const onboardingCompleted = appConfigQuery.data?.onboarding.completed ?? false;
   const createIssueOptions = React.useMemo(
     () =>
       createIssueDialogOptionSections({
@@ -261,16 +352,72 @@ export const WorkspaceScreen = () => {
   }, [agentProvidersQuery.data]);
 
   React.useEffect(() => {
-    if (!isWorkItemsPage) {
-      setSelectedIssue(undefined);
-    }
-  }, [isWorkItemsPage]);
+    if (!onboardingCompleted || appConfigQuery.isLoading) return;
+    if (workspaceLocation.scope !== "repository") return;
+    if (activeRepository !== undefined) return;
+
+    navigateWorkspace(invalidRepositoryFallbackPath(repositories.length > 0), { replace: true });
+  }, [
+    activeRepository,
+    appConfigQuery.isLoading,
+    navigateWorkspace,
+    onboardingCompleted,
+    repositories.length,
+    workspaceLocation,
+  ]);
 
   React.useEffect(() => {
-    if (!isViewsPage) {
-      setSelectedSavedView(undefined);
+    if (!onboardingCompleted || appConfigQuery.isLoading) return;
+    if (workspaceLocation.scope !== "repository" || workspaceLocation.page !== "views") return;
+    if (!workspaceLocation.viewId || !selectedSavedViewQuery.isSuccess) return;
+    if (selectedSavedViewQuery.data !== null) return;
+
+    navigateWorkspace(
+      {
+        page: "views",
+        repositoryId: workspaceLocation.repositoryId,
+        scope: "repository",
+      },
+      { replace: true },
+    );
+  }, [
+    appConfigQuery.isLoading,
+    navigateWorkspace,
+    onboardingCompleted,
+    selectedSavedViewQuery.data,
+    selectedSavedViewQuery.isSuccess,
+    workspaceLocation,
+  ]);
+
+  React.useEffect(() => {
+    if (!onboardingCompleted || appConfigQuery.isLoading) return;
+    if (workspaceLocation.scope === "repository" && activeRepository === undefined) return;
+
+    if (skipNextRouteHistoryPush.current) {
+      skipNextRouteHistoryPush.current = false;
+    } else {
+      const stack = routeHistoryRef.current;
+      const existingIndex = stack.lastIndexOf(currentWorkspacePath);
+
+      if (existingIndex >= 0) {
+        stack.splice(existingIndex + 1);
+      } else {
+        stack.push(currentWorkspacePath);
+        if (stack.length > 50) stack.splice(0, stack.length - 50);
+      }
     }
-  }, [isViewsPage]);
+
+    writeStoredWorkspacePath(
+      typeof window === "undefined" ? undefined : window.localStorage,
+      currentWorkspacePath,
+    );
+  }, [
+    activeRepository,
+    appConfigQuery.isLoading,
+    currentWorkspacePath,
+    onboardingCompleted,
+    workspaceLocation.scope,
+  ]);
 
   React.useEffect(() => {
     if (!activeRepository?.id || repositoryStatus === undefined) return;
@@ -296,11 +443,213 @@ export const WorkspaceScreen = () => {
     repositoryStatus?.status,
   ]);
 
+  const navigationShortcutsDisabled =
+    !onboardingCompleted || createIssueForm.open || repositoryInitialiseRequest !== null;
+
+  const navigateToParent = React.useCallback(() => {
+    const parentPath = parentWorkspacePath(workspaceLocation);
+    if (!parentPath || parentPath === currentWorkspacePath) return;
+
+    routeHistoryRef.current = [];
+    skipNextRouteHistoryPush.current = false;
+    navigateWorkspace(parentPath, { replace: true });
+  }, [currentWorkspacePath, navigateWorkspace, workspaceLocation]);
+
+  const navigateBack = React.useCallback(() => {
+    const stack = routeHistoryRef.current;
+
+    if (stack.length > 1) {
+      stack.pop();
+      skipNextRouteHistoryPush.current = true;
+      navigate(-1);
+      return;
+    }
+
+    navigateToParent();
+  }, [navigate, navigateToParent]);
+
+  useShortcutAction(
+    React.useMemo(
+      () => ({
+        bindings: [["Escape"]],
+        disabled: navigationShortcutsDisabled,
+        id: "navigation.goBack",
+        label: "Go back",
+        run: navigateBack,
+      }),
+      [navigateBack, navigationShortcutsDisabled],
+    ),
+  );
+
+  useShortcutAction(
+    React.useMemo(
+      () => ({
+        bindings: [["g", "n"]],
+        disabled: navigationShortcutsDisabled,
+        id: "navigation.inbox",
+        label: "Open inbox",
+        run: () =>
+          navigateWorkspace({
+            page: "inbox",
+            scope: "workspace",
+          }),
+      }),
+      [navigateWorkspace, navigationShortcutsDisabled],
+    ),
+  );
+
+  useShortcutAction(
+    React.useMemo(
+      () => ({
+        bindings: [["g", "i"]],
+        disabled: navigationShortcutsDisabled,
+        id: "navigation.issues",
+        label: "Open issues",
+        run: () =>
+          navigateWorkspace({
+            page: "issues",
+            scope: "workspace",
+          }),
+      }),
+      [navigateWorkspace, navigationShortcutsDisabled],
+    ),
+  );
+
+  useShortcutAction(
+    React.useMemo(
+      () => ({
+        bindings: [["g", "p"]],
+        disabled: navigationShortcutsDisabled,
+        id: "navigation.initiatives",
+        label: "Open initiatives",
+        run: () =>
+          navigateWorkspace({
+            page: "initiatives",
+            scope: "workspace",
+          }),
+      }),
+      [navigateWorkspace, navigationShortcutsDisabled],
+    ),
+  );
+
+  useShortcutAction(
+    React.useMemo(
+      () => ({
+        bindings: [["g", "v"]],
+        disabled: navigationShortcutsDisabled,
+        id: "navigation.views",
+        label: "Open views",
+        run: () =>
+          navigateWorkspace({
+            page: "views",
+            scope: "workspace",
+          }),
+      }),
+      [navigateWorkspace, navigationShortcutsDisabled],
+    ),
+  );
+
+  useShortcutAction(
+    React.useMemo(
+      () => ({
+        bindings: [["g", ","]],
+        disabled: navigationShortcutsDisabled,
+        id: "navigation.settings",
+        label: "Open settings",
+        run: () =>
+          navigateWorkspace({
+            page: "settings",
+            scope: "workspace",
+          }),
+      }),
+      [navigateWorkspace, navigationShortcutsDisabled],
+    ),
+  );
+
+  useShortcutAction(
+    React.useMemo(
+      () => ({
+        bindings: [["g", "r", "i"]],
+        disabled: navigationShortcutsDisabled || !activeRepository,
+        id: "navigation.repositoryIssues",
+        label: "Open repository issues",
+        run: () => {
+          if (!activeRepository) return;
+          navigateWorkspace({
+            page: "issues",
+            repositoryId: activeRepository.id,
+            scope: "repository",
+          });
+        },
+      }),
+      [activeRepository, navigateWorkspace, navigationShortcutsDisabled],
+    ),
+  );
+
+  useShortcutAction(
+    React.useMemo(
+      () => ({
+        bindings: [["g", "r", "v"]],
+        disabled: navigationShortcutsDisabled || !activeRepository,
+        id: "navigation.repositoryViews",
+        label: "Open repository views",
+        run: () => {
+          if (!activeRepository) return;
+          navigateWorkspace({
+            page: "views",
+            repositoryId: activeRepository.id,
+            scope: "repository",
+          });
+        },
+      }),
+      [activeRepository, navigateWorkspace, navigationShortcutsDisabled],
+    ),
+  );
+
+  useShortcutAction(
+    React.useMemo(
+      () => ({
+        bindings: [["g", "r", "h"]],
+        disabled: navigationShortcutsDisabled || !activeRepository,
+        id: "navigation.repositoryHistory",
+        label: "Open repository history",
+        run: () => {
+          if (!activeRepository) return;
+          navigateWorkspace({
+            page: "history",
+            repositoryId: activeRepository.id,
+            scope: "repository",
+          });
+        },
+      }),
+      [activeRepository, navigateWorkspace, navigationShortcutsDisabled],
+    ),
+  );
+
+  useShortcutAction(
+    React.useMemo(
+      () => ({
+        bindings: [["g", "r", ","]],
+        disabled: navigationShortcutsDisabled || !activeRepository,
+        id: "navigation.repositorySettings",
+        label: "Open repository settings",
+        run: () => {
+          if (!activeRepository) return;
+          navigateWorkspace({
+            page: "settings",
+            repositoryId: activeRepository.id,
+            scope: "repository",
+          });
+        },
+      }),
+      [activeRepository, navigateWorkspace, navigationShortcutsDisabled],
+    ),
+  );
+
   if (bootstrapStatusQuery.data?.blocking !== false || appConfigQuery.isLoading) {
     return <BootloaderScreen status={bootstrapStatusQuery.data} />;
   }
 
-  const onboardingCompleted = appConfigQuery.data?.onboarding.completed ?? false;
   const setupHarnesses = toSetupHarnesses(agentProvidersQuery.data ?? fallbackAgentProviders());
   const hasRepositories = repositories.length > 0;
   const harnessNotice = !getDesktopBridge()
@@ -491,7 +840,7 @@ export const WorkspaceScreen = () => {
         <IconButton
           icon={<ArrowLeft aria-hidden className="size-4" />}
           label={isSavedViewDetailPage ? "Back to view" : "Back to issues"}
-          onClick={() => setSelectedIssue(undefined)}
+          onClick={navigateToParent}
           size="sm"
           title={isSavedViewDetailPage ? "Back to view" : "Back to issues"}
           variant="outline"
@@ -501,7 +850,7 @@ export const WorkspaceScreen = () => {
         <IconButton
           icon={<ArrowLeft aria-hidden className="size-4" />}
           label="Back to views"
-          onClick={() => setSelectedSavedView(undefined)}
+          onClick={navigateToParent}
           size="sm"
           title="Back to views"
           variant="outline"
@@ -531,19 +880,20 @@ export const WorkspaceScreen = () => {
     </>
   );
   const handleNavItemSelect = (item: AppShellNavSection["items"][number]) => {
-    if (item.id !== activeItemId) {
-      setSelectedIssue(undefined);
-      setSelectedSavedView(undefined);
-    }
-
     const repositoryId = repositoryIdFromNavItem(item.id);
     if (repositoryId) {
       const repository = repositories.find((candidate) => candidate.id === repositoryId);
       if (repository) {
-        const nextActiveItemId = activeItemId.startsWith(`repository:${repository.id}:`)
-          ? activeItemId
-          : `repository:${repository.id}:issues`;
-        setActiveItemId(nextActiveItemId);
+        const nextLocation = activeItemId.startsWith(`repository:${repository.id}:`)
+          ? workspaceLocationForNavItemId(activeItemId)
+          : ({
+              page: "issues",
+              repositoryId: repository.id,
+              scope: "repository",
+            } satisfies WorkspaceLocation);
+        if (nextLocation) {
+          navigateWorkspace(nextLocation);
+        }
         updateRepositoryPreferences.mutate({
           id: repository.id,
           preferences: {
@@ -554,7 +904,8 @@ export const WorkspaceScreen = () => {
       }
     }
 
-    setActiveItemId(item.id);
+    const nextLocation = workspaceLocationForNavItemId(item.id);
+    if (nextLocation) navigateWorkspace(nextLocation);
   };
 
   return (
@@ -566,7 +917,12 @@ export const WorkspaceScreen = () => {
             collapsed={collapsed}
             navSections={rendererNavSections}
             onNavItemSelect={handleNavItemSelect}
-            onSettingsSelect={() => setActiveItemId("settings")}
+            onSettingsSelect={() =>
+              navigateWorkspace({
+                page: "settings",
+                scope: "workspace",
+              })
+            }
             settingsActive={activeItemId === "settings"}
           />
           <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-surface">
@@ -594,8 +950,13 @@ export const WorkspaceScreen = () => {
               ) : hasRepositories && isViewsPage && !isSavedViewDetailPage ? (
                 <ViewsPanel
                   onViewSelect={(view) => {
-                    setSelectedIssue(undefined);
-                    setSelectedSavedView(view);
+                    if (!issueRepository) return;
+                    navigateWorkspace({
+                      page: "views",
+                      repositoryId: issueRepository.id,
+                      scope: "repository",
+                      viewId: view.id,
+                    });
                   }}
                   repositoryId={issueRepository?.id}
                 />
@@ -603,7 +964,28 @@ export const WorkspaceScreen = () => {
                 <IssuesPanel
                   loadingRepository={repositoryColdSyncing}
                   onCreateIssue={issueRepository ? openCreateIssueDialog : undefined}
-                  onIssueSelect={setSelectedIssue}
+                  onIssueSelect={(selection) => {
+                    const repositoryId = selection.repositoryId ?? issueRepository?.id;
+                    if (!repositoryId) return;
+
+                    if (selectedSavedViewId) {
+                      navigateWorkspace({
+                        issueId: selection.issueId,
+                        page: "views",
+                        repositoryId,
+                        scope: "repository",
+                        viewId: selectedSavedViewId,
+                      });
+                      return;
+                    }
+
+                    navigateWorkspace({
+                      issueId: selection.issueId,
+                      page: "issues",
+                      repositoryId,
+                      scope: "repository",
+                    });
+                  }}
                   profile={appConfigQuery.data?.profile}
                   query={isInitiativesPage ? { type: "initiative" } : {}}
                   repositoryId={issueRepository?.id}
@@ -625,10 +1007,11 @@ export const WorkspaceScreen = () => {
                   onIssueSelect={(issueId) => {
                     if (!activeRepository) return;
 
-                    setActiveItemId(`repository:${activeRepository.id}:issues`);
-                    setSelectedIssue({
+                    navigateWorkspace({
                       issueId,
+                      page: "issues",
                       repositoryId: activeRepository.id,
+                      scope: "repository",
                     });
                   }}
                   repositoryId={activeRepository?.id}
@@ -650,7 +1033,13 @@ export const WorkspaceScreen = () => {
                   className="absolute bottom-3 right-3 shadow-card"
                   icon={<History aria-hidden className="size-4" />}
                   label="History"
-                  onClick={() => setActiveItemId(`repository:${activeRepository.id}:history`)}
+                  onClick={() =>
+                    navigateWorkspace({
+                      page: "history",
+                      repositoryId: activeRepository.id,
+                      scope: "repository",
+                    })
+                  }
                   size="sm"
                   title="History"
                   variant="outline"

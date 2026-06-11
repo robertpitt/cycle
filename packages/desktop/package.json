@@ -30,6 +30,7 @@
     "@cycle/git-db": "workspace:*",
     "@cycle/rpc": "workspace:*",
     "@cycle/ui": "workspace:*",
+    "@cycle/usecases": "workspace:*",
     "@tanstack/react-query": "^5.101.0",
     "effect": "beta",
     "lucide-react": "^1.17.0",

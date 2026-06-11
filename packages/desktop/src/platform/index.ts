@@ -1,5 +1,7 @@
 export * from "./BrowserWindows.ts";
 export * from "./BrowserWindowsLive.ts";
+export * from "./DesktopRuntime.ts";
+export * from "./DesktopRuntimeLive.ts";
 export * from "./ElectronApp.ts";
 export * from "./ElectronAppLive.ts";
 export * from "./ElectronError.ts";

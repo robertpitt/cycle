@@ -1,5 +1,6 @@
 import { app } from "electron";
 import { Cause, Deferred, Effect, Layer, Queue, Scope } from "effect";
+import { DesktopRuntime } from "./DesktopRuntime.ts";
 import { electronError } from "./ElectronError.ts";
 import { ElectronApp, type ElectronAppLifecycleHandlers } from "./ElectronApp.ts";
 import { ProcessLifecycle, type ProcessLifecycleEvent } from "./ProcessLifecycle.ts";
@@ -37,18 +38,20 @@ const superviseProcessEvents = (
     Effect.asVoid,
   );
 
-const runHandler = (name: string, handler: Effect.Effect<void, unknown>): void => {
-  void Effect.runPromise(
-    handler.pipe(Effect.catchCause((cause) => logSupervisionFailure("electron", name, cause))),
-  );
-};
-
 export const ElectronAppLive = Layer.effect(
   ElectronApp,
   Effect.gen(function* () {
     const processLifecycle = yield* ProcessLifecycle;
+    const runtime = yield* DesktopRuntime;
     const shutdown = yield* Deferred.make<void>();
     const requestShutdown = Deferred.succeed(shutdown, undefined).pipe(Effect.asVoid);
+
+    const runHandler = (name: string, handler: Effect.Effect<void, unknown>): void => {
+      runtime.run(
+        `electron.${name}`,
+        handler.pipe(Effect.catchCause((cause) => logSupervisionFailure("electron", name, cause))),
+      );
+    };
 
     return {
       appPath: Effect.sync(() => app.getAppPath()),

@@ -14,6 +14,7 @@ export * from "./issue-resource-link/index.ts";
 export * from "./issue-sidebar-section/index.ts";
 export * from "./issue-sub-issue-composer/index.ts";
 export * from "./navigation-item/index.ts";
+export * from "./notification/index.ts";
 export * from "./otp-code-field/index.ts";
 export * from "./property-picker/index.ts";
 export * from "./setting-row/index.ts";

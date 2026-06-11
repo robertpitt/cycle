@@ -66,6 +66,7 @@ export type ViewIssueActivityEvent = {
   readonly author: IssueAuthor;
   readonly body: React.ReactNode;
   readonly id: string;
+  readonly occurredAt?: Date | number | string;
   readonly timestamp?: React.ReactNode;
 };
 
@@ -73,6 +74,7 @@ export type ViewIssueComment = {
   readonly author: IssueAuthor;
   readonly body: React.ReactNode;
   readonly id: string;
+  readonly occurredAt?: Date | number | string;
   readonly timestamp?: React.ReactNode;
 };
 
@@ -252,6 +254,32 @@ const ViewerAvatar = ({ author }: { readonly author: IssueAuthor }) => (
   </Avatar>
 );
 
+const activityTime = (value: Date | number | string | undefined): number | undefined => {
+  if (value === undefined) return undefined;
+  const time =
+    value instanceof Date
+      ? value.getTime()
+      : typeof value === "number"
+        ? value
+        : new Date(value).getTime();
+
+  return Number.isFinite(time) ? time : undefined;
+};
+
+type ActivityTimelineItem =
+  | {
+      readonly event: ViewIssueActivityEvent;
+      readonly kind: "event";
+      readonly order: number;
+      readonly time?: number;
+    }
+  | {
+      readonly comment: ViewIssueComment;
+      readonly kind: "comment";
+      readonly order: number;
+      readonly time?: number;
+    };
+
 export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(function ViewIssue(
   {
     activityEvents = defaultActivityEvents,
@@ -317,6 +345,7 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
 
   const handleCommentCreate = React.useCallback(
     (body: string) => {
+      const now = new Date().toISOString();
       onCommentCreate?.(body);
       setLocalComments((current) => [
         ...current,
@@ -324,12 +353,42 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
           author: viewer,
           body,
           id: `comment-${current.length + 1}`,
+          occurredAt: now,
           timestamp: "just now",
         },
       ]);
     },
     [onCommentCreate, viewer],
   );
+
+  const activityTimeline = React.useMemo<readonly ActivityTimelineItem[]>(() => {
+    const items: ActivityTimelineItem[] = [
+      ...activityEvents.map((event, index) => ({
+        event,
+        kind: "event" as const,
+        order: index,
+        time: activityTime(event.occurredAt),
+      })),
+      ...localComments.map((comment, index) => ({
+        comment,
+        kind: "comment" as const,
+        order: activityEvents.length + index,
+        time: activityTime(comment.occurredAt),
+      })),
+    ];
+
+    return items.sort((first, second) => {
+      if (
+        first.time !== undefined &&
+        second.time !== undefined &&
+        first.time !== second.time
+      ) {
+        return first.time - second.time;
+      }
+
+      return first.order - second.order;
+    });
+  }, [activityEvents, localComments]);
 
   return (
     <div
@@ -447,19 +506,24 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
             </div>
           </div>
           <div className="grid gap-5">
-            {activityEvents.map((event) => (
-              <IssueActivityEvent author={event.author} key={event.id} timestamp={event.timestamp}>
-                {event.body}
-              </IssueActivityEvent>
-            ))}
-            {localComments.map((comment) => (
-              <IssueCommentCard
-                author={comment.author}
-                body={comment.body}
-                key={comment.id}
-                timestamp={comment.timestamp}
-              />
-            ))}
+            {activityTimeline.map((item) =>
+              item.kind === "event" ? (
+                <IssueActivityEvent
+                  author={item.event.author}
+                  key={item.event.id}
+                  timestamp={item.event.timestamp}
+                >
+                  {item.event.body}
+                </IssueActivityEvent>
+              ) : (
+                <IssueCommentCard
+                  author={item.comment.author}
+                  body={item.comment.body}
+                  key={item.comment.id}
+                  timestamp={item.comment.timestamp}
+                />
+              ),
+            )}
             <IssueCommentComposer
               author={viewer}
               onAttach={openFilePicker}

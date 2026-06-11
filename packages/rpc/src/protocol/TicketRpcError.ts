@@ -78,3 +78,18 @@ export const databaseFailureToRpcError = (error: unknown): TicketRpcError => {
     sourceTag,
   });
 };
+
+export const useCaseFailureToRpcError = (error: UseCaseFailureLike): TicketRpcError =>
+  ticketRpcError({
+    code: error._tag === "InvalidInputFailure" ? "INVALID_RPC_REQUEST" : (error.code ?? error._tag),
+    details: error.details,
+    message: error.message,
+    sourceTag: error._tag,
+  });
+
+type UseCaseFailureLike = {
+  readonly _tag: string;
+  readonly code?: string;
+  readonly details?: Readonly<Record<string, unknown>>;
+  readonly message: string;
+};

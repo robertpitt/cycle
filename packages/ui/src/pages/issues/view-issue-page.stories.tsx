@@ -43,15 +43,38 @@ export const InlineSubIssueComposer: Story = {
 export const ActivityWithComments: Story = {
   render: () => (
     <ViewIssuePage
+      activityEvents={[
+        {
+          author: {
+            initials: "RP",
+            name: "Robert Pitt",
+          },
+          body: "changed the status to In Progress",
+          id: "status-change",
+          occurredAt: "2026-06-11T10:30:00.000Z",
+          timestamp: "11 Jun 2026, 10:30",
+        },
+        {
+          author: {
+            initials: "RP",
+            name: "Robert Pitt",
+          },
+          body: "created the issue",
+          id: "created",
+          occurredAt: "2026-06-11T09:00:00.000Z",
+          timestamp: "11 Jun 2026, 09:00",
+        },
+      ]}
       comments={[
         {
           author: {
             initials: "RP",
             name: "Robert Pitt",
           },
-          body: "TestComment",
+          body: "Added a repro case and linked the failing test output.",
           id: "comment-1",
-          timestamp: "just now",
+          occurredAt: "2026-06-11T10:00:00.000Z",
+          timestamp: "11 Jun 2026, 10:00",
         },
       ]}
     />

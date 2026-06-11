@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Effect, Layer } from "effect";
+import { DesktopRuntime } from "../platform/DesktopRuntime.ts";
 import { ElectronApp } from "../platform/ElectronApp.ts";
 import { Profile } from "../shared/Profile.ts";
 import { DesktopLogger } from "./DesktopLoggerLive.ts";
@@ -48,6 +49,7 @@ export const DesktopDatabaseLive = Layer.unwrap(
   Effect.gen(function* () {
     const app = yield* ElectronApp;
     const logger = yield* DesktopLogger;
+    const runtime = yield* DesktopRuntime;
     const projectionPath = yield* app
       .getPath("userData")
       .pipe(Effect.map((userData) => join(userData, "cycle-projection.sqlite")));
@@ -59,7 +61,8 @@ export const DesktopDatabaseLive = Layer.unwrap(
 
     return DatabaseLiveWithOptions({
       logger: (event) => {
-        void Effect.runPromise(
+        runtime.run(
+          "database.log",
           logger.info(event.message, {
             ...(event.repositoryId === undefined ? {} : { repositoryId: event.repositoryId }),
             ...(event.data === undefined ? {} : event.data),

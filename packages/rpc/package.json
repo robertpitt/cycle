@@ -17,6 +17,7 @@
   "dependencies": {
     "@cycle/database": "workspace:*",
     "@cycle/git-db": "workspace:*",
+    "@cycle/usecases": "workspace:*",
     "effect": "beta"
   },
   "devDependencies": {

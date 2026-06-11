@@ -1,0 +1,247 @@
+import type { DatabaseFailure } from "@cycle/database";
+import type { UseCaseName } from "./contracts/index.ts";
+
+export type UseCaseFailureTag =
+  | "AutomationEvaluationFailure"
+  | "AuthorizationFailure"
+  | "ConflictFailure"
+  | "ConsistencyFailure"
+  | "InterruptionFailure"
+  | "InvalidInputFailure"
+  | "NotFoundFailure"
+  | "PolicyViolationFailure"
+  | "PushFailure"
+  | "RepositoryNotOpenFailure"
+  | "RepositoryUnavailableFailure"
+  | "StaleCursorFailure"
+  | "StorageFailure"
+  | "SyncFailure"
+  | "TimeoutFailure"
+  | "UnexpectedDefectFailure"
+  | "UnknownUseCaseFailure"
+  | "UnsupportedAliasFailure";
+
+export type UseCaseFailure = {
+  readonly _tag: UseCaseFailureTag;
+  readonly code?: string;
+  readonly details?: Readonly<Record<string, unknown>>;
+  readonly field?: string;
+  readonly message: string;
+  readonly repositoryId?: string;
+  readonly requestId: string;
+  readonly retryable: boolean;
+  readonly ticketId?: string;
+  readonly useCase: string;
+};
+
+type FailureInput = {
+  readonly code?: string;
+  readonly details?: Readonly<Record<string, unknown>>;
+  readonly field?: string;
+  readonly message: string;
+  readonly repositoryId?: string;
+  readonly requestId: string;
+  readonly retryable?: boolean;
+  readonly tag: UseCaseFailureTag;
+  readonly ticketId?: string;
+  readonly useCase: string;
+};
+
+const unsafeDetailKeys = new Set(["cause", "message", "stack"]);
+const secretPattern = /api[-_]?key|credential|password|private[-_]?key|secret|token/iu;
+
+export const useCaseFailure = (input: FailureInput): UseCaseFailure => ({
+  _tag: input.tag,
+  ...(input.code === undefined ? {} : { code: input.code }),
+  ...(input.details === undefined ? {} : { details: redactDetails(input.details) }),
+  ...(input.field === undefined ? {} : { field: input.field }),
+  message: input.message,
+  ...(input.repositoryId === undefined ? {} : { repositoryId: input.repositoryId }),
+  requestId: input.requestId,
+  retryable: input.retryable ?? false,
+  ...(input.ticketId === undefined ? {} : { ticketId: input.ticketId }),
+  useCase: input.useCase,
+});
+
+export const invalidInputFailure = (input: {
+  readonly details?: Readonly<Record<string, unknown>>;
+  readonly field?: string;
+  readonly message: string;
+  readonly requestId: string;
+  readonly useCase: string;
+}): UseCaseFailure =>
+  useCaseFailure({
+    ...input,
+    code: "INVALID_INPUT",
+    tag: "InvalidInputFailure",
+  });
+
+export const policyViolationFailure = (input: {
+  readonly code: string;
+  readonly details?: Readonly<Record<string, unknown>>;
+  readonly field?: string;
+  readonly message: string;
+  readonly repositoryId?: string;
+  readonly requestId: string;
+  readonly ticketId?: string;
+  readonly useCase: UseCaseName;
+}): UseCaseFailure =>
+  useCaseFailure({
+    ...input,
+    tag: "PolicyViolationFailure",
+  });
+
+export const unsupportedAliasFailure = (alias: string, requestId: string): UseCaseFailure =>
+  useCaseFailure({
+    code: "UNSUPPORTED_ALIAS",
+    details: { alias },
+    message: `Unsupported usecase alias: ${alias}`,
+    requestId,
+    tag: "UnsupportedAliasFailure",
+    useCase: alias,
+  });
+
+export const unknownUseCaseFailure = (name: string, requestId: string): UseCaseFailure =>
+  useCaseFailure({
+    code: "UNKNOWN_USECASE",
+    details: { name },
+    message: `Unknown usecase: ${name}`,
+    requestId,
+    tag: "UnknownUseCaseFailure",
+    useCase: name,
+  });
+
+export const mapDatabaseFailure = (
+  error: DatabaseFailure | unknown,
+  context: {
+    readonly requestId: string;
+    readonly repositoryId?: string;
+    readonly ticketId?: string;
+    readonly useCase: UseCaseName;
+  },
+): UseCaseFailure => {
+  if (!isRecord(error)) {
+    return useCaseFailure({
+      message: "Storage request failed.",
+      requestId: context.requestId,
+      tag: "StorageFailure",
+      useCase: context.useCase,
+    });
+  }
+
+  const sourceTag = typeof error["_tag"] === "string" ? error["_tag"] : undefined;
+  const message = typeof error["message"] === "string" ? error["message"] : "Request failed.";
+  const repositoryId =
+    typeof error["repositoryId"] === "string" ? error["repositoryId"] : context.repositoryId;
+  const ticketId = typeof error["ticketId"] === "string" ? error["ticketId"] : context.ticketId;
+  const field = typeof error["field"] === "string" ? error["field"] : undefined;
+  const details = detailsFrom(error);
+
+  switch (sourceTag) {
+    case "RepositoryNotFoundError":
+      return useCaseFailure({
+        code: "REPOSITORY_NOT_OPEN",
+        details,
+        message,
+        repositoryId,
+        requestId: context.requestId,
+        retryable: false,
+        tag: "RepositoryNotOpenFailure",
+        ticketId,
+        useCase: context.useCase,
+      });
+    case "ValidationError":
+      return useCaseFailure({
+        code: "INVALID_INPUT",
+        details,
+        field,
+        message,
+        repositoryId,
+        requestId: context.requestId,
+        tag: "InvalidInputFailure",
+        ticketId,
+        useCase: context.useCase,
+      });
+    case "WorkflowError":
+      return useCaseFailure({
+        code: "POLICY_VIOLATION",
+        details,
+        message,
+        repositoryId,
+        requestId: context.requestId,
+        tag: "PolicyViolationFailure",
+        ticketId,
+        useCase: context.useCase,
+      });
+    case "ConsistencyError":
+      return useCaseFailure({
+        code: "CONSISTENCY_FAILURE",
+        details,
+        message,
+        repositoryId,
+        requestId: context.requestId,
+        retryable: true,
+        tag: "ConsistencyFailure",
+        ticketId,
+        useCase: context.useCase,
+      });
+    case "MaterializationError":
+      return useCaseFailure({
+        code: "SYNC_FAILURE",
+        details,
+        message,
+        repositoryId,
+        requestId: context.requestId,
+        retryable: true,
+        tag: "SyncFailure",
+        ticketId,
+        useCase: context.useCase,
+      });
+    default:
+      return useCaseFailure({
+        code: sourceTag ?? "STORAGE_FAILURE",
+        details,
+        message,
+        repositoryId,
+        requestId: context.requestId,
+        retryable: sourceTag === "StorageError" || sourceTag === "SqliteError",
+        tag: "StorageFailure",
+        ticketId,
+        useCase: context.useCase,
+      });
+  }
+};
+
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === "object" && value !== null;
+
+const detailsFrom = (error: Readonly<Record<string, unknown>>): Record<string, unknown> => {
+  const details: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(error)) {
+    if (unsafeDetailKeys.has(key) || secretPattern.test(key)) continue;
+    if (
+      value === null ||
+      typeof value === "boolean" ||
+      typeof value === "number" ||
+      typeof value === "string" ||
+      Array.isArray(value)
+    ) {
+      details[key] = value;
+    }
+  }
+
+  return details;
+};
+
+const redactDetails = (
+  details: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> => {
+  const redacted: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(details)) {
+    redacted[key] = secretPattern.test(key) ? "[redacted]" : value;
+  }
+
+  return redacted;
+};

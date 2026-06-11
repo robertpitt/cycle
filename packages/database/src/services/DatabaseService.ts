@@ -1,5 +1,5 @@
-import { type CollectionOptions, type Store as GitDbStore } from "@cycle/git-db";
-import { Context, Effect, Layer, Result } from "effect";
+import { type CollectionOptions, type Store as GitDbStore, type SyncResult } from "@cycle/git-db";
+import { Cause, Context, Effect, Layer, Queue, Result } from "effect";
 import {
   CURRENT_SCHEMA_VERSION,
   defaultIssueBody,
@@ -106,8 +106,18 @@ type CommitChange = {
 };
 
 export type DatabaseServiceOptions = {
+  readonly backgroundRunner?: DatabaseBackgroundRunner;
   readonly logger?: (event: DatabaseLogEvent) => void;
   readonly projectionPath?: string;
+};
+
+export type DatabaseBackgroundRunner = {
+  readonly run: (label: string, effect: Effect.Effect<void, unknown>) => void;
+};
+
+type DatabaseBackgroundTask = {
+  readonly effect: Effect.Effect<void, unknown>;
+  readonly label: string;
 };
 
 export type DatabaseLogEvent = {
@@ -227,6 +237,7 @@ export type DatabaseServiceShape = {
     repositoryId: string,
     query?: RepositoryHistoryQuery,
   ) => Effect.Effect<HistoryPage, DatabaseFailure>;
+  readonly pushRepository: (repositoryId: string) => Effect.Effect<SyncResult, DatabaseFailure>;
   readonly repositoryStatus: (
     repositoryId: string,
   ) => Effect.Effect<RepositoryStatus, DatabaseFailure>;
@@ -362,13 +373,43 @@ const legacyIssueCollectionOptions: CollectionOptions<TicketDocument> = {
   extension: "json",
 };
 
+const makeDatabaseBackgroundRunner = Effect.gen(function* () {
+  const queue = yield* Queue.unbounded<DatabaseBackgroundTask>();
+
+  yield* Queue.take(queue).pipe(
+    Effect.flatMap((task) =>
+      task.effect.pipe(
+        Effect.catchCause((cause) =>
+          Effect.logError("database background task failed").pipe(
+            Effect.annotateLogs({
+              cause: Cause.pretty(cause),
+              label: task.label,
+              scope: "database",
+            }),
+          ),
+        ),
+      ),
+    ),
+    Effect.forever,
+    Effect.forkScoped,
+  );
+
+  return {
+    run: (label: string, effect: Effect.Effect<void, unknown>) => {
+      Queue.offerUnsafe(queue, { effect, label });
+    },
+  };
+});
+
 export const makeDatabaseService = (
   identity: DatabaseIdentityShape,
   ids: DatabaseIdGeneratorShape,
   options: DatabaseServiceOptions = {},
 ): DatabaseServiceShape => {
+  const backgroundRunner = options.backgroundRunner;
   const projection = new Projection(options.projectionPath);
   const repositories = new Map<string, RepositoryRuntime>();
+  let closed = false;
   const log = (
     repositoryId: string | undefined,
     message: string,
@@ -594,6 +635,21 @@ export const makeDatabaseService = (
           ),
         ),
       );
+    });
+
+  const pushRepository = (repositoryId: string): Effect.Effect<SyncResult, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const repository = yield* getRepository(repositoryId);
+      const result = yield* storage(
+        "push repository",
+        repository.store.sync({
+          mode: "full",
+          onDiverged: "error",
+          pointers: [DEFAULT_POINTER],
+        }),
+      );
+      yield* syncRepository(repositoryId);
+      return result;
     });
 
   const writeAndSync = <A>(
@@ -2107,6 +2163,8 @@ export const makeDatabaseService = (
     archiveTicket,
     close: () =>
       Effect.sync(() => {
+        if (closed) return;
+        closed = true;
         for (const repository of repositories.values()) {
           if (repository.poller !== undefined) clearInterval(repository.poller);
         }
@@ -2149,12 +2207,13 @@ export const makeDatabaseService = (
         if (existing?.poller !== undefined) clearInterval(existing.poller);
 
         const poller =
-          input.pollIntervalMs === false
+          input.pollIntervalMs === false || backgroundRunner === undefined
             ? undefined
             : setInterval(() => {
-                Effect.runPromise(syncRepository(input.repositoryId)).catch(() => {
-                  // repositoryStatus exposes the failure; polling should not crash the process.
-                });
+                backgroundRunner.run(
+                  `database.pollRepository.${input.repositoryId}`,
+                  syncRepository(input.repositoryId).pipe(Effect.asVoid),
+                );
               }, input.pollIntervalMs ?? 1000);
 
         poller?.unref?.();
@@ -2183,6 +2242,7 @@ export const makeDatabaseService = (
       }),
     repositoryHistory: (repositoryId, query = {}) =>
       sqlite("repository history", () => projection.repositoryHistory(repositoryId, query)),
+    pushRepository,
     repositoryStatus: (repositoryId) =>
       sqlite("repository status", () => projection.repositoryStatus(repositoryId)),
     removeIssueRelation: (repositoryId, ticketId, relation, options) =>
@@ -2232,8 +2292,12 @@ export const DatabaseLive = Layer.effect(
   Effect.gen(function* () {
     const identity = yield* DatabaseIdentity;
     const ids = yield* DatabaseIdGenerator;
+    const backgroundRunner = yield* makeDatabaseBackgroundRunner;
 
-    return DatabaseService.of(makeDatabaseService(identity, ids));
+    return yield* Effect.acquireRelease(
+      Effect.succeed(DatabaseService.of(makeDatabaseService(identity, ids, { backgroundRunner }))),
+      (service) => service.close(),
+    );
   }),
 );
 
@@ -2243,8 +2307,19 @@ export const DatabaseLiveWithOptions = (options: DatabaseServiceOptions) =>
     Effect.gen(function* () {
       const identity = yield* DatabaseIdentity;
       const ids = yield* DatabaseIdGenerator;
+      const backgroundRunner = yield* makeDatabaseBackgroundRunner;
 
-      return DatabaseService.of(makeDatabaseService(identity, ids, options));
+      return yield* Effect.acquireRelease(
+        Effect.succeed(
+          DatabaseService.of(
+            makeDatabaseService(identity, ids, {
+              ...options,
+              backgroundRunner: options.backgroundRunner ?? backgroundRunner,
+            }),
+          ),
+        ),
+        (service) => service.close(),
+      );
     }),
   );
 
@@ -2879,6 +2954,8 @@ const assertTransitionAllowed = (
   const allowed = defaultTransitions[fromKey] ?? [];
 
   if (!allowed.includes(toKey)) {
+    if (actor.type === "human") return Effect.void;
+
     return Effect.fail(
       workflowError(`Transition from ${fromKey} to ${toKey} is not allowed`, ticket.id),
     );

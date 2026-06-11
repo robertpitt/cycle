@@ -120,6 +120,35 @@ describe("@cycle/database", () => {
     }).pipe(Effect.provide(DatabaseTest())),
   );
 
+  it.effect("allows human issue property edits to move directly between visible UI states", () =>
+    Effect.gen(function* () {
+      const database = yield* DatabaseService;
+      const store = yield* makeStore("manual-property-edit-repo");
+
+      yield* database.openRepository({
+        repositoryId: "manual-property-edit-repo",
+        store,
+      });
+
+      const ticket = yield* database.createTicket("manual-property-edit-repo", {
+        priority: "low",
+        status: "todo",
+        title: "Manual property edit ticket",
+      });
+      const updated = yield* database.updateTicket("manual-property-edit-repo", ticket.id, {
+        frontmatter: {
+          priority: "high",
+          status: "in-progress",
+        },
+      });
+
+      assert.strictEqual(updated.status, "in-progress");
+      assert.strictEqual(updated.priority, "high");
+      assert.strictEqual(updated.frontmatter.status, "in-progress");
+      assert.strictEqual(updated.frontmatter.priority, "high");
+    }).pipe(Effect.provide(DatabaseTest())),
+  );
+
   it.effect("materializes issue metadata, relations, and soft-state filters", () =>
     Effect.gen(function* () {
       const database = yield* DatabaseService;

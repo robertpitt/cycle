@@ -5,6 +5,7 @@ import {
   secureWebPreferences,
   type ElectronBrowserWindow,
 } from "../platform/BrowserWindows.ts";
+import { DesktopRuntime } from "../platform/DesktopRuntime.ts";
 import { electronError, type ElectronError } from "../platform/ElectronError.ts";
 import { DesktopWindow } from "./DesktopWindow.ts";
 
@@ -23,6 +24,7 @@ export const DesktopWindowLive = Layer.effect(
   Effect.gen(function* () {
     const browserWindows = yield* BrowserWindows;
     const desktopConfig = yield* DesktopConfig;
+    const runtime = yield* DesktopRuntime;
     const scope = yield* Effect.scope;
 
     const createMainWindow = (): Effect.Effect<void, ElectronError> =>
@@ -50,7 +52,8 @@ export const DesktopWindowLive = Layer.effect(
         });
 
         window.webContents.on("render-process-gone", (_event, details) => {
-          void Effect.runPromise(
+          runtime.run(
+            "desktop-window.render-process-gone",
             Effect.logError("renderer process exited").pipe(
               Effect.annotateLogs({
                 exitCode: details.exitCode,
@@ -62,7 +65,8 @@ export const DesktopWindowLive = Layer.effect(
         });
 
         window.webContents.on("did-fail-load", (_event, code, description, validatedUrl) => {
-          void Effect.runPromise(
+          runtime.run(
+            "desktop-window.did-fail-load",
             Effect.logError("renderer load failed").pipe(
               Effect.annotateLogs({
                 code,
