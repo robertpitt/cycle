@@ -16,12 +16,12 @@
   },
   "dependencies": {
     "@cycle/contracts": "workspace:*",
-    "@cycle/database": "workspace:*",
-    "@cycle/git-db": "workspace:*",
     "@cycle/usecases": "workspace:*",
     "effect": "beta"
   },
   "devDependencies": {
+    "@cycle/database": "workspace:*",
+    "@cycle/git-db": "workspace:*",
     "vitest": "^4.1.8"
   }
 }

@@ -58,6 +58,16 @@ export const invalidRpcResponse = (message: string, details?: Readonly<Record<st
     message,
   });
 
+export const interruptedRpcExecution = (
+  message: string,
+  details?: Readonly<Record<string, unknown>>,
+) =>
+  ticketRpcError({
+    code: "RPC_EXECUTION_INTERRUPTED",
+    details,
+    message,
+  });
+
 export const unknownRpcMethod = (method: string) =>
   ticketRpcError({
     code: "UNKNOWN_RPC_METHOD",

@@ -1,5 +1,5 @@
 import { type CollectionOptions, type Store as GitDbStore, type SyncResult } from "@cycle/git-db";
-import { Cause, Context, Effect, Layer, Queue, Result } from "effect";
+import { Cause, Context, Effect, Fiber, Layer, Queue, Result } from "effect";
 import {
   CURRENT_SCHEMA_VERSION,
   defaultIssueBody,
@@ -8,7 +8,6 @@ import {
   normalizeKey,
   parseIssueMarkdown,
   parseLegacyIssueJson,
-  protectedSectionsChanged,
   serializeIssueMarkdown,
   stripUndefined,
   updatedDateKey,
@@ -64,14 +63,13 @@ import {
   type UserProfileQuery,
 } from "../domain/index.ts";
 import {
-  ConsistencyError,
-  MaterializationError,
-  RepositoryNotFoundError,
+  consistencyError,
   type DatabaseFailure,
+  materializationError,
+  repositoryNotFound,
   sqliteError,
   storageError,
   validationError,
-  workflowError,
 } from "../errors.ts";
 import { Projection } from "../store/Projection.ts";
 import { DatabaseIdGenerator, type DatabaseIdGeneratorShape } from "./DatabaseIdGenerator.ts";
@@ -85,7 +83,7 @@ import { DatabaseIdGeneratorDeterministic } from "./DatabaseIdGenerator.ts";
 type RepositoryRuntime = {
   readonly displayName: string;
   readonly gitDir?: string;
-  readonly poller?: ReturnType<typeof setInterval>;
+  readonly poller?: DatabaseBackgroundSchedule;
   readonly repositoryId: string;
   readonly store: GitDbStore.StoreServiceShape;
   readonly worktreePath?: string;
@@ -113,12 +111,34 @@ export type DatabaseServiceOptions = {
 
 export type DatabaseBackgroundRunner = {
   readonly run: (label: string, effect: Effect.Effect<void, unknown>) => void;
+  readonly schedule: (
+    label: string,
+    intervalMs: number,
+    effect: Effect.Effect<void, unknown>,
+  ) => DatabaseBackgroundSchedule;
 };
 
 type DatabaseBackgroundTask = {
   readonly effect: Effect.Effect<void, unknown>;
   readonly label: string;
 };
+
+type DatabaseBackgroundSchedule = {
+  readonly cancel: () => void;
+};
+
+type DatabaseBackgroundScheduleMessage =
+  | {
+      readonly _tag: "cancel";
+      readonly id: string;
+    }
+  | {
+      readonly _tag: "start";
+      readonly effect: Effect.Effect<void, unknown>;
+      readonly id: string;
+      readonly intervalMs: number;
+      readonly label: string;
+    };
 
 export type DatabaseLogEvent = {
   readonly data?: Readonly<Record<string, unknown>>;
@@ -375,6 +395,9 @@ const legacyIssueCollectionOptions: CollectionOptions<TicketDocument> = {
 
 const makeDatabaseBackgroundRunner = Effect.gen(function* () {
   const queue = yield* Queue.unbounded<DatabaseBackgroundTask>();
+  const scheduleQueue = yield* Queue.unbounded<DatabaseBackgroundScheduleMessage>();
+  const scheduled = new Map<string, Fiber.Fiber<void, never>>();
+  let scheduleCounter = 0;
 
   yield* Queue.take(queue).pipe(
     Effect.flatMap((task) =>
@@ -393,10 +416,54 @@ const makeDatabaseBackgroundRunner = Effect.gen(function* () {
     Effect.forever,
     Effect.forkScoped,
   );
+  yield* Queue.take(scheduleQueue).pipe(
+    Effect.flatMap((message) =>
+      Effect.gen(function* () {
+        const current = scheduled.get(message.id);
+
+        if (current !== undefined) {
+          scheduled.delete(message.id);
+          yield* Fiber.interrupt(current);
+        }
+
+        if (message._tag === "cancel") return;
+
+        const fiber = yield* Effect.sleep(message.intervalMs).pipe(
+          Effect.andThen(Queue.offer(queue, { effect: message.effect, label: message.label })),
+          Effect.forever,
+          Effect.forkScoped,
+        );
+
+        scheduled.set(message.id, fiber);
+      }),
+    ),
+    Effect.forever,
+    Effect.forkScoped,
+  );
 
   return {
     run: (label: string, effect: Effect.Effect<void, unknown>) => {
       Queue.offerUnsafe(queue, { effect, label });
+    },
+    schedule: (label: string, intervalMs: number, effect: Effect.Effect<void, unknown>) => {
+      const id = `${label}.${++scheduleCounter}`;
+
+      Queue.offerUnsafe(scheduleQueue, {
+        _tag: "start",
+        effect,
+        id,
+        intervalMs,
+        label,
+      });
+
+      return {
+        cancel: () => {
+          Queue.offerUnsafe(scheduleQueue, {
+            _tag: "cancel",
+            id,
+          });
+        },
+      };
     },
   };
 });
@@ -431,7 +498,7 @@ export const makeDatabaseService = (
     Effect.sync(() => repositories.get(repositoryId)).pipe(
       Effect.flatMap((repository) =>
         repository === undefined
-          ? Effect.fail(new RepositoryNotFoundError(repositoryId))
+          ? Effect.fail(repositoryNotFound(repositoryId))
           : Effect.succeed(repository),
       ),
     );
@@ -495,9 +562,8 @@ export const makeDatabaseService = (
           previous,
           current.id,
         ).pipe(
-          Effect.mapError(
-            (error) =>
-              new MaterializationError(repositoryId, "failed to build materialization plan", error),
+          Effect.mapError((error) =>
+            materializationError(repositoryId, "failed to build materialization plan", error),
           ),
           Effect.result,
         );
@@ -671,30 +737,29 @@ export const makeDatabaseService = (
       const written = yield* write(repository);
 
       yield* syncRepository(repositoryId).pipe(
-        Effect.mapError(
-          (error) =>
-            new ConsistencyError(
-              repositoryId,
-              written.snapshotId,
-              previous,
-              command,
-              objectId,
-              `write committed but SQLite resync failed for ${command}`,
-              error,
-            ),
+        Effect.mapError((error) =>
+          consistencyError({
+            cause: error,
+            command,
+            committedSnapshotId: written.snapshotId,
+            message: `write committed but SQLite resync failed for ${command}`,
+            objectId,
+            previousSnapshotId: previous,
+            repositoryId,
+          }),
         ),
       );
 
       if (!visible()) {
         return yield* Effect.fail(
-          new ConsistencyError(
-            repositoryId,
-            written.snapshotId,
-            previous,
+          consistencyError({
             command,
+            committedSnapshotId: written.snapshotId,
+            message: `write committed but ${objectId ?? "object"} is not visible in SQLite`,
             objectId,
-            `write committed but ${objectId ?? "object"} is not visible in SQLite`,
-          ),
+            previousSnapshotId: previous,
+            repositoryId,
+          }),
         );
       }
 
@@ -898,20 +963,6 @@ export const makeDatabaseService = (
         },
         patch.body ?? current.body,
       );
-
-      if (current.status === "in-progress" && patch.body !== undefined) {
-        const changed = protectedSectionsChanged(current.body, patch.body);
-
-        if (changed.length > 0) {
-          return yield* Effect.fail(
-            workflowError(`protected sections changed: ${changed.join(", ")}`, ticketId),
-          );
-        }
-      }
-
-      if (next.status !== current.status) {
-        yield* assertTransitionAllowed(current.status, next.status, actor, current);
-      }
 
       yield* validateTicket(next);
 
@@ -2166,7 +2217,7 @@ export const makeDatabaseService = (
         if (closed) return;
         closed = true;
         for (const repository of repositories.values()) {
-          if (repository.poller !== undefined) clearInterval(repository.poller);
+          repository.poller?.cancel();
         }
         repositories.clear();
         projection.close();
@@ -2204,19 +2255,16 @@ export const makeDatabaseService = (
       Effect.gen(function* () {
         const existing = repositories.get(input.repositoryId);
 
-        if (existing?.poller !== undefined) clearInterval(existing.poller);
+        existing?.poller?.cancel();
 
         const poller =
           input.pollIntervalMs === false || backgroundRunner === undefined
             ? undefined
-            : setInterval(() => {
-                backgroundRunner.run(
-                  `database.pollRepository.${input.repositoryId}`,
-                  syncRepository(input.repositoryId).pipe(Effect.asVoid),
-                );
-              }, input.pollIntervalMs ?? 1000);
-
-        poller?.unref?.();
+            : backgroundRunner.schedule(
+                `database.pollRepository.${input.repositoryId}`,
+                input.pollIntervalMs ?? 1000,
+                syncRepository(input.repositoryId).pipe(Effect.asVoid),
+              );
 
         repositories.set(input.repositoryId, {
           displayName: input.displayName ?? input.repositoryId,
@@ -2862,17 +2910,6 @@ const findUnsafeKey = (value: unknown, path = ""): string | null => {
   return null;
 };
 
-const defaultTransitions: Readonly<Record<string, ReadonlyArray<string>>> = {
-  backlog: ["todo", "ready", "canceled"],
-  canceled: ["backlog", "todo"],
-  done: ["in-review"],
-  "in-progress": ["needs-review", "in-review", "canceled"],
-  "in-review": ["needs-review", "done", "in-progress", "canceled"],
-  "needs-review": ["todo", "ready", "in-progress", "in-review", "canceled"],
-  ready: ["in-progress", "todo", "canceled"],
-  todo: ["backlog", "ready", "canceled"],
-};
-
 const maxCommitTitleLength = 72;
 
 const compactText = (value: string): string => value.replace(/\s+/gu, " ").trim();
@@ -2942,33 +2979,6 @@ const draftCreatedMessage = (actor: Actor, draft: TicketDraftDocument): string =
 
 const draftUpdatedMessage = (actor: Actor, draft: TicketDraftDocument): string =>
   `${actor.name} updated draft for ${draftTitle(draft)} ticket`;
-
-const assertTransitionAllowed = (
-  from: string,
-  to: string,
-  actor: Actor,
-  ticket: TicketDocument,
-): Effect.Effect<void, DatabaseFailure> => {
-  const fromKey = normalizeKey(from);
-  const toKey = normalizeKey(to);
-  const allowed = defaultTransitions[fromKey] ?? [];
-
-  if (!allowed.includes(toKey)) {
-    if (actor.type === "human") return Effect.void;
-
-    return Effect.fail(
-      workflowError(`Transition from ${fromKey} to ${toKey} is not allowed`, ticket.id),
-    );
-  }
-
-  if (toKey === "done" && actor.type !== "human") {
-    return Effect.fail(
-      workflowError(`Only a human actor can mark ticket ${ticket.id} done`, ticket.id),
-    );
-  }
-
-  return Effect.void;
-};
 
 const makeRecord = (
   input: {

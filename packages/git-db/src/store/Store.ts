@@ -325,22 +325,69 @@ const makeDocumentPath =
     );
 
 const bindGitAdapter = (git: GitService, config: Store): StoreGit => ({
-  deleteRef: (input) => git.deleteRef(config, input),
-  fetch: (input) => git.fetch(config, input),
-  isAncestor: (ancestor, descendant) => git.isAncestor(config, ancestor, descendant),
-  isCommit: (id) => git.isCommit(config, id),
-  listRefs: (prefix) => git.listRefs(config, prefix),
-  mergeBase: (a, b) => git.mergeBase(config, a, b),
-  push: (input) => git.push(config, input),
-  readBlob: (id) => git.readBlob(config, id),
-  readCommit: (id) => git.readCommit(config, id),
-  readRef: (name) => git.readRef(config, name),
-  readTree: (id) => git.readTree(config, id),
-  updateRef: (input) => git.updateRef(config, input),
-  writeBlob: (bytes) => git.writeBlob(config, bytes),
-  writeCommit: (input) => git.writeCommit(config, input),
-  writeTree: (entries) => git.writeTree(config, entries),
+  deleteRef: (input) =>
+    gitDbOperation("pointer.delete", config, git.deleteRef(config, input), { ref: input.ref }),
+  fetch: (input) =>
+    gitDbOperation("transport.fetch", config, git.fetch(config, input), { remote: input.remote }),
+  isAncestor: (ancestor, descendant) =>
+    gitDbOperation("conflict.isAncestor", config, git.isAncestor(config, ancestor, descendant), {
+      ancestor,
+      descendant,
+    }),
+  isCommit: (id) => gitDbOperation("snapshot.isCommit", config, git.isCommit(config, id), { id }),
+  listRefs: (prefix) =>
+    gitDbOperation("pointer.list", config, git.listRefs(config, prefix), { prefix }),
+  mergeBase: (a, b) =>
+    gitDbOperation("conflict.mergeBase", config, git.mergeBase(config, a, b), {
+      left: a,
+      right: b,
+    }),
+  push: (input) =>
+    gitDbOperation("transport.push", config, git.push(config, input), { remote: input.remote }),
+  readBlob: (id) => gitDbOperation("blob.read", config, git.readBlob(config, id), { id }),
+  readCommit: (id) => gitDbOperation("commit.read", config, git.readCommit(config, id), { id }),
+  readRef: (name) =>
+    gitDbOperation("pointer.read", config, git.readRef(config, name), { ref: name }),
+  readTree: (id) => gitDbOperation("tree.read", config, git.readTree(config, id), { id }),
+  updateRef: (input) =>
+    gitDbOperation("pointer.update", config, git.updateRef(config, input), { ref: input.ref }),
+  writeBlob: (bytes) =>
+    gitDbOperation("blob.write", config, git.writeBlob(config, bytes), { bytes: bytes.byteLength }),
+  writeCommit: (input) =>
+    gitDbOperation("commit.write", config, git.writeCommit(config, input), {
+      parents: input.parents?.length ?? 0,
+    }),
+  writeTree: (entries) =>
+    gitDbOperation("tree.write", config, git.writeTree(config, entries), {
+      entries: entries.length,
+    }),
 });
+
+const gitDbOperation = <A, E, R>(
+  operation: string,
+  config: Store,
+  effect: Effect.Effect<A, E, R>,
+  attributes: Readonly<Record<string, unknown>> = {},
+): Effect.Effect<A, E, R> =>
+  effect.pipe(
+    Effect.withSpan(`gitdb.${operation}`, {
+      attributes: {
+        "gitdb.database": config.database,
+        "gitdb.gitDir": config.gitDir,
+        "gitdb.namespace": config.namespace,
+        "gitdb.operation": operation,
+        ...attributes,
+      },
+    }),
+    Effect.annotateLogs({
+      database: config.database,
+      gitDir: config.gitDir,
+      namespace: config.namespace,
+      operation,
+      scope: "git-db",
+      ...attributes,
+    }),
+  );
 
 const makeStoreRuntimeCache = (
   adapter: StoreGit,
@@ -586,25 +633,35 @@ const makeStore = (runtime: StoreRuntime): StoreServiceShape => {
         return null;
       }),
     snapshot: (id) =>
-      Effect.gen(function* () {
-        if (!(yield* adapter.isCommit(id))) {
-          return yield* Effect.fail(snapshotNotFound(id));
-        }
+      gitDbOperation(
+        "snapshot.read",
+        config,
+        Effect.gen(function* () {
+          if (!(yield* adapter.isCommit(id))) {
+            return yield* Effect.fail(snapshotNotFound(id));
+          }
 
-        const commit = yield* adapter.readCommit(id);
-        const message = commit.message.trimEnd();
+          const commit = yield* adapter.readCommit(id);
+          const message = commit.message.trimEnd();
 
-        return {
-          author: commit.author,
-          committer: commit.committer,
-          createdAt: commit.committer?.date ?? commit.author?.date,
-          id,
-          message: message.length > 0 ? message : undefined,
-          parents: commit.parents,
-          root: commit.tree,
-        };
+          return {
+            author: commit.author,
+            committer: commit.committer,
+            createdAt: commit.committer?.date ?? commit.author?.date,
+            id,
+            message: message.length > 0 ? message : undefined,
+            parents: commit.parents,
+            root: commit.tree,
+          };
+        }),
+        { snapshot: id },
+      ),
+    sync: (options: SyncOptions = {}) =>
+      gitDbOperation("sync", config, sync(store, runtime, options), {
+        mode: options.mode ?? "full",
+        pointers: options.pointers?.length ?? null,
+        remote: options.remote ?? "origin",
       }),
-    sync: (options: SyncOptions = {}) => sync(store, runtime, options),
   };
 
   return store;
@@ -625,29 +682,39 @@ const makeStorePointer = (
       }),
     current: () => store.currentSnapshotForPointer(name),
     delete: (options: MovePointerOptions = {}) =>
-      Effect.gen(function* () {
-        const ref = yield* store.pointerRef(name);
-        const hasExpected = Object.hasOwn(options, "expectedSnapshot");
-        const input = hasExpected ? { expected: options.expectedSnapshot ?? null, ref } : { ref };
+      gitDbOperation(
+        "pointer.delete",
+        runtime.config,
+        Effect.gen(function* () {
+          const ref = yield* store.pointerRef(name);
+          const hasExpected = Object.hasOwn(options, "expectedSnapshot");
+          const input = hasExpected ? { expected: options.expectedSnapshot ?? null, ref } : { ref };
 
-        yield* adapter
-          .deleteRef(input)
-          .pipe(
-            Effect.catch((error) =>
-              hasExpected
-                ? adapter
-                    .readRef(ref)
-                    .pipe(
-                      Effect.flatMap((actual) =>
-                        Effect.fail(
-                          pointerConflict(name, options.expectedSnapshot ?? null, actual, error),
+          yield* adapter
+            .deleteRef(input)
+            .pipe(
+              Effect.catch((error) =>
+                hasExpected
+                  ? adapter
+                      .readRef(ref)
+                      .pipe(
+                        Effect.flatMap((actual) =>
+                          Effect.fail(
+                            pointerConflict(name, options.expectedSnapshot ?? null, actual, error),
+                          ),
                         ),
-                      ),
-                    )
-                : Effect.fail(error),
-            ),
-          );
-      }),
+                      )
+                  : Effect.fail(error),
+              ),
+            );
+        }),
+        {
+          expectedSnapshot: Object.hasOwn(options, "expectedSnapshot")
+            ? (options.expectedSnapshot ?? null)
+            : null,
+          pointer: name,
+        },
+      ),
     fork: (targetName) =>
       Effect.gen(function* () {
         const current = yield* pointer.current();
@@ -678,19 +745,27 @@ const makeStorePointer = (
       }),
     history: (options: HistoryOptions = {}) => store.history(name, options),
     move: (target, options: MovePointerOptions = {}) =>
-      Effect.gen(function* () {
-        if (!(yield* adapter.isCommit(target))) {
-          return yield* Effect.fail(snapshotNotFound(target));
-        }
+      gitDbOperation(
+        "pointer.move",
+        runtime.config,
+        Effect.gen(function* () {
+          if (!(yield* adapter.isCommit(target))) {
+            return yield* Effect.fail(snapshotNotFound(target));
+          }
 
-        const current = yield* pointer.current();
-        const expected = Object.hasOwn(options, "expectedSnapshot")
-          ? (options.expectedSnapshot ?? null)
-          : (current?.id ?? null);
-        const ref = yield* store.pointerRef(name);
+          const current = yield* pointer.current();
+          const expected = Object.hasOwn(options, "expectedSnapshot")
+            ? (options.expectedSnapshot ?? null)
+            : (current?.id ?? null);
+          const ref = yield* store.pointerRef(name);
 
-        yield* movePointerRef(runtime, ref, target, expected, name);
-      }),
+          yield* movePointerRef(runtime, ref, target, expected, name);
+        }),
+        {
+          pointer: name,
+          target,
+        },
+      ),
     name,
   };
 
@@ -731,42 +806,50 @@ const makeTransaction = (
           );
         }),
       commit: (options: CommitOptions = {}) =>
-        Effect.gen(function* () {
-          const currentState = yield* getActiveState(state);
-          const expected = Object.hasOwn(options, "expectedSnapshot")
-            ? (options.expectedSnapshot ?? null)
-            : (base?.id ?? null);
-          const targetPointer = options.pointer ?? pointer;
+        gitDbOperation(
+          "transaction.commit",
+          runtime.config,
+          Effect.gen(function* () {
+            const currentState = yield* getActiveState(state);
+            const expected = Object.hasOwn(options, "expectedSnapshot")
+              ? (options.expectedSnapshot ?? null)
+              : (base?.id ?? null);
+            const targetPointer = options.pointer ?? pointer;
 
-          if (HashMap.size(currentState.mutations) === 0 && base !== null) {
-            yield* assertPointerCurrent(store, runtime, pointer, expected);
+            if (HashMap.size(currentState.mutations) === 0 && base !== null) {
+              yield* assertPointerCurrent(store, runtime, pointer, expected);
+              yield* TxRef.set(state, {
+                active: false,
+                mutations: HashMap.empty(),
+              });
+
+              return base;
+            }
+
+            const root = yield* materialize(runtime, base, currentState);
+            const tree = yield* Tree.writeMutableTree(runtime.adapter, root);
+            const snapshotId = yield* runtime.adapter.writeCommit({
+              author: options.author,
+              committer: options.committer,
+              message: options.message,
+              parents: base === null ? [] : [base.id],
+              tree,
+            });
+            const targetRef = yield* store.pointerRef(targetPointer);
+
+            yield* movePointerRef(runtime, targetRef, snapshotId, expected, targetPointer);
             yield* TxRef.set(state, {
               active: false,
               mutations: HashMap.empty(),
             });
 
-            return base;
-          }
-
-          const root = yield* materialize(runtime, base, currentState);
-          const tree = yield* Tree.writeMutableTree(runtime.adapter, root);
-          const snapshotId = yield* runtime.adapter.writeCommit({
-            author: options.author,
-            committer: options.committer,
-            message: options.message,
-            parents: base === null ? [] : [base.id],
-            tree,
-          });
-          const targetRef = yield* store.pointerRef(targetPointer);
-
-          yield* movePointerRef(runtime, targetRef, snapshotId, expected, targetPointer);
-          yield* TxRef.set(state, {
-            active: false,
-            mutations: HashMap.empty(),
-          });
-
-          return yield* store.snapshot(snapshotId);
-        }),
+            return yield* store.snapshot(snapshotId);
+          }),
+          {
+            baseSnapshot: base?.id ?? null,
+            pointer: options.pointer ?? pointer,
+          },
+        ),
       delete: (path) =>
         Effect.gen(function* () {
           const normalizedPath = yield* normalizeStorePath(path);
@@ -1264,15 +1347,23 @@ const materialize = (
   base: Snapshot | null,
   state: TransactionState,
 ): Effect.Effect<Tree.MutableTree, GitDbError> =>
-  Effect.gen(function* () {
-    const root = yield* Tree.loadMutableTree(runtime.adapter, base?.root ?? null);
+  gitDbOperation(
+    "tree.materialize",
+    runtime.config,
+    Effect.gen(function* () {
+      const root = yield* Tree.loadMutableTree(runtime.adapter, base?.root ?? null);
 
-    for (const [path, mutation] of state.mutations) {
-      Tree.applyMutation(root, path, mutation);
-    }
+      for (const [path, mutation] of state.mutations) {
+        Tree.applyMutation(root, path, mutation);
+      }
 
-    return root;
-  });
+      return root;
+    }),
+    {
+      baseSnapshot: base?.id ?? null,
+      mutations: HashMap.size(state.mutations),
+    },
+  );
 
 const snapshotOrResolve = (
   store: StoreServiceShape,

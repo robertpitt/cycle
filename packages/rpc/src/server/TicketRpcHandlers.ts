@@ -19,15 +19,5 @@ export const invokeTicketRpc = (
     }).pipe(Effect.mapError(useCaseFailureToRpcError));
     const result = yield* runner.run(useCase).pipe(Effect.mapError(useCaseFailureToRpcError));
 
-    if (method === "ticket.record.listForIssue") {
-      return recordPageEntries(result);
-    }
-
     return result;
   });
-
-const recordPageEntries = (value: unknown): ReadonlyArray<unknown> => {
-  if (typeof value !== "object" || value === null) return [];
-  const entries = (value as { readonly entries?: unknown }).entries;
-  return Array.isArray(entries) ? entries : [];
-};

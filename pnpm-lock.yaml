@@ -150,12 +150,6 @@ importers:
       '@cycle/contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@cycle/database':
-        specifier: workspace:*
-        version: link:../database
-      '@cycle/git-db':
-        specifier: workspace:*
-        version: link:../git-db
       '@cycle/usecases':
         specifier: workspace:*
         version: link:../usecases
@@ -163,6 +157,12 @@ importers:
         specifier: beta
         version: 4.0.0-beta.78
     devDependencies:
+      '@cycle/database':
+        specifier: workspace:*
+        version: link:../database
+      '@cycle/git-db':
+        specifier: workspace:*
+        version: link:../git-db
       vitest:
         specifier: ^4.1.8
         version: 4.1.8(@types/node@25.9.2)(vite@8.0.16(@types/node@25.9.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))

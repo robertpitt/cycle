@@ -1,6 +1,14 @@
 import { UseCaseRunner, type UseCaseRunnerShape } from "@cycle/usecases";
-import { Context, Effect, Layer, Result, Schema } from "effect";
-import { invalidRpcRequest, TicketRpcRequest, type TicketRpcResponse } from "../protocol/index.ts";
+import { Cause, Context, Effect, Layer, Result, Schema } from "effect";
+import {
+  invalidRpcRequest,
+  invalidRpcResponse,
+  interruptedRpcExecution,
+  TicketRpcRequest,
+  TicketRpcSuccessSchemas,
+  type TicketRpcError,
+  type TicketRpcResponse,
+} from "../protocol/index.ts";
 import { invokeTicketRpc } from "./TicketRpcHandlers.ts";
 
 export type TicketRpcServiceShape = {
@@ -24,11 +32,7 @@ export const makeTicketRpcService = (runner: UseCaseRunnerShape): TicketRpcServi
       );
 
       if (Result.isFailure(decoded)) {
-        return {
-          error: decoded.failure,
-          id: "unknown",
-          ok: false,
-        };
+        return rpcFailureResponse("unknown", decoded.failure);
       }
 
       const rpcRequest = decoded.success;
@@ -38,20 +42,58 @@ export const makeTicketRpcService = (runner: UseCaseRunnerShape): TicketRpcServi
       }).pipe(Effect.result);
 
       if (Result.isFailure(result)) {
-        return {
-          error: result.failure,
-          id: rpcRequest.id,
-          ok: false,
-        };
+        return rpcFailureResponse(rpcRequest.id, result.failure);
       }
 
-      return {
-        id: rpcRequest.id,
-        ok: true,
-        value: result.success,
-      };
-    }),
+      const value = yield* Schema.decodeUnknownEffect(TicketRpcSuccessSchemas[rpcRequest.method])(
+        result.success,
+      ).pipe(
+        Effect.mapError((error) =>
+          invalidRpcResponse(`Invalid RPC success value for ${rpcRequest.method}.`, {
+            parseError: String(error),
+          }),
+        ),
+        Effect.result,
+      );
+
+      if (Result.isFailure(value)) {
+        return rpcFailureResponse(rpcRequest.id, value.failure);
+      }
+
+      return rpcSuccessResponse(rpcRequest.id, value.success);
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.succeed(
+          rpcFailureResponse(
+            requestIdFromUnknown(request),
+            interruptedRpcExecution("RPC execution was interrupted.", {
+              cause: Cause.pretty(cause),
+            }),
+          ),
+        ),
+      ),
+    ),
 });
+
+const rpcFailureResponse = (id: string, error: TicketRpcError): TicketRpcResponse => ({
+  error,
+  id,
+  ok: false,
+});
+
+const rpcSuccessResponse = (id: string, value: unknown): TicketRpcResponse => ({
+  id,
+  ok: true,
+  value,
+});
+
+const requestIdFromUnknown = (request: unknown): string =>
+  typeof request === "object" &&
+  request !== null &&
+  "id" in request &&
+  typeof request.id === "string"
+    ? request.id
+    : "unknown";
 
 export const TicketRpcLive = Layer.effect(
   TicketRpcService,

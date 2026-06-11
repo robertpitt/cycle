@@ -91,6 +91,57 @@ describe("@cycle/usecases", () => {
     }),
   );
 
+  it.effect("rejects unsupported idempotency keys on write usecases", () =>
+    Effect.gen(function* () {
+      const runner = yield* UseCaseRunner;
+      const result = yield* runner
+        .run(
+          IssueCreate(
+            {
+              input: {
+                title: "Idempotency requires a store",
+              },
+              repository,
+            },
+            {
+              idempotencyKey: "issue-create-1",
+              requestId: "write-idempotency",
+              source: "test",
+            },
+          ),
+        )
+        .pipe(Effect.result);
+
+      assert.equal(Result.isFailure(result), true);
+      if (Result.isFailure(result)) {
+        assert.equal(result.failure._tag, "InvalidInputFailure");
+        assert.equal(result.failure.field, "meta.idempotencyKey");
+        assert.equal(result.failure.requestId, "write-idempotency");
+      }
+    }).pipe(withOpenRepository),
+  );
+
+  it.effect("accepts idempotency keys on read-only usecases", () =>
+    Effect.gen(function* () {
+      const runner = yield* UseCaseRunner;
+      const listed = yield* runner.run(
+        IssueList(
+          {
+            input: {},
+            repository,
+          },
+          {
+            idempotencyKey: "issue-list-1",
+            requestId: "read-idempotency",
+            source: "test",
+          },
+        ),
+      );
+
+      assert.deepEqual(listed.entries, []);
+    }).pipe(withOpenRepository),
+  );
+
   it.effect("rejects non-human done transitions before storage", () =>
     Effect.gen(function* () {
       const runner = yield* UseCaseRunner;

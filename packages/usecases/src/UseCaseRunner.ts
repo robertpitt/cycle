@@ -8,12 +8,13 @@ import {
   type TicketDocument,
   type TicketQuery,
 } from "@cycle/database";
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Duration, Effect, Layer, Result, Schema } from "effect";
 import {
   contractFor,
   type AutomationEvaluation,
   type AutomationViolation,
   type CycleUseCase,
+  type UseCaseContract,
   type UseCaseInput,
   type UseCaseName,
   type UseCaseSuccess,
@@ -31,6 +32,8 @@ export type UseCaseRunnerShape = {
     useCase: CycleUseCase<Name>,
   ) => Effect.Effect<UseCaseSuccess<Name>, UseCaseFailure>;
 };
+
+export type UseCasePersistenceGatewayShape = DatabaseServiceShape;
 
 export class UseCaseRunner extends Context.Service<UseCaseRunner, UseCaseRunnerShape>()(
   "@cycle/usecases/UseCaseRunner",
@@ -53,7 +56,7 @@ const defaultTransitions: Readonly<Record<string, ReadonlyArray<string>>> = {
   todo: ["backlog", "ready", "canceled"],
 };
 
-export const makeUseCaseRunner = (database: DatabaseServiceShape): UseCaseRunnerShape => {
+export const makeUseCaseRunner = (database: UseCasePersistenceGatewayShape): UseCaseRunnerShape => {
   let requestCounter = 0;
 
   const requestContext = <Name extends UseCaseName>(
@@ -69,17 +72,22 @@ export const makeUseCaseRunner = (database: DatabaseServiceShape): UseCaseRunner
   ): Effect.Effect<UseCaseSuccess<Name>, UseCaseFailure> => {
     const context = requestContext(useCase);
     const contract = contractFor(useCase.name);
+    const annotations = useCaseExecutionAnnotations(context, contract.sideEffect);
 
-    return Schema.decodeUnknownEffect(contract.inputSchema)(useCase.input).pipe(
-      Effect.mapError((error) =>
-        invalidInputFailure({
-          details: {
-            parseError: String(error),
-          },
-          message: `Invalid input for ${useCase.name}.`,
-          requestId: context.requestId,
-          useCase: useCase.name,
-        }),
+    const program = validateUseCaseMetadata(context, contract).pipe(
+      Effect.andThen(
+        Schema.decodeUnknownEffect(contract.inputSchema)(useCase.input).pipe(
+          Effect.mapError((error) =>
+            invalidInputFailure({
+              details: {
+                parseError: String(error),
+              },
+              message: `Invalid input for ${useCase.name}.`,
+              requestId: context.requestId,
+              useCase: useCase.name,
+            }),
+          ),
+        ),
       ),
       Effect.flatMap((decoded) =>
         execute(database, {
@@ -106,6 +114,28 @@ export const makeUseCaseRunner = (database: DatabaseServiceShape): UseCaseRunner
       ),
       Effect.map((value) => value as UseCaseSuccess<Name>),
     ) as Effect.Effect<UseCaseSuccess<Name>, UseCaseFailure>;
+
+    return applyDeadline(context, program).pipe(
+      Effect.result,
+      Effect.timed,
+      Effect.tap(([duration, result]) =>
+        Effect.logInfo("usecase execution completed").pipe(
+          Effect.annotateLogs({
+            ...annotations,
+            durationMs: Duration.toMillis(duration),
+            failureTag: Result.isFailure(result) ? result.failure._tag : null,
+            result: Result.isSuccess(result) ? "success" : "failure",
+          }),
+        ),
+      ),
+      Effect.flatMap(([, result]) =>
+        Result.isSuccess(result) ? Effect.succeed(result.success) : Effect.fail(result.failure),
+      ),
+      Effect.withSpan("cycle.usecase", {
+        attributes: annotations,
+      }),
+      Effect.annotateLogs(annotations),
+    );
   };
 
   return { run };
@@ -405,7 +435,128 @@ const execute = <Name extends UseCaseName>(
         query: useCase.input.query,
       });
   }
+
+  return unhandledUseCase(useCase.name);
 };
+
+const useCaseExecutionAnnotations = <Name extends UseCaseName>(
+  context: RequestContext<Name>,
+  sideEffect: string,
+): Record<string, unknown> => ({
+  actorType: context.useCase.meta?.actor?.type ?? null,
+  dryRun: context.useCase.meta?.dryRun ?? false,
+  hasIdempotencyKey: context.useCase.meta?.idempotencyKey !== undefined,
+  hasTraceContext: context.useCase.meta?.traceContext !== undefined,
+  requestId: context.requestId,
+  repositoryId: repositoryIdFromInput(context.useCase.input) ?? null,
+  sideEffect,
+  source: context.source,
+  useCase: context.useCase.name,
+});
+
+const validateUseCaseMetadata = <Name extends UseCaseName>(
+  context: RequestContext<Name>,
+  contract: UseCaseContract<Name>,
+): Effect.Effect<void, UseCaseFailure> => {
+  const meta = context.useCase.meta;
+
+  if (meta?.idempotencyKey !== undefined && contract.idempotency === "not-supported") {
+    return Effect.fail(
+      invalidInputFailure({
+        details: {
+          idempotency: contract.idempotency,
+        },
+        field: "meta.idempotencyKey",
+        message: `Usecase ${context.useCase.name} does not accept an idempotency key.`,
+        requestId: context.requestId,
+        useCase: context.useCase.name,
+      }),
+    );
+  }
+
+  if (meta?.idempotencyKey === undefined && contract.idempotency === "required") {
+    return Effect.fail(
+      invalidInputFailure({
+        details: {
+          idempotency: contract.idempotency,
+        },
+        field: "meta.idempotencyKey",
+        message: `Usecase ${context.useCase.name} requires an idempotency key.`,
+        requestId: context.requestId,
+        useCase: context.useCase.name,
+      }),
+    );
+  }
+
+  if (
+    meta?.dryRun === true &&
+    (contract.sideEffect === "push" ||
+      contract.sideEffect === "sync" ||
+      contract.sideEffect === "write")
+  ) {
+    return Effect.fail(
+      invalidInputFailure({
+        details: {
+          sideEffect: contract.sideEffect,
+        },
+        field: "meta.dryRun",
+        message: `Usecase ${context.useCase.name} does not support dry-run execution.`,
+        requestId: context.requestId,
+        useCase: context.useCase.name,
+      }),
+    );
+  }
+
+  if (meta?.deadline !== undefined && !Number.isFinite(meta.deadline)) {
+    return Effect.fail(
+      invalidInputFailure({
+        field: "meta.deadline",
+        message: `Usecase ${context.useCase.name} has an invalid deadline.`,
+        requestId: context.requestId,
+        useCase: context.useCase.name,
+      }),
+    );
+  }
+
+  return Effect.void;
+};
+
+const applyDeadline = <A, Name extends UseCaseName>(
+  context: RequestContext<Name>,
+  effect: Effect.Effect<A, UseCaseFailure>,
+): Effect.Effect<A, UseCaseFailure> => {
+  const deadline = context.useCase.meta?.deadline;
+
+  if (deadline === undefined) return effect;
+
+  const remainingMs = deadline - Date.now();
+  const timeoutFailure = () =>
+    useCaseFailure({
+      code: "DEADLINE_EXCEEDED",
+      details: {
+        deadline,
+      },
+      message: `Usecase ${context.useCase.name} exceeded its deadline.`,
+      requestId: context.requestId,
+      retryable: true,
+      tag: "TimeoutFailure",
+      useCase: context.useCase.name,
+    });
+
+  if (remainingMs <= 0) {
+    return Effect.fail(timeoutFailure());
+  }
+
+  return effect.pipe(
+    Effect.timeoutOrElse({
+      duration: Duration.millis(remainingMs),
+      orElse: () => Effect.fail(timeoutFailure()),
+    }),
+  );
+};
+
+const unhandledUseCase = (name: never): Effect.Effect<never, UseCaseFailure> =>
+  Effect.die(new Error(`Unhandled usecase: ${String(name)}`));
 
 const mapFailure =
   <Name extends UseCaseName>(context: RequestContext<Name>) =>
