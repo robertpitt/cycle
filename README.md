@@ -143,10 +143,6 @@ pnpm check            # typecheck, lint, and format-check
 
 The product and implementation specs are the best place to understand the roadmap:
 
-- `CYCLE_SPEC.md` defines the product model for local-first tickets and agent execution.
-- `DESKTOP_PRD.md` defines the desktop app requirements.
-- `LINEAR_FEATURES_PRD.md` explains the Linear-inspired workflow direction.
-- `LINEAR_FEATURE_PLAN.md` tracks implementation sequencing.
 - `SPEC.md` describes the layered system architecture.
 
 Cycle is building toward a simple promise: the ticket system should be as local, durable,
