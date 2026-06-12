@@ -1196,10 +1196,20 @@ const sync = (
       ? yield* Effect.forEach(options.pointers, validatePointerName)
       : yield* store.localPointers();
     const results: Array<PointerSyncResult> = [];
+    const fetchesRemote = mode === "fetch" || mode === "pull" || mode === "full";
+    const remotePrefix = yield* store.remoteRefPrefix(remote);
+    const remoteBeforeFetch = new Map<string, ObjectId | null>();
 
-    if (mode === "fetch" || mode === "pull" || mode === "full") {
-      const remotePrefix = yield* store.remoteRefPrefix(remote);
+    if (fetchesRemote) {
+      for (const pointer of pointerNames) {
+        remoteBeforeFetch.set(
+          pointer,
+          yield* runtime.adapter.readRef(`${remotePrefix}/${pointer}`),
+        );
+      }
+
       yield* runtime.adapter.fetch({
+        prune: true,
         refspecs: [`+${store.refPrefix}/*:${remotePrefix}/*`],
         remote,
       });
@@ -1210,11 +1220,27 @@ const sync = (
       const remoteRef = yield* store.remotePointerRef(remote, pointer);
       const localBefore = yield* runtime.adapter.readRef(localRef);
       const remoteBefore = yield* runtime.adapter.readRef(remoteRef);
+      const trackedRemoteBeforeFetch = remoteBeforeFetch.get(pointer);
+      const remoteDeleted =
+        fetchesRemote &&
+        trackedRemoteBeforeFetch !== undefined &&
+        trackedRemoteBeforeFetch !== null &&
+        remoteBefore === null;
       const resultBase = {
         localBefore: localBefore ?? undefined,
         pointer,
-        remoteBefore: remoteBefore ?? undefined,
+        remoteBefore: (remoteDeleted ? trackedRemoteBeforeFetch : remoteBefore) ?? undefined,
       };
+
+      if (remoteDeleted) {
+        results.push({
+          ...resultBase,
+          localAfter: localBefore ?? undefined,
+          remoteAfter: undefined,
+          status: "remote-deleted",
+        });
+        continue;
+      }
 
       if (localBefore === remoteBefore) {
         results.push({

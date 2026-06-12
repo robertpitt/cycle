@@ -361,6 +361,7 @@ export const SyncResultOutput = Schema.Struct({
         "merged",
         "pushed",
         "rejected",
+        "remote-deleted",
         "up-to-date",
       ]),
     }),

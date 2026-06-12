@@ -1,0 +1,27 @@
+{
+  "name": "@cycle/cli",
+  "version": "0.0.0",
+  "private": true,
+  "bin": {
+    "cycle": "./src/bin.ts"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts",
+    "./discovery": "./src/discovery.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@cycle/contracts": "workspace:*",
+    "@effect/platform-node": "4.0.0-beta.78",
+    "effect": "4.0.0-beta.78"
+  },
+  "devDependencies": {
+    "@cycle/api": "workspace:*",
+    "vitest": "^4.1.8"
+  }
+}

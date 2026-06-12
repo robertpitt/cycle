@@ -28,7 +28,12 @@ export const layer = Layer.effect(
           spawner,
           store.gitDir,
           store.cwd,
-          ["fetch", input.remote, ...input.refspecs],
+          [
+            "fetch",
+            ...(input.prune === true ? ["--prune"] : []),
+            input.remote,
+            ...input.refspecs,
+          ],
           {},
           (args, result, cause) =>
             remoteFetchError(

@@ -1,7 +1,7 @@
 import { mkdir, appendFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { Context, Effect, Layer } from "effect";
-import { ElectronApp } from "../platform/ElectronApp.ts";
+import { cycleLogPath } from "./CycleDirectory.ts";
 
 export type DesktopLogLevel = "debug" | "error" | "info" | "warn";
 
@@ -39,10 +39,7 @@ const serialize = (
 export const DesktopLoggerLive = Layer.effect(
   DesktopLogger,
   Effect.gen(function* () {
-    const app = yield* ElectronApp;
-    const logPath = yield* app
-      .getPath("userData")
-      .pipe(Effect.map((userData) => join(userData, "logs", "main.log")));
+    const logPath = yield* cycleLogPath;
 
     const write = (
       level: DesktopLogLevel,

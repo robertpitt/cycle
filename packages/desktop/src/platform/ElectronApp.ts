@@ -8,7 +8,7 @@ export type ElectronAppLifecycleHandlers = {
 export type ElectronAppService = {
   readonly appPath: Effect.Effect<string>;
   readonly awaitShutdown: Effect.Effect<void>;
-  readonly getPath: (name: "home" | "userData") => Effect.Effect<string>;
+  readonly getPath: (name: "home") => Effect.Effect<string>;
   readonly platform: NodeJS.Platform;
   readonly quit: () => Effect.Effect<void>;
   readonly startLifecycleSupervision: (

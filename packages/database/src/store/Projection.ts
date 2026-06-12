@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { cycleDatabasePath, ensureDatabaseParentDirectorySync } from "../paths.ts";
 import type {
   CycleRepositoryMetadata,
   HistoryCommit,
@@ -181,7 +182,8 @@ const MAX_LIMIT = 250;
 export class Projection {
   readonly db: DatabaseSync;
 
-  constructor(path = ":memory:") {
+  constructor(path = cycleDatabasePath()) {
+    ensureDatabaseParentDirectorySync(path);
     this.db = new DatabaseSync(path);
     this.db.exec("PRAGMA foreign_keys = ON");
     this.initializeSchema();
@@ -306,6 +308,23 @@ export class Projection {
       .run(JSON.stringify(metadata), repositoryId);
 
     return this.repositoryStatus(repositoryId);
+  }
+
+  clearCycleRepositoryMetadata(repositoryId: string): RepositoryStatus {
+    this.db
+      .prepare("UPDATE repositories SET cycle_metadata_json = NULL WHERE repository_id = ?")
+      .run(repositoryId);
+
+    return this.repositoryStatus(repositoryId);
+  }
+
+  setCycleRepositoryMetadata(
+    repositoryId: string,
+    metadata: CycleRepositoryMetadata | undefined,
+  ): RepositoryStatus {
+    return metadata === undefined
+      ? this.clearCycleRepositoryMetadata(repositoryId)
+      : this.updateCycleRepositoryMetadata(repositoryId, metadata);
   }
 
   repositoryStatus(repositoryId: string): RepositoryStatus {

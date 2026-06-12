@@ -57,7 +57,7 @@ describe("@cycle/database benchmark", () => {
           }),
         );
 
-        assert.strictEqual(opened.status, "ready");
+        assert.strictEqual(opened.status, "empty");
 
         const createdTickets: Array<string> = [];
 

@@ -1,0 +1,28 @@
+{
+  "name": "@cycle/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./api": "./src/api.ts",
+    "./openapi": "./src/openapi.ts",
+    "./server": "./src/server.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@cycle/contracts": "workspace:*",
+    "@cycle/mcp": "workspace:*",
+    "@cycle/usecases": "workspace:*",
+    "@effect/platform-node": "4.0.0-beta.78",
+    "effect": "4.0.0-beta.78"
+  },
+  "devDependencies": {
+    "@cycle/database": "workspace:*",
+    "@cycle/git-db": "workspace:*",
+    "vitest": "^4.1.8"
+  }
+}

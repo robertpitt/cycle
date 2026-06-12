@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { execFile } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { Effect, Layer } from "effect";
@@ -10,6 +10,8 @@ import { afterEach, describe, it } from "vitest";
 import { ElectronApp } from "../src/platform/ElectronApp.ts";
 import {
   AppConfig,
+  CURRENT_APP_CONFIG_SCHEMA_VERSION,
+  DEFAULT_API_PORT,
   defaultAppConfig,
   parseAppConfig,
   type AppConfigState,
@@ -42,7 +44,7 @@ const makeElectronAppTest = (userData: string) =>
   Layer.succeed(ElectronApp)({
     appPath: Effect.succeed(userData),
     awaitShutdown: Effect.void,
-    getPath: (name) => Effect.succeed(name === "userData" ? userData : tmpdir()),
+    getPath: () => Effect.succeed(userData),
     platform: process.platform,
     quit: () => Effect.void,
     startLifecycleSupervision: () => Effect.void,
@@ -71,15 +73,33 @@ const runServices = <A>(
   effect: Effect.Effect<A, unknown, AppConfig | Profile | LocalWorkspace>,
 ) => Effect.runPromise(effect.pipe(Effect.provide(makeServicesLayer(userData))));
 
-const configPath = (userData: string): string => join(userData, "app-config.json");
+const configPath = (userData: string): string => join(userData, ".cycle", "app-config.json");
+
+const configDirectory = (userData: string): string => dirname(configPath(userData));
 
 const readPersistedConfig = async (userData: string): Promise<AppConfigState> =>
   JSON.parse(await readFile(configPath(userData), "utf8")) as AppConfigState;
 
+const assertGeneratedToken = (token: string): void => {
+  assert.match(token, /^[A-Za-z0-9_-]{43}$/u);
+};
+
+const assertDefaultConfigWithGeneratedToken = (config: AppConfigState): void => {
+  assertGeneratedToken(config.api.staticToken);
+  assert.deepEqual(config, {
+    ...defaultAppConfig(),
+    api: {
+      ...defaultAppConfig().api,
+      staticToken: config.api.staticToken,
+    },
+  });
+};
+
 describe("desktop app config", () => {
   it("validates app config through Effect Config and ConfigProvider", async () => {
     const valid = await Effect.runPromise(parseAppConfig(defaultAppConfig()));
-    assert.equal(valid.schemaVersion, 2);
+    assert.equal(valid.schemaVersion, CURRENT_APP_CONFIG_SCHEMA_VERSION);
+    assert.equal(valid.api.port, DEFAULT_API_PORT);
 
     await assert.rejects(() =>
       Effect.runPromise(
@@ -103,8 +123,34 @@ describe("desktop app config", () => {
       }),
     );
 
-    assert.deepEqual(config, defaultAppConfig());
-    assert.deepEqual(await readPersistedConfig(userData), defaultAppConfig());
+    assertDefaultConfigWithGeneratedToken(config);
+    assert.deepEqual(await readPersistedConfig(userData), config);
+  });
+
+  it("migrates auto API ports to the static desktop API port", async () => {
+    const userData = await makeTempDir();
+    const persisted = {
+      ...defaultAppConfig(),
+      api: {
+        ...defaultAppConfig().api,
+        port: "auto",
+        staticToken: "existing-token",
+      },
+    } satisfies AppConfigState;
+
+    await mkdir(configDirectory(userData), { recursive: true });
+    await writeFile(configPath(userData), `${JSON.stringify(persisted, null, 2)}\n`, "utf8");
+
+    const config = await runConfig(
+      userData,
+      Effect.gen(function* () {
+        const appConfig = yield* AppConfig;
+        return yield* appConfig.read();
+      }),
+    );
+
+    assert.equal(config.api.port, DEFAULT_API_PORT);
+    assert.equal((await readPersistedConfig(userData)).api.port, DEFAULT_API_PORT);
   });
 
   it("persists profile updates and onboarding completion", async () => {
@@ -297,6 +343,7 @@ describe("desktop app config", () => {
 
   it("backs up invalid JSON and writes defaults", async () => {
     const userData = await makeTempDir();
+    await mkdir(configDirectory(userData), { recursive: true });
     await writeFile(configPath(userData), "{ nope", "utf8");
 
     const recovered = await runConfig(
@@ -307,17 +354,18 @@ describe("desktop app config", () => {
       }),
     );
 
-    const files = await readdir(userData);
-    assert.deepEqual(recovered, defaultAppConfig());
+    const files = await readdir(configDirectory(userData));
+    assertDefaultConfigWithGeneratedToken(recovered);
     assert.equal(
       files.some((file) => file.startsWith("app-config.invalid-")),
       true,
     );
-    assert.deepEqual(await readPersistedConfig(userData), defaultAppConfig());
+    assert.deepEqual(await readPersistedConfig(userData), recovered);
   });
 
   it("salvages valid sections from partially invalid config", async () => {
     const userData = await makeTempDir();
+    await mkdir(configDirectory(userData), { recursive: true });
     await writeFile(
       configPath(userData),
       JSON.stringify({

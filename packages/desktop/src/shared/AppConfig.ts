@@ -1,6 +1,7 @@
 import { Config, ConfigProvider, Context, Data, Effect, Schema } from "effect";
 
-export const CURRENT_APP_CONFIG_SCHEMA_VERSION = 2;
+export const CURRENT_APP_CONFIG_SCHEMA_VERSION = 3;
+export const DEFAULT_API_PORT = 4738;
 
 export const ThemePreference = Schema.Literals(["light", "dark", "system"]);
 export type ThemePreference = typeof ThemePreference.Type;
@@ -35,6 +36,21 @@ export const ThemeConfig = Schema.Struct({
   preference: ThemePreference,
 });
 export type ThemeConfig = typeof ThemeConfig.Type;
+
+export const ApiConfig = Schema.Struct({
+  enabled: Schema.Boolean,
+  host: Schema.Literals(["127.0.0.1", "localhost"]),
+  port: Schema.Union([Schema.Number, Schema.Literal("auto")]),
+  staticToken: Schema.String,
+});
+export type ApiConfig = typeof ApiConfig.Type;
+
+export const defaultApiConfig = (): ApiConfig => ({
+  enabled: true,
+  host: "127.0.0.1",
+  port: DEFAULT_API_PORT,
+  staticToken: "",
+});
 
 export const RepositoryCommitStyle = Schema.Literals(["descriptive", "compact"]);
 export type RepositoryCommitStyle = typeof RepositoryCommitStyle.Type;
@@ -72,6 +88,7 @@ export type LocalWorkspaceConfig = typeof LocalWorkspaceConfig.Type;
 
 export const AppConfigState = Schema.Struct({
   agentProviders: AgentProvidersConfig,
+  api: ApiConfig,
   localWorkspace: LocalWorkspaceConfig,
   onboarding: OnboardingConfig,
   profile: ProfileConfig,
@@ -101,6 +118,7 @@ export const defaultAppConfig = (): AppConfigState => ({
   agentProviders: {
     preferences: [],
   },
+  api: defaultApiConfig(),
   localWorkspace: {
     repositories: [],
   },

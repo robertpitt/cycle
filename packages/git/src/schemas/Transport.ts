@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 
 export const FetchInput = Schema.Struct({
+  prune: Schema.optional(Schema.Boolean),
   refspecs: Schema.Array(Schema.String),
   remote: Schema.String,
 });

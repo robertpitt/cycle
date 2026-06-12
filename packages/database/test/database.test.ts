@@ -74,7 +74,7 @@ describe("@cycle/database", () => {
       }).pipe(Effect.provide(DatabaseTest())),
   );
 
-  it.effect("initializes Cycle repository metadata with the default ticket prefix", () =>
+  it.effect("does not initialize Cycle repository metadata when opening an empty repository", () =>
     Effect.gen(function* () {
       const database = yield* DatabaseService;
       const store = yield* makeStore("default-prefix-repo");
@@ -85,12 +85,46 @@ describe("@cycle/database", () => {
         syncOnOpen: false,
       });
       const document = yield* store.get("metadata/repository.json");
-      const stored = document === null ? null : JSON.parse(document.text());
+      const pointer = yield* store.pointer("main");
+      const current = yield* pointer.current();
 
       assert.strictEqual(status.activeSnapshotId, null);
-      assert.strictEqual(status.cycleMetadata?.ticketPrefix, "UKN");
+      assert.strictEqual(status.cycleMetadata, undefined);
+      assert.strictEqual(document, null);
+      assert.strictEqual(current, null);
+    }).pipe(Effect.provide(DatabaseTest())),
+  );
+
+  it.effect("creates Cycle metadata and the actor user in the first explicit write", () =>
+    Effect.gen(function* () {
+      const database = yield* DatabaseService;
+      const store = yield* makeStore("first-write-repo");
+
+      yield* database.openRepository({
+        repositoryId: "first-write-repo",
+        store,
+      });
+
+      const ticket = yield* database.createTicket("first-write-repo", {
+        title: "First write ticket",
+      });
+      const document = yield* store.get("metadata/repository.json");
+      const stored = document === null ? null : JSON.parse(document.text());
+      const users = yield* store.collection<{
+        readonly displayName: string;
+        readonly email: string;
+        readonly id: string;
+      }>("users");
+      const sourceProfile = yield* users.get("test@example.invalid");
+      const status = yield* database.repositoryStatus("first-write-repo");
+      const history = yield* store.history("main");
+
+      assert.strictEqual(ticket.id, "UKN-00001");
       assert.strictEqual(stored?.ticketPrefix, "UKN");
       assert.strictEqual(stored?.ticketIdFormat, "prefix-base36-5+");
+      assert.strictEqual(sourceProfile?.id, "test@example.invalid");
+      assert.strictEqual(status.cycleMetadata?.ticketPrefix, "UKN");
+      assert.strictEqual(history.length, 1);
     }).pipe(Effect.provide(DatabaseTest())),
   );
 
@@ -192,6 +226,53 @@ describe("@cycle/database", () => {
 
       assert.strictEqual(ticket.id, "UKN-00001");
       assert.strictEqual(ticket.frontmatter.id, "UKN-00001");
+    }).pipe(Effect.provide(DatabaseTest())),
+  );
+
+  it.effect("allows existing legacy ticket ids to be updated", () =>
+    Effect.gen(function* () {
+      const database = yield* DatabaseService;
+      const store = yield* makeStore("legacy-ticket-id-repo");
+
+      yield* database.openRepository({
+        repositoryId: "legacy-ticket-id-repo",
+        store,
+      });
+
+      const actor: Actor = {
+        email: "legacy@example.invalid",
+        name: "Legacy Writer",
+        type: "human",
+      };
+      const now = "2026-06-12T00:00:00.000Z";
+      const legacyId = "iss_legacy_0001";
+      const legacyTicket = makeTicketDocument(
+        makeFrontmatter(
+          {
+            title: "Legacy ticket",
+          },
+          legacyId,
+          actor,
+          now,
+        ),
+        "Legacy body",
+      );
+      const tx = yield* store.begin();
+
+      yield* tx.put(issueStorePath(legacyId), serializeIssueMarkdown(legacyTicket));
+      yield* tx.commit({
+        author: actor,
+        committer: actor,
+        message: "Seed legacy ticket",
+      });
+      yield* database.syncRepository("legacy-ticket-id-repo");
+
+      const updated = yield* database.transitionTicket("legacy-ticket-id-repo", legacyId, {
+        status: "in-progress",
+      });
+
+      assert.strictEqual(updated.id, legacyId);
+      assert.strictEqual(updated.status, "in-progress");
     }).pipe(Effect.provide(DatabaseTest())),
   );
 
@@ -559,6 +640,7 @@ describe("@cycle/database", () => {
         text: "disappear",
       });
       const history = yield* database.repositoryHistory("removed-pointer-repo");
+      const repositoryStatus = yield* database.repositoryStatus("removed-pointer-repo");
       const fetched = yield* database.getTicket("removed-pointer-repo", ticket.id);
 
       assert.deepStrictEqual(
@@ -567,9 +649,50 @@ describe("@cycle/database", () => {
       );
       assert.strictEqual(status.status, "empty");
       assert.strictEqual(status.activeSnapshotId, null);
+      assert.strictEqual(status.cycleMetadata, undefined);
+      assert.strictEqual(repositoryStatus.cycleMetadata, undefined);
       assert.deepStrictEqual(afterRemoval.entries, []);
       assert.deepStrictEqual(search.entries, []);
       assert.deepStrictEqual(history.entries, []);
+      assert.strictEqual(fetched, null);
+    }).pipe(Effect.provide(DatabaseTest())),
+  );
+
+  it.effect("does not recreate the GitDB pointer when reopening after pointer removal", () =>
+    Effect.gen(function* () {
+      const database = yield* DatabaseService;
+      const store = yield* makeStore("reopened-removed-pointer-repo");
+
+      yield* database.openRepository({
+        repositoryId: "reopened-removed-pointer-repo",
+        store,
+      });
+
+      const ticket = yield* database.createTicket("reopened-removed-pointer-repo", {
+        title: "Reopened pointer removal ticket",
+      });
+      const pointer = yield* store.pointer("main");
+
+      yield* pointer.delete();
+      yield* database.syncRepository("reopened-removed-pointer-repo");
+
+      const reopened = yield* database.openRepository({
+        repositoryId: "reopened-removed-pointer-repo",
+        store,
+      });
+      const current = yield* pointer.current();
+      const metadata = yield* store.get("metadata/repository.json");
+      const listed = yield* database.listTickets({
+        repositoryIds: ["reopened-removed-pointer-repo"],
+      });
+      const fetched = yield* database.getTicket("reopened-removed-pointer-repo", ticket.id);
+
+      assert.strictEqual(reopened.status, "empty");
+      assert.strictEqual(reopened.activeSnapshotId, null);
+      assert.strictEqual(reopened.cycleMetadata, undefined);
+      assert.strictEqual(current, null);
+      assert.strictEqual(metadata, null);
+      assert.deepStrictEqual(listed.entries, []);
       assert.strictEqual(fetched, null);
     }).pipe(Effect.provide(DatabaseTest())),
   );

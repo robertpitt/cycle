@@ -21,6 +21,53 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/api:
+    dependencies:
+      '@cycle/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@cycle/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      '@cycle/usecases':
+        specifier: workspace:*
+        version: link:../usecases
+      '@effect/platform-node':
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.11.1)
+      effect:
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78
+    devDependencies:
+      '@cycle/database':
+        specifier: workspace:*
+        version: link:../database
+      '@cycle/git-db':
+        specifier: workspace:*
+        version: link:../git-db
+      vitest:
+        specifier: ^4.1.8
+        version: 4.1.8(@types/node@25.9.2)(vite@8.0.16(@types/node@25.9.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/cli:
+    dependencies:
+      '@cycle/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@effect/platform-node':
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.11.1)
+      effect:
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78
+    devDependencies:
+      '@cycle/api':
+        specifier: workspace:*
+        version: link:../api
+      vitest:
+        specifier: ^4.1.8
+        version: 4.1.8(@types/node@25.9.2)(vite@8.0.16(@types/node@25.9.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
   packages/contracts:
     dependencies:
       '@cycle/database':
@@ -48,6 +95,9 @@ importers:
 
   packages/desktop:
     dependencies:
+      '@cycle/api':
+        specifier: workspace:*
+        version: link:../api
       '@cycle/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -139,6 +189,22 @@ importers:
         version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.11.1)
       effect:
         specifier: beta
+        version: 4.0.0-beta.78
+    devDependencies:
+      vitest:
+        specifier: ^4.1.8
+        version: 4.1.8(@types/node@25.9.2)(vite@8.0.16(@types/node@25.9.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/mcp:
+    dependencies:
+      '@cycle/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@effect/platform-node':
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.11.1)
+      effect:
+        specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78
     devDependencies:
       vitest:
@@ -412,11 +478,11 @@ packages:
     peerDependencies:
       react: '>=16.8.0'
 
-  '@effect/platform-node-shared@4.0.0-beta.78':
-    resolution: {integrity: sha512-mo0ddTPATyCMyqzQasYDL7+NI29vozoMplom+qu9f/onDTd4xG5hvEEfGxfL0Ljygui6keG/YE/E9OZVf2z5WA==}
+  '@effect/platform-node-shared@4.0.0-beta.83':
+    resolution: {integrity: sha512-+yr/+PJmKTgmJq1QOINSBPgLu7Cjc4CZcotBXnGjyDEizOmimFgTkN2B8PBJAKIKUWYWfobjXqC+58/VhhPKAw==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      effect: ^4.0.0-beta.78
+      effect: ^4.0.0-beta.83
 
   '@effect/platform-node@4.0.0-beta.78':
     resolution: {integrity: sha512-8ONrIS5/R9dq+0BJ6v3kUXNEkfjU6S3GzIYCH5gmHdiriRvIoBhXYNAITfRvZpfx1JPrKuP70cHyuQDjmJcDkQ==}
@@ -3637,7 +3703,7 @@ snapshots:
       react: 19.2.7
       tslib: 2.8.1
 
-  '@effect/platform-node-shared@4.0.0-beta.78(effect@4.0.0-beta.78)':
+  '@effect/platform-node-shared@4.0.0-beta.83(effect@4.0.0-beta.78)':
     dependencies:
       '@types/ws': 8.18.1
       effect: 4.0.0-beta.78
@@ -3648,7 +3714,7 @@ snapshots:
 
   '@effect/platform-node@4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.11.1)':
     dependencies:
-      '@effect/platform-node-shared': 4.0.0-beta.78(effect@4.0.0-beta.78)
+      '@effect/platform-node-shared': 4.0.0-beta.83(effect@4.0.0-beta.78)
       effect: 4.0.0-beta.78
       ioredis: 5.11.1
       mime: 4.1.0

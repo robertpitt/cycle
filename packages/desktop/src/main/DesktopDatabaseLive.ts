@@ -6,11 +6,11 @@ import {
 } from "@cycle/database";
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { Effect, Layer } from "effect";
 import { DesktopRuntime } from "../platform/DesktopRuntime.ts";
-import { ElectronApp } from "../platform/ElectronApp.ts";
 import { Profile } from "../shared/Profile.ts";
+import { cycleDatabasePath } from "./CycleDirectory.ts";
 import { DesktopLogger } from "./DesktopLoggerLive.ts";
 
 const DesktopDatabaseIdentityLive = Layer.effect(
@@ -52,16 +52,13 @@ const DesktopDatabaseIdGeneratorLive = Layer.succeed(
 
 export const DesktopDatabaseLive = Layer.unwrap(
   Effect.gen(function* () {
-    const app = yield* ElectronApp;
     const logger = yield* DesktopLogger;
     const runtime = yield* DesktopRuntime;
-    const projectionPath = yield* app
-      .getPath("userData")
-      .pipe(Effect.map((userData) => join(userData, "cycle-projection.sqlite")));
+    const projectionPath = yield* cycleDatabasePath;
 
     yield* Effect.tryPromise({
       try: () => mkdir(dirname(projectionPath), { recursive: true }),
-      catch: (cause) => validationError("database", "failed to create projection directory", cause),
+      catch: (cause) => validationError("database", "failed to create Cycle directory", cause),
     });
 
     return DatabaseLiveWithOptions({

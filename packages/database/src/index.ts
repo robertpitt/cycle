@@ -1,5 +1,6 @@
 export * from "./domain/index.ts";
 export * from "./errors.ts";
+export * from "./paths.ts";
 export {
   DatabaseIdGenerator,
   DatabaseIdGeneratorDeterministic,

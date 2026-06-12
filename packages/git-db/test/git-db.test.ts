@@ -1278,6 +1278,118 @@ describe("@cycle/git-db", () => {
     ),
   );
 
+  it.effect("prunes deleted remote GitDB refs without resurrecting local pointers", () =>
+    withRepo((repo) =>
+      withTempDir("git-db-remote-", (remoteRoot) =>
+        Effect.gen(function* () {
+          const remote = path.join(remoteRoot, "origin.git");
+
+          yield* git(repo, ["clone", "--bare", repo, remote]);
+          yield* git(repo, ["remote", "add", "origin", remote]);
+
+          const snapshot = yield* Effect.gen(function* () {
+            const store = yield* StoreApi.StoreService;
+            const tickets = yield* store.collection<{
+              readonly status: string;
+              readonly title: string;
+            }>("tickets");
+
+            const snapshot = yield* tickets.put(
+              "ticket-1",
+              {
+                status: "open",
+                title: "Remote deletion test",
+              },
+              {
+                message: "Create remote deletion ticket",
+              },
+            );
+
+            yield* store.sync({
+              mode: "push",
+              pointers: ["main"],
+              remote: "origin",
+            });
+            yield* store.sync({
+              mode: "fetch",
+              pointers: ["main"],
+              remote: "origin",
+            });
+
+            return snapshot;
+          }).pipe(Effect.provide(GitDbLive({ gitDir: path.join(repo, ".git") })));
+
+          yield* git(repo, ["push", "origin", ":refs/gitdb/default/main"]);
+
+          const remoteDeleted = yield* Effect.gen(function* () {
+            const store = yield* StoreApi.StoreService;
+
+            return yield* store.sync({
+              mode: "full",
+              pointers: ["main"],
+              remote: "origin",
+            });
+          }).pipe(Effect.provide(GitDbLive({ gitDir: path.join(repo, ".git") })));
+
+          yield* Effect.flip(
+            git(repo, [
+              "show-ref",
+              "--verify",
+              "--hash",
+              "refs/gitdb/default/remotes/origin/main",
+            ]),
+          );
+
+          const localAfterRemoteDelete = (yield* git(repo, [
+            "show-ref",
+            "--verify",
+            "--hash",
+            "refs/gitdb/default/main",
+          ])).trim();
+
+          yield* git(repo, ["update-ref", "-d", "refs/gitdb/default/main"]);
+
+          const emptyAfterLocalDelete = yield* Effect.gen(function* () {
+            const store = yield* StoreApi.StoreService;
+            const pointer = yield* store.pointer("main");
+            const sync = yield* store.sync({
+              mode: "full",
+              pointers: ["main"],
+              remote: "origin",
+            });
+            const current = yield* pointer.current();
+
+            return { current, sync };
+          }).pipe(Effect.provide(GitDbLive({ gitDir: path.join(repo, ".git") })));
+
+          yield* git(repo, ["cat-file", "-e", `${snapshot.id}^{commit}`]);
+          yield* Effect.flip(
+            git(repo, ["show-ref", "--verify", "--hash", "refs/gitdb/default/main"]),
+          );
+          yield* Effect.flip(
+            git(repo, [
+              "show-ref",
+              "--verify",
+              "--hash",
+              "refs/gitdb/default/remotes/origin/main",
+            ]),
+          );
+
+          assert.strictEqual(remoteDeleted.pointers[0]?.status, "remote-deleted");
+          assert.strictEqual(remoteDeleted.pointers[0]?.localBefore, snapshot.id);
+          assert.strictEqual(remoteDeleted.pointers[0]?.localAfter, snapshot.id);
+          assert.strictEqual(remoteDeleted.pointers[0]?.remoteBefore, snapshot.id);
+          assert.strictEqual(remoteDeleted.pointers[0]?.remoteAfter, undefined);
+          assert.strictEqual(localAfterRemoteDelete, snapshot.id);
+          assert.strictEqual(emptyAfterLocalDelete.current, null);
+          assert.strictEqual(emptyAfterLocalDelete.sync.pointers[0]?.status, "up-to-date");
+          assert.strictEqual(emptyAfterLocalDelete.sync.pointers[0]?.localAfter, undefined);
+          assert.strictEqual(emptyAfterLocalDelete.sync.pointers[0]?.remoteAfter, undefined);
+        }),
+      ),
+    ),
+  );
+
   it.effect("reports sync conflicts without overwriting diverged GitDB refs", () =>
     withRepo((repo) =>
       withTempDir("git-db-remote-", (remoteRoot) =>

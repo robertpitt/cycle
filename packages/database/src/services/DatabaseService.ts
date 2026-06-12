@@ -82,7 +82,7 @@ import {
 import { DatabaseIdGeneratorDeterministic } from "./DatabaseIdGenerator.ts";
 
 type RepositoryRuntime = {
-  readonly cycleMetadata: CycleRepositoryMetadata;
+  readonly cycleMetadata?: CycleRepositoryMetadata;
   readonly displayName: string;
   readonly gitDir?: string;
   readonly poller?: DatabaseBackgroundSchedule;
@@ -384,6 +384,7 @@ const DEFAULT_POINTER = "main";
 const DEFAULT_TICKET_PREFIX = "UKN";
 const REPOSITORY_METADATA_PATH = "metadata/repository.json";
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;
+const LEGACY_TICKET_ID_PATTERN = /^iss_[A-Za-z0-9._-]+$/u;
 const TICKET_ID_PATTERN = /^[A-Z0-9]{2,5}-[0-9A-Z]{5,}$/u;
 
 const issueCollectionOptions: CollectionOptions<TicketDocument> = {
@@ -508,6 +509,16 @@ export const makeDatabaseService = (
       ),
     );
 
+  const setRepositoryCycleMetadata = (
+    repository: RepositoryRuntime,
+    cycleMetadata: CycleRepositoryMetadata | undefined,
+  ): void => {
+    repositories.set(repository.repositoryId, {
+      ...repository,
+      cycleMetadata,
+    });
+  };
+
   const syncRepository = (repositoryId: string): Effect.Effect<RepositoryStatus, DatabaseFailure> =>
     Effect.gen(function* () {
       const repository = yield* getRepository(repositoryId);
@@ -534,6 +545,7 @@ export const makeDatabaseService = (
           const status = yield* sqlite("clear projection for missing GitDB snapshot", () =>
             projection.transaction(() => {
               projection.clearRepositoryProjection(repositoryId);
+              projection.clearCycleRepositoryMetadata(repositoryId);
               return projection.activateSnapshot({
                 completedAt: nowIso(),
                 repositoryId,
@@ -541,6 +553,7 @@ export const makeDatabaseService = (
               });
             }),
           );
+          setRepositoryCycleMetadata(repository, undefined);
           log(repositoryId, "sync cleared projection for missing GitDB snapshot", {
             activeGeneration: status.activeGeneration,
             activeSnapshotId: status.activeSnapshotId,
@@ -553,13 +566,15 @@ export const makeDatabaseService = (
           log(repositoryId, "sync snapshot unchanged", {
             snapshotId: current.id,
           });
-          return yield* sqlite("refresh active snapshot", () =>
-            projection.activateSnapshot({
+          return yield* sqlite("refresh active snapshot", () => {
+            const status = projection.activateSnapshot({
               completedAt: nowIso(),
               repositoryId,
               snapshotId: current.id,
-            }),
-          );
+            });
+            setRepositoryCycleMetadata(repository, status.cycleMetadata);
+            return status;
+          });
         }
 
         const materializationResult = yield* buildMaterialization(
@@ -676,11 +691,13 @@ export const makeDatabaseService = (
               projection.addWarning(warning);
             }
 
+            projection.setCycleRepositoryMetadata(repositoryId, materialization.cycleMetadata);
             const status = projection.activateSnapshot({
               completedAt: nowIso(),
               repositoryId,
               snapshotId: current.id,
             });
+            setRepositoryCycleMetadata(repository, materialization.cycleMetadata);
             log(repositoryId, "sync completed", {
               activeGeneration: status.activeGeneration,
               snapshotId: status.activeSnapshotId,
@@ -814,55 +831,130 @@ export const makeDatabaseService = (
       );
     });
 
-  const ensureCycleRepositoryMetadata = (
-    repositoryId: string,
+  const readCycleRepositoryMetadata = (
     store: GitDbStore.StoreServiceShape,
-  ): Effect.Effect<CycleRepositoryMetadata, DatabaseFailure> =>
+    from?: string,
+  ): Effect.Effect<CycleRepositoryMetadata | undefined, DatabaseFailure> =>
     Effect.gen(function* () {
-      const existing = yield* storage(
+      const document = yield* storage(
         "read Cycle repository metadata",
-        store.get(REPOSITORY_METADATA_PATH),
+        from === undefined
+          ? store.get(REPOSITORY_METADATA_PATH)
+          : store.get(REPOSITORY_METADATA_PATH, { from }),
       );
 
-      if (existing !== null) {
-        return yield* parseCycleRepositoryMetadataTextEffect(existing.text());
-      }
+      return document === null
+        ? undefined
+        : yield* parseCycleRepositoryMetadataTextEffect(document.text());
+    });
 
-      const actor = yield* identity.currentActor;
-      const now = nowIso();
-      const tx = yield* storage("begin initialize Cycle repository metadata", store.begin());
-      const current = yield* storage(
+  const ensureCycleRepositoryMetadataInTransaction = (
+    tx: GitDbStore.Transaction,
+    now: string,
+  ): Effect.Effect<
+    {
+      readonly created: boolean;
+      readonly metadata: CycleRepositoryMetadata;
+    },
+    DatabaseFailure
+  > =>
+    Effect.gen(function* () {
+      const existing = yield* storage(
         "read transactional Cycle repository metadata",
         tx.get(REPOSITORY_METADATA_PATH),
       );
 
-      if (current !== null) {
-        const metadata = yield* parseCycleRepositoryMetadataTextEffect(current.text());
-
-        yield* storage("abort Cycle repository metadata initialization", tx.abort());
-        return metadata;
+      if (existing !== null) {
+        return {
+          created: false,
+          metadata: yield* parseCycleRepositoryMetadataTextEffect(existing.text()),
+        };
       }
 
       const metadata = makeCycleRepositoryMetadata(DEFAULT_TICKET_PREFIX, now);
 
       yield* storage("put Cycle repository metadata", tx.put(REPOSITORY_METADATA_PATH, metadata));
-      yield* storage(
-        "commit Cycle repository metadata",
-        tx.commit({
-          author: gitIdentity(actor),
-          committer: gitIdentity(actor),
-          message: `${actor.name} initialized Cycle repository metadata`,
-        }),
-      );
 
-      return metadata;
+      return {
+        created: true,
+        metadata,
+      };
+    });
+
+  const ensureDefaultWorkflowMetadataInTransaction = (
+    tx: GitDbStore.Transaction,
+    actor: Actor,
+    now: string,
+  ): Effect.Effect<
+    {
+      readonly changed: boolean;
+      readonly metadata: CycleRepositoryMetadata;
+    },
+    DatabaseFailure
+  > =>
+    Effect.gen(function* () {
+      const metadata = yield* ensureCycleRepositoryMetadataInTransaction(tx, now);
+      const actorUserId =
+        actor.type === "human" && actor.email !== undefined && actor.email.trim().length > 0
+          ? yield* normalizeUserIdEffect(actor.email)
+          : undefined;
+      const defaults = defaultRepositoryMetadata(actor, now, actorUserId);
+      const labels = yield* storage(
+        "open default label transaction collection",
+        tx.collection<LabelDefinitionDocument>(LABEL_COLLECTION),
+      );
+      const views = yield* storage(
+        "open default view transaction collection",
+        tx.collection<SavedViewDocument>(VIEW_COLLECTION),
+      );
+      const templates = yield* storage(
+        "open default template transaction collection",
+        tx.collection<IssueTemplateDocument>(TEMPLATE_COLLECTION),
+      );
+      let changed = metadata.created;
+
+      for (const label of defaults.labels) {
+        if ((yield* storage("read default label", labels.get(label.id))) === null) {
+          yield* storage("put default label", labels.put(label.id, label));
+          changed = true;
+        }
+      }
+      for (const view of defaults.views) {
+        if ((yield* storage("read default view", views.get(view.id))) === null) {
+          yield* storage("put default view", views.put(view.id, view));
+          changed = true;
+        }
+      }
+      for (const template of defaults.templates) {
+        if ((yield* storage("read default template", templates.get(template.id))) === null) {
+          yield* storage("put default template", templates.put(template.id, template));
+          changed = true;
+        }
+      }
+
+      return {
+        changed,
+        metadata: metadata.metadata,
+      };
+    });
+
+  const beginWriteTransaction = (
+    repository: RepositoryRuntime,
+    label: string,
+    actor: Actor,
+    now: string,
+  ): Effect.Effect<GitDbStore.Transaction, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const tx = yield* storage(`begin ${label}`, repository.store.begin());
+      yield* ensureDefaultWorkflowMetadataInTransaction(tx, actor, now);
+      return tx;
     });
 
   const generateTicketId = (
     repository: RepositoryRuntime,
   ): Effect.Effect<string, DatabaseFailure> =>
     Effect.gen(function* () {
-      const prefix = repository.cycleMetadata.ticketPrefix;
+      const prefix = repository.cycleMetadata?.ticketPrefix ?? DEFAULT_TICKET_PREFIX;
       const issues = yield* storage(
         "open issue collection for ticket id generation",
         repository.store.collection<TicketDocument>(ISSUE_COLLECTION, issueCollectionOptions),
@@ -891,51 +983,20 @@ export const makeDatabaseService = (
   const ensureDefaultMetadata = (repositoryId: string): Effect.Effect<void, DatabaseFailure> =>
     Effect.gen(function* () {
       const repository = yield* getRepository(repositoryId);
-      const cycleMetadata = yield* ensureCycleRepositoryMetadata(repositoryId, repository.store);
-
-      yield* sqlite("update Cycle repository metadata", () =>
-        projection.updateCycleRepositoryMetadata(repositoryId, cycleMetadata),
-      );
-
       const actor = yield* identity.currentActor;
       const now = nowIso();
-      const actorUserId =
-        actor.type === "human" && actor.email !== undefined && actor.email.trim().length > 0
-          ? yield* normalizeUserIdEffect(actor.email)
-          : undefined;
-      const defaults = defaultRepositoryMetadata(actor, now, actorUserId);
-
-      let wroteDefaults = false;
       const snapshot = yield* storage(
         "seed default repository metadata",
         Effect.gen(function* () {
-          const tx = yield* repository.store.begin();
-          const labels = yield* tx.collection<LabelDefinitionDocument>(LABEL_COLLECTION);
-          const views = yield* tx.collection<SavedViewDocument>(VIEW_COLLECTION);
-          const templates = yield* tx.collection<IssueTemplateDocument>(TEMPLATE_COLLECTION);
+          const tx = yield* storage(
+            "begin seed default repository metadata",
+            repository.store.begin(),
+          );
+          const defaults = yield* ensureDefaultWorkflowMetadataInTransaction(tx, actor, now);
 
           yield* ensureActorUserProfile(tx, actor, now);
 
-          for (const label of defaults.labels) {
-            if ((yield* labels.get(label.id)) === null) {
-              yield* labels.put(label.id, label);
-              wroteDefaults = true;
-            }
-          }
-          for (const view of defaults.views) {
-            if ((yield* views.get(view.id)) === null) {
-              yield* views.put(view.id, view);
-              wroteDefaults = true;
-            }
-          }
-          for (const template of defaults.templates) {
-            if ((yield* templates.get(template.id)) === null) {
-              yield* templates.put(template.id, template);
-              wroteDefaults = true;
-            }
-          }
-
-          if (!wroteDefaults) {
+          if (!defaults.changed) {
             yield* tx.abort();
             return null;
           }
@@ -978,7 +1039,7 @@ export const makeDatabaseService = (
           Effect.gen(function* () {
             const recordId = yield* ids.recordId;
             const statusRecordId = yield* ids.recordId;
-            const tx = yield* storage("begin create ticket", repository.store.begin());
+            const tx = yield* beginWriteTransaction(repository, "create ticket", actor, now);
             const issues = yield* storage(
               "open issue transaction collection",
               tx.collection<TicketDocument>(ISSUE_COLLECTION, issueCollectionOptions),
@@ -1058,7 +1119,7 @@ export const makeDatabaseService = (
         ticketId,
         (repository) =>
           Effect.gen(function* () {
-            const tx = yield* storage("begin update ticket", repository.store.begin());
+            const tx = yield* beginWriteTransaction(repository, "update ticket", actor, now);
             const issues = yield* storage(
               "open issue transaction collection",
               tx.collection<TicketDocument>(ISSUE_COLLECTION, issueCollectionOptions),
@@ -1120,7 +1181,7 @@ export const makeDatabaseService = (
       objectId,
       (repository) =>
         Effect.gen(function* () {
-          const tx = yield* storage(`begin ${command}`, repository.store.begin());
+          const tx = yield* beginWriteTransaction(repository, command, actor, now);
           const issues = yield* storage(
             `open issue transaction collection for ${command}`,
             tx.collection<TicketDocument>(ISSUE_COLLECTION, issueCollectionOptions),
@@ -1469,7 +1530,7 @@ export const makeDatabaseService = (
         recordId,
         (repository) =>
           Effect.gen(function* () {
-            const tx = yield* storage("begin add record", repository.store.begin());
+            const tx = yield* beginWriteTransaction(repository, "add record", actor, now);
             const issues = yield* storage(
               "open issue transaction collection",
               tx.collection<TicketDocument>(ISSUE_COLLECTION, issueCollectionOptions),
@@ -1590,7 +1651,7 @@ export const makeDatabaseService = (
         draftId,
         (repository) =>
           Effect.gen(function* () {
-            const tx = yield* storage("begin create draft", repository.store.begin());
+            const tx = yield* beginWriteTransaction(repository, "create draft", actor, now);
             const drafts = yield* storage(
               "open draft transaction collection",
               tx.collection<TicketDraftDocument>(DRAFT_COLLECTION),
@@ -1632,7 +1693,7 @@ export const makeDatabaseService = (
         draftId,
         (repository) =>
           Effect.gen(function* () {
-            const tx = yield* storage("begin update draft", repository.store.begin());
+            const tx = yield* beginWriteTransaction(repository, "update draft", actor, now);
             const drafts = yield* storage(
               "open draft transaction collection",
               tx.collection<TicketDraftDocument>(DRAFT_COLLECTION),
@@ -1684,7 +1745,7 @@ export const makeDatabaseService = (
         draftId,
         (repository) =>
           Effect.gen(function* () {
-            const tx = yield* storage("begin commit draft", repository.store.begin());
+            const tx = yield* beginWriteTransaction(repository, "commit draft", actor, now);
             const drafts = yield* storage(
               "open draft transaction collection",
               tx.collection<TicketDraftDocument>(DRAFT_COLLECTION),
@@ -1780,7 +1841,7 @@ export const makeDatabaseService = (
         userId,
         (repository) =>
           Effect.gen(function* () {
-            const tx = yield* storage("begin upsert user", repository.store.begin());
+            const tx = yield* beginWriteTransaction(repository, "upsert user", actor, now);
             const users = yield* storage(
               "open user transaction collection",
               tx.collection<UserProfileDocument>(USER_COLLECTION),
@@ -1838,7 +1899,7 @@ export const makeDatabaseService = (
         labelId,
         (repository) =>
           Effect.gen(function* () {
-            const tx = yield* storage("begin upsert label", repository.store.begin());
+            const tx = yield* beginWriteTransaction(repository, "upsert label", actor, now);
             const labels = yield* storage(
               "open label transaction collection",
               tx.collection<LabelDefinitionDocument>(LABEL_COLLECTION),
@@ -1890,7 +1951,7 @@ export const makeDatabaseService = (
         labelId,
         (repository) =>
           Effect.gen(function* () {
-            const tx = yield* storage("begin archive label", repository.store.begin());
+            const tx = yield* beginWriteTransaction(repository, "archive label", actor, now);
             const labels = yield* storage(
               "open label transaction collection",
               tx.collection<LabelDefinitionDocument>(LABEL_COLLECTION),
@@ -1950,7 +2011,7 @@ export const makeDatabaseService = (
         viewId,
         (repository) =>
           Effect.gen(function* () {
-            const tx = yield* storage("begin create view", repository.store.begin());
+            const tx = yield* beginWriteTransaction(repository, "create view", actor, now);
             const views = yield* storage(
               "open view transaction collection",
               tx.collection<SavedViewDocument>(VIEW_COLLECTION),
@@ -2010,7 +2071,7 @@ export const makeDatabaseService = (
         viewId,
         (repository) =>
           Effect.gen(function* () {
-            const tx = yield* storage("begin update view", repository.store.begin());
+            const tx = yield* beginWriteTransaction(repository, "update view", actor, now);
             const views = yield* storage(
               "open view transaction collection",
               tx.collection<SavedViewDocument>(VIEW_COLLECTION),
@@ -2053,7 +2114,7 @@ export const makeDatabaseService = (
         viewId,
         (repository) =>
           Effect.gen(function* () {
-            const tx = yield* storage("begin delete view", repository.store.begin());
+            const tx = yield* beginWriteTransaction(repository, "delete view", actor, now);
             const views = yield* storage(
               "open view transaction collection",
               tx.collection<SavedViewDocument>(VIEW_COLLECTION),
@@ -2110,7 +2171,7 @@ export const makeDatabaseService = (
         templateId,
         (repository) =>
           Effect.gen(function* () {
-            const tx = yield* storage("begin create template", repository.store.begin());
+            const tx = yield* beginWriteTransaction(repository, "create template", actor, now);
             const templates = yield* storage(
               "open template transaction collection",
               tx.collection<IssueTemplateDocument>(TEMPLATE_COLLECTION),
@@ -2169,7 +2230,7 @@ export const makeDatabaseService = (
         templateId,
         (repository) =>
           Effect.gen(function* () {
-            const tx = yield* storage("begin update template", repository.store.begin());
+            const tx = yield* beginWriteTransaction(repository, "update template", actor, now);
             const templates = yield* storage(
               "open template transaction collection",
               tx.collection<IssueTemplateDocument>(TEMPLATE_COLLECTION),
@@ -2345,7 +2406,7 @@ export const makeDatabaseService = (
         existing?.poller?.cancel();
         yield* sqlite("register repository", () => projection.registerRepository(input));
 
-        const cycleMetadata = yield* ensureCycleRepositoryMetadata(input.repositoryId, input.store);
+        const cycleMetadata = yield* readCycleRepositoryMetadata(input.store);
 
         const poller =
           input.pollIntervalMs === false || backgroundRunner === undefined
@@ -2365,8 +2426,8 @@ export const makeDatabaseService = (
           store: input.store,
           worktreePath: input.worktreePath,
         });
-        yield* sqlite("update Cycle repository metadata", () =>
-          projection.updateCycleRepositoryMetadata(input.repositoryId, cycleMetadata),
+        yield* sqlite("set Cycle repository metadata", () =>
+          projection.setCycleRepositoryMetadata(input.repositoryId, cycleMetadata),
         );
 
         if (input.syncOnOpen === false) {
@@ -2376,7 +2437,9 @@ export const makeDatabaseService = (
         }
 
         const status = yield* syncRepository(input.repositoryId);
-        yield* ensureDefaultMetadata(input.repositoryId);
+        if (status.activeSnapshotId !== null) {
+          yield* ensureDefaultMetadata(input.repositoryId);
+        }
         return yield* sqlite("repository status after default metadata", () =>
           projection.repositoryStatus(input.repositoryId),
         ).pipe(Effect.catch(() => Effect.succeed(status)));
@@ -2465,7 +2528,7 @@ export const DatabaseLiveWithOptions = (options: DatabaseServiceOptions) =>
   );
 
 export const DatabaseTest = (prefix?: string) =>
-  DatabaseLive.pipe(
+  DatabaseLiveWithOptions({ projectionPath: ":memory:" }).pipe(
     Layer.provide(Layer.mergeAll(DatabaseIdentityTest(), DatabaseIdGeneratorDeterministic(prefix))),
   );
 
@@ -2514,6 +2577,14 @@ const buildMaterialization = (
           currentSnapshotId,
           "templates",
         );
+    const metadataDocument = yield* storage(
+      "read Cycle repository metadata for materialization",
+      repository.store.get(REPOSITORY_METADATA_PATH, { from: currentSnapshotId }),
+    );
+    const cycleMetadata =
+      metadataDocument === null
+        ? undefined
+        : yield* parseCycleRepositoryMetadataTextEffect(metadataDocument.text());
     const warnings: Array<MaterializationWarning> = [];
     const tickets: Array<{ readonly path: string; readonly value: TicketDocument }> = [];
     const records: Array<{ readonly path: string; readonly value: LinkedRecord }> = [];
@@ -2675,6 +2746,7 @@ const buildMaterialization = (
     return {
       commitChanges,
       commits,
+      cycleMetadata,
       deletedRecords,
       deletedTickets,
       deletedLabels,
@@ -2937,7 +3009,7 @@ const validateTicketSync = (ticket: TicketDocument): void => {
 };
 
 const validateTicketId = (field: string, value: string): void => {
-  if (!TICKET_ID_PATTERN.test(value)) {
+  if (!TICKET_ID_PATTERN.test(value) && !LEGACY_TICKET_ID_PATTERN.test(value)) {
     throw new Error(`${field} must match PREFIX-BASE36 format`);
   }
 };

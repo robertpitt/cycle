@@ -1,12 +1,15 @@
+import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Config, ConfigProvider, Effect, Layer, Schema } from "effect";
 import {
+  ApiConfig,
   AppConfig,
   AppConfigError,
   AppConfigState,
   AgentProvidersConfig,
   CURRENT_APP_CONFIG_SCHEMA_VERSION,
+  DEFAULT_API_PORT,
   LocalWorkspaceConfig,
   OnboardingConfig,
   ProfileConfig,
@@ -14,8 +17,10 @@ import {
   ThemeConfig,
   appConfigError,
   defaultAppConfig,
+  defaultApiConfig,
   defaultRepositoryPreferences,
   parseAppConfig,
+  type ApiConfig as ApiConfigType,
   type AgentProvidersConfig as AgentProvidersConfigType,
   type LocalWorkspaceConfig as LocalWorkspaceConfigType,
   type OnboardingConfig as OnboardingConfigType,
@@ -23,9 +28,7 @@ import {
   type RepositoryRecord as RepositoryRecordType,
   type ThemeConfig as ThemeConfigType,
 } from "../shared/AppConfig.ts";
-import { ElectronApp } from "../platform/ElectronApp.ts";
-
-const configFileName = "app-config.json";
+import { cycleAppConfigFileName, cycleAppConfigPath } from "./CycleDirectory.ts";
 
 const isNodeError = (cause: unknown): cause is NodeJS.ErrnoException =>
   cause instanceof Error && "code" in cause;
@@ -35,6 +38,39 @@ const isMissingFileError = (cause: unknown): boolean =>
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+const generateStaticToken = (): string => randomBytes(32).toString("base64url");
+
+const ensureApiDefaults = (
+  config: AppConfigState,
+): { readonly shouldWrite: boolean; readonly value: AppConfigState } => {
+  let shouldWrite = false;
+  let value = config;
+
+  if (value.api.staticToken.trim().length === 0) {
+    shouldWrite = true;
+    value = {
+      ...value,
+      api: {
+        ...value.api,
+        staticToken: generateStaticToken(),
+      },
+    };
+  }
+
+  if (value.api.port === "auto") {
+    shouldWrite = true;
+    value = {
+      ...value,
+      api: {
+        ...value.api,
+        port: DEFAULT_API_PORT,
+      },
+    };
+  }
+
+  return { shouldWrite, value };
+};
 
 const backupName = (kind: "invalid" | "unsupported"): string => {
   const stamp = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
@@ -85,7 +121,9 @@ const writeValidatedConfig = (
     const directory = dirname(configPath);
     const temporaryPath = join(
       directory,
-      `${configFileName}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`,
+      `${cycleAppConfigFileName}.${process.pid}.${Date.now()}.${Math.random()
+        .toString(16)
+        .slice(2)}.tmp`,
     );
     const serialized = `${JSON.stringify(validated, null, 2)}\n`;
 
@@ -187,6 +225,9 @@ const salvageAppConfig = (raw: unknown): Effect.Effect<AppConfigState, AppConfig
     const profile = yield* parseSection(ProfileConfig, raw.profile).pipe(
       Effect.catch(() => Effect.succeed(defaults.profile as ProfileConfigType)),
     );
+    const api = yield* parseSection(ApiConfig, raw.api).pipe(
+      Effect.catch(() => Effect.succeed(defaultApiConfig() as ApiConfigType)),
+    );
     const theme = yield* parseSection(ThemeConfig, raw.theme).pipe(
       Effect.catch(() => Effect.succeed(defaults.theme as ThemeConfigType)),
     );
@@ -197,6 +238,7 @@ const salvageAppConfig = (raw: unknown): Effect.Effect<AppConfigState, AppConfig
 
     return {
       agentProviders,
+      api,
       localWorkspace,
       onboarding,
       profile,
@@ -215,13 +257,15 @@ const readOrRecoverConfig = (configPath: string): Effect.Effect<AppConfigState, 
   Effect.gen(function* () {
     const text = yield* readConfigText(configPath);
     if (text === undefined) {
-      return yield* writeValidatedConfig(configPath, defaultAppConfig());
+      return yield* writeValidatedConfig(configPath, ensureApiDefaults(defaultAppConfig()).value);
     }
 
     const raw = yield* readJsonConfig(text).pipe(
       Effect.catch(() =>
         backupConfigFile(configPath, "invalid").pipe(
-          Effect.andThen(writeValidatedConfig(configPath, defaultAppConfig())),
+          Effect.andThen(
+            writeValidatedConfig(configPath, ensureApiDefaults(defaultAppConfig()).value),
+          ),
         ),
       ),
     );
@@ -232,7 +276,9 @@ const readOrRecoverConfig = (configPath: string): Effect.Effect<AppConfigState, 
       raw.schemaVersion > CURRENT_APP_CONFIG_SCHEMA_VERSION
     ) {
       return yield* backupConfigFile(configPath, "unsupported").pipe(
-        Effect.andThen(writeValidatedConfig(configPath, defaultAppConfig())),
+        Effect.andThen(
+          writeValidatedConfig(configPath, ensureApiDefaults(defaultAppConfig()).value),
+        ),
       );
     }
 
@@ -245,23 +291,23 @@ const readOrRecoverConfig = (configPath: string): Effect.Effect<AppConfigState, 
       ),
     );
 
-    if (migrated.shouldWrite) return yield* writeValidatedConfig(configPath, parsed);
-    return parsed;
+    const withApiDefaults = ensureApiDefaults(parsed);
+    if (migrated.shouldWrite || withApiDefaults.shouldWrite) {
+      return yield* writeValidatedConfig(configPath, withApiDefaults.value);
+    }
+    return withApiDefaults.value;
   });
 
 export const AppConfigLive = Layer.effect(
   AppConfig,
   Effect.gen(function* () {
-    const app = yield* ElectronApp;
-    const configPath = app
-      .getPath("userData")
-      .pipe(Effect.map((userData) => join(userData, configFileName)));
+    const resolvedConfigPath = yield* cycleAppConfigPath;
 
     const read = (): Effect.Effect<AppConfigState, AppConfigError> =>
-      configPath.pipe(Effect.flatMap(readOrRecoverConfig));
+      readOrRecoverConfig(resolvedConfigPath);
 
     const replace = (next: AppConfigState): Effect.Effect<AppConfigState, AppConfigError> =>
-      configPath.pipe(Effect.flatMap((path) => writeValidatedConfig(path, next)));
+      writeValidatedConfig(resolvedConfigPath, next);
 
     const update = (
       mutator: (current: AppConfigState) => AppConfigState,
@@ -277,7 +323,7 @@ export const AppConfigLive = Layer.effect(
       });
 
     return {
-      configPath,
+      configPath: Effect.succeed(resolvedConfigPath),
       getThemePreference: () => read().pipe(Effect.map((config) => config.theme.preference)),
       read,
       replace,

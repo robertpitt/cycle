@@ -6,6 +6,7 @@ export const PointerSyncStatus = Schema.Literals([
   "merged",
   "pushed",
   "rejected",
+  "remote-deleted",
   "up-to-date",
 ]);
 export type PointerSyncStatus = typeof PointerSyncStatus.Type;

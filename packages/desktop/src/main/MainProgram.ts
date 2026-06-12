@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import { ElectronApp } from "../platform/ElectronApp.ts";
 import { DesktopBootstrap } from "../shared/Bootstrap.ts";
 import { registerDesktopIpc, startDesktopThemeLifecycle } from "./DesktopIpc.ts";
+import { startDesktopApi } from "./DesktopApi.ts";
 import { DesktopWindow } from "./DesktopWindow.ts";
 import { ElectronPreferences } from "./ElectronPreferences.ts";
 
@@ -78,6 +79,8 @@ export const runDesktop = Effect.fnUntraced(function* () {
   const bootstrap = yield* DesktopBootstrap;
   const desktopWindow = yield* DesktopWindow;
   const preferences = yield* ElectronPreferences;
+
+  yield* startDesktopApi();
 
   yield* runDesktopStartupWorkflow({
     awaitShutdown: app.awaitShutdown,

@@ -155,7 +155,7 @@ Key composition details:
 - `ElectronAppLive` depends on `ProcessLifecycleLive` and `DesktopRuntimeLive`.
 - `DesktopWindowLive` depends on `BrowserWindowsLive`, `DesktopConfigLive`, and
   `DesktopRuntimeLive`.
-- `AppConfigLive` depends on `ElectronAppLive` for the `userData` path.
+- `AppConfigLive` depends on `ElectronAppLive` for the home path used to derive `~/.cycle`.
 - `ProfileLive` depends on `AppConfigLive`.
 - `LocalWorkspaceLive` depends on `AppConfigLive` and `GitRepository.NodeLive`.
 - `ElectronPreferences` depends on app config, theme, local workspace, and
@@ -168,7 +168,7 @@ Key composition details:
 
 ### App Config
 
-Path: `app.getPath("userData")/app-config.json`
+Path: `~/.cycle/app-config.json`
 
 Schema owner: `src/shared/AppConfig.ts`
 
@@ -196,7 +196,7 @@ valid sections from partially invalid config.
 
 ### Projection Database
 
-Path: `app.getPath("userData")/cycle-projection.sqlite`
+Path: `~/.cycle/cycle.db`
 
 Owner: `DesktopDatabaseLive`, backed by `@cycle/database`.
 
@@ -657,8 +657,7 @@ Error types:
 
 Logging:
 
-- `DesktopLoggerLive` writes to
-  `app.getPath("userData")/logs/main.log`.
+- `DesktopLoggerLive` writes to `~/.cycle/logs/main.log`.
 - Database events are forwarded to the desktop logger.
 - `DesktopRuntimeLive` logs failed queued tasks.
 - Electron window load/render failures are logged through Effect logs.

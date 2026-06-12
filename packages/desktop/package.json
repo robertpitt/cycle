@@ -25,6 +25,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@cycle/api": "workspace:*",
     "@cycle/contracts": "workspace:*",
     "@cycle/database": "workspace:*",
     "@cycle/git": "workspace:*",

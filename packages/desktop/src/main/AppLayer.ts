@@ -69,9 +69,11 @@ const DesktopDatabaseServiceLive = DesktopDatabaseLive.pipe(
   ),
 );
 
+const UseCaseRunnerServiceLive = UseCaseRunnerLive.pipe(Layer.provide(DesktopDatabaseServiceLive));
+
 const DatabaseConsumerDependenciesLive = Layer.mergeAll(
   DesktopDatabaseServiceLive,
-  UseCaseRunnerLive.pipe(Layer.provide(DesktopDatabaseServiceLive)),
+  UseCaseRunnerServiceLive,
   DesktopLoggerServiceLive,
   DesktopRuntimeLive,
   ElectronPreferencesServiceLive,
@@ -94,6 +96,7 @@ export const DesktopLive = Layer.mergeAll(
   DesktopLoggerServiceLive,
   GitRepositoryServiceLive,
   LocalWorkspaceServiceLive,
+  UseCaseRunnerServiceLive,
   AgentProviderDetectorLive,
   DatabaseConsumersLive,
 );
