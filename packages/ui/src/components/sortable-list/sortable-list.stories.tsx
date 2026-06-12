@@ -5,15 +5,15 @@ import { SortableList, type SortableListItem } from "./index.ts";
 const initialItems: readonly SortableListItem[] = [
   {
     content: "Wire repository status into the sidebar",
-    id: "iss_story_0001",
+    id: "STY-00001",
   },
   {
     content: "Render Markdown comments",
-    id: "iss_story_0002",
+    id: "STY-00002",
   },
   {
     content: "Persist sub-issue ordering",
-    id: "iss_story_0003",
+    id: "STY-00003",
   },
 ];
 

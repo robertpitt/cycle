@@ -1,12 +1,24 @@
 import { GitDbInMemory, Store as GitDbStore } from "@cycle/git-db";
 import { Effect } from "effect";
-import { DatabaseService, DatabaseTest, ValidationError } from "../src/index.ts";
+import { createHash } from "node:crypto";
+import {
+  DatabaseService,
+  DatabaseTest,
+  makeFrontmatter,
+  makeTicketDocument,
+  serializeIssueMarkdown,
+  ValidationError,
+  type Actor,
+} from "../src/index.ts";
 import { assert, describe, it } from "./effect-vitest.ts";
 
 const makeStore = (database: string) =>
   Effect.gen(function* () {
     return yield* GitDbStore.StoreService;
   }).pipe(Effect.provide(GitDbInMemory({ database })));
+
+const issueStorePath = (id: string): string =>
+  `collections/issues/${createHash("sha1").update(id).digest("hex").slice(0, 2)}/${id}.md`;
 
 describe("@cycle/database", () => {
   it.effect(
@@ -48,8 +60,8 @@ describe("@cycle/database", () => {
           status: "backlog",
         });
 
-        assert.strictEqual(ticketA.id, "iss_test_0001");
-        assert.strictEqual(ticketB.id, "iss_test_0002");
+        assert.strictEqual(ticketA.id, "UKN-00001");
+        assert.strictEqual(ticketB.id, "UKN-00002");
         assert.deepStrictEqual(fetchedA?.id, ticketA.id);
         assert.deepStrictEqual(
           repoAHigh.entries.map((ticket) => ticket.id),
@@ -60,6 +72,127 @@ describe("@cycle/database", () => {
           [ticketA.id, ticketB.id].sort(),
         );
       }).pipe(Effect.provide(DatabaseTest())),
+  );
+
+  it.effect("initializes Cycle repository metadata with the default ticket prefix", () =>
+    Effect.gen(function* () {
+      const database = yield* DatabaseService;
+      const store = yield* makeStore("default-prefix-repo");
+
+      const status = yield* database.openRepository({
+        repositoryId: "default-prefix-repo",
+        store,
+        syncOnOpen: false,
+      });
+      const document = yield* store.get("metadata/repository.json");
+      const stored = document === null ? null : JSON.parse(document.text());
+
+      assert.strictEqual(status.activeSnapshotId, null);
+      assert.strictEqual(status.cycleMetadata?.ticketPrefix, "UKN");
+      assert.strictEqual(stored?.ticketPrefix, "UKN");
+      assert.strictEqual(stored?.ticketIdFormat, "prefix-base36-5+");
+    }).pipe(Effect.provide(DatabaseTest())),
+  );
+
+  it.effect("reuses an existing Cycle repository ticket prefix", () =>
+    Effect.gen(function* () {
+      const database = yield* DatabaseService;
+      const store = yield* makeStore("existing-prefix-repo");
+      const tx = yield* store.begin();
+
+      yield* tx.put("metadata/repository.json", {
+        createdAt: "2026-06-12T00:00:00.000Z",
+        schemaVersion: 1,
+        ticketIdFormat: "prefix-base36-5+",
+        ticketPrefix: "MAN",
+        updatedAt: "2026-06-12T00:00:00.000Z",
+      });
+      yield* tx.commit({
+        message: "Seed repository metadata",
+      });
+
+      const status = yield* database.openRepository({
+        repositoryId: "existing-prefix-repo",
+        store,
+      });
+      const ticket = yield* database.createTicket("existing-prefix-repo", {
+        title: "Existing prefix ticket",
+      });
+
+      assert.strictEqual(status.cycleMetadata?.ticketPrefix, "MAN");
+      assert.strictEqual(ticket.id, "MAN-00001");
+    }).pipe(Effect.provide(DatabaseTest())),
+  );
+
+  it.effect("expands the Base36 ticket suffix when the 5 character id collides", () =>
+    Effect.gen(function* () {
+      const database = yield* DatabaseService;
+      const store = yield* makeStore("ticket-collision-repo");
+
+      yield* database.openRepository({
+        repositoryId: "ticket-collision-repo",
+        store,
+      });
+
+      const first = yield* database.createTicket("ticket-collision-repo", {
+        title: "First generated ticket",
+      });
+
+      const actor: Actor = {
+        email: "collision@example.invalid",
+        name: "Collision Writer",
+        type: "human",
+      };
+      const now = "2026-06-12T00:00:00.000Z";
+      const collidingId = "UKN-00002";
+      const colliding = makeTicketDocument(
+        makeFrontmatter(
+          {
+            title: "Existing colliding ticket",
+          },
+          collidingId,
+          actor,
+          now,
+        ),
+        "Existing body",
+      );
+      const tx = yield* store.begin();
+
+      yield* tx.put(issueStorePath(collidingId), serializeIssueMarkdown(colliding));
+      yield* tx.commit({
+        author: actor,
+        committer: actor,
+        message: "Seed colliding ticket",
+      });
+      yield* database.syncRepository("ticket-collision-repo");
+
+      const expanded = yield* database.createTicket("ticket-collision-repo", {
+        title: "Expanded generated ticket",
+      });
+
+      assert.strictEqual(first.id, "UKN-00001");
+      assert.strictEqual(expanded.id, "UKN-000022");
+    }).pipe(Effect.provide(DatabaseTest())),
+  );
+
+  it.effect("commits drafts with repository-prefixed ticket ids", () =>
+    Effect.gen(function* () {
+      const database = yield* DatabaseService;
+      const store = yield* makeStore("draft-ticket-id-repo");
+
+      yield* database.openRepository({
+        repositoryId: "draft-ticket-id-repo",
+        store,
+      });
+
+      const draft = yield* database.createDraft("draft-ticket-id-repo", {
+        title: "Draft ticket id",
+      });
+      const ticket = yield* database.commitDraft("draft-ticket-id-repo", draft.id);
+
+      assert.strictEqual(ticket.id, "UKN-00001");
+      assert.strictEqual(ticket.frontmatter.id, "UKN-00001");
+    }).pipe(Effect.provide(DatabaseTest())),
   );
 
   it.effect("indexes title, body, and comments for ticket-oriented full-text search", () =>

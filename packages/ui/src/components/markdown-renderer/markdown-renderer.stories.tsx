@@ -3,7 +3,7 @@ import { MarkdownRenderer } from "./index.ts";
 
 const markdown = `# Issue body
 
-Track delivery for #iss_story_0001 with **bold**, _italic_, ~~removed~~, and a safe link to https://example.com.
+Track delivery for #STY-00001 with **bold**, _italic_, ~~removed~~, and a safe link to https://example.com.
 
 - [x] Database projection
 - [ ] Desktop bridge

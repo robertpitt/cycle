@@ -22,6 +22,7 @@ import {
   type CreateSavedViewInput,
   type CreateTicketDraftInput,
   type CreateTicketInput,
+  type CycleRepositoryMetadata,
   type DeleteTicketInput,
   type HistoryPage,
   type InitiativeProgress,
@@ -81,6 +82,7 @@ import {
 import { DatabaseIdGeneratorDeterministic } from "./DatabaseIdGenerator.ts";
 
 type RepositoryRuntime = {
+  readonly cycleMetadata: CycleRepositoryMetadata;
   readonly displayName: string;
   readonly gitDir?: string;
   readonly poller?: DatabaseBackgroundSchedule;
@@ -379,7 +381,10 @@ const LABEL_COLLECTION = "labels";
 const VIEW_COLLECTION = "views";
 const TEMPLATE_COLLECTION = "templates";
 const DEFAULT_POINTER = "main";
+const DEFAULT_TICKET_PREFIX = "UKN";
+const REPOSITORY_METADATA_PATH = "metadata/repository.json";
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;
+const TICKET_ID_PATTERN = /^[A-Z0-9]{2,5}-[0-9A-Z]{5,}$/u;
 
 const issueCollectionOptions: CollectionOptions<TicketDocument> = {
   codec: {
@@ -809,9 +814,89 @@ export const makeDatabaseService = (
       );
     });
 
+  const ensureCycleRepositoryMetadata = (
+    repositoryId: string,
+    store: GitDbStore.StoreServiceShape,
+  ): Effect.Effect<CycleRepositoryMetadata, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const existing = yield* storage(
+        "read Cycle repository metadata",
+        store.get(REPOSITORY_METADATA_PATH),
+      );
+
+      if (existing !== null) {
+        return yield* parseCycleRepositoryMetadataTextEffect(existing.text());
+      }
+
+      const actor = yield* identity.currentActor;
+      const now = nowIso();
+      const tx = yield* storage("begin initialize Cycle repository metadata", store.begin());
+      const current = yield* storage(
+        "read transactional Cycle repository metadata",
+        tx.get(REPOSITORY_METADATA_PATH),
+      );
+
+      if (current !== null) {
+        const metadata = yield* parseCycleRepositoryMetadataTextEffect(current.text());
+
+        yield* storage("abort Cycle repository metadata initialization", tx.abort());
+        return metadata;
+      }
+
+      const metadata = makeCycleRepositoryMetadata(DEFAULT_TICKET_PREFIX, now);
+
+      yield* storage("put Cycle repository metadata", tx.put(REPOSITORY_METADATA_PATH, metadata));
+      yield* storage(
+        "commit Cycle repository metadata",
+        tx.commit({
+          author: gitIdentity(actor),
+          committer: gitIdentity(actor),
+          message: `${actor.name} initialized Cycle repository metadata`,
+        }),
+      );
+
+      return metadata;
+    });
+
+  const generateTicketId = (
+    repository: RepositoryRuntime,
+  ): Effect.Effect<string, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const prefix = repository.cycleMetadata.ticketPrefix;
+      const issues = yield* storage(
+        "open issue collection for ticket id generation",
+        repository.store.collection<TicketDocument>(ISSUE_COLLECTION, issueCollectionOptions),
+      );
+
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const seed = yield* normalizeTicketSeedEffect(yield* ids.ticketId);
+
+        for (let length = 5; length <= seed.length; length += 1) {
+          const candidate = `${prefix}-${seed.slice(0, length)}`;
+
+          if (!TICKET_ID_PATTERN.test(candidate)) continue;
+          if (projection.getTicket(repository.repositoryId, candidate) !== null) continue;
+
+          const existing = yield* storage("check ticket id collision", issues.get(candidate));
+
+          if (existing === null) return candidate;
+        }
+      }
+
+      return yield* Effect.fail(
+        validationError("ticket.id", "unable to generate a unique ticket id"),
+      );
+    });
+
   const ensureDefaultMetadata = (repositoryId: string): Effect.Effect<void, DatabaseFailure> =>
     Effect.gen(function* () {
       const repository = yield* getRepository(repositoryId);
+      const cycleMetadata = yield* ensureCycleRepositoryMetadata(repositoryId, repository.store);
+
+      yield* sqlite("update Cycle repository metadata", () =>
+        projection.updateCycleRepositoryMetadata(repositoryId, cycleMetadata),
+      );
+
       const actor = yield* identity.currentActor;
       const now = nowIso();
       const actorUserId =
@@ -877,7 +962,8 @@ export const makeDatabaseService = (
       yield* assertNoUnsafeContent("create ticket input", input);
 
       const actor = yield* identity.currentActor;
-      const id = yield* ids.ticketId;
+      const repository = yield* getRepository(repositoryId);
+      const id = yield* generateTicketId(repository);
       const now = nowIso();
       const body = input.body ?? defaultIssueBody();
       const ticket = makeTicketDocument(makeFrontmatter(input, id, actor, now), body);
@@ -1232,8 +1318,8 @@ export const makeDatabaseService = (
     options: CommitOptions = {},
   ): Effect.Effect<TicketDocument, DatabaseFailure> =>
     Effect.gen(function* () {
-      validateSafeSegment("ticket id", ticketId);
-      validateSafeSegment("relation issue id", relation.issueId);
+      validateTicketId("ticket id", ticketId);
+      validateTicketId("relation issue id", relation.issueId);
 
       if (!isIssueRelationType(relation.type)) {
         return yield* Effect.fail(validationError("relation.type", "invalid issue relation type"));
@@ -1588,7 +1674,8 @@ export const makeDatabaseService = (
   ): Effect.Effect<TicketDocument, DatabaseFailure> =>
     Effect.gen(function* () {
       const actor = yield* identity.currentActor;
-      const ticketId = yield* ids.ticketId;
+      const repository = yield* getRepository(repositoryId);
+      const ticketId = yield* generateTicketId(repository);
       const now = nowIso();
 
       return yield* writeAndSync(
@@ -2256,6 +2343,9 @@ export const makeDatabaseService = (
         const existing = repositories.get(input.repositoryId);
 
         existing?.poller?.cancel();
+        yield* sqlite("register repository", () => projection.registerRepository(input));
+
+        const cycleMetadata = yield* ensureCycleRepositoryMetadata(input.repositoryId, input.store);
 
         const poller =
           input.pollIntervalMs === false || backgroundRunner === undefined
@@ -2267,6 +2357,7 @@ export const makeDatabaseService = (
               );
 
         repositories.set(input.repositoryId, {
+          cycleMetadata,
           displayName: input.displayName ?? input.repositoryId,
           gitDir: input.gitDir,
           poller,
@@ -2274,7 +2365,9 @@ export const makeDatabaseService = (
           store: input.store,
           worktreePath: input.worktreePath,
         });
-        yield* sqlite("register repository", () => projection.registerRepository(input));
+        yield* sqlite("update Cycle repository metadata", () =>
+          projection.updateCycleRepositoryMetadata(input.repositoryId, cycleMetadata),
+        );
 
         if (input.syncOnOpen === false) {
           return yield* sqlite("repository status", () =>
@@ -2833,7 +2926,7 @@ const validateTicket = (ticket: TicketDocument): Effect.Effect<void, DatabaseFai
   );
 
 const validateTicketSync = (ticket: TicketDocument): void => {
-  validateSafeSegment("ticket id", ticket.id);
+  validateTicketId("ticket id", ticket.id);
   validateRequiredString("title", ticket.frontmatter.title);
   validateRequiredString("status", ticket.frontmatter.status);
   validateRequiredString("priority", ticket.frontmatter.priority);
@@ -2841,6 +2934,12 @@ const validateTicketSync = (ticket: TicketDocument): void => {
   validateRequiredString("createdAt", ticket.frontmatter.createdAt);
   validateRequiredString("updatedAt", ticket.frontmatter.updatedAt);
   validateRequiredString("createdBy.name", ticket.frontmatter.createdBy.name);
+};
+
+const validateTicketId = (field: string, value: string): void => {
+  if (!TICKET_ID_PATTERN.test(value)) {
+    throw new Error(`${field} must match PREFIX-BASE36 format`);
+  }
 };
 
 const validateSafeSegment = (field: string, value: string): void => {
@@ -3362,6 +3461,88 @@ const normalizeUserIdEffect = (email: string): Effect.Effect<string, DatabaseFai
     try: () => normalizeUserId(email),
   });
 
+const makeCycleRepositoryMetadata = (prefix: string, now: string): CycleRepositoryMetadata => ({
+  createdAt: now,
+  schemaVersion: CURRENT_SCHEMA_VERSION,
+  ticketIdFormat: "prefix-base36-5+",
+  ticketPrefix: normalizeTicketPrefix(prefix),
+  updatedAt: now,
+});
+
+const parseCycleRepositoryMetadataTextEffect = (
+  text: string,
+): Effect.Effect<CycleRepositoryMetadata, DatabaseFailure> =>
+  Effect.try({
+    catch: (cause) =>
+      cause instanceof Error
+        ? validationError("repository.metadata", cause.message, cause)
+        : validationError("repository.metadata", "invalid repository metadata", cause),
+    try: () => JSON.parse(text) as unknown,
+  }).pipe(Effect.flatMap(parseCycleRepositoryMetadataEffect));
+
+const parseCycleRepositoryMetadataEffect = (
+  input: unknown,
+): Effect.Effect<CycleRepositoryMetadata, DatabaseFailure> =>
+  Effect.try({
+    catch: (cause) =>
+      cause instanceof Error
+        ? validationError("repository.metadata", cause.message, cause)
+        : validationError("repository.metadata", "invalid repository metadata", cause),
+    try: () => parseCycleRepositoryMetadata(input, nowIso()),
+  });
+
+const parseCycleRepositoryMetadata = (input: unknown, now: string): CycleRepositoryMetadata => {
+  if (input === null || typeof input !== "object") {
+    throw new Error("repository metadata must be an object");
+  }
+
+  const value = input as Partial<CycleRepositoryMetadata>;
+
+  if (value.schemaVersion !== undefined && value.schemaVersion !== CURRENT_SCHEMA_VERSION) {
+    throw new Error("repository metadata schema version is unsupported");
+  }
+  if (value.ticketIdFormat !== undefined && value.ticketIdFormat !== "prefix-base36-5+") {
+    throw new Error("repository metadata ticket id format is unsupported");
+  }
+
+  return {
+    createdAt: typeof value.createdAt === "string" ? value.createdAt : now,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    ticketIdFormat: "prefix-base36-5+",
+    ticketPrefix: normalizeTicketPrefix(value.ticketPrefix),
+    updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : now,
+  };
+};
+
+const normalizeTicketPrefix = (value: unknown): string => {
+  const raw = value === null || value === undefined ? DEFAULT_TICKET_PREFIX : String(value);
+  const normalized = raw.trim().toUpperCase();
+
+  if (!/^[A-Z0-9]{2,5}$/u.test(normalized)) {
+    throw new Error("ticket prefix must be 2-5 uppercase alphanumeric characters");
+  }
+
+  return normalized;
+};
+
+const normalizeTicketSeedEffect = (value: string): Effect.Effect<string, DatabaseFailure> =>
+  Effect.try({
+    catch: (cause) =>
+      cause instanceof Error
+        ? validationError("ticket.id", cause.message, cause)
+        : validationError("ticket.id", "invalid ticket id seed", cause),
+    try: () => {
+      const normalized = value
+        .trim()
+        .toUpperCase()
+        .replace(/[^0-9A-Z]+/gu, "");
+
+      if (normalized.length === 0) throw new Error("ticket id seed must not be empty");
+
+      return normalized.padStart(5, "0");
+    },
+  });
+
 const parseUserProfile = (input: unknown): UserProfileDocument => {
   if (input === null || typeof input !== "object") throw new Error("user must be an object");
 
@@ -3549,11 +3730,7 @@ const ticketIdFromRecordId = (recordId: string): string | undefined => {
 
   if (marker === -1) return undefined;
 
-  const second = recordId.indexOf("_", marker + 1);
-
-  return second === -1
-    ? undefined
-    : recordId.slice(0, marker + (recordId.startsWith("iss_") ? 10 : 0));
+  return recordId.slice(0, marker);
 };
 
 const idFromPath = (path: string): string => {

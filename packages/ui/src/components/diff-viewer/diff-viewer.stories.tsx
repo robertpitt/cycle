@@ -6,9 +6,9 @@ const files = [
     language: "markdown",
     newContent:
       "# Issue\n\nUpdated body with a task list.\n\n- [x] Write database tests\n- [ ] Ship UI",
-    newPath: "iss_story_0001.md",
+    newPath: "STY-00001.md",
     oldContent: "# Issue\n\nOriginal body.\n\n- [ ] Write database tests",
-    oldPath: "iss_story_0001.md",
+    oldPath: "STY-00001.md",
   },
 ];
 

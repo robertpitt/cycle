@@ -207,7 +207,7 @@ Desktop-generated database ids use `crypto.randomUUID()` with prefixes:
 
 ```text
 drf_  draft ids
-iss_  ticket ids
+PREFIX-BASE36 ticket ids
 lbl_  label ids
 rec_  record ids
 tpl_  template ids

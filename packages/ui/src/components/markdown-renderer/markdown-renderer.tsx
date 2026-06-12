@@ -13,11 +13,13 @@ export type MarkdownRendererProps = {
 
 const safeProtocols = new Set(["http:", "https:", "mailto:"]);
 const issueHrefPrefix = "cycle-issue:";
-const issueReferencePattern = /(^|[\s(])#(iss_[A-Za-z0-9._-]+)/gu;
+const issueReferencePattern = /(^|[\s(])#([A-Za-z0-9]{2,5}-[A-Za-z0-9]{5,})/gu;
 
 const normalizeMarkdown = (markdown: string): string =>
   markdown.replace(issueReferencePattern, (_match, prefix: string, issueId: string) => {
-    return `${prefix}[#${issueId}](${issueHrefPrefix}${issueId})`;
+    const normalizedIssueId = issueId.toUpperCase();
+
+    return `${prefix}[#${normalizedIssueId}](${issueHrefPrefix}${normalizedIssueId})`;
   });
 
 const isSafeUrl = (href: string): boolean => {

@@ -317,11 +317,20 @@ export type RepositoryMetadata = {
   readonly worktreePath?: string;
 };
 
+export type CycleRepositoryMetadata = {
+  readonly createdAt: string;
+  readonly schemaVersion: 1;
+  readonly ticketIdFormat: "prefix-base36-5+";
+  readonly ticketPrefix: string;
+  readonly updatedAt: string;
+};
+
 export type RepositoryStatusValue = "degraded" | "empty" | "failed" | "ready" | "syncing";
 
 export type RepositoryStatus = {
   readonly activeGeneration: number;
   readonly activeSnapshotId: string | null;
+  readonly cycleMetadata?: CycleRepositoryMetadata;
   readonly lastSyncCompletedAt?: string;
   readonly lastSyncError?: string;
   readonly lastSyncStartedAt?: string;

@@ -243,7 +243,7 @@ const writeExternalTicketBatch = (
     const now = new Date().toISOString();
 
     for (let index = 0; index < count; index += 1) {
-      const id = `iss_external_${String(index + 1).padStart(4, "0")}`;
+      const id = `EXT-${(index + 1).toString(36).toUpperCase().padStart(5, "0")}`;
       const ticket = makeTicketDocument(
         makeFrontmatter(
           {

@@ -19,6 +19,14 @@ export const actorKey = (actor: Actor): string => normalizeKey(actor.email ?? ac
 
 export const updatedDateKey = (iso: string): string => iso.slice(0, 10);
 
+export const ticketReferenceKey = (value: unknown, fallback = "none"): string => {
+  if (value === null || value === undefined) return fallback;
+
+  const normalized = String(value).trim();
+
+  return normalized.length === 0 ? fallback : normalized;
+};
+
 export const makeIssueFrontmatter = (
   input: IssueFrontmatter & Readonly<Record<string, unknown>>,
 ): IssueFrontmatter => stripUndefined(input) as IssueFrontmatter;
@@ -38,7 +46,7 @@ export const makeTicketDocument = (frontmatter: IssueFrontmatter, body: string):
     frontmatter: normalizedFrontmatter,
     id: normalizedFrontmatter.id,
     labels: normalizedFrontmatter.labels?.map((label) => normalizeKey(label)),
-    parent: normalizeKey(normalizedFrontmatter.parent),
+    parent: ticketReferenceKey(normalizedFrontmatter.parent),
     priority: normalizeKey(normalizedFrontmatter.priority),
     relations: normalizedFrontmatter.relations,
     repository:

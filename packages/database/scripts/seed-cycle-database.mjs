@@ -136,7 +136,8 @@ function seed(options) {
 
 function makeSeedTicket(index, options) {
   const number = index + 1;
-  const id = `iss_${options.prefix}_${String(number).padStart(4, "0")}`;
+  const ticketPrefix = normalizeTicketPrefix(options.prefix);
+  const id = `${ticketPrefix}-${number.toString(36).toUpperCase().padStart(5, "0")}`;
   const createdAt = isoFor(index);
   const labels = [
     ...labelGroups[index % labelGroups.length],
@@ -270,7 +271,7 @@ function countSeededTickets(database, options) {
       });
 
       for (const ticket of page.entries) {
-        if (ticket.id.startsWith(`iss_${options.prefix}_`)) count += 1;
+        if (ticket.id.startsWith(`${normalizeTicketPrefix(options.prefix)}-`)) count += 1;
       }
 
       cursor = page.nextCursor;
@@ -278,6 +279,14 @@ function countSeededTickets(database, options) {
 
     return count;
   });
+}
+
+function normalizeTicketPrefix(value) {
+  const normalized = String(value || "UKN")
+    .trim()
+    .toUpperCase();
+
+  return /^[A-Z0-9]{2,5}$/.test(normalized) ? normalized : "UKN";
 }
 
 function parseArgs(args) {
@@ -288,7 +297,7 @@ function parseArgs(args) {
     gitDir: process.env.CYCLE_SEED_GIT_DIR ?? ".git",
     help: false,
     pointer: process.env.CYCLE_SEED_POINTER ?? "main",
-    prefix: process.env.CYCLE_SEED_PREFIX ?? "perf_seed",
+    prefix: normalizeTicketPrefix(process.env.CYCLE_SEED_PREFIX ?? "PERF"),
     repoRoot: process.env.CYCLE_SEED_REPO_ROOT ?? defaultRepoRoot,
     repositoryId: process.env.CYCLE_SEED_REPOSITORY_ID ?? "cycle-local",
     tickets: readIntEnv("CYCLE_SEED_TICKETS", 1000),
@@ -326,10 +335,7 @@ function parseArgs(args) {
         parsed.pointer = readString("--pointer", value());
         break;
       case "--prefix":
-        parsed.prefix = normalizeKey(readString("--prefix", value()), "perf-seed").replaceAll(
-          "-",
-          "_",
-        );
+        parsed.prefix = normalizeTicketPrefix(readString("--prefix", value()));
         break;
       case "--repo-root":
         parsed.repoRoot = path.resolve(readString("--repo-root", value()));
@@ -450,7 +456,7 @@ Options:
   --tickets <number>              Number of tickets to upsert. Default: 1000
   --comments-per-ticket <number>  Visible comments per ticket. Default: 1
   --batch-size <number>           Tickets per GitDB commit. Default: 100
-  --prefix <value>                Stable ID prefix. Default: perf_seed
+  --prefix <value>                Stable ticket ID prefix. Default: PERF
   --database <name>               GitDB database name. Default: cycle
   --pointer <name>                GitDB pointer name. Default: main
   --repo-root <path>              Repository root containing .git. Default: workspace root

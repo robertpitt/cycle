@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import type {
+  CycleRepositoryMetadata,
   HistoryCommit,
   HistoryPage,
   IssueTemplateDocument,
@@ -29,7 +30,7 @@ import type {
   UserProfilePage,
   UserProfileQuery,
 } from "../domain/index.ts";
-import { normalizeKey } from "../domain/index.ts";
+import { normalizeKey, ticketReferenceKey } from "../domain/index.ts";
 
 type SqlValue = null | number | string;
 
@@ -145,6 +146,7 @@ type RepositoryRow = {
   readonly active_generation: number;
   readonly active_snapshot_id: string | null;
   readonly current_branch: string | null;
+  readonly cycle_metadata_json: string | null;
   readonly default_remote: string | null;
   readonly default_remote_url: string | null;
   readonly git_dir: string | null;
@@ -172,7 +174,7 @@ type HistoryRow = {
 };
 
 const WATCHED_REF = "refs/gitdb/cycle/main";
-const CURRENT_PROJECTION_SCHEMA_VERSION = 2;
+const CURRENT_PROJECTION_SCHEMA_VERSION = 3;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 250;
 
@@ -240,6 +242,7 @@ export class Projection {
   private ensureRepositoryMetadataColumns(): void {
     const columns = [
       ["current_branch", "TEXT"],
+      ["cycle_metadata_json", "TEXT"],
       ["default_remote", "TEXT"],
       ["default_remote_url", "TEXT"],
       ["metadata_updated_at", "TEXT"],
@@ -294,6 +297,17 @@ export class Projection {
     return this.repositoryStatus(input.repositoryId);
   }
 
+  updateCycleRepositoryMetadata(
+    repositoryId: string,
+    metadata: CycleRepositoryMetadata,
+  ): RepositoryStatus {
+    this.db
+      .prepare("UPDATE repositories SET cycle_metadata_json = ? WHERE repository_id = ?")
+      .run(JSON.stringify(metadata), repositoryId);
+
+    return this.repositoryStatus(repositoryId);
+  }
+
   repositoryStatus(repositoryId: string): RepositoryStatus {
     const row = this.db
       .prepare("SELECT * FROM repositories WHERE repository_id = ?")
@@ -309,19 +323,7 @@ export class Projection {
       };
     }
 
-    const metadata = metadataFromRepositoryRow(row);
-
-    return {
-      activeGeneration: row.active_generation,
-      activeSnapshotId: row.active_snapshot_id,
-      lastSyncCompletedAt: row.last_sync_completed_at ?? undefined,
-      lastSyncError: row.last_sync_error ?? undefined,
-      lastSyncStartedAt: row.last_sync_started_at ?? undefined,
-      ...(metadata === undefined ? {} : { metadata }),
-      repositoryId: row.repository_id,
-      status: row.sync_status,
-      warningCount: row.warning_count,
-    };
+    return repositoryStatusFromRow(row);
   }
 
   listRepositories(): ReadonlyArray<RepositoryStatus> {
@@ -329,21 +331,7 @@ export class Projection {
       .prepare("SELECT * FROM repositories ORDER BY repository_id ASC")
       .all() as unknown as ReadonlyArray<RepositoryRow>;
 
-    return rows.map((row) => {
-      const metadata = metadataFromRepositoryRow(row);
-
-      return {
-        activeGeneration: row.active_generation,
-        activeSnapshotId: row.active_snapshot_id,
-        lastSyncCompletedAt: row.last_sync_completed_at ?? undefined,
-        lastSyncError: row.last_sync_error ?? undefined,
-        lastSyncStartedAt: row.last_sync_started_at ?? undefined,
-        ...(metadata === undefined ? {} : { metadata }),
-        repositoryId: row.repository_id,
-        status: row.sync_status,
-        warningCount: row.warning_count,
-      };
-    });
+    return rows.map(repositoryStatusFromRow);
   }
 
   markSyncStarted(repositoryId: string, now: string): void {
@@ -1048,7 +1036,7 @@ export class Projection {
     }
     if (query.parent !== undefined) {
       filters.push("t.parent_id = ?");
-      params.push(normalizeKey(query.parent));
+      params.push(ticketReferenceKey(query.parent));
     }
     if (query.label !== undefined) {
       filters.push(
@@ -1608,6 +1596,7 @@ CREATE TABLE repositories (
   last_sync_completed_at TEXT,
   last_sync_error TEXT,
   warning_count INTEGER NOT NULL DEFAULT 0,
+  cycle_metadata_json TEXT,
   current_branch TEXT,
   default_remote TEXT,
   default_remote_url TEXT,
@@ -1995,6 +1984,56 @@ const metadataFromRepositoryRow = (row: RepositoryRow): RepositoryMetadata | und
   }
 
   return metadata;
+};
+
+const cycleMetadataFromRepositoryRow = (
+  row: RepositoryRow,
+): CycleRepositoryMetadata | undefined => {
+  if (row.cycle_metadata_json === null) return undefined;
+
+  try {
+    const parsed = JSON.parse(row.cycle_metadata_json) as unknown;
+    if (parsed === null || typeof parsed !== "object") return undefined;
+
+    const value = parsed as Partial<CycleRepositoryMetadata>;
+    if (
+      value.schemaVersion !== 1 ||
+      value.ticketIdFormat !== "prefix-base36-5+" ||
+      typeof value.ticketPrefix !== "string" ||
+      typeof value.createdAt !== "string" ||
+      typeof value.updatedAt !== "string"
+    ) {
+      return undefined;
+    }
+
+    return {
+      createdAt: value.createdAt,
+      schemaVersion: 1,
+      ticketIdFormat: "prefix-base36-5+",
+      ticketPrefix: value.ticketPrefix,
+      updatedAt: value.updatedAt,
+    };
+  } catch {
+    return undefined;
+  }
+};
+
+const repositoryStatusFromRow = (row: RepositoryRow): RepositoryStatus => {
+  const metadata = metadataFromRepositoryRow(row);
+  const cycleMetadata = cycleMetadataFromRepositoryRow(row);
+
+  return {
+    activeGeneration: row.active_generation,
+    activeSnapshotId: row.active_snapshot_id,
+    ...(cycleMetadata === undefined ? {} : { cycleMetadata }),
+    lastSyncCompletedAt: row.last_sync_completed_at ?? undefined,
+    lastSyncError: row.last_sync_error ?? undefined,
+    lastSyncStartedAt: row.last_sync_started_at ?? undefined,
+    ...(metadata === undefined ? {} : { metadata }),
+    repositoryId: row.repository_id,
+    status: row.sync_status,
+    warningCount: row.warning_count,
+  };
 };
 
 const ticketFromRow = (row: TicketRow): TicketDocument => {

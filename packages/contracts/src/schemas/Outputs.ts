@@ -266,9 +266,18 @@ export const RepositoryMetadataOutput = Schema.Struct({
   worktreePath: Schema.optional(Schema.String),
 });
 
+export const CycleRepositoryMetadataOutput = Schema.Struct({
+  createdAt: Schema.String,
+  schemaVersion: Schema.Literal(1),
+  ticketIdFormat: Schema.Literal("prefix-base36-5+"),
+  ticketPrefix: Schema.String,
+  updatedAt: Schema.String,
+});
+
 export const RepositoryStatusOutput = Schema.Struct({
   activeGeneration: Schema.Number,
   activeSnapshotId: Schema.NullOr(Schema.String),
+  cycleMetadata: Schema.optional(CycleRepositoryMetadataOutput),
   lastSyncCompletedAt: Schema.optional(Schema.String),
   lastSyncError: Schema.optional(Schema.String),
   lastSyncStartedAt: Schema.optional(Schema.String),

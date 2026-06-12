@@ -85,7 +85,7 @@ export const DenseList: Story = {
 
 export const LongId: Story = {
   args: {
-    id: "iss_c6e3d13bfe454029bb12be381747f077",
+    id: "CYC-C6E3D",
     title: "Long issue identifiers should truncate without overlapping the title text",
   },
 };
