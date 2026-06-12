@@ -352,6 +352,14 @@ const broadcastThemeState = (state: ElectronThemeState): Effect.Effect<void> =>
     window.webContents.send(themeStateChangedChannel, state);
   });
 
+export const startDesktopThemeLifecycle = Effect.fnUntraced(function* () {
+  const preferences = yield* ElectronPreferences;
+
+  yield* preferences.startThemeLifecycleSupervision({
+    onUpdated: broadcastThemeState,
+  });
+});
+
 export const registerDesktopIpc = Effect.fnUntraced(function* () {
   const runtime = yield* DesktopRuntime;
   const shell = yield* ElectronShell;
@@ -413,9 +421,6 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
   yield* registerIpcHandler(runtime, clearCacheChannel, decodeEmptyRequest, () =>
     preferences.clearCache(),
   );
-  yield* preferences.startThemeLifecycleSupervision({
-    onUpdated: broadcastThemeState,
-  });
   yield* registerIpcHandler(runtime, listRepositoriesChannel, decodeEmptyRequest, () =>
     localWorkspace.listRepositories(),
   );

@@ -68,6 +68,16 @@ export const interruptedRpcExecution = (
     message,
   });
 
+export const unexpectedRpcExecution = (
+  message: string,
+  details?: Readonly<Record<string, unknown>>,
+) =>
+  ticketRpcError({
+    code: "RPC_EXECUTION_DEFECT",
+    details,
+    message,
+  });
+
 export const unknownRpcMethod = (method: string) =>
   ticketRpcError({
     code: "UNKNOWN_RPC_METHOD",

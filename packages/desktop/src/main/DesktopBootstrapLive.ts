@@ -13,6 +13,8 @@ import { DesktopLogger } from "./DesktopLoggerLive.ts";
 import { ElectronPreferences } from "./ElectronPreferences.ts";
 
 const DEFAULT_POINTER = "main";
+const BACKGROUND_REMOTE_SYNC_CONCURRENCY = 4;
+const BACKGROUND_REMOTE_SYNC_POLL_INTERVAL_MS = 15_000;
 const LOCAL_PROJECTION_POLL_INTERVAL_MS = 60_000;
 
 type RuntimeRepository = {
@@ -254,7 +256,7 @@ export const DesktopBootstrapLive = Layer.effect(
           repositoryId: repository.id,
         });
         const store = yield* makeLocalStore(repository.path, metadata.gitDir ?? inspected.gitDir);
-        const projection = yield* database.openRepository({
+        const registered = yield* database.openRepository({
           displayName: repository.displayName,
           gitDir: metadata.gitDir,
           metadata,
@@ -264,6 +266,22 @@ export const DesktopBootstrapLive = Layer.effect(
           syncOnOpen: false,
           worktreePath: repository.path,
         });
+        setRepositoryStatus(repository, {
+          ...repositoryStatusFromProjection(repository, registered),
+          stage: "opening",
+        });
+        yield* logger.info("bootstrap repository registered", {
+          activeGeneration: registered.activeGeneration,
+          activeSnapshotId: registered.activeSnapshotId,
+          repositoryId: repository.id,
+          status: registered.status,
+          warningCount: registered.warningCount,
+        });
+
+        yield* logger.info("bootstrap local materialization started", {
+          repositoryId: repository.id,
+        });
+        const projection = yield* database.syncRepository(repository.id);
 
         opened.set(repository.id, {
           metadata,
@@ -271,7 +289,7 @@ export const DesktopBootstrapLive = Layer.effect(
           store,
         });
         setRepositoryStatus(repository, repositoryStatusFromProjection(repository, projection));
-        yield* logger.info("bootstrap repository registered", {
+        yield* logger.info("bootstrap local materialization finished", {
           activeGeneration: projection.activeGeneration,
           activeSnapshotId: projection.activeSnapshotId,
           repositoryId: repository.id,
@@ -340,6 +358,14 @@ export const DesktopBootstrapLive = Layer.effect(
         const runtime = opened.get(repositoryId);
         if (runtime === undefined) return;
 
+        const remote = runtime.metadata.defaultRemote;
+        if (remote === undefined) {
+          yield* logger.info("bootstrap remote sync skipped: no default remote", {
+            repositoryId,
+          });
+          return;
+        }
+
         setRepositoryStatus(runtime.record, {
           error: undefined,
           stage: "syncing",
@@ -361,19 +387,11 @@ export const DesktopBootstrapLive = Layer.effect(
           warningCount: localProjection.warningCount,
         });
 
-        const remote = runtime.metadata.defaultRemote;
-        if (remote === undefined) {
-          yield* logger.info("bootstrap remote sync skipped: no default remote", {
-            repositoryId,
-          });
-          return;
-        }
-
         setRepositoryStatus(runtime.record, {
           error: undefined,
           stage: "syncing",
         });
-        yield* logger.info("bootstrap remote GitDB pull started", {
+        yield* logger.info("bootstrap remote GitDB sync started", {
           remote,
           repositoryId,
         });
@@ -389,12 +407,12 @@ export const DesktopBootstrapLive = Layer.effect(
           runtime.metadata.gitDir,
         );
         const remoteResult = yield* transportStore.sync({
-          mode: "pull",
-          onDiverged: "error",
+          mode: "full",
+          onDiverged: "merge",
           pointers: [DEFAULT_POINTER],
           remote,
         });
-        yield* logger.info("bootstrap remote GitDB pull finished", {
+        yield* logger.info("bootstrap remote GitDB sync finished", {
           pointers: remoteResult.pointers,
           remote: remoteResult.remote,
           repositoryId,
@@ -544,11 +562,44 @@ export const DesktopBootstrapLive = Layer.effect(
         ),
       );
 
-    const startBackgroundSync = (repositoryId: string): void => {
-      runtime.run(
-        `bootstrap.backgroundSync.${repositoryId}`,
-        syncRepositoryFromRemote(repositoryId),
-      );
+    const syncConfiguredRepositoriesFromRemote = (): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const repositories = yield* preferences.read().pipe(
+          Effect.map((config) => config.localWorkspace.repositories),
+          Effect.catch((error) =>
+            logger
+              .error("bootstrap background sync skipped: unable to read app config", {
+                error: errorMessage(error),
+              })
+              .pipe(Effect.as([] as ReadonlyArray<RepositoryRecord>)),
+          ),
+        );
+
+        yield* Effect.forEach(
+          repositories,
+          (repository) =>
+            syncRepositoryFromRemote(repository.id).pipe(
+              Effect.catch((error) =>
+                logger.error("bootstrap background repository sync failed", {
+                  error: errorMessage(error),
+                  repositoryId: repository.id,
+                }),
+              ),
+            ),
+          {
+            concurrency: BACKGROUND_REMOTE_SYNC_CONCURRENCY,
+            discard: true,
+          },
+        );
+      });
+
+    const runBackgroundSyncLoop = syncConfiguredRepositoriesFromRemote().pipe(
+      Effect.andThen(Effect.sleep(BACKGROUND_REMOTE_SYNC_POLL_INTERVAL_MS)),
+      Effect.forever,
+    );
+
+    const startBackgroundSyncLoop = (): void => {
+      runtime.run("bootstrap.backgroundSyncLoop", runBackgroundSyncLoop);
     };
 
     const runBootstrap = Effect.gen(function* () {
@@ -610,13 +661,7 @@ export const DesktopBootstrapLive = Layer.effect(
         openedRepositories: [...opened.keys()],
       });
 
-      for (const repositoryId of opened.keys()) {
-        const autoSync = yield* preferences
-          .shouldAutoSyncRepository(repositoryId)
-          .pipe(Effect.catch(() => Effect.succeed(false)));
-
-        if (autoSync) startBackgroundSync(repositoryId);
-      }
+      startBackgroundSyncLoop();
     }).pipe(
       Effect.catch((error) =>
         Effect.sync(() => {

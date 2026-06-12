@@ -1,18 +1,13 @@
 import type { RepositoryStatus } from "@cycle/contracts";
-import { Button, Select, Switch } from "@cycle/ui/atoms";
+import { Select } from "@cycle/ui/atoms";
 import { SettingRow } from "@cycle/ui/molecules";
-import { RefreshCw, Upload } from "lucide-react";
 import {
   isRepositoryCommitStyle,
   type AppConfigState,
   type RepositoryCommitStyle,
   type RepositoryRecord,
 } from "../../shared/AppConfig.ts";
-import {
-  usePushRepositoryMutation,
-  useSyncRepositoryMutation,
-  useUpdateRepositoryPreferencesMutation,
-} from "../mutations/index.ts";
+import { useUpdateRepositoryPreferencesMutation } from "../mutations/index.ts";
 
 type RepositorySettingsPanelProps = {
   readonly appConfig?: AppConfigState;
@@ -47,9 +42,6 @@ export const RepositorySettingsPanel = ({
   status,
 }: RepositorySettingsPanelProps) => {
   const updatePreferences = useUpdateRepositoryPreferencesMutation({ appConfig });
-  const syncRepository = useSyncRepositoryMutation({ repositoryId: repository.id });
-  const pushRepository = usePushRepositoryMutation({ repositoryId: repository.id });
-  const remoteBusy = syncRepository.isPending || pushRepository.isPending;
   const defaultRemote = status?.metadata?.defaultRemote;
   const defaultRemoteUrl = status?.metadata?.defaultRemoteUrl;
   const remotes = status?.metadata?.remotes ?? [];
@@ -57,15 +49,6 @@ export const RepositorySettingsPanel = ({
     remotes.length === 0
       ? "No remotes configured"
       : remotes.map((remote) => `${remote.name}${remote.url ? ` (${remote.url})` : ""}`).join(", ");
-
-  const setAutoSync = (checked: boolean) => {
-    updatePreferences.mutate({
-      id: repository.id,
-      preferences: {
-        autoSync: checked,
-      },
-    });
-  };
 
   const setCommitStyle = (value: string | null) => {
     if (!isRepositoryCommitStyle(value) || value === repository.preferences.commitStyle) return;
@@ -108,17 +91,6 @@ export const RepositorySettingsPanel = ({
         <h2 className="sr-only">Repository preferences</h2>
         <SettingRow
           control={
-            <Switch
-              checked={repository.preferences.autoSync}
-              disabled={updatePreferences.isPending}
-              onCheckedChange={setAutoSync}
-            />
-          }
-          description="Pull Cycle data from the default remote after the repository opens."
-          title="Auto sync"
-        />
-        <SettingRow
-          control={
             <Select
               aria-label="Commit style"
               className="w-40"
@@ -129,53 +101,6 @@ export const RepositorySettingsPanel = ({
           }
           description="Saved preference for Cycle commit message formatting."
           title="Commit style"
-        />
-      </section>
-
-      <section className="rounded-lg border border-border bg-surface px-5 shadow-card">
-        <h2 className="sr-only">Repository actions</h2>
-        <SettingRow
-          control={
-            <Button
-              disabled={remoteBusy}
-              leftIcon={
-                <RefreshCw
-                  aria-hidden
-                  className={syncRepository.isPending ? "size-4 animate-spin" : "size-4"}
-                />
-              }
-              loading={syncRepository.isPending}
-              loadingLabel="Syncing repository"
-              onClick={() => syncRepository.mutate()}
-              size="sm"
-              variant="outline"
-            >
-              Sync
-            </Button>
-          }
-          description="Pull Cycle GitDB refs and refresh the local projection."
-          title="Sync now"
-        />
-        <SettingRow
-          control={
-            <Button
-              disabled={remoteBusy || !defaultRemote}
-              leftIcon={<Upload aria-hidden className="size-4" />}
-              loading={pushRepository.isPending}
-              loadingLabel="Pushing repository"
-              onClick={() => pushRepository.mutate()}
-              size="sm"
-              variant="outline"
-            >
-              Push
-            </Button>
-          }
-          description={
-            defaultRemote
-              ? `Push Cycle GitDB refs to ${defaultRemote}.`
-              : "Configure a default remote before pushing."
-          }
-          title="Push changes"
         />
       </section>
     </div>

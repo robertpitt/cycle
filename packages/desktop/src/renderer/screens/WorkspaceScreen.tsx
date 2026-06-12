@@ -10,8 +10,8 @@ import {
   type InitialSetupStep,
 } from "@cycle/ui/organisms";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button, IconButton, StatusIndicator } from "@cycle/ui/atoms";
-import { ArrowLeft, FolderPlus, History, Plus, RefreshCw, Upload } from "lucide-react";
+import { IconButton, StatusIndicator } from "@cycle/ui/atoms";
+import { ArrowLeft, FolderPlus, History, Plus } from "lucide-react";
 import * as React from "react";
 import { useLocation, useNavigate, type NavigateOptions } from "react-router";
 import {
@@ -33,8 +33,6 @@ import {
   useCompleteOnboardingMutation,
   useCreateIssueMutation,
   useInitialiseRepositoryMutation,
-  usePushRepositoryMutation,
-  useSyncRepositoryMutation,
   useUpdateRepositoryPreferencesMutation,
 } from "../mutations/index.ts";
 import {
@@ -244,22 +242,7 @@ export const WorkspaceScreen = () => {
   });
   const selectedSavedViewQuery = useSavedViewDetailQuery(issueRepository?.id, selectedSavedViewId);
   const selectedSavedView = selectedSavedViewQuery.data ?? undefined;
-  const syncRepository = useSyncRepositoryMutation({
-    repositoryId: activeRepository?.id,
-  });
-  const pushRepository = usePushRepositoryMutation({
-    repositoryId: activeRepository?.id,
-  });
   const repositoryStatus = repositoryStatusQuery.data;
-  const repositoryDefaultRemote = repositoryStatus?.metadata?.defaultRemote;
-  const repositoryRemoteBusy = syncRepository.isPending || pushRepository.isPending;
-  const repositoryActionError = pushRepository.error ?? syncRepository.error;
-  const repositoryActionErrorMessage =
-    repositoryActionError instanceof Error
-      ? repositoryActionError.message
-      : repositoryActionError === null
-        ? undefined
-        : String(repositoryActionError);
   const repositoryColdSyncing =
     repositoryStatus?.status === "syncing" && repositoryStatus.activeSnapshotId === null;
   const onboardingCompleted = appConfigQuery.data?.onboarding.completed ?? false;
@@ -762,22 +745,18 @@ export const WorkspaceScreen = () => {
   const warningCount =
     repositoryStatus?.warningCount ?? materializationWarningsQuery.data?.length ?? 0;
   const repositoryStatusTone =
-    repositoryActionError !== null ||
     repositoryStatusQuery.error !== null ||
     repositoryStatus?.status === "failed" ||
     repositoryStatus?.status === "degraded"
       ? "warning"
-      : repositoryStatus?.status === "syncing" || repositoryRemoteBusy
+      : repositoryStatus?.status === "syncing"
         ? "info"
         : repositoryStatus?.status === "ready"
           ? "success"
           : "neutral";
   const repositoryStatusText = (() => {
-    if (pushRepository.error !== null) return "Push failed";
-    if (syncRepository.error !== null) return "Sync failed";
     if (repositoryStatusQuery.error instanceof Error) return "Status unavailable";
-    if (pushRepository.isPending) return "Pushing";
-    if (repositoryStatus?.status === "syncing" || syncRepository.isPending) return "Syncing";
+    if (repositoryStatus?.status === "syncing") return "Syncing";
     if (repositoryStatus?.status === "failed") return "Failed";
     if (repositoryStatus?.status === "degraded") return `Warnings ${warningCount}`;
     if (repositoryStatus?.status === "ready") return "Ready";
@@ -785,7 +764,6 @@ export const WorkspaceScreen = () => {
     return undefined;
   })();
   const repositoryStatusTitle =
-    repositoryActionErrorMessage ??
     repositoryStatus?.lastSyncError ??
     (warningCount > 0
       ? `${warningCount} materialization warning${warningCount === 1 ? "" : "s"}`
@@ -801,40 +779,6 @@ export const WorkspaceScreen = () => {
           <StatusIndicator label={repositoryStatusText} tone={repositoryStatusTone} />
           {repositoryStatusText}
         </div>
-      ) : null}
-      {activeRepository ? (
-        <IconButton
-          disabled={repositoryRemoteBusy}
-          icon={
-            <RefreshCw
-              aria-hidden
-              className={syncRepository.isPending ? "size-4 animate-spin" : "size-4"}
-            />
-          }
-          label="Sync repository"
-          onClick={() => syncRepository.mutate()}
-          size="sm"
-          title="Sync repository"
-          variant="outline"
-        />
-      ) : null}
-      {activeRepository ? (
-        <Button
-          disabled={repositoryRemoteBusy || !repositoryDefaultRemote}
-          leftIcon={<Upload aria-hidden className="size-4" />}
-          loading={pushRepository.isPending}
-          loadingLabel="Pushing repository"
-          onClick={() => pushRepository.mutate()}
-          size="sm"
-          title={
-            repositoryDefaultRemote
-              ? `Push GitDB refs to ${repositoryDefaultRemote}`
-              : "Repository has no default remote"
-          }
-          variant="outline"
-        >
-          Push
-        </Button>
       ) : null}
       {isIssueDetailPage ? (
         <IconButton

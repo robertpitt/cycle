@@ -8,6 +8,7 @@ import {
   TicketRpcSuccessSchemas,
   type TicketRpcError,
   type TicketRpcResponse,
+  unexpectedRpcExecution,
 } from "../protocol/index.ts";
 import { invokeTicketRpc } from "./TicketRpcHandlers.ts";
 
@@ -66,9 +67,13 @@ export const makeTicketRpcService = (runner: UseCaseRunnerShape): TicketRpcServi
         Effect.succeed(
           rpcFailureResponse(
             requestIdFromUnknown(request),
-            interruptedRpcExecution("RPC execution was interrupted.", {
-              cause: Cause.pretty(cause),
-            }),
+            Cause.hasDies(cause)
+              ? unexpectedRpcExecution("RPC execution failed with an unexpected defect.", {
+                  cause: Cause.pretty(cause),
+                })
+              : interruptedRpcExecution("RPC execution was interrupted.", {
+                  cause: Cause.pretty(cause),
+                }),
           ),
         ),
       ),

@@ -21,10 +21,11 @@ import {
   type UserProfilePage,
 } from "@cycle/database";
 import { GitDbInMemory, Store as GitDbStore } from "@cycle/git-db";
-import { UseCaseRunner, UseCaseRunnerLive } from "@cycle/usecases";
+import { UseCaseRunner, UseCaseRunnerLive, type UseCaseRunnerShape } from "@cycle/usecases";
 import { Effect, Layer } from "effect";
 import {
   makeTicketRpcClient,
+  makeTicketRpcService,
   TicketRpcLive,
   TicketRpcService,
   type TicketRpcRequest,
@@ -235,6 +236,29 @@ describe("@cycle/rpc", () => {
 
     assert.equal(response.id, "invalid-create");
     assert.equal(response.error.code, "INVALID_RPC_REQUEST");
+  });
+
+  it("returns a defect failure response when execution dies", async () => {
+    const rpc = makeTicketRpcService({
+      run: () => Effect.die(new Error("runner defect")),
+    } as UseCaseRunnerShape);
+
+    const response = await Effect.runPromise(
+      rpc.handle({
+        id: "defect-list",
+        method: "ticket.issue.list",
+        payload: {
+          input: {},
+          repository,
+        },
+      } satisfies TicketRpcRequest),
+    );
+
+    assert.equal(response.ok, false);
+    if (response.ok) return;
+
+    assert.equal(response.id, "defect-list");
+    assert.equal(response.error.code, "RPC_EXECUTION_DEFECT");
   });
 
   it("supports durable draft create, update, and commit", async () => {

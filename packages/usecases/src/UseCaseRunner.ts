@@ -8,7 +8,7 @@ import {
   type TicketDocument,
   type TicketQuery,
 } from "@cycle/database";
-import { Context, Duration, Effect, Layer, Result, Schema } from "effect";
+import { Cause, Context, Duration, Effect, Layer, Result, Schema } from "effect";
 import {
   contractFor,
   type AutomationEvaluation,
@@ -116,6 +116,7 @@ export const makeUseCaseRunner = (database: UseCasePersistenceGatewayShape): Use
     ) as Effect.Effect<UseCaseSuccess<Name>, UseCaseFailure>;
 
     return applyDeadline(context, program).pipe(
+      Effect.tapCause((cause) => logUnexpectedUseCaseCause(annotations, cause)),
       Effect.result,
       Effect.timed,
       Effect.tap(([duration, result]) =>
@@ -139,6 +140,24 @@ export const makeUseCaseRunner = (database: UseCasePersistenceGatewayShape): Use
   };
 
   return { run };
+};
+
+const logUnexpectedUseCaseCause = (
+  annotations: Readonly<Record<string, unknown>>,
+  cause: Cause.Cause<unknown>,
+): Effect.Effect<void> => {
+  if (!Cause.hasDies(cause) && !Cause.hasInterrupts(cause)) {
+    return Effect.void;
+  }
+
+  return Effect.logError("usecase execution interrupted or defected").pipe(
+    Effect.annotateLogs({
+      ...annotations,
+      cause: Cause.pretty(cause),
+      defect: Cause.hasDies(cause),
+      interrupted: Cause.hasInterrupts(cause),
+    }),
+  );
 };
 
 const execute = <Name extends UseCaseName>(

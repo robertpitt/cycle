@@ -1079,6 +1079,110 @@ const makeTransactionCollection = <T>(
   return collection;
 };
 
+const changeFinalObjectId = (change: Change): ObjectId | null => change.newObjectId ?? null;
+
+const changesInSet = (changeSet: ChangeSet): ReadonlyArray<Change> => [
+  ...changeSet.added,
+  ...changeSet.modified,
+  ...changeSet.deleted,
+];
+
+const pathContains = (parent: string, child: string): boolean => child.startsWith(`${parent}/`);
+
+const changesConflict = (local: Change, remote: Change): boolean => {
+  if (local.path === remote.path) {
+    return changeFinalObjectId(local) !== changeFinalObjectId(remote);
+  }
+
+  return pathContains(local.path, remote.path) || pathContains(remote.path, local.path);
+};
+
+const hasMergeConflict = (local: ChangeSet, remote: ChangeSet): boolean => {
+  const localChanges = changesInSet(local);
+  const remoteChanges = changesInSet(remote);
+
+  for (const localChange of localChanges) {
+    if (remoteChanges.some((remoteChange) => changesConflict(localChange, remoteChange))) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const applyChangesToTree = (
+  runtime: StoreRuntime,
+  root: Tree.MutableTree,
+  changes: ChangeSet,
+): Effect.Effect<void, GitDbError> =>
+  Effect.gen(function* () {
+    for (const change of changesInSet(changes)) {
+      if (change.newObjectId === undefined) {
+        Tree.applyMutation(root, change.path, { kind: "delete" });
+        continue;
+      }
+
+      Tree.applyMutation(root, change.path, {
+        bytes: yield* runtime.adapter.readBlob(change.newObjectId),
+        kind: "put",
+      });
+    }
+  });
+
+const mergeDivergedPointer = (
+  store: StoreServiceShape,
+  runtime: StoreRuntime,
+  options: {
+    readonly localBefore: ObjectId;
+    readonly localRef: string;
+    readonly mergeBase: ObjectId;
+    readonly pointer: string;
+    readonly remote: string;
+    readonly remoteBefore: ObjectId;
+  },
+): Effect.Effect<ObjectId, GitDbError> =>
+  Effect.gen(function* () {
+    const localChanges = yield* store.diff(options.mergeBase, options.localBefore);
+    const remoteChanges = yield* store.diff(options.mergeBase, options.remoteBefore);
+
+    if (hasMergeConflict(localChanges, remoteChanges)) {
+      return yield* Effect.fail(
+        syncConflict(
+          options.pointer,
+          options.localBefore,
+          options.remoteBefore,
+          options.mergeBase,
+        ),
+      );
+    }
+
+    const remoteSnapshot = yield* store.snapshot(options.remoteBefore);
+    const root = yield* Tree.loadMutableTree(runtime.adapter, remoteSnapshot.root);
+
+    yield* applyChangesToTree(runtime, root, localChanges);
+
+    const tree = yield* Tree.writeMutableTree(runtime.adapter, root);
+    const snapshotId = yield* runtime.adapter.writeCommit({
+      message: `Merge GitDB pointer ${options.pointer}`,
+      parents: [options.remoteBefore, options.localBefore],
+      tree,
+    });
+
+    yield* movePointerRef(
+      runtime,
+      options.localRef,
+      snapshotId,
+      options.localBefore,
+      options.pointer,
+    );
+    yield* runtime.adapter.push({
+      refspecs: [`${options.localRef}:${options.localRef}`],
+      remote: options.remote,
+    });
+
+    return snapshotId;
+  });
+
 const sync = (
   store: StoreServiceShape,
   runtime: StoreRuntime,
@@ -1241,6 +1345,25 @@ const sync = (
       }
 
       const mergeBase = yield* runtime.adapter.mergeBase(localBefore, remoteBefore);
+
+      if (divergence === "merge" && mergeBase !== null) {
+        const snapshotId = yield* mergeDivergedPointer(store, runtime, {
+          localBefore,
+          localRef,
+          mergeBase,
+          pointer,
+          remote,
+          remoteBefore,
+        });
+
+        results.push({
+          ...resultBase,
+          localAfter: snapshotId,
+          remoteAfter: snapshotId,
+          status: "merged",
+        });
+        continue;
+      }
 
       return yield* Effect.fail(
         syncConflict(pointer, localBefore, remoteBefore, mergeBase ?? undefined),

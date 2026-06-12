@@ -1514,4 +1514,289 @@ describe("@cycle/git-db", () => {
       ),
     ),
   );
+
+  it.effect("auto-merges diverged GitDB refs with disjoint path changes", () =>
+    withRepo((repo) =>
+      withTempDir("git-db-remote-", (remoteRoot) =>
+        withTempDir("git-db-clone-", (cloneRoot) =>
+          Effect.gen(function* () {
+            const remote = path.join(remoteRoot, "origin.git");
+            const clone = path.join(cloneRoot, "work");
+
+            yield* git(repo, ["clone", "--bare", repo, remote]);
+            yield* git(repo, ["remote", "add", "origin", remote]);
+
+            yield* Effect.gen(function* () {
+              const store = yield* StoreApi.StoreService;
+              const tickets = yield* store.collection<{
+                readonly status: string;
+                readonly title: string;
+              }>("tickets");
+              const snapshot = yield* tickets.put(
+                "ticket-1",
+                {
+                  status: "open",
+                  title: "Merge base ticket",
+                },
+                {
+                  message: "Create merge base ticket",
+                },
+              );
+
+              yield* store.sync({
+                mode: "push",
+                pointers: ["main"],
+                remote: "origin",
+              });
+
+              return snapshot;
+            }).pipe(Effect.provide(GitDbLive({ gitDir: path.join(repo, ".git") })));
+
+            yield* git(repo, ["clone", remote, clone]);
+
+            yield* Effect.gen(function* () {
+              const store = yield* StoreApi.StoreService;
+
+              yield* store.sync({
+                mode: "full",
+                pointers: ["main"],
+                remote: "origin",
+              });
+            }).pipe(Effect.provide(GitDbLive({ gitDir: path.join(clone, ".git") })));
+
+            const remoteSnapshot = yield* Effect.gen(function* () {
+              const store = yield* StoreApi.StoreService;
+              const tickets = yield* store.collection<{
+                readonly status: string;
+                readonly title: string;
+              }>("tickets");
+              const snapshot = yield* tickets.put(
+                "ticket-1",
+                {
+                  status: "closed",
+                  title: "Merge base ticket",
+                },
+                {
+                  message: "Close ticket remotely",
+                },
+              );
+
+              yield* store.sync({
+                mode: "push",
+                pointers: ["main"],
+                remote: "origin",
+              });
+
+              return snapshot;
+            }).pipe(Effect.provide(GitDbLive({ gitDir: path.join(repo, ".git") })));
+
+            const sourcePath = path.join(clone, "source.txt");
+            yield* attemptPromise(() => writeFile(sourcePath, "local worktree edit\n"));
+            const branchBefore = (yield* git(clone, ["symbolic-ref", "--short", "HEAD"])).trim();
+            const headBefore = (yield* git(clone, ["rev-parse", "HEAD"])).trim();
+            const worktreeHashBefore = yield* hashFile(sourcePath);
+
+            const merged = yield* Effect.gen(function* () {
+              const store = yield* StoreApi.StoreService;
+              const tickets = yield* store.collection<{
+                readonly status: string;
+                readonly title: string;
+              }>("tickets");
+              const clonedSnapshot = yield* tickets.put(
+                "ticket-2",
+                {
+                  status: "open",
+                  title: "Local airplane ticket",
+                },
+                {
+                  message: "Create local airplane ticket",
+                },
+              );
+              const sync = yield* store.sync({
+                mode: "full",
+                onDiverged: "merge",
+                pointers: ["main"],
+                remote: "origin",
+              });
+              const ticketOne = yield* tickets.get("ticket-1");
+              const ticketTwo = yield* tickets.get("ticket-2");
+              const snapshot = yield* store.snapshot(sync.pointers[0]?.localAfter ?? "");
+
+              return {
+                clonedSnapshot,
+                snapshot,
+                sync,
+                ticketOne,
+                ticketTwo,
+              };
+            }).pipe(Effect.provide(GitDbLive({ gitDir: path.join(clone, ".git") })));
+
+            const remoteRefAfterMerge = (yield* git(remote, [
+              "show-ref",
+              "--verify",
+              "--hash",
+              "refs/gitdb/default/main",
+            ])).trim();
+            const branchAfter = (yield* git(clone, ["symbolic-ref", "--short", "HEAD"])).trim();
+            const headAfter = (yield* git(clone, ["rev-parse", "HEAD"])).trim();
+            const worktreeHashAfter = yield* hashFile(sourcePath);
+
+            assert.strictEqual(merged.sync.pointers[0]?.status, "merged");
+            assert.strictEqual(merged.sync.pointers[0]?.localBefore, merged.clonedSnapshot.id);
+            assert.strictEqual(merged.sync.pointers[0]?.remoteBefore, remoteSnapshot.id);
+            assert.strictEqual(merged.sync.pointers[0]?.localAfter, remoteRefAfterMerge);
+            assert.strictEqual(merged.sync.pointers[0]?.remoteAfter, remoteRefAfterMerge);
+            assert.deepStrictEqual(merged.snapshot.parents, [
+              remoteSnapshot.id,
+              merged.clonedSnapshot.id,
+            ]);
+            assert.deepStrictEqual(merged.ticketOne, {
+              status: "closed",
+              title: "Merge base ticket",
+            });
+            assert.deepStrictEqual(merged.ticketTwo, {
+              status: "open",
+              title: "Local airplane ticket",
+            });
+            assert.strictEqual(branchAfter, branchBefore);
+            assert.strictEqual(headAfter, headBefore);
+            assert.strictEqual(worktreeHashAfter, worktreeHashBefore);
+          }),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("keeps diverged same-path GitDB conflicts explicit when merging", () =>
+    withRepo((repo) =>
+      withTempDir("git-db-remote-", (remoteRoot) =>
+        withTempDir("git-db-clone-", (cloneRoot) =>
+          Effect.gen(function* () {
+            const remote = path.join(remoteRoot, "origin.git");
+            const clone = path.join(cloneRoot, "work");
+
+            yield* git(repo, ["clone", "--bare", repo, remote]);
+            yield* git(repo, ["remote", "add", "origin", remote]);
+
+            const base = yield* Effect.gen(function* () {
+              const store = yield* StoreApi.StoreService;
+              const tickets = yield* store.collection<{
+                readonly assignee: string | null;
+                readonly status: string;
+                readonly title: string;
+              }>("tickets");
+              const snapshot = yield* tickets.put(
+                "ticket-1",
+                {
+                  assignee: null,
+                  status: "open",
+                  title: "Explicit merge conflict",
+                },
+                {
+                  message: "Create conflict base ticket",
+                },
+              );
+
+              yield* store.sync({
+                mode: "push",
+                pointers: ["main"],
+                remote: "origin",
+              });
+
+              return snapshot;
+            }).pipe(Effect.provide(GitDbLive({ gitDir: path.join(repo, ".git") })));
+
+            yield* git(repo, ["clone", remote, clone]);
+
+            yield* Effect.gen(function* () {
+              const store = yield* StoreApi.StoreService;
+
+              yield* store.sync({
+                mode: "full",
+                pointers: ["main"],
+                remote: "origin",
+              });
+            }).pipe(Effect.provide(GitDbLive({ gitDir: path.join(clone, ".git") })));
+
+            const remoteSnapshot = yield* Effect.gen(function* () {
+              const store = yield* StoreApi.StoreService;
+              const tickets = yield* store.collection<{
+                readonly assignee: string | null;
+                readonly status: string;
+                readonly title: string;
+              }>("tickets");
+              const snapshot = yield* tickets.put(
+                "ticket-1",
+                {
+                  assignee: "alice",
+                  status: "in-progress",
+                  title: "Explicit merge conflict",
+                },
+                {
+                  message: "Assign ticket remotely",
+                },
+              );
+
+              yield* store.sync({
+                mode: "push",
+                pointers: ["main"],
+                remote: "origin",
+              });
+
+              return snapshot;
+            }).pipe(Effect.provide(GitDbLive({ gitDir: path.join(repo, ".git") })));
+
+            const result = yield* Effect.gen(function* () {
+              const store = yield* StoreApi.StoreService;
+              const tickets = yield* store.collection<{
+                readonly assignee: string | null;
+                readonly status: string;
+                readonly title: string;
+              }>("tickets");
+              const clonedSnapshot = yield* tickets.put(
+                "ticket-1",
+                {
+                  assignee: "bob",
+                  status: "closed",
+                  title: "Explicit merge conflict",
+                },
+                {
+                  message: "Close ticket locally",
+                },
+              );
+              const conflict = yield* Effect.flip(
+                store.sync({
+                  mode: "full",
+                  onDiverged: "merge",
+                  pointers: ["main"],
+                  remote: "origin",
+                }),
+              );
+              const localRef = yield* store.resolveSnapshotId("main");
+
+              return {
+                clonedSnapshot,
+                conflict,
+                localRef,
+              };
+            }).pipe(Effect.provide(GitDbLive({ gitDir: path.join(clone, ".git") })));
+
+            const remoteRefAfterConflict = (yield* git(remote, [
+              "show-ref",
+              "--verify",
+              "--hash",
+              "refs/gitdb/default/main",
+            ])).trim();
+
+            assert.ok(result.conflict instanceof SyncConflictError);
+            assert.strictEqual(result.conflict.localSnapshot, result.clonedSnapshot.id);
+            assert.strictEqual(result.conflict.remoteSnapshot, remoteSnapshot.id);
+            assert.strictEqual(result.conflict.mergeBase, base.id);
+            assert.strictEqual(result.localRef, result.clonedSnapshot.id);
+            assert.strictEqual(remoteRefAfterConflict, remoteSnapshot.id);
+          }),
+        ),
+      ),
+    ),
+  );
 });
