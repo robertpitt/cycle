@@ -12,6 +12,7 @@ import { bytesFromString } from "../internals/bytes.ts";
 import { gitObjectId } from "../internals/hash.ts";
 import { normalizeIdentity } from "../internals/identity.ts";
 import { Git, type GitService } from "./Git.ts";
+import { compareTreeEntries } from "./GitTreeOrder.ts";
 
 type InMemoryObject =
   | { readonly bytes: Uint8Array; readonly kind: "blob" }
@@ -152,7 +153,7 @@ export const layer = Layer.effect(
         }),
       writeTree: (_store, entries) =>
         Effect.gen(function* () {
-          const sorted = [...entries].sort((a, b) => a.name.localeCompare(b.name));
+          const sorted = [...entries].sort(compareTreeEntries);
           const payload = bytesFromString(JSON.stringify(sorted));
           const id = yield* objectId("tree", payload);
 

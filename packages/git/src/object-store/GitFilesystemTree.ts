@@ -4,6 +4,7 @@ import { gitAdapterError, type GitAdapterError } from "../errors/index.ts";
 import { bytesFromString, bytesToString, concatBytes } from "../internals/bytes.ts";
 import { writeObject } from "./GitFilesystemObject.ts";
 import type { FilesystemRuntime } from "./GitFilesystemTypes.ts";
+import { compareTreeEntries } from "./GitTreeOrder.ts";
 
 export const readFilesystemTree = (
   payload: Uint8Array,
@@ -62,7 +63,7 @@ export const writeFilesystemTree = (
   Effect.gen(function* () {
     const parts: Array<Uint8Array> = [];
 
-    for (const entry of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const entry of [...entries].sort(compareTreeEntries)) {
       parts.push(bytesFromString(`${gitTreeMode(entry.mode)} ${entry.name}\0`));
       parts.push(yield* hexToBytes(entry.objectId, "filesystem writeTree"));
     }

@@ -6,6 +6,7 @@ import { bytesToString } from "../internals/bytes.ts";
 import { git, formatGitFailure, formatOperation, sanitizeStderr } from "../command/GitCommand.ts";
 import { Git, type GitService } from "./Git.ts";
 import { commitEnv, parseCommit, parseTree } from "./GitObjectCodec.ts";
+import { compareTreeEntries } from "./GitTreeOrder.ts";
 
 export const layer = Layer.effect(
   Git,
@@ -171,7 +172,7 @@ export const layer = Layer.effect(
         }),
       writeTree: (store, entries) => {
         const input = [...entries]
-          .sort((a, b) => a.name.localeCompare(b.name))
+          .sort(compareTreeEntries)
           .map((entry) => `${entry.mode} ${entry.type} ${entry.objectId}\t${entry.name}\0`)
           .join("");
 

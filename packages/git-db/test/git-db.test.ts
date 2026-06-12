@@ -1637,6 +1637,7 @@ describe("@cycle/git-db", () => {
               "--hash",
               "refs/gitdb/default/main",
             ])).trim();
+            yield* git(clone, ["fsck", "--strict", remoteRefAfterMerge]);
             const branchAfter = (yield* git(clone, ["symbolic-ref", "--short", "HEAD"])).trim();
             const headAfter = (yield* git(clone, ["rev-parse", "HEAD"])).trim();
             const worktreeHashAfter = yield* hashFile(sourcePath);
