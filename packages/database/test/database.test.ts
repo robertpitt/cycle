@@ -1,12 +1,46 @@
 import { Event as GitDbEvent, GitDbInMemory, Store as GitDbStore } from "@cycle/git-db";
-import { Effect } from "effect";
-import { DatabaseService, DatabaseTest, ValidationError } from "../src/index.ts";
+import { randomBytes } from "node:crypto";
+import { Crypto, Effect, Layer } from "effect";
+import {
+  DatabaseIdGenerator,
+  DatabaseIdGeneratorLive,
+  DatabaseService,
+  DatabaseTest,
+  ValidationError,
+} from "../src/index.ts";
 import { assert, describe, it } from "./effect-vitest.ts";
 
 const makeStore = (database: string) =>
   Effect.gen(function* () {
     return yield* GitDbStore.StoreService;
   }).pipe(Effect.provide(GitDbInMemory({ database })));
+
+const TestCrypto = Layer.succeed(
+  Crypto.Crypto,
+  Crypto.make({
+    digest: (_algorithm, data) => Effect.succeed(data),
+    randomBytes: (size) => new Uint8Array(randomBytes(size)),
+  }),
+);
+
+const collectStorePaths = (
+  store: GitDbStore.StoreServiceShape,
+  root = "",
+): Effect.Effect<ReadonlyArray<string>, unknown, never> =>
+  Effect.gen(function* () {
+    const entries = yield* store.list(root);
+    const paths: Array<string> = [];
+
+    for (const entry of entries) {
+      if (entry.type === "tree") {
+        paths.push(...(yield* collectStorePaths(store, entry.path)));
+      } else {
+        paths.push(entry.path);
+      }
+    }
+
+    return paths.sort();
+  });
 
 describe("@cycle/database", () => {
   it.effect(
@@ -106,6 +140,131 @@ describe("@cycle/database", () => {
       assert.strictEqual(sourceProfile?.id, "test@example.invalid");
       assert.strictEqual(status.cycleMetadata?.ticketPrefix, "UKN");
       assert.strictEqual(history.length, 1);
+    }).pipe(Effect.provide(DatabaseTest())),
+  );
+
+  it.effect("uses UUIDv7-shaped live event ids for globally unique event file names", () =>
+    Effect.gen(function* () {
+      const ids = yield* DatabaseIdGenerator;
+      const first = yield* ids.eventId;
+      const second = yield* ids.eventId;
+
+      assert.notStrictEqual(first, second);
+      assert.match(first, /^evt_[0-9a-f]{12}7[0-9a-f]{19}$/u);
+      assert.match(second, /^evt_[0-9a-f]{12}7[0-9a-f]{19}$/u);
+    }).pipe(Effect.provide(DatabaseIdGeneratorLive.pipe(Layer.provide(TestCrypto)))),
+  );
+
+  it.effect("commits only event files and rebuilds materialized ticket state from events", () =>
+    Effect.gen(function* () {
+      const repositoryId = "event-log-invariants-repo";
+      const database = yield* DatabaseService;
+      const store = yield* makeStore(repositoryId);
+
+      yield* database.openRepository({
+        repositoryId,
+        store,
+      });
+
+      const ticket = yield* database.createTicket(repositoryId, {
+        priority: "low",
+        status: "todo",
+        title: "Event log invariant ticket",
+      });
+      yield* database.updateTicket(repositoryId, ticket.id, {
+        frontmatter: {
+          priority: "high",
+          status: "in-progress",
+        },
+      });
+
+      const beforeDeleteStatus = yield* database.repositoryStatus(repositoryId);
+
+      yield* database.deleteTicket(repositoryId, ticket.id, {
+        reason: "verify deletes are events",
+      });
+
+      const afterDeleteStatus = yield* database.repositoryStatus(repositoryId);
+      const beforeDeleteSnapshot = beforeDeleteStatus.activeSnapshotId;
+      const afterDeleteSnapshot = afterDeleteStatus.activeSnapshotId;
+
+      assert.ok(beforeDeleteSnapshot);
+      assert.ok(afterDeleteSnapshot);
+
+      const deleteDiff = yield* store.diff(beforeDeleteSnapshot, afterDeleteSnapshot);
+      const deletePayloads = yield* Effect.forEach(deleteDiff.added, (change) =>
+        store.get(change.path).pipe(Effect.map((document) => document?.json())),
+      );
+      const allPaths = yield* collectStorePaths(store);
+      const events = yield* GitDbEvent.list(store);
+      const activeBeforeRebuild = yield* database.listTickets({
+        repositoryIds: [repositoryId],
+      });
+      const deletedBeforeRebuild = yield* database.listTickets({
+        deleted: true,
+        repositoryIds: [repositoryId],
+      });
+      const rebuilt = yield* Effect.gen(function* () {
+        const freshDatabase = yield* DatabaseService;
+
+        yield* freshDatabase.openRepository({
+          repositoryId,
+          store,
+        });
+
+        const active = yield* freshDatabase.listTickets({
+          repositoryIds: [repositoryId],
+        });
+        const deleted = yield* freshDatabase.listTickets({
+          deleted: true,
+          repositoryIds: [repositoryId],
+        });
+        const status = yield* freshDatabase.repositoryStatus(repositoryId);
+
+        return { active, deleted, status };
+      }).pipe(Effect.provide(DatabaseTest("event-log-rebuild")));
+
+      assert.deepStrictEqual(deleteDiff.deleted, []);
+      assert.ok(deleteDiff.added.every((change) => change.path.startsWith("collections/events/")));
+      assert.ok(
+        deletePayloads.some(
+          (payload) =>
+            payload !== null &&
+            typeof payload === "object" &&
+            !Array.isArray(payload) &&
+            "op" in payload &&
+            payload.op === "ticket.delete",
+        ),
+      );
+      assert.ok(allPaths.every((path) => path.startsWith("collections/events/")));
+      assert.ok(!allPaths.some((path) => /(^|\/)(index|projection)s?(\/|\.|$)/u.test(path)));
+      assert.strictEqual(new Set(allPaths).size, allPaths.length);
+      assert.strictEqual(new Set(events.map((event) => event.path)).size, events.length);
+      assert.ok(
+        events.every(
+          (event) =>
+            event.payload !== null &&
+            typeof event.payload === "object" &&
+            !Array.isArray(event.payload),
+        ),
+      );
+      assert.deepStrictEqual(
+        activeBeforeRebuild.entries.map((entry) => entry.id),
+        [],
+      );
+      assert.deepStrictEqual(
+        deletedBeforeRebuild.entries.map((entry) => entry.id),
+        [ticket.id],
+      );
+      assert.deepStrictEqual(
+        rebuilt.active.entries.map((entry) => entry.id),
+        [],
+      );
+      assert.deepStrictEqual(
+        rebuilt.deleted.entries.map((entry) => entry.id),
+        [ticket.id],
+      );
+      assert.strictEqual(rebuilt.status.activeSnapshotId, afterDeleteStatus.activeSnapshotId);
     }).pipe(Effect.provide(DatabaseTest())),
   );
 

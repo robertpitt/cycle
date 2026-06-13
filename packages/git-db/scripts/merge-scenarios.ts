@@ -352,6 +352,29 @@ const firstUsefulStderrLine = (stderr: string | undefined): string => {
   );
 };
 
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+const resolveTicketStatus = (events: ReadonlyArray<ListedEvent>): string | undefined => {
+  let status: string | undefined;
+
+  for (const event of events) {
+    if (!isRecord(event.payload)) continue;
+
+    if (event.payload.op === "ticket.create" && typeof event.payload.status === "string") {
+      status = event.payload.status;
+    } else if (
+      event.payload.op === "ticket.update" &&
+      event.payload.field === "status" &&
+      typeof event.payload.value === "string"
+    ) {
+      status = event.payload.value;
+    }
+  }
+
+  return status;
+};
+
 const sameTicketDifferentEventsMerge: Scenario = {
   expected:
     "A and B append different event files for the same ticket; merge mode creates a merge commit.",
@@ -401,6 +424,62 @@ const sameTicketDifferentEventsMerge: Scenario = {
     details.push(`user B pushed: ${formatSync(bPush)}`);
     details.push(`user A merged and pushed: ${formatSync(aMerge)}`);
     details.push(`final events: ${events.map((event) => event.eventId).join(", ")}`);
+
+    return { details };
+  },
+};
+
+const sameTicketCompetingStatusUpdatesResolveAfterMerge: Scenario = {
+  expected:
+    "A and B update the same ticket status with different event files; GitDB merges and projection order decides final state.",
+  name: "same-ticket-competing-status-updates-resolve-after-merge",
+  run: async (context) => {
+    const details = [...(await seedScenario(context))];
+
+    await writeInClone(context, context.userA, {
+      actor: "A",
+      eventId: "evt_0002",
+      payload: {
+        field: "status",
+        op: "ticket.update",
+        value: "in-progress",
+      },
+      seconds: 12,
+      ticketId,
+    });
+    await writeInClone(context, context.userB, {
+      actor: "B",
+      eventId: "evt_0003",
+      payload: {
+        field: "status",
+        op: "ticket.update",
+        value: "blocked",
+      },
+      seconds: 13,
+      ticketId,
+    });
+
+    const bPush = await syncMain(context, context.userB, { mode: "full" });
+    const aMerge = await syncMain(context, context.userA, {
+      mode: "full",
+      onDiverged: "merge",
+    });
+    const bPull = await syncMain(context, context.userB, {
+      mode: "full",
+      onDiverged: "merge",
+    });
+    const events = await listTicketEvents(context, context.userB);
+    const projectedStatus = resolveTicketStatus(events);
+
+    assertPointerStatus(bPush, "pushed");
+    assertPointerStatus(aMerge, "merged");
+    assertPointerStatus(bPull, "fast-forwarded");
+    assertEventIds(events, ["evt_0001", "evt_0002", "evt_0003"]);
+    assert.strictEqual(projectedStatus, "blocked");
+
+    details.push(`user B pushed competing status update: ${formatSync(bPush)}`);
+    details.push(`user A merged and pushed competing status update: ${formatSync(aMerge)}`);
+    details.push(`projection resolved final status from ordered events: ${projectedStatus}`);
 
     return { details };
   },
@@ -607,6 +686,7 @@ const stalePushRejectedBeforeMerge: Scenario = {
 
 const scenarios: ReadonlyArray<Scenario> = [
   sameTicketDifferentEventsMerge,
+  sameTicketCompetingStatusUpdatesResolveAfterMerge,
   differentEventsWithoutMergeStrategyRejects,
   sameTicketSameEventSamePayloadMerges,
   sameTicketSameEventDifferentPayloadConflicts,
