@@ -3,11 +3,9 @@ import type { DetectedAgentProvider } from "../../shared/AgentProviders.ts";
 import { fallbackAgentProviders } from "../lib/agentProviders.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 
-export const agentProvidersQueryKey = ["desktop", "agentProviders"] as const;
+const agentProvidersQueryKey = ["desktop", "agentProviders"] as const;
 
-export const detectAgentProvidersForRenderer = async (): Promise<
-  ReadonlyArray<DetectedAgentProvider>
-> => {
+const detectAgentProvidersForRenderer = async (): Promise<ReadonlyArray<DetectedAgentProvider>> => {
   const bridge = getDesktopBridge();
 
   if (!bridge) {

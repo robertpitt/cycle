@@ -89,5 +89,6 @@ await Effect.runPromise(
 ```bash
 npm run typecheck --workspace @cycle/git-db
 npm test --workspace @cycle/git-db
+npm run test:merge-scenarios --workspace @cycle/git-db
 npm run bench:local --workspace @cycle/git-db -- --count 5000
 ```

@@ -1,6 +1,6 @@
 import * as React from "react";
 
-export type ShortcutBinding = readonly string[];
+type ShortcutBinding = readonly string[];
 
 export type ShortcutAction = {
   readonly allowInEditable?: boolean;
@@ -53,7 +53,7 @@ const latestEntry = (entries: readonly ShortcutEntry[]): ShortcutEntry | undefin
     undefined,
   );
 
-export const normalizeShortcutKey = (key: string): string | undefined => {
+const normalizeShortcutKey = (key: string): string | undefined => {
   if (!key || ignoredKeys.has(key) || key === "Dead") return undefined;
   if (key === "Esc") return "Escape";
   if (key.length === 1) return key.toLowerCase();

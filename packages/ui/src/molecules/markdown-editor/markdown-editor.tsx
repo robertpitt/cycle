@@ -533,11 +533,7 @@ const MarkdownEditorValuePlugin = ({
   );
 };
 
-const MarkdownEditorEditablePlugin = ({
-  editable,
-}: {
-  readonly editable: boolean;
-}) => {
+const MarkdownEditorEditablePlugin = ({ editable }: { readonly editable: boolean }) => {
   const [editor] = useLexicalComposerContext();
 
   React.useEffect(() => {
@@ -547,11 +543,7 @@ const MarkdownEditorEditablePlugin = ({
   return null;
 };
 
-const MarkdownEditorKeyboardPlugin = ({
-  onSubmit,
-}: {
-  readonly onSubmit?: () => void;
-}) => {
+const MarkdownEditorKeyboardPlugin = ({ onSubmit }: { readonly onSubmit?: () => void }) => {
   const [editor] = useLexicalComposerContext();
   const onSubmitRef = useLatest(onSubmit);
 
@@ -723,7 +715,9 @@ export const MarkdownEditor = React.forwardRef<HTMLDivElement, MarkdownEditorPro
     );
 
     const showToolbar =
-      isEditable && !currentPreviewOpen && (focused || selectionToolbarOpen || toolbarOpen === true);
+      isEditable &&
+      !currentPreviewOpen &&
+      (focused || selectionToolbarOpen || toolbarOpen === true);
 
     return (
       <div

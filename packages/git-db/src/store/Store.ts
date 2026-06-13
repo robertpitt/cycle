@@ -1,14 +1,4 @@
-import {
-  Cache,
-  Context,
-  Effect,
-  FileSystem,
-  HashMap,
-  Layer,
-  Option,
-  Path,
-  TxRef,
-} from "effect";
+import { Cache, Context, Effect, FileSystem, HashMap, Layer, Option, Path, TxRef } from "effect";
 import { Git, type GitService } from "@cycle/git/object-store/Git";
 import type { GitAdapterError, RemoteFetchError, RemotePushError } from "@cycle/git/errors";
 import type {
@@ -851,12 +841,7 @@ const mergeDivergedPointer = (
 
     if (hasMergeConflict(localChanges, remoteChanges)) {
       return yield* Effect.fail(
-        syncConflict(
-          options.pointer,
-          options.localBefore,
-          options.remoteBefore,
-          options.mergeBase,
-        ),
+        syncConflict(options.pointer, options.localBefore, options.remoteBefore, options.mergeBase),
       );
     }
 

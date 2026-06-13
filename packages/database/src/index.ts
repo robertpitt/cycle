@@ -14,7 +14,6 @@ export {
   type DatabaseIdentityShape,
 } from "./services/DatabaseIdentity.ts";
 export {
-  DatabaseInMemory,
   DatabaseLive,
   DatabaseLiveWithOptions,
   DatabaseService,

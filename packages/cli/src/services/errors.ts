@@ -1,4 +1,4 @@
-import { type CliApiError, isCliApiError } from "../client.ts";
+import { isCliApiError } from "../client.ts";
 import { exitCodes } from "./CliRuntime.ts";
 
 export type CliFailure = {
@@ -75,5 +75,3 @@ const isDiscoveryError = (
 
 const isCliParseError = (value: unknown): boolean =>
   typeof value === "object" && value !== null && "_tag" in value;
-
-export type { CliApiError };

@@ -1,12 +1,6 @@
 import { strict as assert } from "node:assert";
 import { Effect } from "effect";
-import {
-  describe,
-  it as vitestIt,
-  type TestContext,
-  type TestOptions,
-  type TestFunction,
-} from "vitest";
+import { describe, it as vitestIt, type TestContext, type TestOptions } from "vitest";
 
 type EffectTestFunction = (context: TestContext) => Effect.Effect<unknown, unknown, never>;
 
@@ -44,4 +38,3 @@ export const it = Object.assign(vitestIt, {
 }) as typeof vitestIt & {
   readonly effect: EffectTest;
 };
-export type { TestContext, TestFunction, TestOptions };

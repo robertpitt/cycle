@@ -325,8 +325,7 @@ describe("DesktopBootstrapLive", () => {
           const bootstrap = yield* DesktopBootstrap;
           yield* bootstrap.start();
           yield* waitUntil(
-            () =>
-              events.filter((event) => event === `syncRepository:${repository.id}`).length >= 3,
+            () => events.filter((event) => event === `syncRepository:${repository.id}`).length >= 3,
             "background sync did not run",
           );
         }),

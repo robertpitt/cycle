@@ -88,9 +88,11 @@ export const exportMarkdownFromEditorState = (editorState: EditorState): string 
   return normalizeMarkdownEditorValue(markdown);
 };
 
-export const markdownToLexicalState = (markdown: string) => (_editor: LexicalEditor): void => {
-  importMarkdownIntoEditor(markdown);
-};
+export const markdownToLexicalState =
+  (markdown: string) =>
+  (_editor: LexicalEditor): void => {
+    importMarkdownIntoEditor(markdown);
+  };
 
 export const createMarkdownRoundTripEditor = (): LexicalEditor =>
   createEditor({

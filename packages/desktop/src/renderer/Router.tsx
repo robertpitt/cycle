@@ -2,7 +2,7 @@ import { createHashRouter, Navigate, type RouteObject } from "react-router";
 import { NotFoundScreen, RouteErrorScreen, WorkspaceScreen } from "./screens/index.ts";
 import { readStoredWorkspacePath } from "./screens/workspace/workspaceRoute.ts";
 
-export const WorkspaceRouteRedirect = () => {
+const WorkspaceRouteRedirect = () => {
   const fallbackPath =
     typeof window === "undefined" ? undefined : readStoredWorkspacePath(window.localStorage);
 
@@ -24,7 +24,7 @@ const workspaceRoutePaths = [
   "repositories/:repositoryId/settings",
 ] as const;
 
-export const rendererRoutes = [
+const rendererRoutes = [
   {
     children: [
       {

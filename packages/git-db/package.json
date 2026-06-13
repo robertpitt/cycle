@@ -9,6 +9,7 @@
   "scripts": {
     "bench:local": "node scripts/benchmark-local.ts",
     "test": "vitest run",
+    "test:merge-scenarios": "node scripts/merge-scenarios.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

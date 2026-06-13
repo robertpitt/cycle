@@ -2,16 +2,16 @@ import { useQuery } from "@tanstack/react-query";
 import type { BootstrapStatus } from "../../shared/Bootstrap.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 
-export const bootstrapStatusQueryKey = ["desktop", "bootstrapStatus"] as const;
+const bootstrapStatusQueryKey = ["desktop", "bootstrapStatus"] as const;
 
-export const readyBootstrapStatus = (): BootstrapStatus => ({
+const readyBootstrapStatus = (): BootstrapStatus => ({
   blocking: false,
   message: "Ready",
   phase: "ready",
   repositories: [],
 });
 
-export const getBootstrapStatus = async (): Promise<BootstrapStatus> =>
+const getBootstrapStatus = async (): Promise<BootstrapStatus> =>
   getDesktopBridge()?.getBootstrapStatus() ?? readyBootstrapStatus();
 
 export const useBootstrapStatusQuery = () =>

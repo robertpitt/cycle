@@ -155,14 +155,12 @@ export const introduced = (
 export const parseEventPath = (
   path: string,
   root = EVENT_ROOT,
-):
-  | {
-      readonly aggregateId: string;
-      readonly aggregateType: string;
-      readonly eventId: string;
-      readonly path: string;
-    }
-  | null => {
+): {
+  readonly aggregateId: string;
+  readonly aggregateType: string;
+  readonly eventId: string;
+  readonly path: string;
+} | null => {
   const prefix = `${root}/`;
 
   if (!path.startsWith(prefix) || !path.endsWith(".json")) return null;
@@ -186,10 +184,7 @@ export const parseEventPath = (
   };
 };
 
-const validateEventSegment = (
-  label: string,
-  value: string,
-): Effect.Effect<string, GitDbError> => {
+const validateEventSegment = (label: string, value: string): Effect.Effect<string, GitDbError> => {
   if (safeEventSegment.test(value)) return Effect.succeed(value);
 
   return Effect.fail(invalidPath(value, `invalid event ${label}`));

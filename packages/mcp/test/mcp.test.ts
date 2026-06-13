@@ -82,13 +82,9 @@ describe("@cycle/mcp", () => {
       const schemaJson = JSON.stringify(tool.inputSchema);
 
       assert.equal(schemaJson.includes("NaN"), false, `${toolName} should not allow NaN`);
-      assert.equal(
-        schemaJson.includes("Infinity"),
-        false,
-        `${toolName} should not allow infinity`,
-      );
-      assert.equal(schemaJson.includes("\"integer\""), true, `${toolName} should use integer`);
-      assert.equal(schemaJson.includes("\"minimum\":1"), true, `${toolName} should be positive`);
+      assert.equal(schemaJson.includes("Infinity"), false, `${toolName} should not allow infinity`);
+      assert.equal(schemaJson.includes('"integer"'), true, `${toolName} should use integer`);
+      assert.equal(schemaJson.includes('"minimum":1'), true, `${toolName} should be positive`);
     }
   });
 

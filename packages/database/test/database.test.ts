@@ -1,10 +1,6 @@
 import { Event as GitDbEvent, GitDbInMemory, Store as GitDbStore } from "@cycle/git-db";
 import { Effect } from "effect";
-import {
-  DatabaseService,
-  DatabaseTest,
-  ValidationError,
-} from "../src/index.ts";
+import { DatabaseService, DatabaseTest, ValidationError } from "../src/index.ts";
 import { assert, describe, it } from "./effect-vitest.ts";
 
 const makeStore = (database: string) =>

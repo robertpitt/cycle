@@ -17,7 +17,7 @@ export type CreateIssueFormValues = {
   readonly type: string;
 };
 
-export const initialCreateIssueFormValues = (): CreateIssueFormValues => ({
+const initialCreateIssueFormValues = (): CreateIssueFormValues => ({
   assignee: null,
   createMore: false,
   description: "",

@@ -8,10 +8,10 @@ export const issueListRootQueryKey = ["desktop", "ticketRpc", "issues"] as const
 const normalizeRepositoryIds = (repositoryIds: readonly string[] | undefined) =>
   repositoryIds === undefined ? [] : [...new Set(repositoryIds)].sort();
 
-export const issueListRepositoryQueryKey = (repositoryId: string | undefined) =>
+const issueListRepositoryQueryKey = (repositoryId: string | undefined) =>
   [...issueListRootQueryKey, "repository", repositoryId ?? null] as const;
 
-export const issueListGlobalQueryKey = (repositoryIds: readonly string[] | undefined) =>
+const issueListGlobalQueryKey = (repositoryIds: readonly string[] | undefined) =>
   [...issueListRootQueryKey, "global", normalizeRepositoryIds(repositoryIds)] as const;
 
 export const issueListQueryKey = (
@@ -37,7 +37,7 @@ export const issueRecordsQueryKey = (
   issueId: string | undefined,
 ) => ["desktop", "ticketRpc", "issueRecords", repositoryId, issueId] as const;
 
-export const listIssuesForRepository = async (
+const listIssuesForRepository = async (
   repositoryId: string,
   query: Omit<TicketQuery, "repositoryIds"> = {},
 ): Promise<TicketPage> =>
@@ -48,7 +48,7 @@ export const listIssuesForRepository = async (
     },
   });
 
-export const listIssuesForRepositories = async (
+const listIssuesForRepositories = async (
   repositoryIds: readonly string[],
   query: Omit<TicketQuery, "repositoryIds"> = {},
 ): Promise<TicketPage> => {
@@ -72,7 +72,7 @@ export const listIssuesForRepositories = async (
   });
 };
 
-export const getIssueForRepository = async ({
+const getIssueForRepository = async ({
   issueId,
   repositoryId,
 }: {
@@ -88,7 +88,7 @@ export const getIssueForRepository = async ({
     },
   });
 
-export const listIssueRecordsForRepository = async ({
+const listIssueRecordsForRepository = async ({
   issueId,
   repositoryId,
 }: {

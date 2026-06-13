@@ -1,14 +1,11 @@
 export { Change } from "./Change.ts";
 export { ChangeSet } from "./ChangeSet.ts";
 export { CommitOptions } from "./CommitOptions.ts";
-export { DivergenceMode } from "./DivergenceMode.ts";
 export { Entry } from "./Entry.ts";
 export { HistoryOptions } from "./HistoryOptions.ts";
 export { MovePointerOptions } from "./MovePointerOptions.ts";
 export { PointerSyncResult } from "./PointerSyncResult.ts";
-export { PointerSyncStatus } from "./PointerSyncStatus.ts";
 export { ReadOptions } from "./ReadOptions.ts";
 export { Snapshot } from "./Snapshot.ts";
-export { SyncMode } from "./SyncMode.ts";
 export { SyncOptions } from "./SyncOptions.ts";
 export { SyncResult } from "./SyncResult.ts";

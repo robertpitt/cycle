@@ -169,7 +169,7 @@ export type DatabaseServiceOptions = {
   readonly projectionPath?: string;
 };
 
-export type DatabaseBackgroundRunner = {
+type DatabaseBackgroundRunner = {
   readonly run: (label: string, effect: Effect.Effect<void, unknown>) => void;
   readonly schedule: (
     label: string,
@@ -200,7 +200,7 @@ type DatabaseBackgroundScheduleMessage =
       readonly label: string;
     };
 
-export type DatabaseLogEvent = {
+type DatabaseLogEvent = {
   readonly data?: Readonly<Record<string, unknown>>;
   readonly message: string;
   readonly repositoryId?: string;
@@ -1174,7 +1174,14 @@ export const makeDatabaseService = (
               const recordId = makeRecordId(ticketId, "status-change", yield* ids.recordId);
               yield* appendEvent(tx, "record", recordId, {
                 op: "record.add",
-                value: statusChangeRecord(ticketId, recordId, actor, now, current.status, next.status),
+                value: statusChangeRecord(
+                  ticketId,
+                  recordId,
+                  actor,
+                  now,
+                  current.status,
+                  next.status,
+                ),
               });
             }
 
@@ -2530,8 +2537,6 @@ export const DatabaseTest = (prefix?: string) =>
     Layer.provide(Layer.mergeAll(DatabaseIdentityTest(), DatabaseIdGeneratorDeterministic(prefix))),
   );
 
-export const DatabaseInMemory = DatabaseTest;
-
 const buildMaterialization = (
   repository: RepositoryRuntime,
   _previousSnapshotId: string | null,
@@ -2630,11 +2635,15 @@ const foldRepositoryEvents = (
 ): Effect.Effect<FoldedEvents, DatabaseFailure> =>
   Effect.gen(function* () {
     const currentSnapshotId =
-      snapshotId ?? (yield* storage("resolve current snapshot", repository.store.resolveSnapshotId()));
+      snapshotId ??
+      (yield* storage("resolve current snapshot", repository.store.resolveSnapshotId()));
 
     if (currentSnapshotId === null) return emptyFoldedEvents();
 
-    const history = yield* storage("read event history", repository.store.history(currentSnapshotId));
+    const history = yield* storage(
+      "read event history",
+      repository.store.history(currentSnapshotId),
+    );
     const folded = emptyFoldedEvents();
     const warnings: Array<MaterializationWarning> = [];
 
@@ -2838,7 +2847,9 @@ const applyDatabaseEvent = (
     }
   }
 
-  throw new Error(`unsupported event operation: ${String((payload as { readonly op?: unknown }).op)}`);
+  throw new Error(
+    `unsupported event operation: ${String((payload as { readonly op?: unknown }).op)}`,
+  );
 };
 
 const parseTicketValue = (input: unknown): TicketDocument => {
@@ -2870,7 +2881,8 @@ const applyTicketFieldUpdate = (
   field: keyof IssueFrontmatter | "body",
   value: unknown,
 ): TicketDocument => {
-  if (field === "body") return updateTicketDocument(ticket, ticket.frontmatter, String(value ?? ""));
+  if (field === "body")
+    return updateTicketDocument(ticket, ticket.frontmatter, String(value ?? ""));
 
   const frontmatter = {
     ...ticket.frontmatter,
@@ -2974,7 +2986,10 @@ const buildCommitChanges = (repository: RepositoryRuntime, snapshotId: string) =
 
 const initialCommitChanges = (store: GitDbStore.StoreServiceShape, snapshotId: string) =>
   Effect.gen(function* () {
-    const events = yield* storage("list initial event changes", GitDbEvent.list(store, { from: snapshotId }));
+    const events = yield* storage(
+      "list initial event changes",
+      GitDbEvent.list(store, { from: snapshotId }),
+    );
 
     return events.map((event) => eventPathChange("added", event.path));
   });

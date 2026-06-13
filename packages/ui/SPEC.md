@@ -561,23 +561,23 @@ onTicketEditorBlur(event):
 
 ## 18. Test and Validation Matrix
 
-| Area | Requirement | Validation |
-| --- | --- | --- |
-| Package boundary | UI source has no desktop/runtime imports | Extend or keep `packages/ui/test/ui-architecture.test.ts` passing |
-| Dependencies | Lexical packages are added only to `@cycle/ui` and versions align | Package manifest review and install lockfile review |
-| Markdown import/export | Core subset round-trips through the shared transformer set | Vitest table-driven tests for every Section 9.1 construct |
-| Compatibility Markdown | Images, horizontal rules, tables, and HTML comments are not dropped | Vitest fixture tests with existing Markdown examples |
-| Controlled value | External `value` changes import once without render loops | React component test |
-| Uncontrolled value | `defaultValue` initializes editor and local edits call `onValueChange` | React component test |
-| Ticket commit | Blur commits changed ticket Markdown and does not commit unchanged content | React component test |
-| Comment submit | Button and `Mod+Enter` submit trimmed non-empty Markdown | React component test |
-| Empty comments | Empty or whitespace-only comments do not call `onSubmit` | React component test |
-| Slash menu | `/` opens commands, Escape closes, selection inserts Markdown-compatible blocks | React component test or Storybook interaction test |
-| Toolbar | Bold, italic, link, list, quote, and code controls mutate selection | React component test |
-| Accessibility | Editor labels, toolbar labels, disabled/read-only states, and keyboard navigation exist | Testing Library queries plus manual Storybook review |
-| Renderer safety | Unsafe links are not clickable and issue references still route through callbacks | Existing or new `MarkdownRenderer` tests |
-| Desktop integration | Desktop passes strings and does not import Lexical | Typecheck plus import scan |
-| Storybook | Editor, ticket page, and comment input examples exist | `pnpm --filter @cycle/ui storybook:build` |
+| Area                   | Requirement                                                                             | Validation                                                        |
+| ---------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Package boundary       | UI source has no desktop/runtime imports                                                | Extend or keep `packages/ui/test/ui-architecture.test.ts` passing |
+| Dependencies           | Lexical packages are added only to `@cycle/ui` and versions align                       | Package manifest review and install lockfile review               |
+| Markdown import/export | Core subset round-trips through the shared transformer set                              | Vitest table-driven tests for every Section 9.1 construct         |
+| Compatibility Markdown | Images, horizontal rules, tables, and HTML comments are not dropped                     | Vitest fixture tests with existing Markdown examples              |
+| Controlled value       | External `value` changes import once without render loops                               | React component test                                              |
+| Uncontrolled value     | `defaultValue` initializes editor and local edits call `onValueChange`                  | React component test                                              |
+| Ticket commit          | Blur commits changed ticket Markdown and does not commit unchanged content              | React component test                                              |
+| Comment submit         | Button and `Mod+Enter` submit trimmed non-empty Markdown                                | React component test                                              |
+| Empty comments         | Empty or whitespace-only comments do not call `onSubmit`                                | React component test                                              |
+| Slash menu             | `/` opens commands, Escape closes, selection inserts Markdown-compatible blocks         | React component test or Storybook interaction test                |
+| Toolbar                | Bold, italic, link, list, quote, and code controls mutate selection                     | React component test                                              |
+| Accessibility          | Editor labels, toolbar labels, disabled/read-only states, and keyboard navigation exist | Testing Library queries plus manual Storybook review              |
+| Renderer safety        | Unsafe links are not clickable and issue references still route through callbacks       | Existing or new `MarkdownRenderer` tests                          |
+| Desktop integration    | Desktop passes strings and does not import Lexical                                      | Typecheck plus import scan                                        |
+| Storybook              | Editor, ticket page, and comment input examples exist                                   | `pnpm --filter @cycle/ui storybook:build`                         |
 
 ## 19. Implementation Checklist
 

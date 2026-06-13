@@ -1,8 +1,6 @@
 export const lastWorkspaceRouteStorageKey = "cycle.desktop.lastWorkspaceRoute.v1";
 
-export type WorkspaceTopLevelPage = "inbox" | "initiatives" | "issues" | "settings" | "views";
-
-export type RepositoryWorkspacePage = "history" | "issues" | "settings" | "views";
+type WorkspaceTopLevelPage = "inbox" | "initiatives" | "issues" | "settings" | "views";
 
 export type WorkspaceLocation =
   | {
@@ -155,7 +153,7 @@ export const parseWorkspacePath = (path: string): WorkspaceLocation | undefined 
   return undefined;
 };
 
-export const isWorkspacePath = (path: string): boolean => parseWorkspacePath(path) !== undefined;
+const isWorkspacePath = (path: string): boolean => parseWorkspacePath(path) !== undefined;
 
 export const parentWorkspacePath = (location: WorkspaceLocation): string | undefined => {
   if (location.scope === "workspace") {

@@ -4,8 +4,7 @@ import { getDesktopBridge } from "../lib/desktopBridge.ts";
 
 export const appConfigQueryKey = ["desktop", "appConfig"] as const;
 
-export const getRendererAppConfig = async () =>
-  getDesktopBridge()?.getAppConfig() ?? defaultAppConfig();
+const getRendererAppConfig = async () => getDesktopBridge()?.getAppConfig() ?? defaultAppConfig();
 
 export const useAppConfigQuery = () =>
   useQuery({

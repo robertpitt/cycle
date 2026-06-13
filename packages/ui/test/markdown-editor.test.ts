@@ -17,7 +17,7 @@ describe("Markdown editor utilities", () => {
       "> Quote",
       "",
       "```ts",
-      "const bodyFormat = \"markdown\";",
+      'const bodyFormat = "markdown";',
       "```",
       "",
       "Visit https://example.com.",

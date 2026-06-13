@@ -83,8 +83,7 @@ export const defaultConfigPath = (
 ): Effect.Effect<string, never, Path.Path> =>
   Effect.map(
     Path.Path,
-    (path) =>
-      env.CYCLE_CONFIG_PATH ?? path.join(homeDirFromEnv(env), ".cycle", "config.json"),
+    (path) => env.CYCLE_CONFIG_PATH ?? path.join(homeDirFromEnv(env), ".cycle", "config.json"),
   );
 
 const readRuntimeDiscovery = (

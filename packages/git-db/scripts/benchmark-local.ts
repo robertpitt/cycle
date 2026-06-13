@@ -317,11 +317,7 @@ const program = Effect.gen(function* () {
       })
       .join(", "),
   );
-  printTimed(
-    "full event list",
-    results.fullEventList,
-    `${results.fullEventList.result} rows`,
-  );
+  printTimed("full event list", results.fullEventList, `${results.fullEventList.result} rows`);
   printMemory();
 });
 

@@ -44,7 +44,7 @@ type IssuesPanelProps = {
   readonly title?: string;
 };
 
-export type IssuePanelSelection = {
+type IssuePanelSelection = {
   readonly issueId: string;
   readonly repositoryId?: string;
 };

@@ -109,23 +109,23 @@ The renderer uses hash routing and talks to the main process only through
 
 ## Ownership Model
 
-| Area | Owner | Responsibility |
-| --- | --- | --- |
-| Electron lifecycle | `platform/ElectronAppLive.ts` | App readiness, quit, shutdown signal, activate/window lifecycle hooks. |
-| Process failure events | `platform/ProcessLifecycleLive.ts` | Captures uncaught exceptions and unhandled rejections for app supervision. |
-| Windows | `platform/BrowserWindowsLive.ts`, `main/DesktopWindowLive.ts` | BrowserWindow construction, secure web preferences, main window focus/destruction. |
-| Runtime callback execution | `platform/DesktopRuntimeLive.ts` | Runs fire-and-forget Effect work from Electron callbacks and logs task failures. |
-| Theme | `platform/ElectronThemeLive.ts`, `main/ElectronPreferences.ts` | Reads and writes Electron theme source, broadcasts theme updates to renderer. |
-| Shell access | `platform/ElectronShellLive.ts` | Opens external URLs and filesystem paths behind validated main-process calls. |
-| Desktop config paths | `shared/DesktopConfigLive.ts` | Derives preload path, renderer HTML path, renderer dev URL, and dev/prod mode. |
-| Persisted app config | `main/AppConfigLive.ts` | Reads, validates, migrates, salvages, backs up, and writes `app-config.json`. |
-| Profile | `main/ProfileLive.ts` | Normalizes profile/onboarding input and stores it in app config. |
-| Local workspace | `main/LocalWorkspaceLive.ts` | Registers repositories in app config, validates Git repos, initializes missing Git repos. |
-| Provider detection | `main/AgentProviderDetectorLive.ts` | Detects local Codex, Claude Code, and OpenCode executables from PATH/shell. |
-| Database projection | `main/DesktopDatabaseLive.ts` | Creates the local projection database and provides database identity/id generation. |
-| Repository bootstrap | `main/DesktopBootstrapLive.ts` | Opens configured repositories, maintains bootstrap status, runs background sync/push orchestration. |
-| IPC | `main/DesktopIpc.ts`, `ipc/Channels.ts` | Defines bridge contracts, validates input/senders, dispatches requests to services. |
-| Renderer routes and workflow UI | `renderer/` | App shell composition, queries, mutations, navigation, shortcut and notification state. |
+| Area                            | Owner                                                          | Responsibility                                                                                      |
+| ------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Electron lifecycle              | `platform/ElectronAppLive.ts`                                  | App readiness, quit, shutdown signal, activate/window lifecycle hooks.                              |
+| Process failure events          | `platform/ProcessLifecycleLive.ts`                             | Captures uncaught exceptions and unhandled rejections for app supervision.                          |
+| Windows                         | `platform/BrowserWindowsLive.ts`, `main/DesktopWindowLive.ts`  | BrowserWindow construction, secure web preferences, main window focus/destruction.                  |
+| Runtime callback execution      | `platform/DesktopRuntimeLive.ts`                               | Runs fire-and-forget Effect work from Electron callbacks and logs task failures.                    |
+| Theme                           | `platform/ElectronThemeLive.ts`, `main/ElectronPreferences.ts` | Reads and writes Electron theme source, broadcasts theme updates to renderer.                       |
+| Shell access                    | `platform/ElectronShellLive.ts`                                | Opens external URLs and filesystem paths behind validated main-process calls.                       |
+| Desktop config paths            | `shared/DesktopConfigLive.ts`                                  | Derives preload path, renderer HTML path, renderer dev URL, and dev/prod mode.                      |
+| Persisted app config            | `main/AppConfigLive.ts`                                        | Reads, validates, migrates, salvages, backs up, and writes `app-config.json`.                       |
+| Profile                         | `main/ProfileLive.ts`                                          | Normalizes profile/onboarding input and stores it in app config.                                    |
+| Local workspace                 | `main/LocalWorkspaceLive.ts`                                   | Registers repositories in app config, validates Git repos, initializes missing Git repos.           |
+| Provider detection              | `main/AgentProviderDetectorLive.ts`                            | Detects local Codex, Claude Code, and OpenCode executables from PATH/shell.                         |
+| Database projection             | `main/DesktopDatabaseLive.ts`                                  | Creates the local projection database and provides database identity/id generation.                 |
+| Repository bootstrap            | `main/DesktopBootstrapLive.ts`                                 | Opens configured repositories, maintains bootstrap status, runs background sync/push orchestration. |
+| IPC                             | `main/DesktopIpc.ts`, `ipc/Channels.ts`                        | Defines bridge contracts, validates input/senders, dispatches requests to services.                 |
+| Renderer routes and workflow UI | `renderer/`                                                    | App shell composition, queries, mutations, navigation, shortcut and notification state.             |
 
 ## Layer Composition
 
@@ -428,16 +428,16 @@ High-level render flow:
 
 Main page body selection:
 
-| Condition | Component |
-| --- | --- |
-| Workspace settings | `ApplicationSettingsPanel` |
-| Repository settings | `RepositorySettingsPanel` |
-| Issue detail | `ViewIssuePanel` |
-| Repository views list | `ViewsPanel` |
-| Issues, initiatives, saved view detail | `IssuesPanel` |
-| Repository history | `RepositoryHistoryPanel` |
-| No repository configured | `AddRepositoryStep` |
-| Other implemented shell pages | `PageBodyPlaceholder` |
+| Condition                              | Component                  |
+| -------------------------------------- | -------------------------- |
+| Workspace settings                     | `ApplicationSettingsPanel` |
+| Repository settings                    | `RepositorySettingsPanel`  |
+| Issue detail                           | `ViewIssuePanel`           |
+| Repository views list                  | `ViewsPanel`               |
+| Issues, initiatives, saved view detail | `IssuesPanel`              |
+| Repository history                     | `RepositoryHistoryPanel`   |
+| No repository configured               | `AddRepositoryStep`        |
+| Other implemented shell pages          | `PageBodyPlaceholder`      |
 
 `WorkspaceScreen` also owns:
 
@@ -614,25 +614,25 @@ built renderer HTML file.
 
 Workspace package dependencies:
 
-| Package | Used for |
-| --- | --- |
-| `@cycle/ui` | Renderer visual components, theme provider, styles. |
-| `@cycle/contracts` | Ticket/domain types used by renderer queries and mutations. |
-| `@cycle/rpc` | Renderer ticket RPC client and main-process ticket RPC server. |
-| `@cycle/usecases` | Main-process use-case runner behind ticket RPC. |
-| `@cycle/database` | Projection database, repository status, ticket operations. |
-| `@cycle/git` | Git repository validation, initialization, and metadata inspection. |
-| `@cycle/git-db` | GitDB local and transport stores, remote sync/push result types. |
+| Package            | Used for                                                            |
+| ------------------ | ------------------------------------------------------------------- |
+| `@cycle/ui`        | Renderer visual components, theme provider, styles.                 |
+| `@cycle/contracts` | Ticket/domain types used by renderer queries and mutations.         |
+| `@cycle/rpc`       | Renderer ticket RPC client and main-process ticket RPC server.      |
+| `@cycle/usecases`  | Main-process use-case runner behind ticket RPC.                     |
+| `@cycle/database`  | Projection database, repository status, ticket operations.          |
+| `@cycle/git`       | Git repository validation, initialization, and metadata inspection. |
+| `@cycle/git-db`    | GitDB local and transport stores, remote sync/push result types.    |
 
 Third-party runtime dependencies:
 
-| Package | Used for |
-| --- | --- |
-| `effect` | Main-process service model, layers, scopes, errors, queues. |
-| `react`, `react-dom` | Renderer UI runtime. |
-| `react-router` | Hash routing and navigation. |
-| `@tanstack/react-query` | Renderer server-state cache. |
-| `lucide-react` | Renderer icons. |
+| Package                 | Used for                                                    |
+| ----------------------- | ----------------------------------------------------------- |
+| `effect`                | Main-process service model, layers, scopes, errors, queues. |
+| `react`, `react-dom`    | Renderer UI runtime.                                        |
+| `react-router`          | Hash routing and navigation.                                |
+| `@tanstack/react-query` | Renderer server-state cache.                                |
+| `lucide-react`          | Renderer icons.                                             |
 
 Build/test dependencies:
 

@@ -101,9 +101,9 @@ export const repositoryIdFromNavItem = (itemId: string): string | undefined => {
   return repositoryId;
 };
 
-export type RepositoryPageKind = "history" | "issues" | "settings" | "views";
+type RepositoryPageKind = "history" | "issues" | "settings" | "views";
 
-export const repositoryPageFromNavItem = (
+const repositoryPageFromNavItem = (
   itemId: string,
   repositories: readonly RepositoryRecord[],
 ): { readonly kind: RepositoryPageKind; readonly repository: RepositoryRecord } | undefined => {
@@ -126,7 +126,7 @@ export const repositoryPageFromNavItem = (
   };
 };
 
-export const repositoryPageLabel = {
+const repositoryPageLabel = {
   history: "History",
   issues: "Issues",
   settings: "Settings",
