@@ -30,7 +30,10 @@ import {
   DialogTitle,
   DialogViewport,
 } from "../../molecules/dialog/index.ts";
-import { MarkdownEditor } from "../../molecules/markdown-editor/index.ts";
+import {
+  MarkdownEditor,
+  type MarkdownEditorTagSuggestion,
+} from "../../molecules/markdown-editor/index.ts";
 import {
   PropertyPicker,
   type PropertyPickerOption,
@@ -82,6 +85,8 @@ export type CreateIssueDialogProps = React.HTMLAttributes<HTMLDivElement> & {
   readonly onPriorityChange?: (priority: CreateIssueDialogPriority) => void;
   readonly onProjectChange?: (project: string | null) => void;
   readonly onStatusChange?: (status: CreateIssueDialogStatus) => void;
+  readonly onTagQueryChange?: (query: string) => void;
+  readonly onTagSelect?: (suggestion: MarkdownEditorTagSuggestion) => void;
   readonly onTitleChange?: (title: string) => void;
   readonly openChip?: CreateIssueDialogChipId;
   readonly priority?: CreateIssueDialogPriority;
@@ -92,6 +97,7 @@ export type CreateIssueDialogProps = React.HTMLAttributes<HTMLDivElement> & {
   readonly status?: CreateIssueDialogStatus;
   readonly statusSections?: readonly PropertyPickerSection[];
   readonly assigneeSections?: readonly PropertyPickerSection[];
+  readonly tagSuggestions?: readonly MarkdownEditorTagSuggestion[];
   readonly teamLabel?: string;
   readonly template?: string | null;
   readonly templateSections?: readonly PropertyPickerSection[];
@@ -419,6 +425,8 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
       onPriorityChange,
       onProjectChange,
       onStatusChange,
+      onTagQueryChange,
+      onTagSelect,
       onTitleChange,
       openChip,
       priority = "none",
@@ -429,6 +437,7 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
       status = "todo",
       statusSections: statusPickerSections = statusSections,
       teamLabel = "ROB",
+      tagSuggestions,
       template = null,
       templateSections: templatePickerSections = templateSections,
       onTemplateChange,
@@ -514,8 +523,11 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
                       editorClassName="border-transparent bg-transparent hover:bg-transparent focus-within:border-transparent focus-within:bg-transparent"
                       minHeightClassName="min-h-[132px]"
                       mode="ticket"
+                      onTagQueryChange={onTagQueryChange}
+                      onTagSelect={onTagSelect}
                       onValueChange={onDescriptionChange}
                       placeholder={descriptionPlaceholder}
+                      tagSuggestions={tagSuggestions}
                       value={description}
                     />
                   </div>

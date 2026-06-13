@@ -1,5 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { MarkdownEditor, MarkdownEditorSlashMenu, MarkdownEditorToolbar } from "./index.ts";
+import {
+  MarkdownEditor,
+  MarkdownEditorSlashMenu,
+  MarkdownEditorToolbar,
+  type MarkdownEditorTagSuggestion,
+} from "./index.ts";
 
 const sampleMarkdown = `## Reconcile local draft state
 
@@ -15,6 +20,41 @@ Track #ROB-10001 while preserving Markdown output.
 const bodyFormat = "markdown";
 \`\`\`
 `;
+
+const tagSuggestions: readonly MarkdownEditorTagSuggestion[] = [
+  {
+    description: "Reconcile local draft state",
+    id: "ROB-10001",
+    kind: "issue",
+    label: "#ROB-10001",
+    searchText: "ticket issue draft state reconcile",
+  },
+  {
+    description: "Local agent",
+    id: "codex",
+    kind: "agent",
+    label: "Codex",
+    searchText: "agent implementation review",
+  },
+  {
+    description: "Workspace owner",
+    id: "robert",
+    kind: "user",
+    label: "Robert Pitt",
+  },
+  {
+    description: "Current workspace",
+    id: "cycle",
+    kind: "repository",
+    label: "cycle",
+  },
+  {
+    description: "Latest UI change",
+    id: "abcdef1",
+    kind: "commit",
+    label: "abcdef1",
+  },
+];
 
 const meta = {
   component: MarkdownEditor,
@@ -42,6 +82,7 @@ export const CommentInput: Story = {
         minHeightClassName="min-h-20"
         mode="comment"
         placeholder="Leave a comment..."
+        tagSuggestions={tagSuggestions}
       />
     </div>
   ),
@@ -60,7 +101,10 @@ export const ToolbarAndSlashMenu: Story = {
     <div className="grid max-w-3xl gap-4 rounded-lg border border-border bg-background p-8">
       <MarkdownEditorToolbar />
       <MarkdownEditorSlashMenu />
-      <MarkdownEditor defaultValue="Type / to insert a block or select text to format it." />
+      <MarkdownEditor
+        defaultValue="Type @ to tag work into this Markdown body."
+        tagSuggestions={tagSuggestions}
+      />
     </div>
   ),
 };

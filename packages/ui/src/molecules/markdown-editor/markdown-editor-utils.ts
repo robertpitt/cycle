@@ -1,5 +1,5 @@
 import { CodeHighlightNode, CodeNode } from "@lexical/code";
-import { AutoLinkNode, LinkNode } from "@lexical/link";
+import { $createLinkNode, $isLinkNode, AutoLinkNode, LinkNode } from "@lexical/link";
 import { ListItemNode, ListNode } from "@lexical/list";
 import {
   $convertFromMarkdownString,
@@ -19,11 +19,18 @@ import {
   QUOTE,
   STRIKETHROUGH,
   UNORDERED_LIST,
+  type TextMatchTransformer,
   type Transformer,
 } from "@lexical/markdown";
 import { HeadingNode, QuoteNode } from "@lexical/rich-text";
 import type { InitialConfigType } from "@lexical/react/LexicalComposer";
-import { createEditor, type EditorState, type LexicalEditor } from "lexical";
+import { $createTextNode, createEditor, type EditorState, type LexicalEditor } from "lexical";
+import { $findMatchingParent } from "@lexical/utils";
+import {
+  cycleReferenceProtocols,
+  getCycleReferenceHref,
+  type CycleReferenceKind,
+} from "../../lib/markdown-references.ts";
 
 export const markdownEditorNodes: InitialConfigType["nodes"] = [
   HeadingNode,
@@ -35,6 +42,72 @@ export const markdownEditorNodes: InitialConfigType["nodes"] = [
   CodeNode,
   CodeHighlightNode,
 ];
+
+const createCycleReferenceTransformer = ({
+  importRegExp,
+  kind,
+  label,
+  normalizeId = (id: string) => id,
+  regExp,
+}: {
+  readonly importRegExp: RegExp;
+  readonly kind: CycleReferenceKind;
+  readonly label: (id: string) => string;
+  readonly normalizeId?: (id: string) => string;
+  readonly regExp: RegExp;
+}): TextMatchTransformer => ({
+  dependencies: [LinkNode],
+  importRegExp,
+  regExp,
+  replace: (textNode, match) => {
+    if ($findMatchingParent(textNode, $isLinkNode)) return;
+
+    const rawId = match[1];
+    if (!rawId) return;
+
+    const id = normalizeId(rawId);
+    const linkNode = $createLinkNode(getCycleReferenceHref({ id, kind }));
+    const linkTextNode = $createTextNode(label(id));
+    linkTextNode.setFormat(textNode.getFormat());
+    linkNode.append(linkTextNode);
+    textNode.replace(linkNode);
+
+    return linkTextNode;
+  },
+  type: "text-match",
+});
+
+const ISSUE_REFERENCE = createCycleReferenceTransformer({
+  importRegExp: /(?<![\w/-])#([A-Za-z0-9]{2,5}-[A-Za-z0-9]{5,})(?![\w-])/u,
+  kind: "issue",
+  label: (id) => `#${id}`,
+  normalizeId: (id) => id.toUpperCase(),
+  regExp: /(?<![\w/-])#([A-Za-z0-9]{2,5}-[A-Za-z0-9]{5,})(?![\w-])$/u,
+});
+
+const USER_REFERENCE = createCycleReferenceTransformer({
+  importRegExp: /(?<![\w.-])@([A-Za-z][A-Za-z0-9_-]{1,63})(?![\w-])/u,
+  kind: "user",
+  label: (id) => `@${id}`,
+  regExp: /(?<![\w.-])@([A-Za-z][A-Za-z0-9_-]{1,63})(?![\w-])$/u,
+});
+
+const REPOSITORY_REFERENCE = createCycleReferenceTransformer({
+  importRegExp:
+    /(?<![\w/-])repo:([A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)?)(?![\w./-])/u,
+  kind: "repository",
+  label: (id) => `repo:${id}`,
+  regExp:
+    /(?<![\w/-])repo:([A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)?)(?![\w./-])$/u,
+});
+
+const COMMIT_REFERENCE = createCycleReferenceTransformer({
+  importRegExp: /(?<![\w:-])commit:([a-f0-9]{7,64})(?![a-f0-9])/iu,
+  kind: "commit",
+  label: (id) => `commit:${id}`,
+  normalizeId: (id) => id.toLowerCase(),
+  regExp: /(?<![\w:-])commit:([a-f0-9]{7,64})(?![a-f0-9])$/iu,
+});
 
 export const markdownEditorTransformers: Array<Transformer> = [
   HEADING,
@@ -52,11 +125,22 @@ export const markdownEditorTransformers: Array<Transformer> = [
   STRIKETHROUGH,
   INLINE_CODE,
   LINK,
+  ISSUE_REFERENCE,
+  USER_REFERENCE,
+  REPOSITORY_REFERENCE,
+  COMMIT_REFERENCE,
 ];
 
-export const safeMarkdownProtocols = new Set(["http:", "https:", "mailto:"]);
+export const safeMarkdownProtocols = new Set([
+  "http:",
+  "https:",
+  "mailto:",
+  ...Array.from(cycleReferenceProtocols, (protocol) => `${protocol}:`),
+]);
 
 export const isSafeMarkdownUrl = (href: string): boolean => {
+  if (href.trim().length === 0) return false;
+
   try {
     const url = new URL(href, "https://cycle.local");
     return safeMarkdownProtocols.has(url.protocol) || href.startsWith("#") || href.startsWith("/");

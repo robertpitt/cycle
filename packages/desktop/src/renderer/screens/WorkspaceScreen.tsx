@@ -28,6 +28,7 @@ import {
 } from "../components/index.ts";
 import { fallbackAgentProviders, toSetupHarnesses } from "../lib/agentProviders.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
+import { createMarkdownTagSuggestions } from "../lib/markdownTagSuggestions.ts";
 import {
   useAddRepositoryMutation,
   useCompleteOnboardingMutation,
@@ -42,6 +43,7 @@ import {
   issueListQueryKey,
   issueListRootQueryKey,
   repositoryHistoryRepositoryQueryKey,
+  useIssueListQuery,
   useIssueTemplateListQuery,
   useLabelListQuery,
   useMaterializationWarningsQuery,
@@ -234,6 +236,7 @@ export const WorkspaceScreen = () => {
   const userListQuery = useUserListQuery(issueRepository?.id, {
     disabled: false,
   });
+  const createIssueSuggestionsQuery = useIssueListQuery(issueRepository?.id);
   const labelListQuery = useLabelListQuery(issueRepository?.id, {
     archived: false,
   });
@@ -246,6 +249,25 @@ export const WorkspaceScreen = () => {
   const repositoryColdSyncing =
     repositoryStatus?.status === "syncing" && repositoryStatus.activeSnapshotId === null;
   const onboardingCompleted = appConfigQuery.data?.onboarding.completed ?? false;
+  const detectedAgentProviders = React.useMemo(
+    () => agentProvidersQuery.data ?? fallbackAgentProviders(),
+    [agentProvidersQuery.data],
+  );
+  const createIssueTagSuggestions = React.useMemo(
+    () =>
+      createMarkdownTagSuggestions({
+        agentProviders: detectedAgentProviders,
+        issues: createIssueSuggestionsQuery.data?.entries,
+        repositories,
+        users: userListQuery.data?.entries,
+      }),
+    [
+      createIssueSuggestionsQuery.data?.entries,
+      detectedAgentProviders,
+      repositories,
+      userListQuery.data?.entries,
+    ],
+  );
   const createIssueOptions = React.useMemo(
     () =>
       createIssueDialogOptionSections({
@@ -888,7 +910,9 @@ export const WorkspaceScreen = () => {
                 />
               ) : hasRepositories && isIssueDetailPage ? (
                 <ViewIssuePanel
+                  agentProviders={detectedAgentProviders}
                   issueId={selectedIssueId}
+                  repositories={repositories}
                   repositoryId={selectedIssueRepositoryId}
                 />
               ) : hasRepositories && isViewsPage && !isSavedViewDetailPage ? (
@@ -1046,6 +1070,7 @@ export const WorkspaceScreen = () => {
           saving={createIssue.isPending}
           status={createIssueForm.values.status}
           statusSections={createIssueOptions.statusSections}
+          tagSuggestions={createIssueTagSuggestions}
           teamLabel={issueRepository?.displayName ?? "Repository"}
           template={createIssueForm.values.template}
           templateSections={createIssueOptions.templateSections}

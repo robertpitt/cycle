@@ -1,28 +1,47 @@
 import * as React from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import ReactMarkdown, {
+  defaultUrlTransform,
+  type Components,
+  type UrlTransform,
+} from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "../../lib/cn.ts";
+import {
+  linkCycleReferenceShorthand,
+  parseCycleReferenceHref,
+  type CycleReference,
+} from "../../lib/markdown-references.ts";
 import { typography } from "../../lib/styles.ts";
 
 export type MarkdownRendererProps = {
   readonly className?: string;
   readonly markdown: string;
+  readonly onAgentReferenceClick?: (agentId: string) => void;
+  readonly onCommitReferenceClick?: (commitId: string) => void;
+  readonly onCycleReferenceClick?: (reference: CycleReference) => void;
   readonly onExternalLinkClick?: (url: string) => void;
   readonly onIssueReferenceClick?: (issueId: string) => void;
+  readonly onRepositoryReferenceClick?: (repositoryId: string) => void;
+  readonly onUserReferenceClick?: (userId: string) => void;
 };
 
+export type MarkdownReferenceHandlers = Pick<
+  MarkdownRendererProps,
+  | "onAgentReferenceClick"
+  | "onCommitReferenceClick"
+  | "onCycleReferenceClick"
+  | "onIssueReferenceClick"
+  | "onRepositoryReferenceClick"
+  | "onUserReferenceClick"
+>;
+
 const safeProtocols = new Set(["http:", "https:", "mailto:"]);
-const issueHrefPrefix = "cycle-issue:";
-const issueReferencePattern = /(^|[\s(])#([A-Za-z0-9]{2,5}-[A-Za-z0-9]{5,})/gu;
 
-const normalizeMarkdown = (markdown: string): string =>
-  markdown.replace(issueReferencePattern, (_match, prefix: string, issueId: string) => {
-    const normalizedIssueId = issueId.toUpperCase();
-
-    return `${prefix}[#${normalizedIssueId}](${issueHrefPrefix}${normalizedIssueId})`;
-  });
+const normalizeMarkdown = (markdown: string): string => linkCycleReferenceShorthand(markdown);
 
 const isSafeUrl = (href: string): boolean => {
+  if (href.trim().length === 0) return false;
+
   try {
     const url = new URL(href, "https://cycle.local");
     return safeProtocols.has(url.protocol) || href.startsWith("#") || href.startsWith("/");
@@ -31,18 +50,45 @@ const isSafeUrl = (href: string): boolean => {
   }
 };
 
+const markdownUrlTransform: UrlTransform = (url, key) =>
+  key === "href" && parseCycleReferenceHref(url) ? url : defaultUrlTransform(url);
+
+const handleCycleReferenceClick = (
+  reference: CycleReference,
+  handlers: MarkdownReferenceHandlers,
+): void => {
+  handlers.onCycleReferenceClick?.(reference);
+
+  switch (reference.kind) {
+    case "agent":
+      handlers.onAgentReferenceClick?.(reference.id);
+      return;
+    case "commit":
+      handlers.onCommitReferenceClick?.(reference.id);
+      return;
+    case "issue":
+      handlers.onIssueReferenceClick?.(reference.id);
+      return;
+    case "repository":
+      handlers.onRepositoryReferenceClick?.(reference.id);
+      return;
+    case "user":
+      handlers.onUserReferenceClick?.(reference.id);
+      return;
+  }
+};
+
 const components = (
-  onIssueReferenceClick: MarkdownRendererProps["onIssueReferenceClick"],
-  onExternalLinkClick: MarkdownRendererProps["onExternalLinkClick"],
+  handlers: MarkdownReferenceHandlers & Pick<MarkdownRendererProps, "onExternalLinkClick">,
 ): Components => ({
   a: ({ children, href, ...props }) => {
-    if (href?.startsWith(issueHrefPrefix) === true) {
-      const issueId = href.slice(issueHrefPrefix.length);
+    const cycleReference = href ? parseCycleReferenceHref(href) : null;
 
+    if (cycleReference) {
       return (
         <button
           className="font-medium text-primary underline-offset-4 hover:underline"
-          onClick={() => onIssueReferenceClick?.(issueId)}
+          onClick={() => handleCycleReferenceClick(cycleReference, handlers)}
           type="button"
         >
           {children}
@@ -61,9 +107,9 @@ const components = (
         {...props}
         href={href}
         onClick={(event) => {
-          if (external && onExternalLinkClick !== undefined) {
+          if (external && handlers.onExternalLinkClick !== undefined) {
             event.preventDefault();
-            onExternalLinkClick(href);
+            handlers.onExternalLinkClick(href);
           }
         }}
         rel={external ? "noreferrer noopener" : undefined}
@@ -119,8 +165,13 @@ const components = (
 export const MarkdownRenderer = ({
   className,
   markdown,
+  onAgentReferenceClick,
+  onCommitReferenceClick,
+  onCycleReferenceClick,
   onExternalLinkClick,
   onIssueReferenceClick,
+  onRepositoryReferenceClick,
+  onUserReferenceClick,
 }: MarkdownRendererProps) => (
   <div
     className={cn(
@@ -130,8 +181,17 @@ export const MarkdownRenderer = ({
     )}
   >
     <ReactMarkdown
-      components={components(onIssueReferenceClick, onExternalLinkClick)}
+      components={components({
+        onAgentReferenceClick,
+        onCommitReferenceClick,
+        onCycleReferenceClick,
+        onExternalLinkClick,
+        onIssueReferenceClick,
+        onRepositoryReferenceClick,
+        onUserReferenceClick,
+      })}
       remarkPlugins={[remarkGfm]}
+      urlTransform={markdownUrlTransform}
     >
       {normalizeMarkdown(markdown)}
     </ReactMarkdown>

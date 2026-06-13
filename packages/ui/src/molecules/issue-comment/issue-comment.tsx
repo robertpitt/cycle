@@ -2,10 +2,14 @@ import { ArrowUp, Paperclip } from "lucide-react";
 import * as React from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "../../atoms/avatar/index.ts";
 import { IconButton } from "../../atoms/icon-button/index.ts";
-import { MarkdownRenderer } from "../../components/markdown-renderer/index.ts";
+import {
+  MarkdownRenderer,
+  type MarkdownReferenceHandlers,
+} from "../../components/markdown-renderer/index.ts";
 import { cn } from "../../lib/cn.ts";
 import { typography } from "../../lib/styles.ts";
 import { MarkdownEditor } from "../markdown-editor/index.ts";
+import type { MarkdownEditorTagSuggestion } from "../markdown-editor/index.ts";
 
 export type IssueAuthor = {
   readonly avatarSrc?: string;
@@ -19,12 +23,13 @@ export type IssueActivityEventProps = React.HTMLAttributes<HTMLDivElement> & {
   readonly timestamp?: React.ReactNode;
 };
 
-export type IssueCommentCardProps = React.HTMLAttributes<HTMLDivElement> & {
-  readonly author: IssueAuthor;
-  readonly body: React.ReactNode;
-  readonly replyPlaceholder?: string;
-  readonly timestamp?: React.ReactNode;
-};
+export type IssueCommentCardProps = React.HTMLAttributes<HTMLDivElement> &
+  MarkdownReferenceHandlers & {
+    readonly author: IssueAuthor;
+    readonly body: React.ReactNode;
+    readonly replyPlaceholder?: string;
+    readonly timestamp?: React.ReactNode;
+  };
 
 export type IssueCommentComposerProps = Omit<
   React.HTMLAttributes<HTMLFormElement>,
@@ -34,8 +39,11 @@ export type IssueCommentComposerProps = Omit<
   readonly defaultValue?: string;
   readonly onAttach?: React.MouseEventHandler<HTMLButtonElement>;
   readonly onSubmit?: (value: string) => void;
+  readonly onTagQueryChange?: (query: string) => void;
+  readonly onTagSelect?: (suggestion: MarkdownEditorTagSuggestion) => void;
   readonly placeholder?: string;
   readonly submitLabel?: string;
+  readonly tagSuggestions?: readonly MarkdownEditorTagSuggestion[];
 };
 
 const IssueAvatar = ({
@@ -75,7 +83,20 @@ export const IssueActivityEvent = React.forwardRef<HTMLDivElement, IssueActivity
 
 export const IssueCommentCard = React.forwardRef<HTMLDivElement, IssueCommentCardProps>(
   function IssueCommentCard(
-    { author, body, className, replyPlaceholder = "Leave a reply...", timestamp, ...props },
+    {
+      author,
+      body,
+      className,
+      onAgentReferenceClick,
+      onCommitReferenceClick,
+      onCycleReferenceClick,
+      onIssueReferenceClick,
+      onRepositoryReferenceClick,
+      onUserReferenceClick,
+      replyPlaceholder = "Leave a reply...",
+      timestamp,
+      ...props
+    },
     ref,
   ) {
     return (
@@ -94,7 +115,19 @@ export const IssueCommentCard = React.forwardRef<HTMLDivElement, IssueCommentCar
             {timestamp ? <span className="text-muted-foreground">{timestamp}</span> : null}
           </div>
           <div className={cn("text-foreground", typography.bodyCompact)}>
-            {typeof body === "string" ? <MarkdownRenderer markdown={body} /> : body}
+            {typeof body === "string" ? (
+              <MarkdownRenderer
+                markdown={body}
+                onAgentReferenceClick={onAgentReferenceClick}
+                onCommitReferenceClick={onCommitReferenceClick}
+                onCycleReferenceClick={onCycleReferenceClick}
+                onIssueReferenceClick={onIssueReferenceClick}
+                onRepositoryReferenceClick={onRepositoryReferenceClick}
+                onUserReferenceClick={onUserReferenceClick}
+              />
+            ) : (
+              body
+            )}
           </div>
         </div>
         <div className="flex min-h-14 items-center gap-3 border-t border-border px-4">
@@ -128,8 +161,11 @@ export const IssueCommentComposer = React.forwardRef<HTMLFormElement, IssueComme
       defaultValue = "",
       onAttach,
       onSubmit,
+      onTagQueryChange,
+      onTagSelect,
       placeholder = "Leave a comment...",
       submitLabel = "Send comment",
+      tagSuggestions,
       ...props
     },
     ref,
@@ -147,7 +183,7 @@ export const IssueCommentComposer = React.forwardRef<HTMLFormElement, IssueComme
         {...props}
         ref={ref}
         className={cn(
-          "grid min-h-28 overflow-hidden rounded-lg border border-border bg-elevated text-elevated-foreground",
+          "relative grid min-h-28 overflow-visible rounded-lg border border-border bg-elevated text-elevated-foreground",
           className,
         )}
         onSubmit={(event) => {
@@ -164,8 +200,11 @@ export const IssueCommentComposer = React.forwardRef<HTMLFormElement, IssueComme
           minHeightClassName="min-h-20"
           mode="comment"
           onSubmit={submitCurrentValue}
+          onTagQueryChange={onTagQueryChange}
+          onTagSelect={onTagSelect}
           onValueChange={setValue}
           placeholder={placeholder}
+          tagSuggestions={tagSuggestions}
           value={value}
         />
         <div className="flex items-center gap-2 px-4 pb-4">

@@ -18,6 +18,7 @@ import * as React from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "../../atoms/avatar/index.ts";
 import { Button } from "../../atoms/button/index.ts";
 import { IconButton } from "../../atoms/icon-button/index.ts";
+import type { MarkdownReferenceHandlers } from "../../components/markdown-renderer/index.ts";
 import { cn } from "../../lib/cn.ts";
 import { typography } from "../../lib/styles.ts";
 import { EditableText } from "../../molecules/editable-text/index.ts";
@@ -31,6 +32,7 @@ import {
   IssueEditor,
   type IssueEditorCommand,
   type IssueEditorFormatAction,
+  type IssueEditorTagSuggestion,
 } from "../../molecules/issue-editor/index.ts";
 import { IssueResourceLink } from "../../molecules/issue-resource-link/index.ts";
 import { IssueSidebarSection } from "../../molecules/issue-sidebar-section/index.ts";
@@ -78,37 +80,41 @@ export type ViewIssueComment = {
   readonly timestamp?: React.ReactNode;
 };
 
-export type ViewIssueProps = Omit<React.HTMLAttributes<HTMLDivElement>, "title"> & {
-  readonly activityEvents?: readonly ViewIssueActivityEvent[];
-  readonly assignee?: IssueAuthor;
-  readonly comments?: readonly ViewIssueComment[];
-  readonly defaultDescription?: string;
-  readonly descriptionDefaultPreviewOpen?: boolean;
-  readonly defaultSubIssueComposerOpen?: boolean;
-  readonly defaultTitle?: string;
-  readonly description?: string;
-  readonly descriptionSlashMenuOpen?: boolean;
-  readonly descriptionToolbarOpen?: boolean;
-  readonly dueDate?: React.ReactNode;
-  readonly labels?: readonly ViewIssueLabel[];
-  readonly onCommentCreate?: (comment: string) => void;
-  readonly onDescriptionSave?: (description: string) => void;
-  readonly onEditorCommandSelect?: (command: IssueEditorCommand) => void;
-  readonly onEditorFormatSelect?: (action: IssueEditorFormatAction) => void;
-  readonly onFilesSelect?: (files: FileList) => void;
-  readonly onSubIssueCreate?: (draft: IssueSubIssueDraft) => void;
-  readonly onTitleSave?: (title: string) => void;
-  readonly labelsDefaultOpen?: boolean;
-  readonly priority?: React.ReactNode;
-  readonly project?: React.ReactNode;
-  readonly projectDefaultOpen?: boolean;
-  readonly properties?: readonly ViewIssueProperty[];
-  readonly propertiesDefaultOpen?: boolean;
-  readonly resources?: readonly ViewIssueResource[];
-  readonly status?: React.ReactNode;
-  readonly title?: string;
-  readonly viewer?: IssueAuthor;
-};
+export type ViewIssueProps = Omit<React.HTMLAttributes<HTMLDivElement>, "title"> &
+  MarkdownReferenceHandlers & {
+    readonly activityEvents?: readonly ViewIssueActivityEvent[];
+    readonly assignee?: IssueAuthor;
+    readonly comments?: readonly ViewIssueComment[];
+    readonly defaultDescription?: string;
+    readonly descriptionDefaultPreviewOpen?: boolean;
+    readonly defaultSubIssueComposerOpen?: boolean;
+    readonly defaultTitle?: string;
+    readonly description?: string;
+    readonly descriptionSlashMenuOpen?: boolean;
+    readonly descriptionToolbarOpen?: boolean;
+    readonly dueDate?: React.ReactNode;
+    readonly labels?: readonly ViewIssueLabel[];
+    readonly onCommentCreate?: (comment: string) => void;
+    readonly onDescriptionSave?: (description: string) => void;
+    readonly onEditorCommandSelect?: (command: IssueEditorCommand) => void;
+    readonly onEditorFormatSelect?: (action: IssueEditorFormatAction) => void;
+    readonly onFilesSelect?: (files: FileList) => void;
+    readonly onSubIssueCreate?: (draft: IssueSubIssueDraft) => void;
+    readonly onTagQueryChange?: (query: string) => void;
+    readonly onTagSelect?: (suggestion: IssueEditorTagSuggestion) => void;
+    readonly onTitleSave?: (title: string) => void;
+    readonly labelsDefaultOpen?: boolean;
+    readonly priority?: React.ReactNode;
+    readonly project?: React.ReactNode;
+    readonly projectDefaultOpen?: boolean;
+    readonly properties?: readonly ViewIssueProperty[];
+    readonly propertiesDefaultOpen?: boolean;
+    readonly resources?: readonly ViewIssueResource[];
+    readonly status?: React.ReactNode;
+    readonly tagSuggestions?: readonly IssueEditorTagSuggestion[];
+    readonly title?: string;
+    readonly viewer?: IssueAuthor;
+  };
 
 const defaultAuthor: IssueAuthor = {
   initials: "RP",
@@ -301,13 +307,21 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
       },
     ],
     labelsDefaultOpen = true,
+    onAgentReferenceClick,
     onCommentCreate,
+    onCommitReferenceClick,
+    onCycleReferenceClick,
     onDescriptionSave,
     onEditorCommandSelect,
     onEditorFormatSelect,
     onFilesSelect,
+    onIssueReferenceClick,
+    onRepositoryReferenceClick,
     onSubIssueCreate,
+    onTagQueryChange,
+    onTagSelect,
     onTitleSave,
+    onUserReferenceClick,
     priority,
     project,
     projectDefaultOpen = true,
@@ -315,6 +329,7 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
     propertiesDefaultOpen = true,
     resources = defaultResources,
     status,
+    tagSuggestions,
     title,
     viewer = defaultAuthor,
     ...props
@@ -420,11 +435,20 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
             defaultValue={defaultDescription}
             defaultPreviewOpen={descriptionDefaultPreviewOpen}
             onAttach={openFilePicker}
+            onAgentReferenceClick={onAgentReferenceClick}
             onCommandSelect={onEditorCommandSelect}
+            onCommitReferenceClick={onCommitReferenceClick}
+            onCycleReferenceClick={onCycleReferenceClick}
             onFormatSelect={onEditorFormatSelect}
+            onIssueReferenceClick={onIssueReferenceClick}
+            onRepositoryReferenceClick={onRepositoryReferenceClick}
             onSave={onDescriptionSave}
+            onTagQueryChange={onTagQueryChange}
+            onTagSelect={onTagSelect}
+            onUserReferenceClick={onUserReferenceClick}
             placeholder="Add description..."
             slashMenuOpen={descriptionSlashMenuOpen}
+            tagSuggestions={tagSuggestions}
             toolbarOpen={descriptionToolbarOpen}
             value={description}
           />
@@ -516,6 +540,12 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
                   author={item.comment.author}
                   body={item.comment.body}
                   key={item.comment.id}
+                  onAgentReferenceClick={onAgentReferenceClick}
+                  onCommitReferenceClick={onCommitReferenceClick}
+                  onCycleReferenceClick={onCycleReferenceClick}
+                  onIssueReferenceClick={onIssueReferenceClick}
+                  onRepositoryReferenceClick={onRepositoryReferenceClick}
+                  onUserReferenceClick={onUserReferenceClick}
                   timestamp={item.comment.timestamp}
                 />
               ),
@@ -524,6 +554,9 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
               author={viewer}
               onAttach={openFilePicker}
               onSubmit={handleCommentCreate}
+              onTagQueryChange={onTagQueryChange}
+              onTagSelect={onTagSelect}
+              tagSuggestions={tagSuggestions}
             />
           </div>
         </section>

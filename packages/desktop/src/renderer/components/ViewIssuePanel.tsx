@@ -23,14 +23,20 @@ import {
   useInitiativeProgressQuery,
   useIssueDetailQuery,
   useIssueHistoryQuery,
+  useIssueListQuery,
   useIssueRecordsQuery,
   useLabelListQuery,
   useUserListQuery,
 } from "../queries/index.ts";
+import { createMarkdownTagSuggestions } from "../lib/markdownTagSuggestions.ts";
 import { labelColorClassName } from "../screens/workspace/createIssueOptions.tsx";
+import type { RepositoryRecord } from "../../shared/AppConfig.ts";
+import type { DetectedAgentProvider } from "../../shared/AgentProviders.ts";
 
 type ViewIssuePanelProps = {
+  readonly agentProviders?: readonly DetectedAgentProvider[];
   readonly issueId?: string;
+  readonly repositories?: readonly RepositoryRecord[];
   readonly repositoryId?: string;
 };
 
@@ -195,11 +201,17 @@ const metadataControlClassName =
 const priorityOptions = ["none", "urgent", "high", "medium", "low"] as const;
 const statusOptions = ["backlog", "todo", "in-progress", "done", "canceled"] as const;
 
-export const ViewIssuePanel = ({ issueId, repositoryId }: ViewIssuePanelProps) => {
+export const ViewIssuePanel = ({
+  agentProviders = [],
+  issueId,
+  repositories = [],
+  repositoryId,
+}: ViewIssuePanelProps) => {
   const issueQuery = useIssueDetailQuery(repositoryId, issueId);
   const issueHistoryQuery = useIssueHistoryQuery(repositoryId, issueId, {
     limit: issueHistoryPageLimit,
   });
+  const issueListQuery = useIssueListQuery(repositoryId);
   const recordsQuery = useIssueRecordsQuery(repositoryId, issueId);
   const usersQuery = useUserListQuery(repositoryId, {
     disabled: false,
@@ -243,6 +255,12 @@ export const ViewIssuePanel = ({ issueId, repositoryId }: ViewIssuePanelProps) =
 
   const users = usersQuery.data?.entries ?? [];
   const labels = labelsQuery.data?.entries ?? [];
+  const tagSuggestions = createMarkdownTagSuggestions({
+    agentProviders,
+    issues: issueListQuery.data?.entries,
+    repositories,
+    users,
+  });
   const userMap = new Map(users.map((user) => [user.id, user] as const));
   const labelMap = new Map(labels.map((label) => [label.id, label] as const));
   const rawAssignee = issue.frontmatter.assignee?.trim() || "";
@@ -487,6 +505,7 @@ export const ViewIssuePanel = ({ issueId, repositoryId }: ViewIssuePanelProps) =
       properties={issueProperties}
       resources={issueResources(issue)}
       status={issue.frontmatter.status}
+      tagSuggestions={tagSuggestions}
       title={issue.frontmatter.title}
       viewer={{
         initials: initialsForName(issue.frontmatter.createdBy.name),

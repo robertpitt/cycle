@@ -1,6 +1,7 @@
 import { AtSign, Eye, Paperclip, PencilLine } from "lucide-react";
 import * as React from "react";
 import { IconButton } from "../../atoms/icon-button/index.ts";
+import type { MarkdownReferenceHandlers } from "../../components/markdown-renderer/index.ts";
 import { cn } from "../../lib/cn.ts";
 import { focusRing, typography } from "../../lib/styles.ts";
 import {
@@ -10,35 +11,41 @@ import {
   type MarkdownEditorCommand,
   type MarkdownEditorCommandSection,
   type MarkdownEditorFormatAction,
+  type MarkdownEditorTagSuggestion,
 } from "../markdown-editor/index.ts";
 
 export type IssueEditorCommand = MarkdownEditorCommand;
 export type IssueEditorCommandSection = MarkdownEditorCommandSection;
 export type IssueEditorFormatAction = MarkdownEditorFormatAction;
+export type IssueEditorTagSuggestion = MarkdownEditorTagSuggestion;
 
 export type IssueEditorProps = Omit<
   React.HTMLAttributes<HTMLDivElement>,
   "defaultValue" | "onChange"
-> & {
-  readonly commandSections?: readonly IssueEditorCommandSection[];
-  readonly defaultPreviewOpen?: boolean;
-  readonly defaultSlashMenuOpen?: boolean;
-  readonly defaultToolbarOpen?: boolean;
-  readonly defaultValue?: string;
-  readonly disabled?: boolean;
-  readonly onAttach?: React.MouseEventHandler<HTMLButtonElement>;
-  readonly onCommandSelect?: (command: IssueEditorCommand) => void;
-  readonly onFormatSelect?: (action: IssueEditorFormatAction) => void;
-  readonly onPreviewOpenChange?: (open: boolean) => void;
-  readonly onSave?: (value: string) => void;
-  readonly onValueChange?: (value: string) => void;
-  readonly placeholder?: string;
-  readonly previewOpen?: boolean;
-  readonly readOnly?: boolean;
-  readonly slashMenuOpen?: boolean;
-  readonly toolbarOpen?: boolean;
-  readonly value?: string;
-};
+> &
+  MarkdownReferenceHandlers & {
+    readonly commandSections?: readonly IssueEditorCommandSection[];
+    readonly defaultPreviewOpen?: boolean;
+    readonly defaultSlashMenuOpen?: boolean;
+    readonly defaultToolbarOpen?: boolean;
+    readonly defaultValue?: string;
+    readonly disabled?: boolean;
+    readonly onAttach?: React.MouseEventHandler<HTMLButtonElement>;
+    readonly onCommandSelect?: (command: IssueEditorCommand) => void;
+    readonly onFormatSelect?: (action: IssueEditorFormatAction) => void;
+    readonly onPreviewOpenChange?: (open: boolean) => void;
+    readonly onSave?: (value: string) => void;
+    readonly onTagQueryChange?: (query: string) => void;
+    readonly onTagSelect?: (suggestion: IssueEditorTagSuggestion) => void;
+    readonly onValueChange?: (value: string) => void;
+    readonly placeholder?: string;
+    readonly previewOpen?: boolean;
+    readonly readOnly?: boolean;
+    readonly slashMenuOpen?: boolean;
+    readonly tagSuggestions?: readonly IssueEditorTagSuggestion[];
+    readonly toolbarOpen?: boolean;
+    readonly value?: string;
+  };
 
 export const IssueEditorToolbar = MarkdownEditorToolbar;
 export const IssueEditorSlashMenu = MarkdownEditorSlashMenu;
@@ -52,16 +59,25 @@ export const IssueEditor = React.forwardRef<HTMLDivElement, IssueEditorProps>(fu
     defaultToolbarOpen = false,
     defaultValue,
     disabled = false,
+    onAgentReferenceClick,
     onAttach,
     onCommandSelect,
+    onCommitReferenceClick,
+    onCycleReferenceClick,
     onFormatSelect,
+    onIssueReferenceClick,
     onPreviewOpenChange,
+    onRepositoryReferenceClick,
     onSave,
+    onTagQueryChange,
+    onTagSelect,
+    onUserReferenceClick,
     onValueChange,
     placeholder = "Add description...",
     previewOpen,
     readOnly = false,
     slashMenuOpen,
+    tagSuggestions,
     toolbarOpen,
     value,
     ...props
@@ -92,14 +108,23 @@ export const IssueEditor = React.forwardRef<HTMLDivElement, IssueEditorProps>(fu
         defaultValue={defaultValue}
         disabled={disabled}
         mode="ticket"
+        onAgentReferenceClick={onAgentReferenceClick}
         onCommandSelect={onCommandSelect}
+        onCommitReferenceClick={onCommitReferenceClick}
         onCommit={onSave}
+        onCycleReferenceClick={onCycleReferenceClick}
         onFormatSelect={onFormatSelect}
+        onIssueReferenceClick={onIssueReferenceClick}
+        onRepositoryReferenceClick={onRepositoryReferenceClick}
+        onTagQueryChange={onTagQueryChange}
+        onTagSelect={onTagSelect}
+        onUserReferenceClick={onUserReferenceClick}
         onValueChange={onValueChange}
         placeholder={placeholder}
         previewOpen={currentPreviewOpen}
         readOnly={readOnly}
         slashMenuOpen={slashMenuOpen}
+        tagSuggestions={tagSuggestions}
         toolbarOpen={toolbarOpen}
         value={value}
       />
