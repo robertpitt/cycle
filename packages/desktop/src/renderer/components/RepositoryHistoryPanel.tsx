@@ -1,14 +1,12 @@
 import type { HistoryCommit, RepositoryHistoryQuery } from "@cycle/contracts";
-import { Badge, Button, Spinner } from "@cycle/ui/atoms";
-import { cn } from "@cycle/ui/utils";
+import { Badge, Button } from "@cycle/ui/atoms";
 import {
-  AlertTriangle,
-  ArrowUpRight,
-  Copy,
-  GitCommitHorizontal,
-  History,
-  Ticket,
-} from "lucide-react";
+  CommitHistory,
+  type CommitHistoryItem,
+  type CommitHistoryState,
+} from "@cycle/ui/organisms";
+import { cn } from "@cycle/ui/utils";
+import { ArrowUpRight, Copy, History, Ticket } from "lucide-react";
 import * as React from "react";
 import { useRepositoryHistoryQuery } from "../queries/index.ts";
 
@@ -42,25 +40,24 @@ const shortIssueId = (issueId: string): string =>
 const authorLabel = (entry: HistoryCommit): string =>
   entry.authorName ?? entry.authorEmail ?? "Unknown author";
 
+const initialsForName = (name: string): string =>
+  name
+    .trim()
+    .split(/\s+/u)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "?";
+
 const copyText = (value: string): void => {
   void navigator.clipboard?.writeText(value);
 };
 
-const renderPanelState = (
-  title: string,
-  description: string,
-  icon: "error" | "loading" | "empty",
-) => (
+const renderRepositoryRequiredState = (title: string, description: string) => (
   <div className="grid min-h-full place-items-center p-8">
     <div className="grid max-w-md justify-items-center gap-3 text-center">
       <div className="grid size-10 place-items-center rounded-lg border border-border bg-subtle text-muted-foreground">
-        {icon === "loading" ? (
-          <Spinner className="size-4" label={title} />
-        ) : icon === "error" ? (
-          <AlertTriangle aria-hidden className="size-4 text-warning" />
-        ) : (
-          <History aria-hidden className="size-4" />
-        )}
+        <History aria-hidden className="size-4" />
       </div>
       <div className="grid gap-1">
         <p className="text-sm font-semibold text-foreground">{title}</p>
@@ -69,6 +66,9 @@ const renderPanelState = (
     </div>
   </div>
 );
+
+const pluralize = (count: number, singular: string, plural = `${singular}s`): string =>
+  `${count} ${count === 1 ? singular : plural}`;
 
 const InlineIconButton = ({
   children,
@@ -92,6 +92,17 @@ const InlineIconButton = ({
   >
     {children}
   </button>
+);
+
+const CopySnapshotAction = ({ snapshotId }: { readonly snapshotId: string }) => (
+  <span className="inline-flex max-w-full items-center rounded-md border border-border bg-popover px-1 py-0.5">
+    <span className="min-w-0 truncate px-1.5 font-mono text-xs font-semibold text-foreground">
+      {shortSnapshotId(snapshotId)}
+    </span>
+    <InlineIconButton label={`Copy commit id ${snapshotId}`} onClick={() => copyText(snapshotId)}>
+      <Copy aria-hidden className="size-3.5" />
+    </InlineIconButton>
+  </span>
 );
 
 const ChangedTicketActions = ({
@@ -119,71 +130,89 @@ const ChangedTicketActions = ({
   </span>
 );
 
-const HistoryRow = ({
-  entry,
-  onIssueSelect,
-}: {
-  readonly entry: HistoryCommit;
-  readonly onIssueSelect?: (issueId: string) => void;
-}) => (
-  <li className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-3">
-    <div className="grid justify-items-center">
-      <span className="mt-1 grid size-6 place-items-center rounded-full border border-border bg-surface text-muted-foreground">
-        <GitCommitHorizontal aria-hidden className="size-3.5" />
-      </span>
-      <span className="mt-2 min-h-8 w-px bg-border" aria-hidden />
-    </div>
-    <article className="grid min-w-0 gap-3 border-b border-border/70 pb-5">
-      <div className="grid min-w-0 gap-1">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
-            {entry.message ?? "Untitled GitDB commit"}
-          </h2>
-          {entry.warningCount > 0 ? (
-            <Badge tone="warning">
-              {entry.warningCount} warning{entry.warningCount === 1 ? "" : "s"}
-            </Badge>
-          ) : null}
-        </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-muted-foreground">
-          <span>{formatDateTime(entry.committedAt)}</span>
-          <span>{authorLabel(entry)}</span>
-          <span>#{entry.sequence}</span>
-          {entry.parentIds.length > 1 ? <span>{entry.parentIds.length} parents</span> : null}
-        </div>
-      </div>
+const ticketImpactState = (entry: HistoryCommit): CommitHistoryState => {
+  const ticketCount = entry.changedTicketIds.length;
 
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <span className="inline-flex items-center rounded-md border border-border bg-subtle px-1 py-0.5">
-          <span
-            className="px-1.5 font-mono text-xs font-semibold text-foreground"
-            title={entry.snapshotId}
-          >
-            {shortSnapshotId(entry.snapshotId)}
-          </span>
-          <InlineIconButton
-            label={`Copy commit id ${entry.snapshotId}`}
-            onClick={() => copyText(entry.snapshotId)}
-          >
-            <Copy aria-hidden className="size-3.5" />
-          </InlineIconButton>
-        </span>
-        {entry.changedTicketIds.length > 0 ? (
-          <>
-            {entry.changedTicketIds.slice(0, 8).map((issueId) => (
-              <ChangedTicketActions issueId={issueId} key={issueId} onIssueSelect={onIssueSelect} />
-            ))}
-            {entry.changedTicketIds.length > 8 ? (
-              <Badge appearance="outline">+{entry.changedTicketIds.length - 8}</Badge>
-            ) : null}
-          </>
-        ) : (
-          <p className="text-xs font-medium text-muted-foreground">No ticket changes detected.</p>
-        )}
-      </div>
-    </article>
-  </li>
-);
+  return {
+    id: ticketCount > 0 ? "ticket-changes" : "no-ticket-changes",
+    label: ticketCount > 0 ? pluralize(ticketCount, "ticket change") : "No ticket changes",
+    tone: ticketCount > 0 ? "info" : "neutral",
+  };
+};
+
+const warningState = (entry: HistoryCommit): CommitHistoryState => ({
+  id: "warnings",
+  label: pluralize(entry.warningCount, "warning"),
+  tone: "warning",
+});
+
+const commitTransition = (entry: HistoryCommit): CommitHistoryItem["transition"] => {
+  if (entry.warningCount > 0) {
+    return {
+      from: ticketImpactState(entry),
+      label: "Projection",
+      to: warningState(entry),
+    };
+  }
+
+  return {
+    label: "Impact",
+    to: ticketImpactState(entry),
+  };
+};
+
+const commitMeta = (
+  entry: HistoryCommit,
+  onIssueSelect?: (issueId: string) => void,
+): readonly React.ReactNode[] => {
+  const meta: React.ReactNode[] = [
+    <span key="sequence">#{entry.sequence}</span>,
+    <CopySnapshotAction key="snapshot" snapshotId={entry.snapshotId} />,
+  ];
+
+  if (entry.parentIds.length > 1) {
+    meta.splice(1, 0, <span key="parents">{pluralize(entry.parentIds.length, "parent")}</span>);
+  }
+
+  meta.push(
+    ...entry.changedTicketIds
+      .slice(0, 8)
+      .map((issueId) => (
+        <ChangedTicketActions issueId={issueId} key={issueId} onIssueSelect={onIssueSelect} />
+      )),
+  );
+
+  if (entry.changedTicketIds.length > 8) {
+    meta.push(
+      <Badge appearance="outline" key="ticket-overflow">
+        +{entry.changedTicketIds.length - 8}
+      </Badge>,
+    );
+  }
+
+  return meta;
+};
+
+const commitHistoryItem = (
+  entry: HistoryCommit,
+  onIssueSelect?: (issueId: string) => void,
+): CommitHistoryItem => {
+  const authorName = authorLabel(entry);
+
+  return {
+    author: {
+      initials: initialsForName(authorName),
+      name: authorName,
+    },
+    commitRef: shortSnapshotId(entry.snapshotId),
+    commitTitle: entry.message ?? "Untitled GitDB commit",
+    id: entry.snapshotId,
+    meta: commitMeta(entry, onIssueSelect),
+    occurredAt: entry.committedAt,
+    timestamp: formatDateTime(entry.committedAt),
+    transition: commitTransition(entry),
+  };
+};
 
 export const RepositoryHistoryPanel = ({
   onIssueSelect,
@@ -206,55 +235,41 @@ export const RepositoryHistoryPanel = ({
   }, [repositoryId]);
 
   if (!repositoryId) {
-    return renderPanelState(
+    return renderRepositoryRequiredState(
       "Choose a repository",
       "Repository history is available after a repository is selected.",
-      "empty",
     );
-  }
-
-  if (historyQuery.isLoading) {
-    return renderPanelState("Loading history", "Reading GitDB commit history.", "loading");
-  }
-
-  if (historyQuery.error instanceof Error) {
-    return renderPanelState("History unavailable", historyQuery.error.message, "error");
   }
 
   const history = historyQuery.data;
   const entries = history?.entries ?? [];
-
-  if (entries.length === 0) {
-    return renderPanelState(
-      "No committed history",
-      "This repository does not have committed Cycle GitDB changes yet.",
-      "empty",
-    );
-  }
+  const items = entries.map((entry) => commitHistoryItem(entry, onIssueSelect));
 
   return (
-    <section className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] bg-background">
-      <header className="flex min-h-14 items-center justify-between gap-4 border-b border-border px-5">
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-muted-foreground">GitDB history</p>
-          <h1 className="truncate text-sm font-semibold text-foreground">
-            Repository commits related to Cycle data
-          </h1>
-        </div>
-        <Badge appearance="outline">Page {cursorStack.length + 1}</Badge>
-      </header>
-
-      <div className="min-h-0 overflow-y-auto px-5 py-5">
-        <ol className="grid gap-0">
-          {entries.map((entry) => (
-            <HistoryRow entry={entry} key={entry.snapshotId} onIssueSelect={onIssueSelect} />
-          ))}
-        </ol>
+    <section className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] bg-background">
+      <div className="min-h-0 overflow-y-auto">
+        <CommitHistory
+          count={
+            historyQuery.isLoading
+              ? undefined
+              : entries.length === 0
+                ? "No commits"
+                : pluralize(entries.length, "commit")
+          }
+          emptyState="This repository does not have committed Cycle GitDB changes yet."
+          error={historyQuery.error instanceof Error ? historyQuery.error.message : undefined}
+          headerAction={<Badge appearance="outline">Page {cursorStack.length + 1}</Badge>}
+          items={items}
+          loading={historyQuery.isLoading}
+          title="Repository history"
+        />
       </div>
 
       <footer className="flex min-h-12 items-center justify-between gap-3 border-t border-border bg-surface px-5">
         <p className="truncate text-xs font-medium text-muted-foreground">
-          Showing {entries.length} commit{entries.length === 1 ? "" : "s"}
+          {historyQuery.isLoading
+            ? "Loading history"
+            : `Showing ${pluralize(entries.length, "commit")}`}
         </p>
         <div className="flex items-center gap-2">
           <Button

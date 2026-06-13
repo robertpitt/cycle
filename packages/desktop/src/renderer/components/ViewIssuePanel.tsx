@@ -1,13 +1,19 @@
 import { ViewIssue, type ViewIssueActivityEvent, type ViewIssueComment } from "@cycle/ui/organisms";
+import { cn } from "@cycle/ui/utils";
 import {
   AlertTriangle,
   BarChart3,
   CalendarDays,
+  Check,
   Circle,
+  CircleCheck,
+  CircleDashed,
+  CircleOff,
   Gauge,
   LoaderCircle,
   UserRound,
 } from "lucide-react";
+import * as React from "react";
 import type {
   CreateTicketInput,
   HistoryCommit,
@@ -194,12 +200,402 @@ const renderPanelState = (message: string, icon: "error" | "loading") => (
 );
 
 const propertyIconClassName = "size-4 text-muted-foreground";
-
-const metadataControlClassName =
-  "h-7 min-w-0 rounded-md border border-border bg-popover px-2 text-sm font-medium text-foreground shadow-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+const propertyMenuIconClassName = "size-4";
+const propertyTriggerClassName =
+  "grid size-6 place-items-center rounded-md text-muted-foreground transition hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-45";
+const propertyPanelClassName =
+  "absolute left-0 top-full z-50 mt-1 overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-elevated";
+const propertyInputClassName =
+  "h-9 min-w-0 rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground outline-none transition placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover";
 
 const priorityOptions = ["none", "urgent", "high", "medium", "low"] as const;
 const statusOptions = ["backlog", "todo", "in-progress", "done", "canceled"] as const;
+
+type PropertyMenuOption = {
+  readonly icon?: React.ReactNode;
+  readonly label: React.ReactNode;
+  readonly rightMeta?: React.ReactNode;
+  readonly value: string;
+};
+
+const titleForValue = (value: string): string =>
+  value
+    .split("-")
+    .filter(Boolean)
+    .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
+    .join(" ");
+
+const priorityLabel = (priority: string): string =>
+  priority === "none" ? "No priority" : titleForValue(priority);
+
+const useOutsideClose = ({
+  onClose,
+  open,
+  ref,
+}: {
+  readonly onClose: () => void;
+  readonly open: boolean;
+  readonly ref: React.RefObject<HTMLElement | null>;
+}) => {
+  React.useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && ref.current?.contains(event.target)) return;
+      onClose();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, open, ref]);
+};
+
+const StatusIcon = ({ status }: { readonly status: string }) => {
+  if (status === "done" || status === "closed") {
+    return <CircleCheck aria-hidden className={propertyMenuIconClassName} />;
+  }
+
+  if (status === "backlog") {
+    return <CircleDashed aria-hidden className={propertyMenuIconClassName} />;
+  }
+
+  if (status === "canceled") {
+    return <CircleOff aria-hidden className={propertyMenuIconClassName} />;
+  }
+
+  return <Circle aria-hidden className={propertyMenuIconClassName} />;
+};
+
+const PriorityBars = ({ priority }: { readonly priority: string }) => {
+  const level = priority === "high" ? 3 : priority === "medium" ? 2 : 1;
+
+  if (priority === "none") {
+    return <span className="text-xs font-semibold leading-none text-muted-foreground">--</span>;
+  }
+
+  if (priority === "urgent") {
+    return (
+      <span className="grid size-5 place-items-center rounded-sm bg-muted-foreground text-xs font-bold leading-none text-background">
+        !
+      </span>
+    );
+  }
+
+  return (
+    <span aria-hidden className="flex h-5 items-end gap-0.5 text-muted-foreground">
+      {[1, 2, 3].map((bar) => (
+        <span
+          className="w-1.5 rounded-sm bg-current data-[muted=true]:opacity-35"
+          data-muted={bar > level}
+          key={bar}
+          style={{
+            height: `${bar * 5 + 4}px`,
+          }}
+        />
+      ))}
+    </span>
+  );
+};
+
+const AssigneeMark = ({ name }: { readonly name?: string }) => {
+  if (!name) return <UserRound aria-hidden className={propertyMenuIconClassName} />;
+
+  return (
+    <span className="grid size-5 place-items-center rounded-full bg-subtle text-[10px] font-semibold text-muted-foreground">
+      {initialsForName(name)}
+    </span>
+  );
+};
+
+const IssuePropertyOptionMenu = ({
+  children,
+  disabled = false,
+  label,
+  onChange,
+  options,
+  value,
+  widthClassName = "w-[260px]",
+}: {
+  readonly children: React.ReactNode;
+  readonly disabled?: boolean;
+  readonly label: string;
+  readonly onChange: (value: string) => void;
+  readonly options: readonly PropertyMenuOption[];
+  readonly value: string;
+  readonly widthClassName?: string;
+}) => {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+  const close = React.useCallback(() => setOpen(false), []);
+
+  useOutsideClose({
+    onClose: close,
+    open,
+    ref,
+  });
+
+  return (
+    <div className="relative inline-flex" ref={ref}>
+      <button
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label={label}
+        className={cn(propertyTriggerClassName, open && "bg-subtle text-foreground shadow-sm")}
+        disabled={disabled}
+        onClick={() => setOpen((current) => !current)}
+        title={label}
+        type="button"
+      >
+        {children}
+      </button>
+      {open ? (
+        <div
+          className={cn(propertyPanelClassName, "max-h-72 overflow-y-auto p-2", widthClassName)}
+          role="menu"
+        >
+          {options.map((option) => {
+            const selected = option.value === value;
+
+            return (
+              <button
+                aria-checked={selected}
+                className={cn(
+                  "grid min-h-10 w-full grid-cols-[1.5rem_minmax(0,1fr)_auto_auto] items-center gap-3 rounded-lg px-2 text-left text-sm text-foreground transition hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover",
+                  selected && "bg-subtle",
+                )}
+                key={option.value}
+                onClick={() => {
+                  if (!selected) onChange(option.value);
+                  close();
+                }}
+                role="menuitemradio"
+                type="button"
+              >
+                <span className="grid size-6 place-items-center text-muted-foreground">
+                  {option.icon}
+                </span>
+                <span className="min-w-0 truncate font-medium">{option.label}</span>
+                <span className="grid size-4 place-items-center text-muted-foreground">
+                  {selected ? <Check aria-hidden className="size-4" /> : null}
+                </span>
+                {option.rightMeta ? (
+                  <span className="min-w-5 text-right text-xs font-medium text-muted-foreground">
+                    {option.rightMeta}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+const IssuePropertyPopover = ({
+  children,
+  disabled = false,
+  label,
+  onOpenChange,
+  trigger,
+  widthClassName = "w-[260px]",
+}: {
+  readonly children: (close: () => void) => React.ReactNode;
+  readonly disabled?: boolean;
+  readonly label: string;
+  readonly onOpenChange?: (open: boolean) => void;
+  readonly trigger: React.ReactNode;
+  readonly widthClassName?: string;
+}) => {
+  const [open, setOpenState] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+  const setOpen = React.useCallback(
+    (nextOpen: boolean) => {
+      setOpenState(nextOpen);
+      onOpenChange?.(nextOpen);
+    },
+    [onOpenChange],
+  );
+  const close = React.useCallback(() => setOpen(false), [setOpen]);
+
+  useOutsideClose({
+    onClose: close,
+    open,
+    ref,
+  });
+
+  return (
+    <div className="relative inline-flex" ref={ref}>
+      <button
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-label={label}
+        className={cn(propertyTriggerClassName, open && "bg-subtle text-foreground shadow-sm")}
+        disabled={disabled}
+        onClick={() => setOpen(!open)}
+        title={label}
+        type="button"
+      >
+        {trigger}
+      </button>
+      {open ? (
+        <div className={cn(propertyPanelClassName, "p-3", widthClassName)} role="dialog">
+          {children(close)}
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+const IssueDueDateControl = ({
+  disabled = false,
+  onChange,
+  value,
+}: {
+  readonly disabled?: boolean;
+  readonly onChange: (value: string | null) => void;
+  readonly value: string;
+}) => {
+  const [draft, setDraft] = React.useState(value);
+
+  React.useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  return (
+    <IssuePropertyPopover
+      disabled={disabled}
+      label="Change issue due date"
+      onOpenChange={(open) => {
+        if (open) setDraft(value);
+      }}
+      trigger={<CalendarDays aria-hidden className={propertyMenuIconClassName} />}
+    >
+      {(close) => (
+        <form
+          className="grid gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const nextDueDate = draft.trim();
+            if (nextDueDate !== value) {
+              onChange(nextDueDate.length > 0 ? nextDueDate : null);
+            }
+            close();
+          }}
+        >
+          <label className="grid gap-1.5 text-sm font-medium text-foreground">
+            <span>Due date</span>
+            <input
+              aria-label="Issue due date"
+              className={propertyInputClassName}
+              onChange={(event) => setDraft(event.currentTarget.value)}
+              type="date"
+              value={draft}
+            />
+          </label>
+          <div className="flex items-center justify-between gap-2">
+            <button
+              className="rounded-md px-2 py-1 text-sm font-medium text-muted-foreground transition hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
+              onClick={() => {
+                if (value.length > 0) onChange(null);
+                close();
+              }}
+              type="button"
+            >
+              Clear
+            </button>
+            <button
+              className="rounded-md bg-primary px-3 py-1 text-sm font-semibold text-primary-foreground transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
+              type="submit"
+            >
+              Apply
+            </button>
+          </div>
+        </form>
+      )}
+    </IssuePropertyPopover>
+  );
+};
+
+const IssueEstimateControl = ({
+  disabled = false,
+  onChange,
+  value,
+}: {
+  readonly disabled?: boolean;
+  readonly onChange: (value: string | null) => void;
+  readonly value: string;
+}) => {
+  const [draft, setDraft] = React.useState(value);
+
+  React.useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  return (
+    <IssuePropertyPopover
+      disabled={disabled}
+      label="Change issue estimate"
+      onOpenChange={(open) => {
+        if (open) setDraft(value);
+      }}
+      trigger={<Gauge aria-hidden className={propertyMenuIconClassName} />}
+    >
+      {(close) => (
+        <form
+          className="grid gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const nextEstimate = draft.trim();
+            if (nextEstimate !== value) {
+              onChange(nextEstimate.length > 0 ? nextEstimate : null);
+            }
+            close();
+          }}
+        >
+          <label className="grid gap-1.5 text-sm font-medium text-foreground">
+            <span>Estimate</span>
+            <input
+              aria-label="Issue estimate"
+              className={propertyInputClassName}
+              inputMode="decimal"
+              onChange={(event) => setDraft(event.currentTarget.value)}
+              placeholder="None"
+              value={draft}
+            />
+          </label>
+          <div className="flex items-center justify-between gap-2">
+            <button
+              className="rounded-md px-2 py-1 text-sm font-medium text-muted-foreground transition hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
+              onClick={() => {
+                if (value.length > 0) onChange(null);
+                close();
+              }}
+              type="button"
+            >
+              Clear
+            </button>
+            <button
+              className="rounded-md bg-primary px-3 py-1 text-sm font-semibold text-primary-foreground transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
+              type="submit"
+            >
+              Apply
+            </button>
+          </div>
+        </form>
+      )}
+    </IssuePropertyPopover>
+  );
+};
 
 export const ViewIssuePanel = ({
   agentProviders = [],
@@ -292,156 +688,135 @@ export const ViewIssuePanel = ({
       message,
     });
   };
-  const propertySelect = ({
-    label,
-    onChange,
-    options,
-    value,
-  }: {
-    readonly label: string;
-    readonly onChange: (value: string) => void;
-    readonly options: readonly { readonly label: string; readonly value: string }[];
-    readonly value: string;
-  }) => (
-    <select
-      aria-label={label}
-      className={metadataControlClassName}
-      disabled={updateIssue.isPending}
-      onChange={(event) => onChange(event.currentTarget.value)}
-      value={value}
-    >
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-  );
   const currentDueDate =
     typeof issue.frontmatter.dueDate === "string" ? issue.frontmatter.dueDate : "";
   const currentEstimate =
     issue.frontmatter.estimate === null || issue.frontmatter.estimate === undefined
       ? ""
       : String(issue.frontmatter.estimate);
+  const statusMenuOptions = statusOptions.map((status) => ({
+    icon: <StatusIcon status={status} />,
+    label: titleForValue(status),
+    value: status,
+  }));
+  const priorityMenuOptions = priorityOptions.map((priority) => ({
+    icon: <PriorityBars priority={priority} />,
+    label: priorityLabel(priority),
+    value: priority,
+  }));
+  const assigneeMenuOptions = [
+    {
+      icon: <AssigneeMark />,
+      label: "No assignee",
+      value: "none",
+    },
+    ...users.map((user) => ({
+      icon: <AssigneeMark name={user.displayName} />,
+      label: user.displayName,
+      rightMeta: user.email,
+      value: user.id,
+    })),
+    ...(rawAssignee && !userMap.has(rawAssignee)
+      ? [
+          {
+            icon: <AssigneeMark name={rawAssignee} />,
+            label: rawAssignee,
+            value: rawAssignee,
+          },
+        ]
+      : []),
+  ];
   const issueProperties = [
     {
-      icon: <Circle aria-hidden className={propertyIconClassName} />,
+      icon: (
+        <IssuePropertyOptionMenu
+          disabled={updateIssue.isPending}
+          label="Change issue status"
+          onChange={(status) => {
+            if (status === issue.frontmatter.status) return;
+            updateFrontmatter({ status }, `Updated ${issue.id} status to ${status}`);
+          }}
+          options={statusMenuOptions}
+          value={issue.frontmatter.status}
+        >
+          <StatusIcon status={issue.frontmatter.status} />
+        </IssuePropertyOptionMenu>
+      ),
       id: "status",
       label: "Status",
-      value: propertySelect({
-        label: "Issue status",
-        onChange: (status) => {
-          if (status === issue.frontmatter.status) return;
-          updateFrontmatter({ status }, `Updated ${issue.id} status to ${status}`);
-        },
-        options: statusOptions.map((status) => ({
-          label: status
-            .split("-")
-            .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
-            .join(" "),
-          value: status,
-        })),
-        value: issue.frontmatter.status,
-      }),
+      value: titleForValue(issue.frontmatter.status),
     },
     {
-      icon: <BarChart3 aria-hidden className={propertyIconClassName} />,
+      icon: (
+        <IssuePropertyOptionMenu
+          disabled={updateIssue.isPending}
+          label="Change issue priority"
+          onChange={(priority) => {
+            if (priority === issue.frontmatter.priority) return;
+            updateFrontmatter({ priority }, `Updated ${issue.id} priority to ${priority}`);
+          }}
+          options={priorityMenuOptions}
+          value={issue.frontmatter.priority}
+        >
+          <PriorityBars priority={issue.frontmatter.priority} />
+        </IssuePropertyOptionMenu>
+      ),
       id: "priority",
       label: "Priority",
-      value: propertySelect({
-        label: "Issue priority",
-        onChange: (priority) => {
-          if (priority === issue.frontmatter.priority) return;
-          updateFrontmatter({ priority }, `Updated ${issue.id} priority to ${priority}`);
-        },
-        options: priorityOptions.map((priority) => ({
-          label:
-            priority === "none"
-              ? "No priority"
-              : `${priority[0]?.toUpperCase() ?? ""}${priority.slice(1)}`,
-          value: priority,
-        })),
-        value: issue.frontmatter.priority,
-      }),
+      value: priorityLabel(issue.frontmatter.priority),
     },
     {
-      icon: <UserRound aria-hidden className={propertyIconClassName} />,
+      icon: (
+        <IssuePropertyOptionMenu
+          disabled={updateIssue.isPending}
+          label="Change issue assignee"
+          onChange={(assignee) => {
+            const nextAssignee = assignee === "none" ? null : assignee;
+            if ((issue.frontmatter.assignee ?? null) === nextAssignee) return;
+            updateFrontmatter({ assignee: nextAssignee }, `Updated ${issue.id} assignee`);
+          }}
+          options={assigneeMenuOptions}
+          value={rawAssignee || "none"}
+          widthClassName="w-[300px]"
+        >
+          <AssigneeMark name={assigneeName} />
+        </IssuePropertyOptionMenu>
+      ),
       id: "assignee",
       label: "Assignee",
-      value: propertySelect({
-        label: "Issue assignee",
-        onChange: (assignee) => {
-          const nextAssignee = assignee === "none" ? null : assignee;
-          if ((issue.frontmatter.assignee ?? null) === nextAssignee) return;
-          updateFrontmatter({ assignee: nextAssignee }, `Updated ${issue.id} assignee`);
-        },
-        options: [
-          {
-            label: "No assignee",
-            value: "none",
-          },
-          ...users.map((user) => ({
-            label: user.displayName,
-            value: user.id,
-          })),
-          ...(rawAssignee && !userMap.has(rawAssignee)
-            ? [
-                {
-                  label: rawAssignee,
-                  value: rawAssignee,
-                },
-              ]
-            : []),
-        ],
-        value: rawAssignee || "none",
-      }),
+      muted: !assigneeName,
+      value: assigneeName ?? "No assignee",
     },
     {
-      icon: <CalendarDays aria-hidden className={propertyIconClassName} />,
+      icon: (
+        <IssueDueDateControl
+          disabled={updateIssue.isPending}
+          onChange={(dueDate) => {
+            updateFrontmatter({ dueDate }, `Updated ${issue.id} due date`);
+          }}
+          value={currentDueDate}
+        />
+      ),
       id: "due-date",
       label: "Due date",
       muted: currentDueDate.length === 0,
-      value: (
-        <input
-          aria-label="Issue due date"
-          className={metadataControlClassName}
-          defaultValue={currentDueDate}
-          disabled={updateIssue.isPending}
-          onBlur={(event) => {
-            const nextDueDate = event.currentTarget.value.trim();
-            if (nextDueDate === currentDueDate) return;
-            updateFrontmatter(
-              { dueDate: nextDueDate.length > 0 ? nextDueDate : null },
-              `Updated ${issue.id} due date`,
-            );
-          }}
-          type="date"
-        />
-      ),
+      value:
+        formatDate(currentDueDate) ?? (currentDueDate.length > 0 ? currentDueDate : "No due date"),
     },
     {
-      icon: <Gauge aria-hidden className={propertyIconClassName} />,
+      icon: (
+        <IssueEstimateControl
+          disabled={updateIssue.isPending}
+          onChange={(estimate) => {
+            updateFrontmatter({ estimate }, `Updated ${issue.id} estimate`);
+          }}
+          value={currentEstimate}
+        />
+      ),
       id: "estimate",
       label: "Estimate",
       muted: currentEstimate.length === 0,
-      value: (
-        <input
-          aria-label="Issue estimate"
-          className={metadataControlClassName}
-          defaultValue={currentEstimate}
-          disabled={updateIssue.isPending}
-          inputMode="decimal"
-          onBlur={(event) => {
-            const nextEstimate = event.currentTarget.value.trim();
-            if (nextEstimate === currentEstimate) return;
-            updateFrontmatter(
-              { estimate: nextEstimate.length > 0 ? nextEstimate : null },
-              `Updated ${issue.id} estimate`,
-            );
-          }}
-          placeholder="None"
-        />
-      ),
+      value: currentEstimate.length > 0 ? currentEstimate : "None",
     },
     ...(issue.type === "initiative"
       ? [

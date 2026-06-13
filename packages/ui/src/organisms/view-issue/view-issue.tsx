@@ -564,7 +564,11 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
 
       <aside className="grid h-fit content-start gap-3 max-xl:hidden">
         <ViewIssueActions />
-        <IssueSidebarSection defaultOpen={propertiesDefaultOpen} title="Properties">
+        <IssueSidebarSection
+          className="overflow-visible"
+          defaultOpen={propertiesDefaultOpen}
+          title="Properties"
+        >
           <div className="grid gap-2">
             {properties.map((property) => (
               <PropertyRow key={property.id} property={property} />

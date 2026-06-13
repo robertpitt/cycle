@@ -1,4 +1,5 @@
 export * from "./app-shell/index.ts";
+export * from "./commit-history/index.ts";
 export * from "./create-issue-dialog/index.ts";
 export * from "./initial-setup/index.ts";
 export * from "./issues-list/index.ts";
