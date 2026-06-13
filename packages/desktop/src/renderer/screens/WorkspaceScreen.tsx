@@ -18,6 +18,7 @@ import {
   AddRepositoryStep,
   ApplicationSettingsPanel,
   BootloaderScreen,
+  InboxPanel,
   IssuesPanel,
   PageBodyPlaceholder,
   RepositoryHistoryPanel,
@@ -42,7 +43,9 @@ import {
   useBootstrapStatusQuery,
   issueListQueryKey,
   issueListRootQueryKey,
+  inboxRootQueryKey,
   repositoryHistoryRepositoryQueryKey,
+  useInboxSummaryQuery,
   useIssueListQuery,
   useIssueTemplateListQuery,
   useLabelListQuery,
@@ -166,6 +169,7 @@ export const WorkspaceScreen = () => {
     workspaceLocation.scope === "repository" ? workspaceLocation.repositoryId : undefined;
   const isGlobalIssuesPage =
     workspaceLocation.scope === "workspace" && workspaceLocation.page === "issues";
+  const isInboxPage = workspaceLocation.scope === "workspace" && workspaceLocation.page === "inbox";
   const isIssuesPage =
     isGlobalIssuesPage ||
     (workspaceLocation.scope === "repository" && workspaceLocation.page === "issues");
@@ -237,6 +241,16 @@ export const WorkspaceScreen = () => {
     disabled: false,
   });
   const createIssueSuggestionsQuery = useIssueListQuery(issueRepository?.id);
+  const inboxSummaryQuery = useInboxSummaryQuery(
+    appConfigQuery.data?.profile.email
+      ? {
+          limit: 1,
+          repositoryIds,
+          status: "all",
+          userId: appConfigQuery.data.profile.email,
+        }
+      : undefined,
+  );
   const labelListQuery = useLabelListQuery(issueRepository?.id, {
     archived: false,
   });
@@ -430,6 +444,9 @@ export const WorkspaceScreen = () => {
 
     void queryClient.invalidateQueries({
       queryKey: repositoryHistoryRepositoryQueryKey(activeRepository.id),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: inboxRootQueryKey,
     });
 
     if (!issueRepository?.id) return;
@@ -747,6 +764,7 @@ export const WorkspaceScreen = () => {
     chooseRepositoryFolder();
   };
   const rendererNavSections = createRendererNavSections(repositories, {
+    inboxUnreadCount: inboxSummaryQuery.data?.unreadCount,
     repositoryAction: (
       <IconButton
         className="-mr-[9px] text-muted-foreground hover:bg-transparent hover:text-foreground"
@@ -907,6 +925,19 @@ export const WorkspaceScreen = () => {
                   appConfig={appConfigQuery.data}
                   repository={activeRepository}
                   status={repositoryStatus}
+                />
+              ) : hasRepositories && isInboxPage ? (
+                <InboxPanel
+                  onIssueSelect={(selection) =>
+                    navigateWorkspace({
+                      issueId: selection.issueId,
+                      page: "issues",
+                      repositoryId: selection.repositoryId,
+                      scope: "repository",
+                    })
+                  }
+                  profile={appConfigQuery.data?.profile}
+                  repositories={repositories}
                 />
               ) : hasRepositories && isIssueDetailPage ? (
                 <ViewIssuePanel

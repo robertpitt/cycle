@@ -4,6 +4,10 @@ import {
   type CreateOrUpdateUserProfileInput,
   type CreateSavedViewInput as DatabaseCreateSavedViewInput,
   type CreateTicketInput,
+  type InboxMutationInput as DatabaseInboxMutationInput,
+  type InboxQuery as DatabaseInboxQuery,
+  type InboxReason as DatabaseInboxReason,
+  type InboxStatus as DatabaseInboxStatus,
   type InitiativeUpdatePayload,
   type IssueRelation as DatabaseIssueRelation,
   type IssueTemplateQuery as DatabaseIssueTemplateQuery,
@@ -26,6 +30,8 @@ import { RepositoryRef } from "./RepositoryRef.ts";
 
 const StringList = Schema.Array(Schema.String);
 const UnknownRecord = Schema.Record(Schema.String, Schema.Unknown);
+const InboxReason = Schema.Literals(["assigned", "comment_assigned", "comment_created", "mention"]);
+const InboxStatus = Schema.Literals(["archived", "read", "snoozed", "unread"]);
 const ExternalLinkSchema = Schema.Struct({
   source: Schema.optional(Schema.String),
   title: Schema.optional(Schema.String),
@@ -63,6 +69,32 @@ export const RepositoryHistoryInput = Schema.Struct({
 export type RepositoryHistoryInput = RepositoryHistoryQuery & {
   readonly max?: number;
 };
+
+export const InboxQuery = Schema.Struct({
+  createdAfter: Schema.optional(Schema.String),
+  createdBefore: Schema.optional(Schema.String),
+  cursor: Schema.optional(Schema.String),
+  includeSourceInactive: Schema.optional(Schema.Boolean),
+  limit: Schema.optional(Schema.Number),
+  reason: Schema.optional(InboxReason),
+  repositoryIds: Schema.optional(Schema.Array(Schema.String)),
+  status: Schema.optional(Schema.Union([InboxStatus, Schema.Literal("all")])),
+  ticketId: Schema.optional(Schema.String),
+  userId: Schema.String,
+});
+export type InboxQuery = DatabaseInboxQuery;
+
+export const InboxSummaryQuery = InboxQuery;
+export type InboxSummaryQuery = DatabaseInboxQuery;
+
+export const InboxMutationInput = Schema.Struct({
+  allowMissing: Schema.optional(Schema.Boolean),
+  itemIds: Schema.Array(Schema.String),
+  userId: Schema.String,
+});
+export type InboxMutationInput = DatabaseInboxMutationInput;
+export type InboxReason = DatabaseInboxReason;
+export type InboxStatus = DatabaseInboxStatus;
 
 export const RepositoryOpenInput = Schema.Struct({
   displayName: Schema.optional(Schema.String),

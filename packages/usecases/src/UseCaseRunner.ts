@@ -201,6 +201,16 @@ const execute = <Name extends UseCaseName>(
         })
         .pipe(Effect.mapError(mapFailure(context)));
     }
+    case "InboxList":
+      return database.listInbox(useCase.input).pipe(Effect.mapError(mapFailure(context)));
+    case "InboxSummaryGet":
+      return database.inboxSummary(useCase.input).pipe(Effect.mapError(mapFailure(context)));
+    case "InboxMarkRead":
+      return database.markInboxRead(useCase.input).pipe(Effect.mapError(mapFailure(context)));
+    case "InboxMarkUnread":
+      return database.markInboxUnread(useCase.input).pipe(Effect.mapError(mapFailure(context)));
+    case "InboxArchive":
+      return database.archiveInboxItems(useCase.input).pipe(Effect.mapError(mapFailure(context)));
     case "IssueCreate":
       return database
         .createTicket(useCase.input.repository.id, useCase.input.input)

@@ -3,6 +3,7 @@ import { CycleHttpApi } from "../CycleHttpApi.ts";
 import { withAutomationHandlers } from "./v1/automation.ts";
 import { withCommentHandlers } from "./v1/comments.ts";
 import { withDraftHandlers } from "./v1/drafts.ts";
+import { withInboxHandlers } from "./v1/inbox.ts";
 import { withInitiativeHandlers } from "./v1/initiatives.ts";
 import { withIssueHandlers } from "./v1/issues.ts";
 import { withLabelHandlers } from "./v1/labels.ts";
@@ -19,7 +20,9 @@ export const V1ApiHandlers = HttpApiBuilder.group(CycleHttpApi, "v1", (handlers)
           withUserHandlers(
             withLabelHandlers(
               withDraftHandlers(
-                withCommentHandlers(withIssueHandlers(withRepositoryHandlers(handlers))),
+                withCommentHandlers(
+                  withIssueHandlers(withInboxHandlers(withRepositoryHandlers(handlers))),
+                ),
               ),
             ),
           ),

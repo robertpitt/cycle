@@ -1,4 +1,7 @@
 import type {
+  InboxMutationResult,
+  InboxPage,
+  InboxSummary,
   MaterializationWarning,
   RepositoryStatus,
   SavedViewDocument,
@@ -15,6 +18,11 @@ import { getDesktopBridge } from "./desktopBridge.ts";
 
 type SupportedCycleApiAlias = Extract<
   UseCaseAlias,
+  | "inbox.archive"
+  | "inbox.list"
+  | "inbox.markRead"
+  | "inbox.markUnread"
+  | "inbox.summary"
   | "repository.history.list"
   | "repository.materializationWarnings"
   | "repository.status.get"
@@ -329,6 +337,8 @@ const encodeSegment = (value: string): string => encodeURIComponent(value);
 const repositoryPath = (repositoryId: string): string =>
   `/v1/repositories/${encodeSegment(repositoryId)}`;
 
+const inboxPath = "/v1/inbox";
+
 const withQuery = (path: string, query: QueryInput = {}): string => {
   const params = new URLSearchParams();
 
@@ -370,6 +380,8 @@ const queryParamName = (key: string): string => {
       return "filter[status][in]";
     case "assigneeIn":
       return "filter[assignee][in]";
+    case "repositoryIds":
+      return "filter[repository][in]";
     case "orderBy":
       return "sort[field]";
     case "orderDirection":
@@ -378,6 +390,8 @@ const queryParamName = (key: string): string => {
     case "archived":
     case "assignee":
     case "blocked":
+    case "createdAfter":
+    case "createdBefore":
     case "deleted":
     case "disabled":
     case "dueAfter":
@@ -387,12 +401,14 @@ const queryParamName = (key: string): string => {
     case "hasDueDate":
     case "hasEstimate":
     case "hasLabels":
+    case "includeSourceInactive":
     case "kind":
     case "label":
     case "parent":
     case "pinned":
     case "priority":
     case "recordType":
+    case "reason":
     case "staleBefore":
     case "status":
     case "ticketId":
@@ -555,8 +571,37 @@ export const cycleApiClient = {
     alias: Alias,
     payload: UseCasePayloadsByAlias[Alias],
   ): Promise<UseCaseSuccessesByAlias[Alias]> => {
-    const repositoryId = repositoryIdFromPayload(payload);
     const input = inputFromPayload<QueryInput>(payload, {});
+
+    switch (alias) {
+      case "inbox.list":
+        return resource<InboxPage>("GET", withQuery(inboxPath, payload as QueryInput)) as Promise<
+          UseCaseSuccessesByAlias[Alias]
+        >;
+
+      case "inbox.summary":
+        return resource<InboxSummary>(
+          "GET",
+          withQuery(`${inboxPath}/summary`, payload as QueryInput),
+        ) as Promise<UseCaseSuccessesByAlias[Alias]>;
+
+      case "inbox.markRead":
+        return resource<InboxMutationResult>("POST", `${inboxPath}/read`, payload) as Promise<
+          UseCaseSuccessesByAlias[Alias]
+        >;
+
+      case "inbox.markUnread":
+        return resource<InboxMutationResult>("POST", `${inboxPath}/unread`, payload) as Promise<
+          UseCaseSuccessesByAlias[Alias]
+        >;
+
+      case "inbox.archive":
+        return resource<InboxMutationResult>("POST", `${inboxPath}/archive`, payload) as Promise<
+          UseCaseSuccessesByAlias[Alias]
+        >;
+    }
+
+    const repositoryId = repositoryIdFromPayload(payload);
     const base = repositoryPath(repositoryId);
 
     switch (alias) {

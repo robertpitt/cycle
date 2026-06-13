@@ -49,6 +49,26 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
     }),
   )
   .add(
+    HttpApiEndpoint.get("listInbox", "/v1/inbox", {
+      success: ResourceEnvelope,
+    }),
+    HttpApiEndpoint.get("inboxSummary", "/v1/inbox/summary", {
+      success: ResourceEnvelope,
+    }),
+    HttpApiEndpoint.post("markInboxRead", "/v1/inbox/read", {
+      payload: AnyPayload,
+      success: ResourceEnvelope,
+    }),
+    HttpApiEndpoint.post("markInboxUnread", "/v1/inbox/unread", {
+      payload: AnyPayload,
+      success: ResourceEnvelope,
+    }),
+    HttpApiEndpoint.post("archiveInbox", "/v1/inbox/archive", {
+      payload: AnyPayload,
+      success: ResourceEnvelope,
+    }),
+  )
+  .add(
     HttpApiEndpoint.get("listIssues", "/v1/repositories/:repositoryId/issues", {
       params: RepositoryParams,
       success: CollectionEnvelope,

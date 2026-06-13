@@ -4,6 +4,16 @@ import type {
   CycleRepositoryMetadata,
   HistoryCommit,
   HistoryPage,
+  InboxEntry,
+  InboxItem,
+  InboxMutationInput,
+  InboxMutationResult,
+  InboxPage,
+  InboxQuery,
+  InboxReason,
+  InboxSourceState,
+  InboxStatus,
+  InboxSummary,
   IssueTemplateDocument,
   IssueTemplatePage,
   IssueTemplateQuery,
@@ -174,8 +184,36 @@ type HistoryRow = {
   readonly warning_count: number;
 };
 
+type InboxItemRow = {
+  readonly actor_email: string | null;
+  readonly actor_name: string | null;
+  readonly body_excerpt: string | null;
+  readonly created_at: string;
+  readonly event_path: string;
+  readonly item_id: string;
+  readonly metadata_json: string | null;
+  readonly reason: InboxReason;
+  readonly record_id: string | null;
+  readonly repository_id: string;
+  readonly sequence: number;
+  readonly snapshot_id: string;
+  readonly ticket_id: string;
+  readonly title: string;
+  readonly user_id: string;
+};
+
+type InboxListRow = InboxItemRow & {
+  readonly archived_at: string | null;
+  readonly deleted_at: string | null;
+  readonly local_archived_at: string | null;
+  readonly local_read_at: string | null;
+  readonly local_snoozed_until: string | null;
+  readonly local_updated_at: string | null;
+  readonly status: InboxStatus;
+};
+
 const WATCHED_REF = "refs/gitdb/cycle/main";
-const CURRENT_PROJECTION_SCHEMA_VERSION = 3;
+const CURRENT_PROJECTION_SCHEMA_VERSION = 4;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 250;
 
@@ -212,6 +250,7 @@ export class Projection {
 
     this.ensureRepositoryMetadataColumns();
     this.ensureSharedMetadataTables();
+    this.ensureInboxTables();
     if (version < CURRENT_PROJECTION_SCHEMA_VERSION) {
       this.db.exec(`PRAGMA user_version = ${CURRENT_PROJECTION_SCHEMA_VERSION}`);
     }
@@ -260,6 +299,10 @@ export class Projection {
 
   private ensureSharedMetadataTables(): void {
     this.db.exec(sharedMetadataSchemaSql);
+  }
+
+  private ensureInboxTables(): void {
+    this.db.exec(inboxSchemaSql);
   }
 
   registerRepository(input: RepositoryInput): RepositoryStatus {
@@ -413,6 +456,7 @@ export class Projection {
       "commit_parents",
       "commit_changes",
       "commits",
+      "inbox_items",
       "materialization_warnings",
       "search_documents",
       "search_fts",
@@ -988,6 +1032,154 @@ export class Projection {
       });
   }
 
+  upsertInboxItem(item: InboxItem): void {
+    this.db
+      .prepare(
+        `INSERT INTO inbox_items (
+          repository_id, user_id, item_id, snapshot_id, sequence, event_path, ticket_id,
+          record_id, reason, actor_name, actor_email, created_at, title, body_excerpt,
+          metadata_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(repository_id, user_id, item_id) DO UPDATE SET
+          snapshot_id = excluded.snapshot_id,
+          sequence = excluded.sequence,
+          event_path = excluded.event_path,
+          ticket_id = excluded.ticket_id,
+          record_id = excluded.record_id,
+          reason = excluded.reason,
+          actor_name = excluded.actor_name,
+          actor_email = excluded.actor_email,
+          created_at = excluded.created_at,
+          title = excluded.title,
+          body_excerpt = excluded.body_excerpt,
+          metadata_json = excluded.metadata_json`,
+      )
+      .run(
+        item.repositoryId,
+        item.userId,
+        item.itemId,
+        item.snapshotId,
+        item.sequence,
+        item.eventPath,
+        item.ticketId,
+        item.recordId ?? null,
+        item.reason,
+        item.actorName ?? null,
+        item.actorEmail ?? null,
+        item.createdAt,
+        item.title,
+        item.bodyExcerpt ?? null,
+        item.metadataJson ?? null,
+      );
+  }
+
+  listInbox(query: InboxQuery): InboxPage {
+    const limit = normalizeLimit(query.limit);
+    const cursor = decodeCursor(query.cursor);
+    const filtered = this.inboxFilters(query, true);
+    const rows = this.db
+      .prepare(
+        `SELECT
+           i.*,
+           COALESCE(s.status, 'unread') AS status,
+           s.read_at AS local_read_at,
+           s.archived_at AS local_archived_at,
+           s.snoozed_until AS local_snoozed_until,
+           s.updated_at AS local_updated_at,
+           t.archived_at,
+           t.deleted_at
+         FROM inbox_items i
+         JOIN tickets t
+           ON t.repository_id = i.repository_id AND t.ticket_id = i.ticket_id
+         LEFT JOIN inbox_item_state s
+           ON s.repository_id = i.repository_id
+          AND s.user_id = i.user_id
+          AND s.item_id = i.item_id
+         WHERE ${filtered.where}
+         ORDER BY i.created_at DESC, i.sequence DESC, i.item_id ASC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(...filtered.params, limit + 1, cursor.offset) as unknown as ReadonlyArray<InboxListRow>;
+    const entries = rows.slice(0, limit).map(inboxEntryFromRow);
+
+    return {
+      activeSnapshotIds: this.inboxActiveSnapshotIds(query.repositoryIds),
+      entries,
+      nextCursor: rows.length > limit ? encodeCursor(cursor.offset + limit) : undefined,
+    };
+  }
+
+  inboxSummary(query: InboxQuery): InboxSummary {
+    const filtered = this.inboxFilters(query, false);
+    const rows = this.db
+      .prepare(
+        `SELECT
+           i.repository_id,
+           i.reason,
+           COALESCE(s.status, 'unread') AS status,
+           COUNT(*) AS count,
+           MAX(i.created_at) AS latest
+         FROM inbox_items i
+         JOIN tickets t
+           ON t.repository_id = i.repository_id AND t.ticket_id = i.ticket_id
+         LEFT JOIN inbox_item_state s
+           ON s.repository_id = i.repository_id
+          AND s.user_id = i.user_id
+          AND s.item_id = i.item_id
+         WHERE ${filtered.where}
+         GROUP BY i.repository_id, i.reason, COALESCE(s.status, 'unread')`,
+      )
+      .all(...filtered.params) as unknown as ReadonlyArray<{
+      readonly count: number;
+      readonly latest: string | null;
+      readonly reason: InboxReason;
+      readonly repository_id: string;
+      readonly status: InboxStatus;
+    }>;
+    const byRepository: Record<string, number> = {};
+    const byReason: Record<string, number> = {};
+    let unreadCount = 0;
+    let readCount = 0;
+    let archivedCount = 0;
+    let latestItemTimestamp: string | undefined;
+
+    for (const row of rows) {
+      byRepository[row.repository_id] = (byRepository[row.repository_id] ?? 0) + row.count;
+      byReason[row.reason] = (byReason[row.reason] ?? 0) + row.count;
+      if (row.status === "unread") unreadCount += row.count;
+      if (row.status === "read") readCount += row.count;
+      if (row.status === "archived") archivedCount += row.count;
+      if (
+        row.latest !== null &&
+        (latestItemTimestamp === undefined || row.latest > latestItemTimestamp)
+      ) {
+        latestItemTimestamp = row.latest;
+      }
+    }
+
+    return {
+      archivedCount,
+      byReason,
+      byRepository,
+      ...(latestItemTimestamp === undefined ? {} : { latestItemTimestamp }),
+      readCount,
+      repositories: this.inboxRepositorySummaries(query.repositoryIds),
+      unreadCount,
+    };
+  }
+
+  markInboxRead(input: InboxMutationInput, now: string): InboxMutationResult {
+    return this.setInboxItemStatus(input, "read", now);
+  }
+
+  markInboxUnread(input: InboxMutationInput, now: string): InboxMutationResult {
+    return this.setInboxItemStatus(input, "unread", now);
+  }
+
+  archiveInboxItems(input: InboxMutationInput, now: string): InboxMutationResult {
+    return this.setInboxItemStatus(input, "archived", now);
+  }
+
   getTicket(repositoryId: string, ticketId: string): TicketDocument | null {
     const row = this.db
       .prepare("SELECT * FROM tickets WHERE repository_id = ? AND ticket_id = ?")
@@ -1537,6 +1729,194 @@ export class Projection {
     return row?.count ?? 0;
   }
 
+  private inboxFilters(
+    query: InboxQuery,
+    includeStatusFilter: boolean,
+  ): {
+    readonly params: ReadonlyArray<SqlValue>;
+    readonly where: string;
+  } {
+    const filters = ["i.user_id = ?"];
+    const params: Array<SqlValue> = [query.userId];
+
+    if (query.repositoryIds !== undefined && query.repositoryIds.length > 0) {
+      filters.push(`i.repository_id IN (${placeholders(query.repositoryIds.length)})`);
+      params.push(...query.repositoryIds);
+    }
+    if (query.reason !== undefined) {
+      filters.push("i.reason = ?");
+      params.push(query.reason);
+    }
+    if (query.ticketId !== undefined) {
+      filters.push("i.ticket_id = ?");
+      params.push(query.ticketId);
+    }
+    if (query.createdAfter !== undefined) {
+      filters.push("i.created_at >= ?");
+      params.push(query.createdAfter);
+    }
+    if (query.createdBefore !== undefined) {
+      filters.push("i.created_at <= ?");
+      params.push(query.createdBefore);
+    }
+    if (query.includeSourceInactive !== true) {
+      filters.push("t.archived_at IS NULL");
+      filters.push("t.deleted_at IS NULL");
+    }
+    if (includeStatusFilter && query.status !== "all") {
+      filters.push("COALESCE(s.status, 'unread') = ?");
+      params.push(query.status ?? "unread");
+    }
+
+    return {
+      params,
+      where: filters.join(" AND "),
+    };
+  }
+
+  private inboxActiveSnapshotIds(
+    repositoryIds: ReadonlyArray<string> | undefined,
+  ): Readonly<Record<string, string | null>> {
+    const rows =
+      repositoryIds !== undefined && repositoryIds.length > 0
+        ? (this.db
+            .prepare(
+              `SELECT repository_id, active_snapshot_id
+               FROM repositories
+               WHERE repository_id IN (${placeholders(repositoryIds.length)})
+               ORDER BY repository_id ASC`,
+            )
+            .all(...repositoryIds) as unknown as ReadonlyArray<{
+            readonly active_snapshot_id: string | null;
+            readonly repository_id: string;
+          }>)
+        : (this.db
+            .prepare(
+              `SELECT repository_id, active_snapshot_id
+               FROM repositories
+               ORDER BY repository_id ASC`,
+            )
+            .all() as unknown as ReadonlyArray<{
+            readonly active_snapshot_id: string | null;
+            readonly repository_id: string;
+          }>);
+
+    return Object.fromEntries(rows.map((row) => [row.repository_id, row.active_snapshot_id]));
+  }
+
+  private inboxRepositorySummaries(
+    repositoryIds: ReadonlyArray<string> | undefined,
+  ): InboxSummary["repositories"] {
+    const rows =
+      repositoryIds !== undefined && repositoryIds.length > 0
+        ? (this.db
+            .prepare(
+              `SELECT repository_id, active_snapshot_id, sync_status, warning_count
+               FROM repositories
+               WHERE repository_id IN (${placeholders(repositoryIds.length)})
+               ORDER BY repository_id ASC`,
+            )
+            .all(...repositoryIds) as unknown as ReadonlyArray<RepositoryRow>)
+        : (this.db
+            .prepare(
+              `SELECT repository_id, active_snapshot_id, sync_status, warning_count
+               FROM repositories
+               ORDER BY repository_id ASC`,
+            )
+            .all() as unknown as ReadonlyArray<RepositoryRow>);
+
+    return rows.map((row) => ({
+      activeSnapshotId: row.active_snapshot_id,
+      repositoryId: row.repository_id,
+      status: row.sync_status,
+      warningCount: row.warning_count,
+    }));
+  }
+
+  private setInboxItemStatus(
+    input: InboxMutationInput,
+    status: InboxStatus,
+    now: string,
+  ): InboxMutationResult {
+    if (input.itemIds.length === 0) {
+      return {
+        matchedCount: 0,
+        missingItemIds: [],
+        status,
+        updatedCount: 0,
+      };
+    }
+
+    const rows = this.db
+      .prepare(
+        `SELECT repository_id, item_id
+         FROM inbox_items
+         WHERE user_id = ? AND item_id IN (${placeholders(input.itemIds.length)})
+         ORDER BY repository_id ASC, item_id ASC`,
+      )
+      .all(input.userId, ...input.itemIds) as unknown as ReadonlyArray<{
+      readonly item_id: string;
+      readonly repository_id: string;
+    }>;
+    const foundIds = new Set(rows.map((row) => row.item_id));
+    const missingItemIds = input.itemIds.filter((itemId) => !foundIds.has(itemId));
+
+    if (missingItemIds.length > 0 && input.allowMissing !== true) {
+      throw new Error(`unknown inbox item ids: ${missingItemIds.join(", ")}`);
+    }
+
+    if (status === "unread") {
+      for (const row of rows) {
+        this.db
+          .prepare(
+            `DELETE FROM inbox_item_state
+             WHERE repository_id = ? AND user_id = ? AND item_id = ?`,
+          )
+          .run(row.repository_id, input.userId, row.item_id);
+      }
+    } else {
+      for (const row of rows) {
+        this.db
+          .prepare(
+            `INSERT INTO inbox_item_state (
+              repository_id, user_id, item_id, status, read_at, archived_at, snoozed_until,
+              updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
+            ON CONFLICT(repository_id, user_id, item_id) DO UPDATE SET
+              status = excluded.status,
+              read_at = CASE
+                WHEN excluded.status = 'read' AND inbox_item_state.read_at IS NOT NULL
+                  THEN inbox_item_state.read_at
+                ELSE excluded.read_at
+              END,
+              archived_at = CASE
+                WHEN excluded.status = 'archived' AND inbox_item_state.archived_at IS NOT NULL
+                  THEN inbox_item_state.archived_at
+                ELSE excluded.archived_at
+              END,
+              snoozed_until = excluded.snoozed_until,
+              updated_at = excluded.updated_at`,
+          )
+          .run(
+            row.repository_id,
+            input.userId,
+            row.item_id,
+            status,
+            status === "read" ? now : null,
+            status === "archived" ? now : null,
+            now,
+          );
+      }
+    }
+
+    return {
+      matchedCount: rows.length,
+      missingItemIds,
+      status,
+      updatedCount: rows.length,
+    };
+  }
+
   private upsertSearchDocument(input: {
     readonly body: string;
     readonly documentId: string;
@@ -1600,6 +1980,44 @@ export class Projection {
     return [...fields];
   }
 }
+
+const inboxSchemaSql = `
+CREATE TABLE IF NOT EXISTS inbox_items (
+  repository_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  item_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  event_path TEXT NOT NULL,
+  ticket_id TEXT NOT NULL,
+  record_id TEXT,
+  reason TEXT NOT NULL,
+  actor_name TEXT,
+  actor_email TEXT,
+  created_at TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body_excerpt TEXT,
+  metadata_json TEXT,
+  PRIMARY KEY (repository_id, user_id, item_id)
+);
+CREATE INDEX IF NOT EXISTS inbox_items_user_order ON inbox_items(user_id, created_at DESC, sequence DESC, item_id);
+CREATE INDEX IF NOT EXISTS inbox_items_repository_user ON inbox_items(repository_id, user_id, created_at DESC, item_id);
+CREATE INDEX IF NOT EXISTS inbox_items_ticket ON inbox_items(repository_id, ticket_id, user_id);
+CREATE INDEX IF NOT EXISTS inbox_items_reason ON inbox_items(user_id, reason, created_at DESC, item_id);
+
+CREATE TABLE IF NOT EXISTS inbox_item_state (
+  repository_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  item_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  read_at TEXT,
+  archived_at TEXT,
+  snoozed_until TEXT,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (repository_id, user_id, item_id)
+);
+CREATE INDEX IF NOT EXISTS inbox_item_state_status ON inbox_item_state(user_id, status, updated_at DESC, item_id);
+`;
 
 const schemaSql = `
 CREATE TABLE repositories (
@@ -1862,6 +2280,8 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
   title,
   body
 );
+
+${inboxSchemaSql}
 `;
 
 const sharedMetadataSchemaSql = `
@@ -2126,6 +2546,55 @@ const historyFromRow = (row: HistoryRow): HistoryCommit => ({
   snapshotId: row.snapshot_id,
   warningCount: row.warning_count,
 });
+
+const inboxEntryFromRow = (row: InboxListRow): InboxEntry => {
+  const actor: InboxEntry["actor"] = {
+    ...(row.actor_email === null ? {} : { email: row.actor_email }),
+    ...(row.actor_name === null ? {} : { name: row.actor_name }),
+  };
+  const metadata = parseInboxMetadata(row.metadata_json);
+
+  return {
+    actor,
+    ...(row.body_excerpt === null ? {} : { bodyExcerpt: row.body_excerpt }),
+    createdAt: row.created_at,
+    eventPath: row.event_path,
+    itemId: row.item_id,
+    ...(metadata === undefined ? {} : { metadata }),
+    reason: row.reason,
+    ...(row.record_id === null ? {} : { recordId: row.record_id }),
+    repositoryId: row.repository_id,
+    sequence: row.sequence,
+    snapshotId: row.snapshot_id,
+    sourceState: inboxSourceState(row),
+    status: row.status,
+    ticketId: row.ticket_id,
+    title: row.title,
+    ...(row.local_updated_at === null ? {} : { updatedAt: row.local_updated_at }),
+  };
+};
+
+const inboxSourceState = (row: InboxListRow): InboxSourceState =>
+  row.deleted_at !== null
+    ? "source_deleted"
+    : row.archived_at !== null
+      ? "source_archived"
+      : "active";
+
+const parseInboxMetadata = (
+  value: string | null,
+): Readonly<Record<string, unknown>> | undefined => {
+  if (value === null) return undefined;
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+
+    return parsed as Readonly<Record<string, unknown>>;
+  } catch {
+    return undefined;
+  }
+};
 
 const commentBody = (payload: unknown): string => {
   if (typeof payload === "string") return payload;

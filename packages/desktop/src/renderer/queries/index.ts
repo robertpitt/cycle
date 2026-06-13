@@ -1,6 +1,7 @@
 export * from "./agentProviders.ts";
 export * from "./appConfig.ts";
 export * from "./bootstrap.ts";
+export * from "./inbox.ts";
 export * from "./issueHistory.ts";
 export * from "./issues.ts";
 export * from "./metadata.ts";

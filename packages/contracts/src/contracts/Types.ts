@@ -1,5 +1,8 @@
 import type {
   HistoryPage,
+  InboxMutationResult,
+  InboxPage,
+  InboxSummary,
   InitiativeProgress,
   IssueTemplateDocument,
   IssueTemplatePage,
@@ -34,6 +37,9 @@ import type {
   CreateSavedViewInput,
   DeleteIssueInput,
   EmptyInput,
+  InboxMutationInput,
+  InboxQuery,
+  InboxSummaryQuery,
   IssueDiffInput,
   IssueHistoryInput,
   IssueIdInput,
@@ -136,6 +142,26 @@ export type UseCaseDefinitions = {
   readonly RepositoryHistoryList: {
     readonly input: RepositoryScoped<RepositoryHistoryInput>;
     readonly success: HistoryPage;
+  };
+  readonly InboxList: {
+    readonly input: InboxQuery;
+    readonly success: InboxPage;
+  };
+  readonly InboxSummaryGet: {
+    readonly input: InboxSummaryQuery;
+    readonly success: InboxSummary;
+  };
+  readonly InboxMarkRead: {
+    readonly input: InboxMutationInput;
+    readonly success: InboxMutationResult;
+  };
+  readonly InboxMarkUnread: {
+    readonly input: InboxMutationInput;
+    readonly success: InboxMutationResult;
+  };
+  readonly InboxArchive: {
+    readonly input: InboxMutationInput;
+    readonly success: InboxMutationResult;
   };
   readonly IssueCreate: {
     readonly input: RepositoryScoped<CreateIssueInput>;

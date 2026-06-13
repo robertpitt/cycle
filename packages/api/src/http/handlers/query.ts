@@ -70,6 +70,23 @@ export const historyQueryFrom = (params: URLSearchParams): Record<string, unknow
     ticketId: params.get("filter[ticketId]") ?? undefined,
   });
 
+export const inboxQueryFrom = (params: URLSearchParams): Record<string, unknown> => {
+  const repositoryIds = params.get("filter[repository][in]") ?? params.get("repositoryIds");
+
+  return stripUndefined({
+    createdAfter: filterParam(params, "createdAfter") ?? undefined,
+    createdBefore: filterParam(params, "createdBefore") ?? undefined,
+    cursor: params.get("page[cursor]") ?? undefined,
+    includeSourceInactive: booleanParam(filterParam(params, "includeSourceInactive")),
+    limit: pageLimitFrom(params),
+    reason: filterParam(params, "reason") ?? undefined,
+    repositoryIds: repositoryIds === null ? undefined : commaList(repositoryIds),
+    status: filterParam(params, "status") ?? undefined,
+    ticketId: filterParam(params, "ticketId") ?? undefined,
+    userId: filterParam(params, "userId") ?? params.get("userId") ?? undefined,
+  });
+};
+
 export const recordQueryFrom = (params: URLSearchParams): Record<string, unknown> =>
   stripUndefined({
     cursor: params.get("page[cursor]") ?? undefined,

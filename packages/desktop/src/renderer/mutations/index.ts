@@ -1,5 +1,6 @@
 export * from "./metadata.ts";
 export * from "./settings.ts";
+export * from "./useInboxMutation.ts";
 export * from "./useAddRepositoryMutation.ts";
 export * from "./useAddIssueCommentMutation.ts";
 export * from "./useCompleteOnboardingMutation.ts";

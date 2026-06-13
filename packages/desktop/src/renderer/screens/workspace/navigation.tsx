@@ -49,6 +49,7 @@ const createRepositoryNavItems = (repositories: readonly RepositoryRecord[]) =>
   });
 
 type RendererNavOptions = {
+  readonly inboxUnreadCount?: number;
   readonly repositoryAction?: AppShellNavSection["action"];
 };
 
@@ -61,7 +62,10 @@ export const createRendererNavSections = (
       id: "workspace",
       items: [
         {
-          badge: "3",
+          badge:
+            options.inboxUnreadCount === undefined || options.inboxUnreadCount === 0
+              ? undefined
+              : String(options.inboxUnreadCount),
           icon: <Inbox aria-hidden className="size-4" />,
           id: "inbox",
           label: "Inbox",

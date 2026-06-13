@@ -2,11 +2,19 @@ import { Event as GitDbEvent, GitDbInMemory, Store as GitDbStore } from "@cycle/
 import { randomBytes } from "node:crypto";
 import { Crypto, Effect, Layer } from "effect";
 import {
+  CURRENT_SCHEMA_VERSION,
   DatabaseIdGenerator,
   DatabaseIdGeneratorLive,
   DatabaseService,
   DatabaseTest,
   ValidationError,
+  extractMentionTags,
+  makeFrontmatter,
+  makeTicketDocument,
+  updatedDateKey,
+  type Actor,
+  type CreateTicketInput,
+  type LinkedRecord,
 } from "../src/index.ts";
 import { assert, describe, it } from "./effect-vitest.ts";
 
@@ -40,6 +48,134 @@ const collectStorePaths = (
     }
 
     return paths.sort();
+  });
+
+const externalActor: Actor = {
+  email: "other@example.invalid",
+  name: "Other User",
+  type: "human",
+};
+
+const appendExternalTicket = (
+  store: GitDbStore.StoreServiceShape,
+  input: {
+    readonly eventId: string;
+    readonly ticket: CreateTicketInput;
+    readonly ticketId: string;
+  },
+) =>
+  Effect.gen(function* () {
+    const now = new Date().toISOString();
+    const ticket = makeTicketDocument(
+      makeFrontmatter(input.ticket, input.ticketId, externalActor, now),
+      input.ticket.body ?? "External ticket body.",
+    );
+    const tx = yield* store.begin();
+
+    yield* GitDbEvent.append(tx, {
+      aggregateId: input.ticketId,
+      aggregateType: "ticket",
+      eventId: input.eventId,
+      payload: {
+        op: "ticket.create",
+        value: ticket,
+      },
+    });
+    yield* tx.commit({
+      author: {
+        email: externalActor.email,
+        name: externalActor.name,
+      },
+      committer: {
+        email: externalActor.email,
+        name: externalActor.name,
+      },
+      message: `External create ${input.ticketId}`,
+    });
+
+    return ticket;
+  });
+
+const appendExternalTicketUpdate = (
+  store: GitDbStore.StoreServiceShape,
+  input: {
+    readonly eventId: string;
+    readonly field: "body" | "priority" | "title" | "assignee";
+    readonly ticketId: string;
+    readonly value: unknown;
+  },
+) =>
+  Effect.gen(function* () {
+    const tx = yield* store.begin();
+
+    yield* GitDbEvent.append(tx, {
+      aggregateId: input.ticketId,
+      aggregateType: "ticket",
+      eventId: input.eventId,
+      payload: {
+        field: input.field,
+        op: "ticket.update",
+        value: input.value,
+      },
+    });
+    yield* tx.commit({
+      author: {
+        email: externalActor.email,
+        name: externalActor.name,
+      },
+      committer: {
+        email: externalActor.email,
+        name: externalActor.name,
+      },
+      message: `External update ${input.ticketId}`,
+    });
+  });
+
+const appendExternalComment = (
+  store: GitDbStore.StoreServiceShape,
+  input: {
+    readonly body: string;
+    readonly eventId: string;
+    readonly recordId: string;
+    readonly ticketId: string;
+  },
+) =>
+  Effect.gen(function* () {
+    const now = new Date().toISOString();
+    const record: LinkedRecord = {
+      createdAt: now,
+      createdBy: externalActor,
+      createdDate: updatedDateKey(now),
+      id: input.recordId,
+      issueId: input.ticketId,
+      payload: {
+        body: input.body,
+      },
+      recordType: "comment",
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+    };
+    const tx = yield* store.begin();
+
+    yield* GitDbEvent.append(tx, {
+      aggregateId: record.id,
+      aggregateType: "record",
+      eventId: input.eventId,
+      payload: {
+        op: "record.add",
+        value: record,
+      },
+    });
+    yield* tx.commit({
+      author: {
+        email: externalActor.email,
+        name: externalActor.name,
+      },
+      committer: {
+        email: externalActor.email,
+        name: externalActor.name,
+      },
+      message: `External comment ${input.ticketId}`,
+    });
   });
 
 describe("@cycle/database", () => {
@@ -344,6 +480,263 @@ describe("@cycle/database", () => {
       assert.ok(emptyComment instanceof ValidationError);
       assert.match(emptyComment.message, /comment body must not be empty/u);
     }).pipe(Effect.provide(DatabaseTest())),
+  );
+
+  it.effect("parses mentions while ignoring markdown code spans and fenced blocks", () =>
+    Effect.sync(() => {
+      const mentions = extractMentionTags(
+        [
+          "Please ask @reviewer and @user@example.invalid.",
+          "",
+          "`@inline` should not count.",
+          "",
+          "```ts",
+          "const owner = '@fenced';",
+          "```",
+          "",
+          "@reviewer should only appear once.",
+        ].join("\n"),
+      );
+
+      assert.deepStrictEqual(
+        mentions.map((mention) => mention.normalized),
+        ["reviewer", "user@example.invalid"],
+      );
+    }),
+  );
+
+  it.effect(
+    "derives inbox items from mentions, comments, and assignment without GitDB inbox writes",
+    () =>
+      Effect.gen(function* () {
+        const repositoryId = "inbox-derived-repo";
+        const userId = "mentioned@example.invalid";
+        const database = yield* DatabaseService;
+        const store = yield* makeStore(repositoryId);
+
+        yield* database.openRepository({
+          repositoryId,
+          store,
+        });
+        yield* database.upsertUser(repositoryId, {
+          aliases: ["reviewer"],
+          displayName: "Mentioned User",
+          email: userId,
+        });
+
+        const mentionedTicket = yield* appendExternalTicket(store, {
+          eventId: "evt_inbox_mention",
+          ticket: {
+            body: "Please review this, @reviewer.",
+            title: "Mentioned ticket",
+          },
+          ticketId: "EXT-00001",
+        });
+        yield* database.syncRepository(repositoryId);
+
+        const afterMention = yield* database.listInbox({
+          repositoryIds: [repositoryId],
+          userId,
+        });
+
+        yield* appendExternalTicketUpdate(store, {
+          eventId: "evt_inbox_unrelated_update",
+          field: "priority",
+          ticketId: mentionedTicket.id,
+          value: "high",
+        });
+        yield* appendExternalTicketUpdate(store, {
+          eventId: "evt_inbox_assigned_update",
+          field: "assignee",
+          ticketId: mentionedTicket.id,
+          value: "reviewer",
+        });
+        yield* appendExternalComment(store, {
+          body: "New detail for @reviewer.",
+          eventId: "evt_inbox_comment",
+          recordId: "EXT-00001_comment_rec_0001",
+          ticketId: mentionedTicket.id,
+        });
+        yield* database.syncRepository(repositoryId);
+
+        const page = yield* database.listInbox({
+          repositoryIds: [repositoryId],
+          status: "all",
+          userId,
+        });
+        const summary = yield* database.inboxSummary({
+          repositoryIds: [repositoryId],
+          userId,
+        });
+        const storePathsBeforeLocalState = yield* collectStorePaths(store);
+        const firstItemId = page.entries[0]?.itemId;
+
+        assert.ok(firstItemId);
+
+        const read = yield* database.markInboxRead({
+          itemIds: [firstItemId],
+          userId,
+        });
+        const readAgain = yield* database.markInboxRead({
+          itemIds: [firstItemId],
+          userId,
+        });
+        const archive = yield* database.archiveInboxItems({
+          itemIds: [firstItemId],
+          userId,
+        });
+        const archiveAgain = yield* database.archiveInboxItems({
+          itemIds: [firstItemId],
+          userId,
+        });
+        const storePathsAfterLocalState = yield* collectStorePaths(store);
+        const archived = yield* database.listInbox({
+          repositoryIds: [repositoryId],
+          status: "archived",
+          userId,
+        });
+        const rebuilt = yield* Effect.gen(function* () {
+          const freshDatabase = yield* DatabaseService;
+
+          yield* freshDatabase.openRepository({
+            repositoryId,
+            store,
+          });
+
+          return yield* freshDatabase.listInbox({
+            repositoryIds: [repositoryId],
+            status: "all",
+            userId,
+          });
+        }).pipe(Effect.provide(DatabaseTest("inbox-rebuild")));
+
+        assert.deepStrictEqual(
+          afterMention.entries.map((entry) => entry.reason),
+          ["mention"],
+        );
+        assert.strictEqual(page.entries.length, 4);
+        assert.deepStrictEqual(
+          page.entries.map((entry) => entry.reason).sort(),
+          ["assigned", "comment_assigned", "mention", "mention"].sort(),
+        );
+        assert.strictEqual(summary.unreadCount, 4);
+        assert.strictEqual(summary.byReason.mention, 2);
+        assert.strictEqual(summary.byReason.assigned, 1);
+        assert.strictEqual(summary.byReason.comment_assigned, 1);
+        assert.strictEqual(read.matchedCount, 1);
+        assert.strictEqual(readAgain.matchedCount, 1);
+        assert.strictEqual(archive.matchedCount, 1);
+        assert.strictEqual(archiveAgain.matchedCount, 1);
+        assert.deepStrictEqual(storePathsAfterLocalState, storePathsBeforeLocalState);
+        assert.deepStrictEqual(
+          archived.entries.map((entry) => entry.itemId),
+          [firstItemId],
+        );
+        assert.strictEqual(
+          new Set(page.entries.map((entry) => entry.itemId)).size,
+          page.entries.length,
+        );
+        assert.deepStrictEqual(
+          rebuilt.entries.map((entry) => entry.itemId).sort(),
+          page.entries.map((entry) => entry.itemId).sort(),
+        );
+      }).pipe(Effect.provide(DatabaseTest())),
+  );
+
+  it.effect(
+    "suppresses self-authored inbox items and skips unknown mentions without blocking sync",
+    () =>
+      Effect.gen(function* () {
+        const repositoryId = "inbox-self-and-unknown-repo";
+        const userId = "mentioned@example.invalid";
+        const database = yield* DatabaseService;
+        const store = yield* makeStore(repositoryId);
+
+        yield* database.openRepository({
+          repositoryId,
+          store,
+        });
+        yield* database.upsertUser(repositoryId, {
+          aliases: ["reviewer"],
+          displayName: "Mentioned User",
+          email: userId,
+        });
+
+        const now = new Date().toISOString();
+        const selfTicket = makeTicketDocument(
+          makeFrontmatter(
+            {
+              body: "Self-authored @reviewer mention.",
+              title: "Self mention",
+            },
+            "EXT-00003",
+            {
+              email: userId,
+              name: "Mentioned User",
+              type: "human",
+            },
+            now,
+          ),
+          "Self-authored @reviewer mention.",
+        );
+        const tx = yield* store.begin();
+
+        yield* GitDbEvent.append(tx, {
+          aggregateId: selfTicket.id,
+          aggregateType: "ticket",
+          eventId: "evt_inbox_self_mention",
+          payload: {
+            op: "ticket.create",
+            value: selfTicket,
+          },
+        });
+        yield* GitDbEvent.append(tx, {
+          aggregateId: "EXT-00004",
+          aggregateType: "ticket",
+          eventId: "evt_inbox_unknown_mention",
+          payload: {
+            op: "ticket.create",
+            value: makeTicketDocument(
+              makeFrontmatter(
+                {
+                  body: "Unknown @missing-user mention.",
+                  title: "Unknown mention",
+                },
+                "EXT-00004",
+                externalActor,
+                now,
+              ),
+              "Unknown @missing-user mention.",
+            ),
+          },
+        });
+        yield* tx.put("collections/events/ticket/broken-inbox/evt_broken_inbox.json", {
+          op: "ticket.not-supported",
+        });
+        yield* tx.commit({
+          author: {
+            email: userId,
+            name: "Mentioned User",
+          },
+          committer: {
+            email: userId,
+            name: "Mentioned User",
+          },
+          message: "Add self, unknown, and invalid inbox sources",
+        });
+
+        const status = yield* database.syncRepository(repositoryId);
+        const page = yield* database.listInbox({
+          repositoryIds: [repositoryId],
+          status: "all",
+          userId,
+        });
+        const warnings = yield* database.materializationWarnings(repositoryId);
+
+        assert.strictEqual(status.status, "degraded");
+        assert.deepStrictEqual(page.entries, []);
+        assert.ok(warnings.some((warning) => warning.objectId === "broken-inbox"));
+      }).pipe(Effect.provide(DatabaseTest())),
   );
 
   it.effect("allows human issue property edits to move directly between visible UI states", () =>

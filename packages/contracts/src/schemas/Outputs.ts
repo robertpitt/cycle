@@ -315,6 +315,60 @@ export const HistoryPageOutput = Schema.Struct({
   nextCursor: Schema.optional(Schema.String),
 });
 
+export const InboxActorOutput = Schema.Struct({
+  email: Schema.optional(Schema.String),
+  name: Schema.optional(Schema.String),
+});
+
+export const InboxEntryOutput = Schema.Struct({
+  actor: InboxActorOutput,
+  bodyExcerpt: Schema.optional(Schema.String),
+  createdAt: Schema.String,
+  eventPath: Schema.String,
+  itemId: Schema.String,
+  metadata: Schema.optional(UnknownRecord),
+  reason: Schema.Literals(["assigned", "comment_assigned", "comment_created", "mention"]),
+  recordId: Schema.optional(Schema.String),
+  repositoryId: Schema.String,
+  sequence: Schema.Number,
+  snapshotId: Schema.String,
+  sourceState: Schema.Literals(["active", "source_archived", "source_deleted"]),
+  status: Schema.Literals(["archived", "read", "snoozed", "unread"]),
+  ticketId: Schema.String,
+  title: Schema.String,
+  updatedAt: Schema.optional(Schema.String),
+});
+
+export const InboxPageOutput = Schema.Struct({
+  activeSnapshotIds: Schema.Record(Schema.String, Schema.NullOr(Schema.String)),
+  entries: Schema.Array(InboxEntryOutput),
+  nextCursor: Schema.optional(Schema.String),
+});
+
+export const InboxRepositorySummaryOutput = Schema.Struct({
+  activeSnapshotId: Schema.NullOr(Schema.String),
+  repositoryId: Schema.String,
+  status: Schema.String,
+  warningCount: Schema.Number,
+});
+
+export const InboxSummaryOutput = Schema.Struct({
+  archivedCount: Schema.Number,
+  byReason: Schema.Record(Schema.String, Schema.Number),
+  byRepository: Schema.Record(Schema.String, Schema.Number),
+  latestItemTimestamp: Schema.optional(Schema.String),
+  readCount: Schema.Number,
+  repositories: Schema.Array(InboxRepositorySummaryOutput),
+  unreadCount: Schema.Number,
+});
+
+export const InboxMutationResultOutput = Schema.Struct({
+  matchedCount: Schema.Number,
+  missingItemIds: Schema.Array(Schema.String),
+  status: Schema.Literals(["archived", "read", "snoozed", "unread"]),
+  updatedCount: Schema.Number,
+});
+
 export const TicketRevisionDiffFileOutput = Schema.Struct({
   language: Schema.optional(Schema.String),
   newContent: Schema.String,
