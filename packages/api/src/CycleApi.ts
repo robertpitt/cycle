@@ -1,7 +1,7 @@
 import { makeCycleMcpHttpLayer, type CycleMcpHttpOptions } from "@cycle/mcp/server";
 import { NodeServices } from "@effect/platform-node";
 import { Layer } from "effect";
-import { HttpRouter, HttpServer } from "effect/unstable/http";
+import { HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { CycleHttpApi, makeOpenApiDocument } from "./api.ts";
 import { CycleAuthorizationLive } from "./http/handlers/Authorization.ts";
@@ -73,8 +73,34 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
     maxAge: 86_400,
   });
 
-  return Layer.mergeAll(apiLayer, mcpLayer, corsLayer) as Layer.Layer<never, unknown, any>;
+  return Layer.mergeAll(apiDocsLayer, apiLayer, mcpLayer, corsLayer) as Layer.Layer<
+    never,
+    unknown,
+    any
+  >;
 };
+
+const apiDocsLayer = HttpRouter.add(
+  "GET",
+  "/",
+  HttpServerResponse.html(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Cycle Local API</title>
+    <style>
+      body {
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <redoc spec-url="/spec.json"></redoc>
+    <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
+  </body>
+</html>`),
+);
 
 const makeHostedMcpLayer = (options: CycleApiOptions): Layer.Layer<never, unknown, any> => {
   const mcp = options.mcp;

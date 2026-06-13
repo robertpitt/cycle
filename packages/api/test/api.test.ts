@@ -137,6 +137,16 @@ describe("@cycle/api", () => {
       assert.equal(health.status, 200);
       assert.equal(health.headers.get("access-control-allow-origin"), "*");
 
+      const docs = await api.fetch(new Request("http://cycle.test/"));
+      const docsBody = await docs.text();
+      assert.equal(docs.status, 200);
+      assert.match(docs.headers.get("content-type") ?? "", /^text\/html/);
+      assert.match(docsBody, /<redoc spec-url="\/spec\.json"><\/redoc>/);
+      assert.match(
+        docsBody,
+        /https:\/\/cdn\.redoc\.ly\/redoc\/latest\/bundles\/redoc\.standalone\.js/,
+      );
+
       const spec = await api.fetch(new Request("http://cycle.test/spec.json"));
       const body = (await spec.json()) as { openapi?: string; paths?: Record<string, unknown> };
       assert.equal(spec.status, 200);
