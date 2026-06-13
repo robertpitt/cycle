@@ -40,5 +40,5 @@ export const mapPackFsError =
       cause,
     });
 
-export const errorMessage = (cause: unknown): string =>
+const errorMessage = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause);

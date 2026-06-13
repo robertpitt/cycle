@@ -2127,7 +2127,7 @@ const historyFromRow = (row: HistoryRow): HistoryCommit => ({
   warningCount: row.warning_count,
 });
 
-export const commentBody = (payload: unknown): string => {
+const commentBody = (payload: unknown): string => {
   if (typeof payload === "string") return payload;
 
   if (payload !== null && typeof payload === "object") {

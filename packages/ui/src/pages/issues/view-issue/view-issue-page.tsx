@@ -21,6 +21,7 @@ export const viewIssueComponentBreakdown = {
     "IssueEditor",
     "IssueEditorToolbar",
     "IssueEditorSlashMenu",
+    "MarkdownEditor",
     "IssueResourceLink",
     "IssueSubIssueComposer",
     "IssueActivityEvent",

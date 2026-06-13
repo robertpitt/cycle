@@ -21,7 +21,6 @@ import { Button } from "../../atoms/button/index.ts";
 import { IconButton } from "../../atoms/icon-button/index.ts";
 import { Input } from "../../atoms/input/index.ts";
 import { Switch } from "../../atoms/switch/index.ts";
-import { Textarea } from "../../atoms/textarea/index.ts";
 import { cn } from "../../lib/cn.ts";
 import {
   DialogCloseButton,
@@ -31,6 +30,7 @@ import {
   DialogTitle,
   DialogViewport,
 } from "../../molecules/dialog/index.ts";
+import { MarkdownEditor } from "../../molecules/markdown-editor/index.ts";
 import {
   PropertyPicker,
   type PropertyPickerOption,
@@ -507,11 +507,14 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
                       required
                       value={title}
                     />
-                    <Textarea
+                    <MarkdownEditor
                       aria-label="Issue description"
-                      className="min-h-[132px] resize-none border-transparent bg-transparent px-0 text-lg leading-7 shadow-none placeholder:text-muted-foreground/80 hover:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
-                      name="description"
-                      onChange={(event) => onDescriptionChange?.(event.currentTarget.value)}
+                      className="rounded-md"
+                      contentClassName="px-0 text-lg leading-7"
+                      editorClassName="border-transparent bg-transparent hover:bg-transparent focus-within:border-transparent focus-within:bg-transparent"
+                      minHeightClassName="min-h-[132px]"
+                      mode="ticket"
+                      onValueChange={onDescriptionChange}
                       placeholder={descriptionPlaceholder}
                       value={description}
                     />

@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { ObjectId } from "./ObjectId.ts";
 
-export const invalidRefChars = /[ ~^:?*[\\]/u;
+const invalidRefChars = /[ ~^:?*[\\]/u;
 
 const filter = (expected: string, predicate: (value: string) => boolean) =>
   Schema.makeFilter<string>((value) => predicate(value) || expected, { expected });

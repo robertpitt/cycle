@@ -4,7 +4,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "../../atoms/avatar/index.ts
 import { IconButton } from "../../atoms/icon-button/index.ts";
 import { MarkdownRenderer } from "../../components/markdown-renderer/index.ts";
 import { cn } from "../../lib/cn.ts";
-import { focusRing, typography } from "../../lib/styles.ts";
+import { typography } from "../../lib/styles.ts";
+import { MarkdownEditor } from "../markdown-editor/index.ts";
 
 export type IssueAuthor = {
   readonly avatarSrc?: string;
@@ -134,6 +135,12 @@ export const IssueCommentComposer = React.forwardRef<HTMLFormElement, IssueComme
     ref,
   ) {
     const [value, setValue] = React.useState(defaultValue);
+    const submitCurrentValue = React.useCallback(() => {
+      const trimmed = value.trim();
+      if (!trimmed) return;
+      onSubmit?.(trimmed);
+      setValue("");
+    }, [onSubmit, value]);
 
     return (
       <form
@@ -145,20 +152,19 @@ export const IssueCommentComposer = React.forwardRef<HTMLFormElement, IssueComme
         )}
         onSubmit={(event) => {
           event.preventDefault();
-          const trimmed = value.trim();
-          if (!trimmed) return;
-          onSubmit?.(trimmed);
-          setValue("");
+          submitCurrentValue();
         }}
       >
-        <textarea
+        <MarkdownEditor
           aria-label={placeholder}
-          className={cn(
-            "min-h-20 resize-none bg-transparent p-4 text-foreground outline-none placeholder:text-muted-foreground",
-            focusRing,
-            typography.bodyCompact,
-          )}
-          onChange={(event) => setValue(event.currentTarget.value)}
+          className="px-3 pt-3"
+          contentClassName="px-1 py-1"
+          defaultValue={defaultValue}
+          editorClassName="border-transparent hover:bg-transparent focus-within:border-transparent focus-within:bg-transparent"
+          minHeightClassName="min-h-20"
+          mode="comment"
+          onSubmit={submitCurrentValue}
+          onValueChange={setValue}
           placeholder={placeholder}
           value={value}
         />

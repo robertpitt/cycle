@@ -137,7 +137,7 @@ export const readPackedRefs = (
     return yield* Cache.get(runtime.packedRefs, packedRefsCacheKey(file, info));
   });
 
-export const readPackedRefsFile = (
+const readPackedRefsFile = (
   runtime: FilesystemRuntimeBase,
   file: string,
 ): Effect.Effect<Map<string, ObjectId>, GitAdapterError> =>

@@ -1547,14 +1547,6 @@ export const makeDatabaseService = (
         actor,
         now,
       );
-      const nextTicket =
-        input.userVisible === false
-          ? ticket
-          : updateTicketDocument(ticket, {
-              ...ticket.frontmatter,
-              updatedAt: now,
-            });
-
       return yield* writeAndSync(
         repositoryId,
         "addRecord",
@@ -3581,17 +3573,6 @@ const makeCycleRepositoryMetadata = (prefix: string, now: string): CycleReposito
   ticketPrefix: normalizeTicketPrefix(prefix),
   updatedAt: now,
 });
-
-const parseCycleRepositoryMetadataEffect = (
-  input: unknown,
-): Effect.Effect<CycleRepositoryMetadata, DatabaseFailure> =>
-  Effect.try({
-    catch: (cause) =>
-      cause instanceof Error
-        ? validationError("repository.metadata", cause.message, cause)
-        : validationError("repository.metadata", "invalid repository metadata", cause),
-    try: () => parseCycleRepositoryMetadata(input, nowIso()),
-  });
 
 const parseCycleRepositoryMetadata = (input: unknown, now: string): CycleRepositoryMetadata => {
   if (input === null || typeof input !== "object") {

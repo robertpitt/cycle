@@ -13,6 +13,7 @@ export * from "./issue-meta-chip/index.ts";
 export * from "./issue-resource-link/index.ts";
 export * from "./issue-sidebar-section/index.ts";
 export * from "./issue-sub-issue-composer/index.ts";
+export * from "./markdown-editor/index.ts";
 export * from "./navigation-item/index.ts";
 export * from "./notification/index.ts";
 export * from "./otp-code-field/index.ts";

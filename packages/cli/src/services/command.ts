@@ -1,4 +1,4 @@
-import { Effect, Result } from "effect";
+import { Effect } from "effect";
 import { makeCycleApiClientEffect, type CycleApiClient } from "../client.ts";
 import { cycle } from "../commands/root.ts";
 import { CliRuntime, type CliRuntimeShape } from "./CliRuntime.ts";
@@ -31,7 +31,7 @@ export const commandEffect = (
     yield* writeSuccess(runtime, root.json, output);
   });
 
-export const writeSuccess = (
+const writeSuccess = (
   runtime: CliRuntimeShape,
   json: boolean,
   output: CommandOutput,
@@ -66,6 +66,3 @@ export const optionToUndefined = <A>(option: {
 }): A | undefined => (option._tag === "Some" ? option.value : undefined);
 
 export const rootJsonFlag = (argv: ReadonlyArray<string>): boolean => argv.includes("--json");
-
-export const resultFailure = <A, E>(result: Result.Result<A, E>): E | undefined =>
-  Result.isFailure(result) ? result.failure : undefined;

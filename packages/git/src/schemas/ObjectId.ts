@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 
-export const objectIdPattern = /^[0-9a-fA-F]{40}$/u;
-export const potentialObjectIdPattern = /^[0-9a-fA-F]{4,64}$/u;
+const objectIdPattern = /^[0-9a-fA-F]{40}$/u;
+const potentialObjectIdPattern = /^[0-9a-fA-F]{4,64}$/u;
 
 export const ObjectId = Schema.String.check(
   Schema.isPattern(objectIdPattern, { expected: "a 40 character hexadecimal Git object id" }),

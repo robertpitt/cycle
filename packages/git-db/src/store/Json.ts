@@ -16,7 +16,7 @@ export const encodeValue = (value: unknown): Effect.Effect<Uint8Array, InvalidJs
     },
   });
 
-export const stableStringify = (value: unknown): string => JSON.stringify(normalizeJson(value));
+const stableStringify = (value: unknown): string => JSON.stringify(normalizeJson(value));
 
 const normalizeJson = (value: unknown): unknown => {
   if (value === undefined) {

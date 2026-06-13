@@ -1,6 +1,6 @@
 import { Stream } from "effect";
 
-export const utf8Encoder = new TextEncoder();
+const utf8Encoder = new TextEncoder();
 
 export const bytesFromString = (value: string): Uint8Array => utf8Encoder.encode(value);
 

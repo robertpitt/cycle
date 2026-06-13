@@ -115,7 +115,7 @@ export const asPage = (
 export const severityThreshold = (value: unknown): "error" | "fatal" | "warning" | undefined =>
   value === "error" || value === "fatal" || value === "warning" ? value : undefined;
 
-export const stripUndefined = (input: Readonly<Record<string, unknown>>): Record<string, unknown> =>
+const stripUndefined = (input: Readonly<Record<string, unknown>>): Record<string, unknown> =>
   Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
 
 export const optionalString = (value: unknown): string | undefined =>
@@ -130,7 +130,7 @@ export const stringField = (
   return typeof value === "string" ? value : fallback;
 };
 
-export const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const commaList = (value: string): ReadonlyArray<string> =>

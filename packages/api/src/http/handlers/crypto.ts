@@ -22,14 +22,6 @@ export const requestIdFromHeadersWithCrypto = (
   });
 };
 
-export const timingSafeTokenEqual = (
-  supplied: string,
-  expected: string,
-): Effect.Effect<boolean, never, Crypto.Crypto> =>
-  Effect.flatMap(Crypto.Crypto, (crypto) =>
-    timingSafeTokenEqualWithCrypto(crypto, supplied, expected),
-  );
-
 export const timingSafeTokenEqualWithCrypto = (
   crypto: Crypto.Crypto,
   supplied: string,

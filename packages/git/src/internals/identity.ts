@@ -1,7 +1,7 @@
 import type { Identity, IdentityInput } from "../schemas/index.ts";
 
-export const defaultIdentityName = "Cycle Git";
-export const defaultIdentityEmail = "git@example.invalid";
+const defaultIdentityName = "Cycle Git";
+const defaultIdentityEmail = "git@example.invalid";
 
 export const normalizeIdentity = (identity: IdentityInput | undefined, now: number): Identity => {
   const date =
