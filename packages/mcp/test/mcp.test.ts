@@ -69,6 +69,29 @@ describe("@cycle/mcp", () => {
     assert.equal(update.annotations?.openWorldHint, false);
   });
 
+  it("emits MCP paging limits as plain positive integers", () => {
+    const toolNames = [
+      "cycle_issue_list",
+      "cycle_issue_search",
+      "cycle_issue_comments_list",
+      "cycle_issue_history",
+    ] as const;
+
+    for (const toolName of toolNames) {
+      const tool = mcpToolFromDefinition(cycleMcpTools.find((entry) => entry.name === toolName)!);
+      const schemaJson = JSON.stringify(tool.inputSchema);
+
+      assert.equal(schemaJson.includes("NaN"), false, `${toolName} should not allow NaN`);
+      assert.equal(
+        schemaJson.includes("Infinity"),
+        false,
+        `${toolName} should not allow infinity`,
+      );
+      assert.equal(schemaJson.includes("\"integer\""), true, `${toolName} should use integer`);
+      assert.equal(schemaJson.includes("\"minimum\":1"), true, `${toolName} should be positive`);
+    }
+  });
+
   it("maps search and relation removal to current REST routes", async () => {
     const requests: Array<any> = [];
     const toolContext = context(requests, {

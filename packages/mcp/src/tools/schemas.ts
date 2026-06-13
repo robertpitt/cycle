@@ -15,6 +15,8 @@ const TargetIssueFields = {
   targetIssueId: Schema.optional(Schema.String),
 };
 
+const PageLimit = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
+
 export const IssueRelationType = Schema.Literals([
   "related",
   "blocked-by",
@@ -26,7 +28,7 @@ export const IssueListQueryInput = Schema.Struct({
   cursor: Schema.optional(Schema.String),
   label: Schema.optional(Schema.String),
   labelIn: Schema.optional(Schema.Array(Schema.String)),
-  limit: Schema.optional(Schema.Number),
+  limit: Schema.optional(PageLimit),
   priority: Schema.optional(Schema.String),
   priorityIn: Schema.optional(Schema.Array(Schema.String)),
   status: Schema.optional(Schema.String),
@@ -51,7 +53,7 @@ export type IssueListInput = typeof IssueListInput.Type;
 export const IssueSearchInput = Schema.Struct({
   ...ContextFields,
   cursor: Schema.optional(Schema.String),
-  limit: Schema.optional(Schema.Number),
+  limit: Schema.optional(PageLimit),
   text: Schema.String,
 });
 export type IssueSearchInput = typeof IssueSearchInput.Type;
@@ -77,7 +79,7 @@ export const IssueCommentsListInput = Schema.Struct({
   ...ContextFields,
   ...TargetIssueFields,
   cursor: Schema.optional(Schema.String),
-  limit: Schema.optional(Schema.Number),
+  limit: Schema.optional(PageLimit),
 });
 export type IssueCommentsListInput = typeof IssueCommentsListInput.Type;
 
@@ -92,7 +94,7 @@ export const IssueHistoryInput = Schema.Struct({
   ...ContextFields,
   ...TargetIssueFields,
   cursor: Schema.optional(Schema.String),
-  limit: Schema.optional(Schema.Number),
+  limit: Schema.optional(PageLimit),
 });
 export type IssueHistoryInput = typeof IssueHistoryInput.Type;
 
