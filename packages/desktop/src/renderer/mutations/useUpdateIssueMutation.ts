@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { UpdateTicketPatch } from "@cycle/contracts";
-import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
+import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { issueHistoryQueryKey } from "../queries/issueHistory.ts";
 import {
   issueDetailQueryKey,
@@ -27,7 +27,7 @@ export const useUpdateIssueMutation = ({
         throw new Error("Choose an issue before updating it.");
       }
 
-      return ticketRpcClient.call("ticket.issue.update", {
+      return cycleApiClient.call("ticket.issue.update", {
         input: {
           id: issueId,
           patch,

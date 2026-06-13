@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
+import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { issueHistoryQueryKey } from "../queries/issueHistory.ts";
 import {
   issueDetailQueryKey,
@@ -27,7 +27,7 @@ export const useAddIssueCommentMutation = ({
         throw new Error("Enter a comment before sending.");
       }
 
-      return ticketRpcClient.call("ticket.record.add", {
+      return cycleApiClient.call("ticket.record.add", {
         input: {
           issueId,
           payload: {

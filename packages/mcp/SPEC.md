@@ -30,7 +30,7 @@ about it.
 
 ## 3. Problem Statement
 
-Cycle currently has REST API, CLI, and RPC adapter surfaces over the central usecase layer. Agents
+Cycle currently has REST API and CLI adapter surfaces over the central usecase layer. Agents
 that work in editors or coding environments need a protocol-native tool surface rather than shelling
 out to the CLI or hand-coding REST calls. MCP is the right integration point for those clients, but
 an MCP server can easily become a second backend if it directly imports storage or workflow services.
@@ -69,7 +69,7 @@ true`, not as protocol-level failures.
 3. Mount GitDB, create SQLite projections, or access Cycle storage directly.
 4. Import desktop renderer code or depend on Electron APIs.
 5. Reimplement usecase validation, workflow policy, ticket mutation rules, or repository materialization.
-6. Expose every REST or RPC operation.
+6. Expose every REST operation.
 7. Expose issue create, archive, restore, delete, draft, label, user, template, view, initiative,
    automation, repository status, repository sync, or repository push tools.
 8. Infer repository or issue context from the current working directory, branch name, prompt text, or

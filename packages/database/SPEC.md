@@ -90,7 +90,7 @@ Level 2: @cycle/database
   app-wide SQLite read model, ticket domain writes, GitDB-to-SQLite projection, search, history
 
 Level 3+: adapters and applications
-  desktop UI, CLI, RPC, repository manager, sync scheduler, agent workflows
+  desktop UI, API, CLI, repository manager, sync scheduler, agent workflows
 ```
 
 ### 6.2 Main Components

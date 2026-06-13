@@ -1,9 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import type { RecordPage, TicketDocument, TicketPage, TicketQuery } from "@cycle/contracts";
-import { getDesktopBridge } from "../lib/desktopBridge.ts";
-import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
+import { cycleApiClient } from "../lib/cycleApiClient.ts";
 
-export const issueListRootQueryKey = ["desktop", "ticketRpc", "issues"] as const;
+export const issueListRootQueryKey = ["desktop", "api", "issues"] as const;
 
 const normalizeRepositoryIds = (repositoryIds: readonly string[] | undefined) =>
   repositoryIds === undefined ? [] : [...new Set(repositoryIds)].sort();
@@ -30,18 +29,18 @@ export const issueListQueryKey = (
 export const issueDetailQueryKey = (
   repositoryId: string | undefined,
   issueId: string | undefined,
-) => ["desktop", "ticketRpc", "issue", repositoryId, issueId] as const;
+) => ["desktop", "api", "issue", repositoryId, issueId] as const;
 
 export const issueRecordsQueryKey = (
   repositoryId: string | undefined,
   issueId: string | undefined,
-) => ["desktop", "ticketRpc", "issueRecords", repositoryId, issueId] as const;
+) => ["desktop", "api", "issueRecords", repositoryId, issueId] as const;
 
 const listIssuesForRepository = async (
   repositoryId: string,
   query: Omit<TicketQuery, "repositoryIds"> = {},
 ): Promise<TicketPage> =>
-  ticketRpcClient.call("ticket.issue.list", {
+  cycleApiClient.call("ticket.issue.list", {
     input: query,
     repository: {
       id: repositoryId,
@@ -61,7 +60,7 @@ const listIssuesForRepositories = async (
     };
   }
 
-  return ticketRpcClient.call("ticket.issue.list", {
+  return cycleApiClient.call("ticket.issue.list", {
     input: {
       ...query,
       repositoryIds: normalizedRepositoryIds,
@@ -79,7 +78,7 @@ const getIssueForRepository = async ({
   readonly issueId: string;
   readonly repositoryId: string;
 }): Promise<TicketDocument | null> =>
-  ticketRpcClient.call("ticket.issue.get", {
+  cycleApiClient.call("ticket.issue.get", {
     input: {
       id: issueId,
     },
@@ -95,7 +94,7 @@ const listIssueRecordsForRepository = async ({
   readonly issueId: string;
   readonly repositoryId: string;
 }): Promise<RecordPage> =>
-  ticketRpcClient.call("ticket.record.listForIssue", {
+  cycleApiClient.call("ticket.record.listForIssue", {
     input: {
       issueId,
       query: {
@@ -114,8 +113,7 @@ export const useIssueListQuery = (
 ) =>
   useQuery({
     enabled:
-      ((repositoryIds !== undefined && repositoryIds.length > 0) || repositoryId !== undefined) &&
-      getDesktopBridge() !== undefined,
+      (repositoryIds !== undefined && repositoryIds.length > 0) || repositoryId !== undefined,
     queryFn: () => {
       if (repositoryIds !== undefined && repositoryIds.length > 0) {
         return listIssuesForRepositories(repositoryIds, query);
@@ -135,8 +133,7 @@ export const useIssueDetailQuery = (
   issueId: string | undefined,
 ) =>
   useQuery({
-    enabled:
-      repositoryId !== undefined && issueId !== undefined && getDesktopBridge() !== undefined,
+    enabled: repositoryId !== undefined && issueId !== undefined,
     queryFn: () => {
       if (!repositoryId || !issueId) {
         throw new Error("Choose an issue before loading issue details.");
@@ -155,8 +152,7 @@ export const useIssueRecordsQuery = (
   issueId: string | undefined,
 ) =>
   useQuery({
-    enabled:
-      repositoryId !== undefined && issueId !== undefined && getDesktopBridge() !== undefined,
+    enabled: repositoryId !== undefined && issueId !== undefined,
     queryFn: () => {
       if (!repositoryId || !issueId) {
         throw new Error("Choose an issue before loading issue activity.");

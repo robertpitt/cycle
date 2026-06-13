@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { CreateTicketInput } from "@cycle/contracts";
-import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
+import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { issueListRootQueryKey } from "../queries/issues.ts";
 
 type UseCreateIssueMutationOptions = {
@@ -16,7 +16,7 @@ export const useCreateIssueMutation = ({ repositoryId }: UseCreateIssueMutationO
         throw new Error("Choose a repository before creating an issue.");
       }
 
-      return ticketRpcClient.call("ticket.issue.create", {
+      return cycleApiClient.call("ticket.issue.create", {
         input: {
           ...input,
           repository: repositoryId,

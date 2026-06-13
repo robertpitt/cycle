@@ -54,7 +54,7 @@ paste handling harder to maintain consistently.
 Cycle needs one reusable editor system in `@cycle/ui` that:
 
 - edits Markdown ticket descriptions and comments with the same Lexical runtime
-- preserves existing Markdown persistence and desktop RPC contracts
+- preserves existing Markdown persistence and desktop API contracts
 - gives ticket pages a full editor surface with toolbar, slash commands, attachments, and preview
 - gives comments a compact submit-focused editor surface
 - remains presentational and data-driven so desktop renderer code only passes values and callbacks
@@ -89,9 +89,9 @@ The Lexical Markdown editor MUST:
 The Lexical Markdown editor v0.1 MUST NOT:
 
 1. Persist Lexical JSON, HTML, or editor-specific state in ticket or comment records.
-2. Change `@cycle/contracts`, `@cycle/database`, `@cycle/rpc`, or `@cycle/desktop` domain schemas to
+2. Change `@cycle/contracts`, `@cycle/database`, `@cycle/api`, or `@cycle/desktop` domain schemas to
    add editor-specific payload fields.
-3. Add Electron, React Query, RPC, Effect runtime, filesystem, upload, or network logic to
+3. Add Electron, React Query, API client, Effect runtime, filesystem, upload, or network logic to
    `@cycle/ui`.
 4. Implement collaborative editing, remote cursors, Yjs sync, or live multi-user comments.
 5. Execute raw HTML, scripts, embedded iframes, or user-provided Markdown code.
@@ -113,7 +113,7 @@ The editor sits in the presentation layer:
   TicketDocument.bodyFormat: "markdown"
   LinkedRecord payload body: string for comments
 
-@cycle/contracts / @cycle/rpc
+@cycle/contracts / @cycle/api
   Create/update/comment payload validation and transport
 
 @cycle/desktop renderer
@@ -124,7 +124,7 @@ The editor sits in the presentation layer:
 ```
 
 `@cycle/ui` MUST remain free of runtime application packages. Production source files in `@cycle/ui`
-MUST NOT import `@cycle/contracts`, `@cycle/database`, `@cycle/desktop`, `@cycle/rpc`,
+MUST NOT import `@cycle/contracts`, `@cycle/database`, `@cycle/desktop`, `@cycle/api`,
 `@tanstack/react-query`, `effect`, `electron`, or `react-router`.
 
 ### 7.2 Main Components
@@ -486,7 +486,7 @@ unsupported structures to plain text, but it MUST NOT silently discard user text
 
 ### 15.4 Consumer Mutation Failures
 
-`@cycle/ui` MUST NOT retry desktop or RPC mutations. Consumers own persistence failure handling.
+`@cycle/ui` MUST NOT retry desktop or API mutations. Consumers own persistence failure handling.
 Components SHOULD support controlled values and disabled/pending props so consumers can keep failed
 comment drafts visible and prevent duplicate submits.
 

@@ -50,17 +50,21 @@ flowchart TD
   Preload["Preload script"]
   Renderer["React renderer"]
   Bridge["window.cycleDesktop"]
+  Http["Local HTTP API"]
   Ipc["ipcMain handlers"]
   Services["Effect services"]
-  Domain["RPC, use cases, database, GitDB"]
+  Domain["Use cases, database, GitDB"]
 
   Main --> Services
+  Main --> Http
   Main --> Ipc
   Main --> Preload
   Preload --> Bridge
   Renderer --> Bridge
+  Renderer --> Http
   Bridge --> Ipc
   Ipc --> Services
+  Http --> Services
   Services --> Domain
 ```
 
@@ -104,8 +108,9 @@ The renderer mounts `DesktopRendererApp`, which wraps the app in:
 4. `ShortcutProvider`
 5. `RouterProvider`
 
-The renderer uses hash routing and talks to the main process only through
-`window.cycleDesktop` and the ticket RPC client built on top of that bridge.
+The renderer uses hash routing. Native desktop capabilities still go through
+`window.cycleDesktop`, while ticket and repository data is fetched from the
+local Cycle HTTP API started by the desktop main process.
 
 ## Ownership Model
 
@@ -139,14 +144,12 @@ flowchart TD
   Config["Config and preferences"]
   Window["Desktop window"]
   Data["Database consumers"]
-  Rpc["TicketRpcLive"]
   Bootstrap["DesktopBootstrapLive"]
 
   DesktopLive --> Platform
   DesktopLive --> Config
   DesktopLive --> Window
   DesktopLive --> Data
-  Data --> Rpc
   Data --> Bootstrap
 ```
 
@@ -161,8 +164,8 @@ Key composition details:
 - `ElectronPreferences` depends on app config, theme, local workspace, and
   profile services.
 - `DesktopDatabaseLive` depends on profile, app, logger, and runtime services.
-- `TicketRpcLive` and `DesktopBootstrapLive` are provided with database,
-  use-case runner, logger, runtime, preferences, and Git services.
+- `DesktopBootstrapLive` is provided with database, use-case runner, logger,
+  runtime, preferences, and Git services.
 
 ## Persistent State
 
@@ -289,23 +292,22 @@ Local projection polling uses `60_000` ms.
 
 There are two current sync paths:
 
-1. Manual `repository.sync` from the renderer uses ticket RPC and currently
-   routes to `DatabaseService.syncRepository(repositoryId)` through
-   `@cycle/usecases`. This materializes the local projection.
+1. Manual sync requests outside the renderer use the local HTTP API and route to
+   `DatabaseService.syncRepository(repositoryId)` through `@cycle/usecases`.
+   This materializes the local projection.
 2. Bootstrap auto-sync uses `DesktopBootstrap.syncRepositoryFromRemote`. It
    materializes local state, pulls GitDB refs from the repository default remote
    when one exists, and materializes again.
 
-Push is special-cased in `DesktopIpc.ts`:
+Push orchestration lives in `DesktopBootstrapLive`:
 
-1. Renderer calls ticket RPC method `repository.push`.
-2. Main validates the repository id and ensures the repository is configured and
+1. Main validates the repository id and ensures the repository is configured and
    opened.
-3. `DesktopBootstrap.pushRepositoryToRemote(repositoryId)` runs.
-4. Bootstrap materializes locally before pushing.
-5. Bootstrap creates a transport GitDB store.
-6. Bootstrap runs `store.sync({ mode: "full", pointers: ["main"], remote })`.
-7. Bootstrap materializes the projection again and updates status.
+2. `DesktopBootstrap.pushRepositoryToRemote(repositoryId)` runs.
+3. Bootstrap materializes locally before pushing.
+4. Bootstrap creates a transport GitDB store.
+5. Bootstrap runs `store.sync({ mode: "full", pointers: ["main"], remote })`.
+6. Bootstrap materializes the projection again and updates status.
 
 Remote operations are serialized per repository by `DesktopBootstrapLive` so a
 second remote operation waits for the current one to settle.
@@ -317,13 +319,13 @@ Contract owner: `src/ipc/Channels.ts`
 The bridge type is `CycleDesktopBridge`. It includes:
 
 - app config and onboarding APIs
+- API connection discovery
 - theme APIs and theme-change subscription
 - local repository APIs
 - provider detection
 - backend log path
 - bootstrap status
 - external URL opening
-- ticket RPC invocation
 - cache clearing
 - current platform string
 
@@ -359,27 +361,29 @@ additionally parses URLs and only allows `http:`, `https:`, and `mailto:`.
 IPC handlers are registered with `Effect.acquireRelease`, and removed when the
 Effect scope is released.
 
-## Ticket RPC Flow
+## Renderer HTTP API Flow
 
-Renderer client: `src/renderer/lib/ticketRpcClient.ts`
+Renderer client: `src/renderer/lib/cycleApiClient.ts`
 
-Server side: `DesktopIpc.ts` -> `TicketRpcService` -> `UseCaseRunnerLive` ->
-`DatabaseService`
+Server side: `@cycle/api` -> `UseCaseRunnerLive` -> `DatabaseService`
 
 Flow:
 
-1. Renderer query or mutation calls `ticketRpcClient.call(method, payload)`.
-2. The client wraps the call in a ticket RPC request envelope.
-3. Preload invokes `cycle:desktop:ticket-rpc/invoke`.
-4. Main validates the envelope.
-5. `repository.status.list` is allowed without repository scope.
-6. Other methods must include `payload.repository.id`.
-7. Main verifies the repository is registered in app config.
-8. Main ensures the repository has been opened by bootstrap.
-9. `repository.push` is routed to bootstrap push orchestration.
-10. All other methods are handled by `TicketRpcService`.
+1. Renderer query or mutation calls `cycleApiClient.call(method, payload)`.
+2. The client maps the domain method alias to a `/v1` HTTP endpoint.
+3. In Electron, the client reads API host, port, and token from
+   `window.cycleDesktop.getAppConfig()`.
+4. In a local browser, the client uses same-origin `/cycle-api` by default.
+5. The Vite dev server proxy reads the desktop API runtime discovery file and
+   CLI config token, then forwards the request to the local API with bearer auth.
+6. The API validates auth, decodes path/query/body input, and runs the matching
+   use case.
+7. The renderer adapter unwraps API envelopes back into the page/resource shapes
+   expected by React Query.
 
-Contracts and method aliases are owned by `@cycle/contracts`.
+For browser testing without the dev proxy, pass `cycleApiUrl` and
+`cycleApiToken` query parameters or set `cycle.api.baseUrl` and `cycle.api.token`
+in `localStorage`.
 
 ## Renderer Route Hierarchy
 
@@ -488,9 +492,9 @@ repository.
 ### Create Or Update Issue
 
 1. Renderer gathers metadata queries for labels, users, templates, and views.
-2. Create/update forms call ticket RPC mutations.
-3. Main validates repository scope and ensures the repository is opened.
-4. `TicketRpcService` delegates to the use-case runner and database.
+2. Create/update forms call HTTP API mutations through `cycleApiClient`.
+3. The local API validates repository scope through the route and bearer token.
+4. `@cycle/api` delegates to the use-case runner and database.
 5. Renderer invalidates affected React Query keys, usually issue detail, issue
    list root, records, history, and sometimes metadata.
 
@@ -532,12 +536,11 @@ Desktop bridge queries:
 - `bootstrapStatusQueryKey`
 - `agentProvidersQueryKey`
 
-Ticket RPC query groups:
+HTTP API query groups:
 
-- repository status, status list, warnings, history
+- repository status, warnings, history
 - issue lists, issue detail, issue records
-- issue history, revisions, diffs
-- issue search
+- issue history and search
 - users, labels, saved views, templates
 - initiative progress
 
@@ -614,15 +617,15 @@ built renderer HTML file.
 
 Workspace package dependencies:
 
-| Package            | Used for                                                            |
-| ------------------ | ------------------------------------------------------------------- |
-| `@cycle/ui`        | Renderer visual components, theme provider, styles.                 |
-| `@cycle/contracts` | Ticket/domain types used by renderer queries and mutations.         |
-| `@cycle/rpc`       | Renderer ticket RPC client and main-process ticket RPC server.      |
-| `@cycle/usecases`  | Main-process use-case runner behind ticket RPC.                     |
-| `@cycle/database`  | Projection database, repository status, ticket operations.          |
-| `@cycle/git`       | Git repository validation, initialization, and metadata inspection. |
-| `@cycle/git-db`    | GitDB local and transport stores, remote sync/push result types.    |
+| Package            | Used for                                                             |
+| ------------------ | -------------------------------------------------------------------- |
+| `@cycle/ui`        | Renderer visual components, theme provider, styles.                  |
+| `@cycle/api`       | Local HTTP API server used by renderer, CLI, MCP, and browser tests. |
+| `@cycle/contracts` | Ticket/domain types used by renderer queries and mutations.          |
+| `@cycle/usecases`  | Main-process use-case runner behind the local HTTP API.              |
+| `@cycle/database`  | Projection database, repository status, ticket operations.           |
+| `@cycle/git`       | Git repository validation, initialization, and metadata inspection.  |
+| `@cycle/git-db`    | GitDB local and transport stores, remote sync/push result types.     |
 
 Third-party runtime dependencies:
 
@@ -696,15 +699,15 @@ interfaces so lower-level services can be tested with replacement layers.
 6. Add a renderer query or mutation wrapper.
 7. Add focused tests for parsing, service behavior, or renderer helpers.
 
-### Add A Ticket RPC Operation
+### Add A Renderer API Data Operation
 
 1. Define or reuse the contract in `@cycle/contracts`.
-2. Implement the behavior in the use-case/database layer that owns it.
-3. Use `ticketRpcClient.call()` from renderer queries or mutations.
-4. Ensure the payload includes `repository.id` for repository-scoped methods.
-5. Invalidate React Query keys for every data shape affected by the operation.
-6. Only special-case the method in `DesktopIpc.ts` when desktop process
-   orchestration is required.
+2. Expose or reuse the matching route in `@cycle/api`.
+3. Implement the behavior in the use-case/database layer that owns it.
+4. Add the method mapping in `renderer/lib/cycleApiClient.ts`.
+5. Use `cycleApiClient.call()` from renderer queries or mutations.
+6. Ensure the payload includes `repository.id` for repository-scoped methods.
+7. Invalidate React Query keys for every data shape affected by the operation.
 
 ### Add A Renderer Page
 

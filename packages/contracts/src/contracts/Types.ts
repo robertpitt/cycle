@@ -62,7 +62,7 @@ import type {
   IssueTemplateQuery,
 } from "../schemas/index.ts";
 
-export type UseCaseSource = "api" | "ci" | "cli" | "desktop" | "rpc" | "test" | string;
+export type UseCaseSource = "api" | "ci" | "cli" | "desktop" | "mcp" | "test" | string;
 
 export type UseCaseActor = {
   readonly email?: string;

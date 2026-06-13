@@ -56,7 +56,7 @@ Cycle already has the right coarse package set:
 - `@cycle/database`
 - `@cycle/contracts`
 - `@cycle/usecases`
-- `@cycle/rpc`
+- `@cycle/api`
 - `@cycle/desktop`
 - `@cycle/ui`
 
@@ -82,10 +82,10 @@ The package architecture MUST:
 2. Preserve `@cycle/database` as the repository domain projection and persistence gateway.
 3. Make `@cycle/contracts` the canonical schema and application contract package.
 4. Make `@cycle/usecases` the canonical workflow execution and policy layer.
-5. Make `@cycle/rpc` a transport adapter derived from usecase contracts, not a second contract
+5. Make `@cycle/api` the local REST adapter derived from usecase contracts, not a second contract
    registry.
 6. Keep `@cycle/desktop` as a composition and platform package, not a domain policy package.
-7. Keep `@cycle/ui` presentation-first and free of persistence, RPC execution, Electron, and Effect
+7. Keep `@cycle/ui` presentation-first and free of persistence, API execution, Electron, and Effect
    runtime ownership.
 8. Standardize all runtime dependencies through `Context.Service` classes and `Layer` composition.
 9. Use schema-backed domain models, inputs, outputs, and tagged errors at public package boundaries.
@@ -135,17 +135,17 @@ The allowed dependency graph is:
   -> @cycle/database public gateway service contracts
   -> effect
 
-@cycle/rpc
+@cycle/api
   -> @cycle/contracts schemas and usecase contracts
   -> @cycle/usecases runner service
   -> effect
 
 @cycle/desktop main/preload
-  -> @cycle/rpc, @cycle/usecases, @cycle/database, @cycle/git-db, @cycle/git
+  -> @cycle/api, @cycle/usecases, @cycle/database, @cycle/git-db, @cycle/git
   -> Electron and Effect platform/runtime services
 
 @cycle/desktop renderer
-  -> @cycle/rpc client/protocol or the canonical application contract surface
+  -> local REST API through fetch and the canonical application contract surface
   -> @cycle/ui
   -> React libraries
 
@@ -156,14 +156,14 @@ The allowed dependency graph is:
 No package MAY import a package from a higher layer. In particular:
 
 - `@cycle/git` MUST NOT import any other `@cycle/*` package.
-- `@cycle/git-db` MUST NOT import `@cycle/database`, `@cycle/usecases`, `@cycle/rpc`,
+- `@cycle/git-db` MUST NOT import `@cycle/database`, `@cycle/usecases`, `@cycle/api`,
   `@cycle/desktop`, or `@cycle/ui`.
-- `@cycle/database` MUST NOT import `@cycle/contracts`, `@cycle/usecases`, `@cycle/rpc`,
+- `@cycle/database` MUST NOT import `@cycle/contracts`, `@cycle/usecases`, `@cycle/api`,
   `@cycle/desktop`, or `@cycle/ui`.
-- `@cycle/contracts` MUST NOT import `@cycle/usecases`, `@cycle/rpc`, `@cycle/desktop`, or
+- `@cycle/contracts` MUST NOT import `@cycle/usecases`, `@cycle/api`, `@cycle/desktop`, or
   `@cycle/ui`.
-- `@cycle/usecases` MUST NOT import `@cycle/rpc`, `@cycle/desktop`, or `@cycle/ui`.
-- `@cycle/rpc` MUST NOT import `@cycle/database` or `@cycle/git-db` domain types directly.
+- `@cycle/usecases` MUST NOT import `@cycle/api`, `@cycle/desktop`, or `@cycle/ui`.
+- `@cycle/api` MUST NOT import `@cycle/database` or `@cycle/git-db` domain types directly.
 - `@cycle/desktop` renderer code MUST NOT import `@cycle/database`, `@cycle/git-db`, or
   `@cycle/git`.
 - `@cycle/ui` MUST NOT import any non-UI Cycle runtime package.
@@ -175,13 +175,13 @@ Each package MUST have one primary responsibility:
 | Package            | Owns                                                                                                        | Must not own                                                                                   |
 | ------------------ | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `@cycle/git`       | Git repository inspection, Git object/ref/transport service contracts, Git schemas, Git errors              | GitDB collection semantics, ticket documents, usecase policy, UI contracts                     |
-| `@cycle/git-db`    | Git-backed document store, snapshots, refs, collections, transactions, sync                                 | Cycle issue workflow, SQLite projections, RPC aliases, Electron state                          |
+| `@cycle/git-db`    | Git-backed document store, snapshots, refs, collections, transactions, sync                                 | Cycle issue workflow, SQLite projections, transport aliases, Electron state                    |
 | `@cycle/database`  | Repository registry, GitDB source adapter, projection store, ticket/domain persistence, query read model    | Human approval policy, transport envelopes, Electron IPC, React state                          |
 | `@cycle/contracts` | Shared application schemas, usecase contract metadata, usecase constructors, renderer-safe DTO type aliases | Workflow execution, durable storage, transport envelopes, Electron callbacks                   |
 | `@cycle/usecases`  | Workflow execution, validation, policy, orchestration, usecase failure mapping                              | Durable storage internals, transport envelopes, Electron callbacks, canonical schema ownership |
-| `@cycle/rpc`       | Request/response envelopes, alias compatibility, client/server transport adapter                            | Canonical business operation definitions, database DTO ownership                               |
+| `@cycle/api`       | Local REST routes, request/response envelopes, auth, client/server transport adapter                        | Canonical business operation definitions, database DTO ownership                               |
 | `@cycle/desktop`   | Electron platform services, runtime composition, IPC registration, app config, bootstrap orchestration      | Storage schemas, workflow policy, reusable presentational components                           |
-| `@cycle/ui`        | Presentational React components and design-system contracts                                                 | App state, RPC execution, Electron APIs, persistence, Effect runtime ownership                 |
+| `@cycle/ui`        | Presentational React components and design-system contracts                                                 | App state, API execution, Electron APIs, persistence, Effect runtime ownership                 |
 
 ## 8. Effect Runtime and Service Contract
 
@@ -242,7 +242,7 @@ type derived from that schema. This applies to:
 - GitDB store options, collection entries, snapshots, sync results, and errors
 - Database documents, pages, records, repository status, warnings, diffs, and query inputs
 - Usecase inputs, successes, failures, metadata, and automation reports
-- RPC envelopes and transport errors
+- REST envelopes and transport errors
 - Desktop IPC payloads that cross the preload boundary
 
 Schema values MUST live with the package that owns the domain meaning. Higher packages MAY compose
@@ -270,26 +270,26 @@ MAY exist only for usecases marked experimental and excluded from conformance.
 
 Usecase contracts MUST be capable of deriving:
 
-- RPC payload validation
-- RPC success validation
+- REST payload validation
+- REST success validation
 - renderer/client TypeScript payload and result types
-- API or CLI validation in future adapters
+- CLI validation and other future adapter validation
 - documentation tables
 - conformance tests
 
-### 9.3 RPC Contracts
+### 9.3 API Contracts
 
-`@cycle/rpc` MUST derive method names and payload/success schemas from `@cycle/contracts` usecase
-contracts and compatibility aliases. It MUST NOT keep a parallel hand-maintained database-shaped
-type map once the usecase contract registry can express the same information.
+`@cycle/api` MUST derive route payload and success schemas from `@cycle/contracts` usecase
+contracts. It MUST NOT keep a parallel hand-maintained database-shaped type map once the usecase
+contract registry can express the same information.
 
-RPC clients MUST validate successful responses against the method success schema before returning
-values to callers. Invalid server responses MUST become typed RPC protocol failures, not untyped
+API clients MUST validate successful responses against the route success schema before returning
+values to callers. Invalid server responses MUST become typed API protocol failures, not untyped
 throws.
 
 ### 9.4 Renderer Contracts
 
-Renderer code MUST import application-facing DTOs from `@cycle/rpc` or `@cycle/contracts`.
+Renderer code MUST import application-facing DTOs from `@cycle/contracts`.
 Renderer code MUST NOT import storage-facing DTOs from `@cycle/database`, `@cycle/git-db`, or
 `@cycle/git`.
 
@@ -384,19 +384,19 @@ composition surface for consumers. Required changes:
    source, repository ID when present, actor type when present, side-effect class, duration, and
    result status.
 
-### 10.5 `@cycle/rpc`
+### 10.5 `@cycle/api`
 
-`@cycle/rpc` MUST be a thin transport adapter. Required changes:
+`@cycle/api` MUST be a thin local REST transport adapter. Required changes:
 
-1. Derive method aliases from `@cycle/usecases` contract aliases.
+1. Derive route handlers from `@cycle/usecases` contract names and route mappings.
 2. Derive payload and success schemas from the same contract registry.
-3. Keep RPC envelope schemas transport-specific and small.
+3. Keep REST envelope schemas transport-specific and small.
 4. Remove direct imports of `@cycle/database` and `@cycle/git-db` from protocol type definitions
    after equivalent usecase success schemas exist.
 5. Validate request payloads and response values at the transport boundary.
-6. Normalize invalid envelope, unsupported alias, invalid payload, invalid success, and interrupted
-   execution into typed RPC errors.
-7. Keep backward-compatible method names as aliases, not canonical operation names.
+6. Normalize invalid request, unsupported route, invalid payload, invalid success, and interrupted
+   execution into typed API errors.
+7. Keep route names as transport mappings, not canonical operation names.
 
 ### 10.6 `@cycle/desktop`
 
@@ -406,11 +406,12 @@ composition surface for consumers. Required changes:
    runtime that is disposed on app shutdown.
 2. Replace detached background `Effect.runPromise` starts inside service implementations with
    supervised scoped fibers or runtime-owned callback bridges.
-3. Keep Electron IPC handlers as security and transport adapters. They MUST validate preload inputs,
-   authorize repository-scoped requests, call RPC/usecase services, and map failures.
+3. Keep Electron IPC handlers as security adapters for desktop-only operations. They MUST validate
+   preload inputs, expose local API connection metadata, call usecase services where needed, and map
+   failures.
 4. Keep bootstrap open/sync/push orchestration in a dedicated desktop orchestration service, but
    make repository operation queues Effect-managed rather than promise maps where possible.
-5. Renderer code MUST consume the RPC client and canonical application DTOs only.
+5. Renderer code MUST consume the local REST API client and canonical application DTOs only.
 6. Main-process services MUST use Effect `Config`, `ConfigProvider`, `FileSystem`, `Path`, and
    resource layers where those services are already available instead of ad hoc process/global
    reads.
@@ -421,7 +422,7 @@ composition surface for consumers. Required changes:
 
 `@cycle/ui` MUST stay presentation-first. Required changes:
 
-1. Keep runtime state, Electron bridge calls, RPC clients, query clients, persistence, and Effect
+1. Keep runtime state, Electron bridge calls, API clients, query clients, persistence, and Effect
    services out of UI components.
 2. Keep reusable semantic UI contracts in `src/lib/contracts.ts`.
 3. Accept product data through props and callbacks rather than importing app/domain packages.
@@ -477,16 +478,16 @@ Usecase execution MUST:
 Usecase handlers MUST NOT return success before required post-commit projection consistency is
 visible for write usecases that claim read-after-write behavior.
 
-### 11.4 RPC Invocation
+### 11.4 API Invocation
 
-RPC invocation MUST:
+API invocation MUST:
 
-1. Decode the envelope.
-2. Resolve the alias to a usecase contract.
+1. Decode the request.
+2. Resolve the route to a usecase contract.
 3. Decode payload using the usecase input schema.
 4. Execute the usecase runner.
 5. Encode and validate the success or failure envelope.
-6. Return a transport response without throwing for expected domain failures.
+6. Return an HTTP response without throwing for expected domain failures.
 
 ### 11.5 Projection Sync
 
@@ -631,7 +632,7 @@ The implementation MUST include these conformance checks:
 | Dependency graph           | Static check that disallowed `@cycle/*` imports do not exist                                     |
 | Effect dependency versions | Static check that all packages use one compatible Effect v4 version range                        |
 | Public schemas             | Test that every public usecase has concrete input, success, and failure schemas                  |
-| RPC derivation             | Test that every RPC method maps to one usecase alias and derives matching schemas                |
+| API route mapping          | Test that every route maps to one usecase contract and derives matching schemas                  |
 | Renderer boundary          | Static check that desktop renderer imports no storage packages                                   |
 | Git backends               | Shared service conformance suite for CLI, filesystem, and in-memory backends where applicable    |
 | GitDB backends             | Shared GitDB collection/pointer/snapshot/sync conformance suite                                  |
@@ -655,7 +656,7 @@ pnpm --filter @cycle/git test
 pnpm --filter @cycle/git-db test
 pnpm --filter @cycle/database test
 pnpm --filter @cycle/usecases test
-pnpm --filter @cycle/rpc test
+pnpm --filter @cycle/api test
 pnpm --filter @cycle/desktop test
 pnpm --filter @cycle/ui storybook:build
 ```
@@ -671,14 +672,14 @@ surfaces without replacing them with equivalent coverage.
 2. Align Effect dependency versions across packages.
 3. Add database domain schemas for exported DTOs and pages.
 4. Replace usecase `Schema.Unknown` success placeholders with concrete schemas.
-5. Make RPC derive aliases, payload schemas, and success schemas from usecase contracts.
+5. Make REST routes derive payload schemas and success schemas from usecase contracts.
 6. Move desktop renderer imports away from `@cycle/database` to application contract exports.
 
 Exit criteria:
 
 - No disallowed package imports remain.
 - Every implemented usecase has concrete schemas.
-- RPC has no direct storage DTO imports.
+- API has no direct storage DTO imports.
 - Renderer has no direct storage package imports.
 
 ### Phase 2: Runtime Supervision and Resource Management
@@ -699,15 +700,15 @@ Exit criteria:
 ### Phase 3: Error, Observability, and Policy Hardening
 
 1. Convert public database and Git errors to schema-backed tagged errors.
-2. Normalize lower-level failures into usecase failures and RPC failures.
-3. Add structured spans and log annotations across Git, GitDB, database, usecase, RPC, and desktop
+2. Normalize lower-level failures into usecase failures and API failures.
+3. Add structured spans and log annotations across Git, GitDB, database, usecase, API, and desktop
    boundaries.
 4. Move remaining workflow policy out of `@cycle/database` into `@cycle/usecases`.
 5. Implement or downgrade idempotency declarations for write usecases.
 
 Exit criteria:
 
-- Failure mapping is tested at database, usecase, RPC, and desktop boundaries.
+- Failure mapping is tested at database, usecase, API, and desktop boundaries.
 - Secret redaction tests cover failure detail serialization.
 - Usecase tests can validate workflow policy without a real database.
 
@@ -733,7 +734,7 @@ The architecture migration is complete when:
 - The package graph matches Section 7.
 - Public domain and usecase contracts are schema-backed.
 - `@cycle/usecases` is the only canonical workflow contract registry.
-- `@cycle/rpc` derives from usecase contracts and contains no storage DTO ownership.
+- `@cycle/api` derives from usecase contracts and contains no storage DTO ownership.
 - Desktop renderer code no longer imports storage packages.
 - Desktop background work and IPC handlers are runtime/scoped.
 - Database projection resources are Effect-managed.

@@ -11,23 +11,22 @@ import type {
   UserProfilePage,
   UserProfileQuery,
 } from "@cycle/contracts";
-import { getDesktopBridge } from "../lib/desktopBridge.ts";
-import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
+import { cycleApiClient } from "../lib/cycleApiClient.ts";
 
 const usersQueryKey = (repositoryId: string | undefined) =>
-  ["desktop", "ticketRpc", "users", repositoryId] as const;
+  ["desktop", "api", "users", repositoryId] as const;
 
 const userListQueryKey = (repositoryId: string | undefined, query: UserProfileQuery = {}) =>
   [...usersQueryKey(repositoryId), "list", query] as const;
 
 const labelsQueryKey = (repositoryId: string | undefined) =>
-  ["desktop", "ticketRpc", "labels", repositoryId] as const;
+  ["desktop", "api", "labels", repositoryId] as const;
 
 const labelListQueryKey = (repositoryId: string | undefined, query: LabelDefinitionQuery = {}) =>
   [...labelsQueryKey(repositoryId), "list", query] as const;
 
 export const viewsQueryKey = (repositoryId: string | undefined) =>
-  ["desktop", "ticketRpc", "views", repositoryId] as const;
+  ["desktop", "api", "views", repositoryId] as const;
 
 const viewListQueryKey = (repositoryId: string | undefined, query: SavedViewQuery = {}) =>
   [...viewsQueryKey(repositoryId), "list", query] as const;
@@ -36,7 +35,7 @@ const viewDetailQueryKey = (repositoryId: string | undefined, viewId: string | u
   [...viewsQueryKey(repositoryId), "detail", viewId] as const;
 
 const templatesQueryKey = (repositoryId: string | undefined) =>
-  ["desktop", "ticketRpc", "templates", repositoryId] as const;
+  ["desktop", "api", "templates", repositoryId] as const;
 
 const templateListQueryKey = (repositoryId: string | undefined, query: IssueTemplateQuery = {}) =>
   [...templatesQueryKey(repositoryId), "list", query] as const;
@@ -44,13 +43,13 @@ const templateListQueryKey = (repositoryId: string | undefined, query: IssueTemp
 const initiativeProgressQueryKey = (
   repositoryId: string | undefined,
   initiativeId: string | undefined,
-) => ["desktop", "ticketRpc", "initiativeProgress", repositoryId, initiativeId] as const;
+) => ["desktop", "api", "initiativeProgress", repositoryId, initiativeId] as const;
 
 const listUsersForRepository = async (
   repositoryId: string,
   query: UserProfileQuery = {},
 ): Promise<UserProfilePage> =>
-  ticketRpcClient.call("ticket.user.list", {
+  cycleApiClient.call("ticket.user.list", {
     input: query,
     repository: {
       id: repositoryId,
@@ -61,7 +60,7 @@ const listLabelsForRepository = async (
   repositoryId: string,
   query: LabelDefinitionQuery = {},
 ): Promise<LabelDefinitionPage> =>
-  ticketRpcClient.call("ticket.label.list", {
+  cycleApiClient.call("ticket.label.list", {
     input: query,
     repository: {
       id: repositoryId,
@@ -72,7 +71,7 @@ const listViewsForRepository = async (
   repositoryId: string,
   query: SavedViewQuery = {},
 ): Promise<SavedViewPage> =>
-  ticketRpcClient.call("ticket.view.list", {
+  cycleApiClient.call("ticket.view.list", {
     input: query,
     repository: {
       id: repositoryId,
@@ -86,7 +85,7 @@ const getViewForRepository = async ({
   readonly repositoryId: string;
   readonly viewId: string;
 }): Promise<SavedViewDocument | null> =>
-  ticketRpcClient.call("ticket.view.get", {
+  cycleApiClient.call("ticket.view.get", {
     input: {
       id: viewId,
     },
@@ -99,7 +98,7 @@ const listTemplatesForRepository = async (
   repositoryId: string,
   query: IssueTemplateQuery = {},
 ): Promise<IssueTemplatePage> =>
-  ticketRpcClient.call("ticket.template.list", {
+  cycleApiClient.call("ticket.template.list", {
     input: query,
     repository: {
       id: repositoryId,
@@ -113,7 +112,7 @@ const getInitiativeProgressForRepository = async ({
   readonly initiativeId: string;
   readonly repositoryId: string;
 }): Promise<InitiativeProgress> =>
-  ticketRpcClient.call("ticket.initiative.progress", {
+  cycleApiClient.call("ticket.initiative.progress", {
     input: {
       id: initiativeId,
     },
@@ -124,7 +123,7 @@ const getInitiativeProgressForRepository = async ({
 
 export const useUserListQuery = (repositoryId: string | undefined, query: UserProfileQuery = {}) =>
   useQuery({
-    enabled: repositoryId !== undefined && getDesktopBridge() !== undefined,
+    enabled: repositoryId !== undefined,
     queryFn: () => {
       if (!repositoryId) {
         throw new Error("Choose a repository before loading users.");
@@ -140,7 +139,7 @@ export const useLabelListQuery = (
   query: LabelDefinitionQuery = {},
 ) =>
   useQuery({
-    enabled: repositoryId !== undefined && getDesktopBridge() !== undefined,
+    enabled: repositoryId !== undefined,
     queryFn: () => {
       if (!repositoryId) {
         throw new Error("Choose a repository before loading labels.");
@@ -156,7 +155,7 @@ export const useSavedViewListQuery = (
   query: SavedViewQuery = {},
 ) =>
   useQuery({
-    enabled: repositoryId !== undefined && getDesktopBridge() !== undefined,
+    enabled: repositoryId !== undefined,
     queryFn: () => {
       if (!repositoryId) {
         throw new Error("Choose a repository before loading saved views.");
@@ -172,7 +171,7 @@ export const useSavedViewDetailQuery = (
   viewId: string | undefined,
 ) =>
   useQuery({
-    enabled: repositoryId !== undefined && viewId !== undefined && getDesktopBridge() !== undefined,
+    enabled: repositoryId !== undefined && viewId !== undefined,
     queryFn: () => {
       if (!repositoryId || !viewId) {
         throw new Error("Choose a saved view before loading view details.");
@@ -191,7 +190,7 @@ export const useIssueTemplateListQuery = (
   query: IssueTemplateQuery = {},
 ) =>
   useQuery({
-    enabled: repositoryId !== undefined && getDesktopBridge() !== undefined,
+    enabled: repositoryId !== undefined,
     queryFn: () => {
       if (!repositoryId) {
         throw new Error("Choose a repository before loading issue templates.");
@@ -207,8 +206,7 @@ export const useInitiativeProgressQuery = (
   initiativeId: string | undefined,
 ) =>
   useQuery({
-    enabled:
-      repositoryId !== undefined && initiativeId !== undefined && getDesktopBridge() !== undefined,
+    enabled: repositoryId !== undefined && initiativeId !== undefined,
     queryFn: () => {
       if (!repositoryId || !initiativeId) {
         throw new Error("Choose an initiative before loading progress.");

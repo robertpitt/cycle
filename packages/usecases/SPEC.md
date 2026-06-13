@@ -9,7 +9,7 @@ Package: `@cycle/usecases`
 ## 1. Purpose
 
 `@cycle/usecases` is the controller and domain workflow package for Cycle. It provides the single
-Effect-first entrypoint for application, API, RPC, CLI, and CI callers to execute Cycle workflows
+Effect-first entrypoint for application, API, CLI, MCP, and CI callers to execute Cycle workflows
 without duplicating business logic in transport or UI layers.
 
 The package sits above `@cycle/database`. `@cycle/database` owns durable storage, projection,
@@ -31,7 +31,7 @@ choice and expose enough information for callers and conformance tests to reason
 Cycle currently has transport and application code that can call `@cycle/database` directly. That
 forces storage-facing services to contain workflow policy such as status transition rules, commit
 message policy, human approval gates, relation rules, and domain-specific command behavior. As more
-entrypoints are added, such as an HTTP API, RPC bridge, desktop app, CLI automation, and CI checks,
+entrypoints are added, such as an HTTP API, desktop app, CLI automation, MCP tools, and CI checks,
 duplicating or bypassing those rules would make Cycle harder to reason about and easier to break.
 
 Cycle needs a stable controller layer where every caller runs the same command contracts through the
@@ -42,8 +42,8 @@ workflow behavior testable without requiring Electron, an API server, or a CLI p
 
 `@cycle/usecases` MUST:
 
-1. Become the sole domain workflow API used by `@cycle/rpc`, future API packages, CLI/CI entrypoints,
-   desktop backend code, and other adapter layers.
+1. Become the sole domain workflow API used by `@cycle/api`, CLI/CI entrypoints, desktop backend
+   code, MCP tools, and other adapter layers.
 2. Expose an Effect v4-first API whose core operation is `run(useCase)`.
 3. Maintain the canonical operation contracts for Cycle workflows, including input schemas, success
    schemas, failure schemas, and operation metadata.
@@ -53,7 +53,7 @@ workflow behavior testable without requiring Electron, an API server, or a CLI p
 6. Cover repository open, close, status, sync, push, warnings, history, ticket, draft, record,
    comment, relation, user, label, saved view, template, initiative, search, and automation
    evaluation workflows.
-7. Provide adapter-neutral contracts that RPC, HTTP, IPC, CLI, and CI layers can derive from or map
+7. Provide adapter-neutral contracts that HTTP, IPC, CLI, MCP, and CI layers can derive from or map
    to without reimplementing validation or policy.
 8. Return typed, serializable, redacted failures that adapters can map to transport-specific error
    responses or process exit codes.
@@ -66,7 +66,7 @@ workflow behavior testable without requiring Electron, an API server, or a CLI p
 
 `@cycle/usecases` v0.1 MUST NOT:
 
-1. Implement a transport protocol, HTTP server, RPC bridge, Electron IPC handler, CLI parser, or CI
+1. Implement a transport protocol, HTTP server, Electron IPC handler, CLI parser, MCP server, or CI
    runner binary.
 2. Own durable repository storage, SQLite projection schema, Git object storage, GitDB ref layout, or
    materialization logic.
@@ -75,7 +75,7 @@ workflow behavior testable without requiring Electron, an API server, or a CLI p
 4. Execute arbitrary shell commands or manage long-running agent processes.
 5. Replace `@cycle/database` domain types with a second incompatible type system.
 6. Require network access for local reads, writes, search, history, or automation evaluation.
-7. Require legacy RPC method names to be the canonical internal operation names.
+7. Require legacy transport method names to be the canonical internal operation names.
 8. Hide post-commit consistency failures by returning success before required projected rows are
    visible.
 
@@ -96,7 +96,7 @@ Level 3: @cycle/usecases
   command contracts, workflow policy, validation, orchestration, automation evaluation
 
 Level 4: adapters and applications
-  desktop backend, renderer bridge, RPC, HTTP API, CLI, CI, test harnesses
+  desktop backend, renderer HTTP client, REST API, CLI, MCP, CI, test harnesses
 ```
 
 Adapters MUST call `@cycle/usecases` for domain workflows. They MUST NOT call `@cycle/database`
@@ -119,7 +119,7 @@ documented test setup.
 - Repository orchestration service: opens repositories, synchronizes projections, pushes Cycle refs,
   exposes repository status, and serializes repository-scoped side effects.
 - Automation evaluator: provides deterministic machine-readable checks for CLI and CI callers.
-- Compatibility mapper: maps legacy RPC names or transport-specific route names to canonical
+- Compatibility mapper: maps legacy method names or transport-specific route names to canonical
   usecase contracts without making those aliases the core model.
 - Observability surface: emits structured logs, metrics, and trace annotations for usecase
   executions.
@@ -176,7 +176,7 @@ Usecase metadata SHOULD include:
 
 - `requestId`
 - `actor`
-- `source`: `desktop`, `rpc`, `api`, `cli`, `ci`, `test`, or an extension value
+- `source`: `desktop`, `api`, `cli`, `mcp`, `ci`, `test`, or an extension value
 - `idempotencyKey`
 - `dryRun`
 - `deadline`
@@ -201,7 +201,7 @@ Each usecase contract MUST define:
 - idempotency posture: `required`, `supported`, `not-supported`, or `read-only`
 - compatibility aliases, if any
 
-Contract schemas are the source of truth for transport validation. RPC, HTTP, IPC, CLI, and CI
+Contract schemas are the source of truth for transport validation. HTTP, IPC, CLI, MCP, and CI
 adapters MUST derive their request validation from these contracts or prove equivalent validation in
 tests.
 
@@ -369,8 +369,8 @@ Automation and CI:
 
 ### 8.3 Compatibility Aliases
 
-Legacy RPC method names MAY be supported as aliases by adapters or by a compatibility mapper. The
-canonical usecase contract names MUST remain independent from legacy names such as
+Legacy method names MAY be supported as aliases by adapters or by a compatibility mapper. The
+canonical usecase contract names MUST remain independent from transport names such as
 `ticket.issue.create` or `repository.sync`.
 
 Each compatibility alias MUST map to exactly one canonical usecase. If an alias needs different
@@ -659,11 +659,11 @@ Adapters MUST:
 Adapters MAY expose different route names, method names, or command names. Those names MUST map to
 canonical usecases.
 
-### 13.3 RPC Compatibility
+### 13.3 Adapter Compatibility
 
-The existing `@cycle/rpc` method set SHOULD be migrated to a thin adapter over `@cycle/usecases`.
-The RPC package MAY keep method names such as `ticket.issue.create` for compatibility, but handler
-logic SHOULD become a lookup from RPC method to canonical usecase constructor.
+The former desktop bridge method set has been retired. Adapters that still accept compatibility names
+such as `ticket.issue.create` SHOULD map those names to canonical usecases or REST routes without
+embedding workflow logic.
 
 ### 13.4 CLI and CI Compatibility
 
@@ -787,8 +787,8 @@ The migration from direct database calls to usecases SHOULD proceed in these pha
 
 1. Introduce `packages/usecases` with contracts, runner, failures, and a persistence gateway backed
    by the current `DatabaseService`.
-2. Migrate `@cycle/rpc` handlers to construct and run canonical usecases.
-3. Migrate desktop backend paths that perform domain workflows to call usecases.
+2. Expose `@cycle/api` routes that construct and run canonical usecases.
+3. Migrate desktop renderer workflows to call the local REST API.
 4. Move workflow policy out of `@cycle/database` into usecase handlers and policy services.
 5. Slim `@cycle/database` toward storage, projection, primitive writes, and read-model queries.
 6. Add CLI/CI adapters that call the same usecase runner.
@@ -838,16 +838,16 @@ AutomationEvaluateQuery(repository, query, rules):
   return report
 ```
 
-### 18.3 RPC Alias Dispatch
+### 18.3 Alias Dispatch
 
 ```text
-handle_rpc(method, payload):
-  alias = rpcAliasRegistry[method]
+handle_alias(method, payload):
+  alias = aliasRegistry[method]
   if alias is missing:
     return unknown method failure
   usecase = alias.construct(payload)
   result = UseCaseRunner.run(usecase)
-  return map result to rpc envelope
+  return map result to transport response
 ```
 
 ## 19. Test and Validation Matrix
@@ -857,7 +857,7 @@ Conformance tests MUST cover:
 1. Every contract decodes valid input and rejects invalid input with `InvalidInputFailure`.
 2. Every contract success value conforms to its success schema.
 3. Unknown usecase names and unsupported aliases return typed failures.
-4. Adapters can map legacy RPC names to canonical usecase names without custom workflow logic.
+4. Adapters can map compatibility names to canonical usecase names without custom workflow logic.
 5. `IssueCreate` writes through the persistence gateway, syncs, and returns a visible ticket.
 6. `IssueUpdate` preserves unknown frontmatter fields.
 7. `IssueUpdate` rejects protected-section changes during active implementation state.
@@ -883,9 +883,9 @@ An implementation is complete when:
 1. `packages/usecases` builds as an Effect package in the Cycle workspace.
 2. The package exports usecase constructors, contract registry, runner service, failures, live layer,
    and test layer.
-3. Canonical contracts cover all existing Cycle RPC operations plus automation evaluation usecases.
-4. `@cycle/rpc` delegates workflow handling to `@cycle/usecases`.
-5. New API, CLI, and CI entrypoints can call the same runner without importing `@cycle/database`
+3. Canonical contracts cover all Cycle issue workflows plus automation evaluation usecases.
+4. `@cycle/api` delegates workflow handling to `@cycle/usecases`.
+5. API, CLI, MCP, and CI entrypoints can call the same runner without importing `@cycle/database`
    workflow methods.
 6. Workflow policy tests live with `@cycle/usecases`.
 7. `@cycle/database` is documented as storage/projection/read-model infrastructure rather than the

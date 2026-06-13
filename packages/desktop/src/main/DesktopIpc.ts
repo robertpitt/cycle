@@ -1,12 +1,11 @@
-import { contractFor, useCaseNameForAlias } from "@cycle/contracts/contracts";
-import { ticketRpcError, type TicketRpcResponse } from "@cycle/rpc/protocol";
-import { TicketRpcService } from "@cycle/rpc/server";
 import { dialog, ipcMain, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron";
 import { Effect } from "effect";
+import { readFile } from "node:fs/promises";
 import {
   completeOnboardingChannel,
   clearCacheChannel,
   detectAgentProvidersChannel,
+  getApiConnectionChannel,
   getAppConfigChannel,
   getBackendLogPathChannel,
   getBootstrapStatusChannel,
@@ -17,7 +16,6 @@ import {
   isProfileUpdateInput,
   isRemoveRepositoryRequest,
   isSetThemePreferenceRequest,
-  isTicketRpcBridgeRequest,
   isUpdateRepositoryPreferencesInput,
   isUpsertRepositoryPathInput,
   initializeRepositoryPathChannel,
@@ -27,18 +25,17 @@ import {
   selectRepositoryFolderChannel,
   setThemePreferenceChannel,
   themeStateChangedChannel,
-  ticketRpcChannel,
   updateRepositoryPreferencesChannel,
   updateProfileChannel,
   upsertRepositoryPathChannel,
+  type ApiConnection,
   type OpenExternalRequest,
   type ElectronThemeState,
-  type TicketRpcBridgeRequest,
 } from "../ipc/index.ts";
 import { DesktopRuntime, type DesktopRuntimeService } from "../platform/DesktopRuntime.ts";
 import { electronSecurityError, type ElectronError } from "../platform/ElectronError.ts";
 import { ElectronShell } from "../platform/ElectronShell.ts";
-import { AppConfigError } from "../shared/AppConfig.ts";
+import { AppConfigError, DEFAULT_API_PORT, type ApiConfig } from "../shared/AppConfig.ts";
 import { AgentProviderDetector } from "../shared/AgentProviders.ts";
 import type { ThemePreference } from "../shared/AppConfig.ts";
 import { DesktopBootstrap } from "../shared/Bootstrap.ts";
@@ -51,6 +48,7 @@ import {
   type UpsertRepositoryPathInput,
 } from "../shared/LocalWorkspace.ts";
 import type { CompleteOnboardingInput, ProfileUpdateInput } from "../shared/Profile.ts";
+import { desktopApiRuntimeDiscoveryPath } from "./DesktopApi.ts";
 import { currentDesktopWindow } from "./DesktopWindowLive.ts";
 import { DesktopLogger } from "./DesktopLoggerLive.ts";
 import { ElectronPreferences } from "./ElectronPreferences.ts";
@@ -61,6 +59,10 @@ type SetThemePreferenceRequest = {
 
 type RemoveRepositoryRequest = {
   readonly id: string;
+};
+
+type DesktopApiRuntimeFile = {
+  readonly baseUrl?: unknown;
 };
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
@@ -89,24 +91,6 @@ const normalizeIpcError = (channel: string, error: unknown): Error => {
   });
   return normalized;
 };
-
-const ticketRpcFailureResponse = (
-  id: string,
-  error: unknown,
-  code = "DESKTOP_IPC_FAILURE",
-): TicketRpcResponse => ({
-  error: ticketRpcError({
-    code,
-    details: {
-      ...(errorCategory(error) === undefined ? {} : { category: errorCategory(error) }),
-      ...(errorTag(error) === undefined ? {} : { sourceTag: errorTag(error) }),
-    },
-    message: errorMessage(error),
-    sourceTag: errorTag(error),
-  }),
-  id,
-  ok: false,
-});
 
 const validateInvokeSender = (
   event: IpcMainInvokeEvent,
@@ -242,30 +226,22 @@ const decodeEmptyRequest = (value: unknown): Effect.Effect<void, ElectronError> 
     ? Effect.void
     : Effect.fail(electronSecurityError("ipc.request", "Expected empty renderer request."));
 
-const decodeTicketRpcRequest = (
-  value: unknown,
-): Effect.Effect<TicketRpcBridgeRequest, ElectronError> =>
-  isTicketRpcBridgeRequest(value)
-    ? Effect.succeed(value)
-    : Effect.fail(electronSecurityError("ipc.ticketRpc", "Expected ticket RPC request envelope."));
+const apiBaseUrlFromConfig = (config: ApiConfig): string =>
+  `http://${config.host}:${config.port === "auto" ? DEFAULT_API_PORT : config.port}`;
 
-const ticketRpcRepositoryId = (request: TicketRpcBridgeRequest) =>
-  Effect.gen(function* () {
-    const payload = request.payload;
-    const repository = isRecord(payload) ? payload.repository : undefined;
-    const repositoryId = isRecord(repository) ? repository.id : undefined;
+const readDesktopApiRuntimeBaseUrl = (): Effect.Effect<string | undefined> =>
+  Effect.tryPromise({
+    try: async () => {
+      const parsed = JSON.parse(
+        await readFile(desktopApiRuntimeDiscoveryPath(), "utf8"),
+      ) as DesktopApiRuntimeFile;
 
-    if (typeof repositoryId === "string" && repositoryId.length > 0) {
-      return repositoryId;
-    }
-
-    return yield* Effect.fail(
-      electronSecurityError(
-        "ipc.ticketRpc.repository",
-        "Expected ticket RPC payload to include repository.id.",
-      ),
-    );
-  });
+      return typeof parsed.baseUrl === "string" && parsed.baseUrl.length > 0
+        ? parsed.baseUrl.replace(/\/+$/u, "")
+        : undefined;
+    },
+    catch: (cause) => cause,
+  }).pipe(Effect.catch(() => Effect.succeed(undefined)));
 
 const selectRepositoryFolder = (
   localWorkspace: LocalWorkspaceService,
@@ -368,13 +344,29 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
   const logger = yield* DesktopLogger;
   const localWorkspace = yield* LocalWorkspace;
   const agentProviderDetector = yield* AgentProviderDetector;
-  const ticketRpc = yield* TicketRpcService;
 
   yield* registerIpcHandler(runtime, openExternalChannel, decodeOpenExternalRequest, (request) =>
     shell.openExternal(request.targetUrl),
   );
   yield* registerIpcHandler(runtime, getAppConfigChannel, decodeEmptyRequest, () =>
     preferences.read(),
+  );
+  yield* registerIpcHandler(runtime, getApiConnectionChannel, decodeEmptyRequest, () =>
+    Effect.gen(function* () {
+      const config = yield* preferences.read();
+      const runtimeBaseUrl = yield* readDesktopApiRuntimeBaseUrl();
+
+      if (!config.api.enabled) {
+        return yield* Effect.fail(
+          electronSecurityError("ipc.apiConnection", "The local Cycle API is disabled."),
+        );
+      }
+
+      return {
+        baseUrl: runtimeBaseUrl ?? apiBaseUrlFromConfig(config.api),
+        token: config.api.staticToken,
+      } satisfies ApiConnection;
+    }),
   );
   yield* registerIpcHandler(
     runtime,
@@ -453,59 +445,5 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
   );
   yield* registerIpcHandler(runtime, detectAgentProvidersChannel, decodeEmptyRequest, () =>
     agentProviderDetector.detect(),
-  );
-  yield* registerIpcHandler(runtime, ticketRpcChannel, decodeTicketRpcRequest, (request) =>
-    Effect.gen(function* () {
-      const useCaseName = useCaseNameForAlias(request.method);
-      const contract = useCaseName === null ? null : contractFor(useCaseName);
-
-      if (contract === null || contract.repositoryScope === "none") {
-        return yield* ticketRpc.handle(request);
-      }
-
-      const repositoryId = yield* ticketRpcRepositoryId(request);
-      const config = yield* preferences.read();
-      const repository = config.localWorkspace.repositories.find(
-        (candidate) => candidate.id === repositoryId,
-      );
-
-      if (!repository) {
-        return yield* Effect.fail(
-          electronSecurityError(
-            "ipc.ticketRpc.repository",
-            `Repository is not registered: ${repositoryId}`,
-          ),
-        );
-      }
-
-      yield* bootstrap.ensureRepositoryOpened(repository.id);
-
-      if (request.method === "repository.sync") {
-        yield* bootstrap.syncRepositoryFromRemote(repository.id);
-        return yield* ticketRpc.handle(request);
-      }
-
-      if (request.method === "repository.push") {
-        return {
-          id: request.id,
-          ok: true as const,
-          value: yield* bootstrap.pushRepositoryToRemote(repository.id),
-        };
-      }
-
-      return yield* ticketRpc.handle(request);
-    }).pipe(
-      Effect.catch((error) =>
-        Effect.succeed(
-          ticketRpcFailureResponse(
-            request.id,
-            error,
-            errorCategory(error) === "security"
-              ? "DESKTOP_REPOSITORY_UNAUTHORIZED"
-              : "DESKTOP_TICKET_RPC_FAILURE",
-          ),
-        ),
-      ),
-    ),
   );
 });

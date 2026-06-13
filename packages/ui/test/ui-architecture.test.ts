@@ -21,7 +21,6 @@ const forbiddenRuntimePackages = [
   "@cycle/desktop",
   "@cycle/git",
   "@cycle/git-db",
-  "@cycle/rpc",
   "@cycle/usecases",
   "@tanstack/react-query",
   "effect",

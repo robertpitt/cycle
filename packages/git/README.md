@@ -191,7 +191,8 @@ The intended dependency direction is:
 @cycle/git
   -> @cycle/git-db
     -> @cycle/database
-      -> @cycle/rpc
+      -> @cycle/usecases
+        -> @cycle/api
         -> @cycle/desktop
 ```
 

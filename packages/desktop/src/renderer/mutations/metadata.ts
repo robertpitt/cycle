@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { CreateSavedViewInput } from "@cycle/contracts";
-import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
+import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { viewsQueryKey } from "../queries/metadata.ts";
 
 type RepositoryMutationOptions = {
@@ -25,7 +25,7 @@ export const useCreateSavedViewMutation = ({ repositoryId }: RepositoryMutationO
         "Choose a repository before creating saved views.",
       );
 
-      return ticketRpcClient.call("ticket.view.create", {
+      return cycleApiClient.call("ticket.view.create", {
         input,
         repository: {
           id,

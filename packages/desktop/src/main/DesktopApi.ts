@@ -15,7 +15,7 @@ import { DesktopLogger } from "./DesktopLoggerLive.ts";
 
 const LOCAL_PROJECTION_POLL_INTERVAL_MS = 60_000;
 
-const runtimeDiscoveryPath = (): string =>
+export const desktopApiRuntimeDiscoveryPath = (): string =>
   process.env.CYCLE_API_RUNTIME_FILE ??
   join(tmpdir(), `cycle-api-${process.getuid?.() ?? "user"}.json`);
 
@@ -159,14 +159,14 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
             enabled: true,
             env: {
               ...process.env,
-              CYCLE_API_RUNTIME_FILE: runtimeDiscoveryPath(),
+              CYCLE_API_RUNTIME_FILE: desktopApiRuntimeDiscoveryPath(),
             },
             path: "/mcp",
           },
           port: config.api.port === "auto" ? undefined : config.api.port,
           repositoryOpenInput,
           runner,
-          runtimeFile: runtimeDiscoveryPath(),
+          runtimeFile: desktopApiRuntimeDiscoveryPath(),
           staticToken: config.api.staticToken,
         }),
       catch: (cause) => cause,
@@ -186,7 +186,7 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
 
   yield* logger.info("api server started", {
     baseUrl: handle.baseUrl,
-    runtimeFile: runtimeDiscoveryPath(),
+    runtimeFile: desktopApiRuntimeDiscoveryPath(),
     scope: "api",
   });
 });

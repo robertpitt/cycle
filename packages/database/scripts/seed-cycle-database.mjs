@@ -24,7 +24,7 @@ const actor = {
 
 const priorities = ["urgent", "high", "medium", "low"];
 const assignees = ["Robert Pitt", "Cycle Agent", "Runtime Team", "Design Tools", "QA"];
-const repositories = ["cycle", "cycle-desktop", "cycle-rpc", "cycle-database"];
+const repositories = ["cycle", "cycle-desktop", "cycle-api", "cycle-database"];
 const statuses = ["backlog", "todo", "in-progress", "review", "done"];
 const labelGroups = [
   ["performance", "sqlite"],

@@ -3,6 +3,7 @@ import {
   clearCacheChannel,
   completeOnboardingChannel,
   detectAgentProvidersChannel,
+  getApiConnectionChannel,
   getAppConfigChannel,
   getBackendLogPathChannel,
   getBootstrapStatusChannel,
@@ -11,7 +12,6 @@ import {
   isElectronThemeState,
   isInitializeRepositoryPathInput,
   isProfileUpdateInput,
-  isTicketRpcBridgeRequest,
   isThemePreferenceValue,
   isUpdateRepositoryPreferencesInput,
   isUpsertRepositoryPathInput,
@@ -22,7 +22,6 @@ import {
   selectRepositoryFolderChannel,
   setThemePreferenceChannel,
   themeStateChangedChannel,
-  ticketRpcChannel,
   updateRepositoryPreferencesChannel,
   updateProfileChannel,
   upsertRepositoryPathChannel,
@@ -39,6 +38,7 @@ const desktopBridge: CycleDesktopBridge = {
   },
   clearCache: async () => ipcRenderer.invoke(clearCacheChannel),
   detectAgentProviders: async () => ipcRenderer.invoke(detectAgentProvidersChannel),
+  getApiConnection: async () => ipcRenderer.invoke(getApiConnectionChannel),
   getBackendLogPath: async () => ipcRenderer.invoke(getBackendLogPathChannel),
   getBootstrapStatus: async () => ipcRenderer.invoke(getBootstrapStatusChannel),
   getAppConfig: async () => ipcRenderer.invoke(getAppConfigChannel),
@@ -94,13 +94,6 @@ const desktopBridge: CycleDesktopBridge = {
     return () => {
       ipcRenderer.off(themeStateChangedChannel, handler);
     };
-  },
-  ticketRpc: async (request) => {
-    if (!isTicketRpcBridgeRequest(request)) {
-      throw new TypeError("request must include id and method.");
-    }
-
-    return ipcRenderer.invoke(ticketRpcChannel, request);
   },
   updateRepositoryPreferences: async (input) => {
     if (!isUpdateRepositoryPreferencesInput(input)) {

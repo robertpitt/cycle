@@ -1,4 +1,3 @@
-import type { TicketRpcMethod, TicketRpcResponse } from "@cycle/rpc/protocol";
 import type {
   AppConfigState,
   RepositoryCommitStyle,
@@ -34,9 +33,14 @@ export const upsertRepositoryPathChannel = "cycle:desktop:local-workspace/upsert
 export const removeRepositoryChannel = "cycle:desktop:local-workspace/remove-repository";
 export const detectAgentProvidersChannel = "cycle:desktop:agent-providers/detect";
 export const openExternalChannel = "cycle:desktop:shell/open-external";
-export const ticketRpcChannel = "cycle:desktop:ticket-rpc/invoke";
 export const getBootstrapStatusChannel = "cycle:desktop:bootstrap/status";
 export const getBackendLogPathChannel = "cycle:desktop:logs/path";
+export const getApiConnectionChannel = "cycle:desktop:api/connection";
+
+export type ApiConnection = {
+  readonly baseUrl: string;
+  readonly token: string;
+};
 
 export type OpenExternalRequest = {
   readonly targetUrl: string;
@@ -52,15 +56,10 @@ export type RemoveRepositoryRequest = {
   readonly id: string;
 };
 
-export type TicketRpcBridgeRequest = {
-  readonly id: string;
-  readonly method: TicketRpcMethod;
-  readonly payload: unknown;
-};
-
 export type CycleDesktopBridge = {
   readonly completeOnboarding: (input: CompleteOnboardingInput) => Promise<AppConfigState>;
   readonly detectAgentProviders: () => Promise<ReadonlyArray<DetectedAgentProvider>>;
+  readonly getApiConnection: () => Promise<ApiConnection>;
   readonly getBackendLogPath: () => Promise<string>;
   readonly getBootstrapStatus: () => Promise<BootstrapStatus>;
   readonly getAppConfig: () => Promise<AppConfigState>;
@@ -76,7 +75,6 @@ export type CycleDesktopBridge = {
   readonly clearCache: () => Promise<void>;
   readonly setThemePreference: (preference: ThemePreference) => Promise<AppConfigState>;
   readonly onThemeStateChanged: (listener: (state: ElectronThemeState) => void) => () => void;
-  readonly ticketRpc: (request: TicketRpcBridgeRequest) => Promise<TicketRpcResponse>;
   readonly updateRepositoryPreferences: (
     input: UpdateRepositoryPreferencesInput,
   ) => Promise<RepositoryRecord | null>;
@@ -162,6 +160,3 @@ export const isUpdateRepositoryPreferencesInput = (
 
 export const isRemoveRepositoryRequest = (value: unknown): value is RemoveRepositoryRequest =>
   isRecord(value) && typeof value.id === "string";
-
-export const isTicketRpcBridgeRequest = (value: unknown): value is TicketRpcBridgeRequest =>
-  isRecord(value) && typeof value.id === "string" && typeof value.method === "string";

@@ -24,20 +24,39 @@ export const filterRepositories = (
 
 export const issueQueryFrom = (params: URLSearchParams): Record<string, unknown> => {
   const query: Record<string, unknown> = {
+    archived: booleanParam(filterParam(params, "archived")),
+    assignee: nullableStringParam(filterParam(params, "assignee")),
+    blocked: booleanParam(filterParam(params, "blocked")),
     cursor: params.get("page[cursor]") ?? undefined,
-    label: params.get("filter[label]") ?? undefined,
+    deleted: booleanParam(filterParam(params, "deleted")),
+    dueAfter: filterParam(params, "dueAfter") ?? undefined,
+    dueBefore: filterParam(params, "dueBefore") ?? undefined,
+    estimate: filterParam(params, "estimate") ?? undefined,
+    hasAssignee: booleanParam(filterParam(params, "hasAssignee")),
+    hasDueDate: booleanParam(filterParam(params, "hasDueDate")),
+    hasEstimate: booleanParam(filterParam(params, "hasEstimate")),
+    hasLabels: booleanParam(filterParam(params, "hasLabels")),
+    label: filterParam(params, "label") ?? undefined,
     limit: pageLimitFrom(params),
-    priority: params.get("filter[priority]") ?? undefined,
-    status: params.get("filter[status]") ?? undefined,
+    orderBy: orderByParam(params),
+    orderDirection: orderDirectionParam(params),
+    parent: nullableStringParam(filterParam(params, "parent")),
+    priority: filterParam(params, "priority") ?? undefined,
+    staleBefore: filterParam(params, "staleBefore") ?? undefined,
+    status: filterParam(params, "status") ?? undefined,
     text: params.get("q") ?? undefined,
-    type: params.get("filter[type]") ?? undefined,
+    type: filterParam(params, "type") ?? undefined,
+    updatedAfter: filterParam(params, "updatedAfter") ?? undefined,
+    updatedBefore: filterParam(params, "updatedBefore") ?? undefined,
   };
-  const labelIn = params.get("filter[label][in]");
-  const statusIn = params.get("filter[status][in]");
-  const priorityIn = params.get("filter[priority][in]");
+  const assigneeIn = params.get("filter[assignee][in]") ?? params.get("assigneeIn");
+  const labelIn = params.get("filter[label][in]") ?? params.get("labelIn");
+  const statusIn = params.get("filter[status][in]") ?? params.get("statusIn");
+  const priorityIn = params.get("filter[priority][in]") ?? params.get("priorityIn");
 
   return stripUndefined({
     ...query,
+    assigneeIn: assigneeIn === null ? undefined : commaList(assigneeIn),
     labelIn: labelIn === null ? undefined : commaList(labelIn),
     priorityIn: priorityIn === null ? undefined : commaList(priorityIn),
     statusIn: statusIn === null ? undefined : commaList(statusIn),
@@ -142,5 +161,35 @@ const commaList = (value: string): ReadonlyArray<string> =>
 const booleanParam = (value: string | null): boolean | undefined => {
   if (value === "true") return true;
   if (value === "false") return false;
+  return undefined;
+};
+
+const filterParam = (params: URLSearchParams, key: string): string | null =>
+  params.get(`filter[${key}]`) ?? params.get(key);
+
+const nullableStringParam = (value: string | null): string | null | undefined => {
+  if (value === null) return undefined;
+  return value === "null" ? null : value;
+};
+
+const orderByParam = (
+  params: URLSearchParams,
+): "createdAt" | "dueDate" | "priority" | "title" | "updatedAt" | undefined => {
+  const value = params.get("sort[field]") ?? params.get("orderBy");
+  if (
+    value === "createdAt" ||
+    value === "dueDate" ||
+    value === "priority" ||
+    value === "title" ||
+    value === "updatedAt"
+  ) {
+    return value;
+  }
+  return undefined;
+};
+
+const orderDirectionParam = (params: URLSearchParams): "asc" | "desc" | undefined => {
+  const value = params.get("sort[direction]") ?? params.get("orderDirection");
+  if (value === "asc" || value === "desc") return value;
   return undefined;
 };

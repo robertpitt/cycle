@@ -9,7 +9,8 @@ import {
   IssueTransition,
   UseCaseRunner,
   UseCaseRunnerLive,
-  useCaseFromAlias,
+  makeUseCase,
+  useCaseNameForAlias,
 } from "../src/index.ts";
 import { assert, describe, it } from "./effect-vitest.ts";
 
@@ -70,24 +71,50 @@ describe("@cycle/usecases", () => {
     }).pipe(withOpenRepository),
   );
 
-  it.effect("rejects invalid aliased payloads with typed failures", () =>
+  it.effect("rejects invalid usecase payloads with typed failures", () =>
     Effect.gen(function* () {
-      const result = yield* useCaseFromAlias(
-        "ticket.issue.create",
-        {
-          input: {
-            body: "missing title",
-          },
-          repository,
-        },
-        { requestId: "invalid-alias", source: "test" },
-      ).pipe(Effect.result);
+      const runner = yield* UseCaseRunner;
+      const result = yield* runner
+        .run(
+          IssueCreate(
+            {
+              input: {
+                body: "missing title",
+              } as never,
+              repository,
+            },
+            { requestId: "invalid-input", source: "test" },
+          ),
+        )
+        .pipe(Effect.result);
 
       assert.equal(Result.isFailure(result), true);
       if (Result.isFailure(result)) {
         assert.equal(result.failure._tag, "InvalidInputFailure");
-        assert.equal(result.failure.requestId, "invalid-alias");
+        assert.equal(result.failure.requestId, "invalid-input");
       }
+    }).pipe(withOpenRepository),
+  );
+
+  it.effect("maps compatibility aliases to canonical usecases", () =>
+    Effect.sync(() => {
+      const name = useCaseNameForAlias("ticket.issue.create");
+      if (name === null) throw new Error("ticket.issue.create alias is missing.");
+
+      const created = makeUseCase(
+        name,
+        {
+          input: {
+            body: "Alias-compatible body",
+            title: "Alias-compatible issue",
+          },
+          repository,
+        } as never,
+        { requestId: "alias-contract", source: "test" },
+      );
+
+      assert.equal(created.name, "IssueCreate");
+      assert.equal(created.meta?.requestId, "alias-contract");
     }),
   );
 

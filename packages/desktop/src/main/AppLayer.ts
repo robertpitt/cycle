@@ -1,4 +1,3 @@
-import { TicketRpcLive } from "@cycle/rpc/server";
 import { UseCaseRunnerLive } from "@cycle/usecases";
 import { GitRepository } from "@cycle/git";
 import { Layer } from "effect";
@@ -80,7 +79,7 @@ const DatabaseConsumerDependenciesLive = Layer.mergeAll(
   GitRepositoryServiceLive,
 );
 
-const DatabaseConsumersLive = Layer.mergeAll(TicketRpcLive, DesktopBootstrapLive).pipe(
+const DatabaseConsumersLive = DesktopBootstrapLive.pipe(
   Layer.provide(DatabaseConsumerDependenciesLive),
 );
 

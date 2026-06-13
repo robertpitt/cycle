@@ -5,17 +5,16 @@ import type {
   RepositoryHistoryQuery,
   RepositoryStatus,
 } from "@cycle/contracts";
-import { getDesktopBridge } from "../lib/desktopBridge.ts";
-import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
+import { cycleApiClient } from "../lib/cycleApiClient.ts";
 
 const repositoryStatusQueryKey = (repositoryId: string | undefined) =>
-  ["desktop", "ticketRpc", "repositoryStatus", repositoryId] as const;
+  ["desktop", "api", "repositoryStatus", repositoryId] as const;
 
 const materializationWarningsQueryKey = (repositoryId: string | undefined) =>
-  ["desktop", "ticketRpc", "materializationWarnings", repositoryId] as const;
+  ["desktop", "api", "materializationWarnings", repositoryId] as const;
 
 export const repositoryHistoryRepositoryQueryKey = (repositoryId: string | undefined) =>
-  ["desktop", "ticketRpc", "repositoryHistory", repositoryId] as const;
+  ["desktop", "api", "repositoryHistory", repositoryId] as const;
 
 const repositoryHistoryQueryKey = (
   repositoryId: string | undefined,
@@ -23,7 +22,7 @@ const repositoryHistoryQueryKey = (
 ) => [...repositoryHistoryRepositoryQueryKey(repositoryId), query ?? {}] as const;
 
 const getRepositoryStatus = async (repositoryId: string): Promise<RepositoryStatus> =>
-  ticketRpcClient.call("repository.status.get", {
+  cycleApiClient.call("repository.status.get", {
     input: {},
     repository: {
       id: repositoryId,
@@ -33,7 +32,7 @@ const getRepositoryStatus = async (repositoryId: string): Promise<RepositoryStat
 const listMaterializationWarnings = async (
   repositoryId: string,
 ): Promise<ReadonlyArray<MaterializationWarning>> =>
-  ticketRpcClient.call("repository.materializationWarnings", {
+  cycleApiClient.call("repository.materializationWarnings", {
     input: {},
     repository: {
       id: repositoryId,
@@ -44,7 +43,7 @@ const listRepositoryHistory = async (
   repositoryId: string,
   query: RepositoryHistoryQuery = {},
 ): Promise<HistoryPage> =>
-  ticketRpcClient.call("repository.history.list", {
+  cycleApiClient.call("repository.history.list", {
     input: query,
     repository: {
       id: repositoryId,
@@ -53,7 +52,7 @@ const listRepositoryHistory = async (
 
 export const useRepositoryStatusQuery = (repositoryId: string | undefined) =>
   useQuery({
-    enabled: repositoryId !== undefined && getDesktopBridge() !== undefined,
+    enabled: repositoryId !== undefined,
     queryFn: () => {
       if (!repositoryId) {
         throw new Error("Choose a repository before loading repository status.");
@@ -67,7 +66,7 @@ export const useRepositoryStatusQuery = (repositoryId: string | undefined) =>
 
 export const useMaterializationWarningsQuery = (repositoryId: string | undefined) =>
   useQuery({
-    enabled: repositoryId !== undefined && getDesktopBridge() !== undefined,
+    enabled: repositoryId !== undefined,
     queryFn: () => {
       if (!repositoryId) {
         throw new Error("Choose a repository before loading materialization warnings.");
@@ -83,7 +82,7 @@ export const useRepositoryHistoryQuery = (
   query: RepositoryHistoryQuery = {},
 ) =>
   useQuery({
-    enabled: repositoryId !== undefined && getDesktopBridge() !== undefined,
+    enabled: repositoryId !== undefined,
     queryFn: () => {
       if (!repositoryId) {
         throw new Error("Choose a repository before loading repository history.");

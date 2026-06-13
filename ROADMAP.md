@@ -43,17 +43,17 @@ toward.
       update records at the database layer.
 - [x] Implemented tests for invalid source objects being skipped with materialization warnings.
 
-### Contracts, Usecases, And RPC
+### Contracts, Usecases, And API
 
 - [x] Added `@cycle/contracts` as the canonical schema and usecase contract surface.
 - [x] Added `@cycle/usecases` runner with input validation, success validation, typed failures, and
       request metadata.
 - [x] Added usecase policy checks for status transitions, human approval, self-relations, protected
       planning sections, and deterministic automation reports.
-- [x] Added `@cycle/rpc` request/response envelopes, schema validation, handler service, and typed
-      client.
+- [x] Added `@cycle/api` local REST request/response envelopes, schema validation, handler
+      service, and desktop HTTP client integration.
 - [x] Exposed repository, issue, draft, record, relation, history, sync, user, label, view, template,
-      initiative, and automation operations through contracts/RPC.
+      initiative, and automation operations through contracts, usecases, and REST routes.
 
 ### Desktop Application
 

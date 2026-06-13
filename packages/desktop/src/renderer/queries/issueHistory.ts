@@ -1,13 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import type { HistoryPage, RepositoryHistoryQuery } from "@cycle/contracts";
-import { getDesktopBridge } from "../lib/desktopBridge.ts";
-import { ticketRpcClient } from "../lib/ticketRpcClient.ts";
+import { cycleApiClient } from "../lib/cycleApiClient.ts";
 
 export const issueHistoryQueryKey = (
   repositoryId: string | undefined,
   issueId: string | undefined,
   query?: RepositoryHistoryQuery,
-) => ["desktop", "ticketRpc", "issueHistory", repositoryId, issueId, query ?? {}] as const;
+) => ["desktop", "api", "issueHistory", repositoryId, issueId, query ?? {}] as const;
 
 const listIssueHistory = async ({
   issueId,
@@ -18,7 +17,7 @@ const listIssueHistory = async ({
   readonly query?: RepositoryHistoryQuery;
   readonly repositoryId: string;
 }): Promise<HistoryPage> =>
-  ticketRpcClient.call("ticket.issue.history", {
+  cycleApiClient.call("ticket.issue.history", {
     input: {
       id: issueId,
       options: query,
@@ -34,8 +33,7 @@ export const useIssueHistoryQuery = (
   query: RepositoryHistoryQuery = {},
 ) =>
   useQuery({
-    enabled:
-      repositoryId !== undefined && issueId !== undefined && getDesktopBridge() !== undefined,
+    enabled: repositoryId !== undefined && issueId !== undefined,
     queryFn: () => {
       if (!repositoryId || !issueId) {
         throw new Error("Choose an issue before loading issue history.");
