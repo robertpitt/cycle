@@ -1,4 +1,4 @@
-import { Crypto, Effect, Schema } from "effect";
+import { Effect, Schema } from "effect";
 import * as GitSchemas from "@cycle/git/schemas";
 import {
   invalidIdentifier,
@@ -10,7 +10,6 @@ import {
   type InvalidPathError,
   type InvalidPointerNameError,
 } from "../errors/index.ts";
-import { sha1Hex } from "../internals/hash.ts";
 import * as IdentifierSchema from "../schemas/Identifier.ts";
 import * as PathSchema from "../schemas/Path.ts";
 
@@ -30,22 +29,6 @@ export const validateDatabaseName = (
 ): Effect.Effect<string, InvalidIdentifierError> =>
   Schema.decodeUnknownEffect(IdentifierSchema.DatabaseName)(database).pipe(
     Effect.mapError(() => invalidIdentifier("database", database)),
-  );
-
-export const validateCollectionName = (
-  name: string,
-): Effect.Effect<string, InvalidIdentifierError | InvalidPathError> =>
-  Schema.decodeUnknownEffect(IdentifierSchema.CollectionName)(name).pipe(
-    Effect.mapError(() =>
-      IdentifierSchema.isSafeSegment(name)
-        ? invalidPath(name, "collection names must not start with .")
-        : invalidIdentifier("collection", name),
-    ),
-  );
-
-export const validateDocumentId = (id: string): Effect.Effect<string, InvalidIdentifierError> =>
-  Schema.decodeUnknownEffect(IdentifierSchema.DocumentId)(id).pipe(
-    Effect.mapError(() => invalidIdentifier("document id", id)),
   );
 
 export const validateRemoteName = (remote: string): Effect.Effect<string, InvalidIdentifierError> =>
@@ -82,51 +65,6 @@ export const rejectEmptyMutationPath = (path: string): Effect.Effect<string, Inv
 
 export const joinStorePath = PathSchema.joinStorePath;
 
-export const collectionRootPath = (
-  collection: string,
-): Effect.Effect<string, InvalidIdentifierError | InvalidPathError> =>
-  validateCollectionName(collection).pipe(Effect.map((name) => joinStorePath("collections", name)));
-
-export const collectionMetaPath = (
-  collection: string,
-): Effect.Effect<string, InvalidIdentifierError | InvalidPathError> =>
-  collectionRootPath(collection).pipe(Effect.map((root) => joinStorePath(root, ".meta.json")));
-
-export const documentPath = (
-  collection: string,
-  id: string,
-  shardLength = 2,
-  extension = "json",
-): Effect.Effect<string, InvalidIdentifierError | InvalidPathError, Crypto.Crypto> =>
-  Effect.gen(function* () {
-    const name = yield* validateCollectionName(collection);
-    const documentId = yield* validateDocumentId(id);
-    const documentExtension = yield* validateDocumentExtension(extension);
-    const root = joinStorePath("collections", name);
-
-    if (shardLength <= 0) {
-      return joinStorePath(root, `${documentId}.${documentExtension}`);
-    }
-
-    const shard = yield* hashShard(documentId, shardLength);
-
-    return joinStorePath(root, shard, `${documentId}.${documentExtension}`);
-  });
-
-export const hashShard = (value: string, length = 2): Effect.Effect<string, never, Crypto.Crypto> =>
-  sha1Hex(value).pipe(Effect.map((hash) => hash.slice(0, length)));
-
-export const idFromDocumentPath = (path: string, extension = "json"): string | null => {
-  const filename = path.split("/").at(-1);
-  const suffix = `.${extension}`;
-
-  if (!filename?.endsWith(suffix) || filename === ".meta.json") {
-    return null;
-  }
-
-  return filename.slice(0, -suffix.length);
-};
-
 export const isPotentialObjectId = GitSchemas.isPotentialObjectId;
 
 const namespaceError = (
@@ -146,14 +84,4 @@ const namespaceError = (
   }
 
   return invalidNamespace(original, "namespace is not a valid Git ref path");
-};
-
-const validateDocumentExtension = (
-  extension: string,
-): Effect.Effect<string, InvalidIdentifierError> => {
-  if (/^[A-Za-z0-9][A-Za-z0-9_-]*$/u.test(extension)) {
-    return Effect.succeed(extension);
-  }
-
-  return Effect.fail(invalidIdentifier("document extension", extension));
 };

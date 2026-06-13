@@ -1,9 +1,5 @@
 export { Change } from "./Change.ts";
 export { ChangeSet } from "./ChangeSet.ts";
-export { CollectionEntry } from "./CollectionEntry.ts";
-export { CollectionInfo } from "./CollectionInfo.ts";
-export type { CollectionPage } from "./CollectionPage.ts";
-export type { CollectionDocumentCodec, CollectionOptions } from "./CollectionOptions.ts";
 export { CommitOptions } from "./CommitOptions.ts";
 export { DivergenceMode } from "./DivergenceMode.ts";
 export { Entry } from "./Entry.ts";
@@ -16,4 +12,3 @@ export { Snapshot } from "./Snapshot.ts";
 export { SyncMode } from "./SyncMode.ts";
 export { SyncOptions } from "./SyncOptions.ts";
 export { SyncResult } from "./SyncResult.ts";
-export type { CollectionListOptions, CollectionPageOptions } from "./CollectionListOptions.ts";

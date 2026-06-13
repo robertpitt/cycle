@@ -1,14 +1,9 @@
 export * from "./errors/index.ts";
-export type {
-  CollectionDocumentCodec,
-  CollectionOptions,
-  PointerSyncResult,
-  SyncResult,
-} from "./domain/index.ts";
+export type { PointerSyncResult, SyncResult } from "./domain/index.ts";
 export { GitDbFilesystem, GitDbInMemory, GitDbLive } from "./store/Layer.ts";
 export * as Schemas from "./schemas/index.ts";
-export * as Collection from "./store/Collection.ts";
 export * as Document from "./store/Document.ts";
+export * as Event from "./store/Event.ts";
 export * as GitDb from "./store/Layer.ts";
 export * as Pointer from "./store/Pointer.ts";
 export * as Snapshot from "./store/Snapshot.ts";

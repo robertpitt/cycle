@@ -37,6 +37,7 @@ const DesktopDatabaseIdGeneratorLive = Layer.succeed(
   DatabaseIdGenerator,
   DatabaseIdGenerator.of({
     draftId: Effect.sync(() => `drf_${randomUUID().replaceAll("-", "")}`),
+    eventId: Effect.sync(() => `evt_${randomUUID().replaceAll("-", "")}`),
     labelId: Effect.sync(() => `lbl_${randomUUID().replaceAll("-", "")}`),
     recordId: Effect.sync(() => `rec_${randomUUID().replaceAll("-", "")}`),
     templateId: Effect.sync(() => `tpl_${randomUUID().replaceAll("-", "")}`),

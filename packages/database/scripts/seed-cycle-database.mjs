@@ -1,9 +1,8 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
-import { GitDbFilesystem, Store as GitDbStore } from "@cycle/git-db";
+import { Event as GitDbEvent, GitDbFilesystem, Store as GitDbStore } from "@cycle/git-db";
 import { Effect, Layer } from "effect";
 import {
   DatabaseIdGeneratorDeterministic,
@@ -12,7 +11,6 @@ import {
   DatabaseService,
   makeFrontmatter,
   makeTicketDocument,
-  serializeIssueMarkdown,
 } from "../src/index.ts";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -71,11 +69,27 @@ function seed(options) {
       for (let index = batchStart; index < batchEnd; index += 1) {
         const ticket = makeSeedTicket(index, options);
 
-        yield* tx.put(issueStorePath(ticket.id), serializeIssueMarkdown(ticket));
+        yield* GitDbEvent.append(tx, {
+          aggregateId: ticket.id,
+          aggregateType: "ticket",
+          eventId: seedEventId("ticket", ticket.id, index),
+          payload: {
+            op: "ticket.create",
+            value: ticket,
+          },
+        });
         ticketsWritten += 1;
 
-        for (const record of makeSeedRecords(ticket, index, options)) {
-          yield* tx.put(recordStorePath(record.id), record);
+        for (const [recordIndex, record] of makeSeedRecords(ticket, index, options).entries()) {
+          yield* GitDbEvent.append(tx, {
+            aggregateId: record.id,
+            aggregateType: "record",
+            eventId: seedEventId("record", record.id, recordIndex),
+            payload: {
+              op: "record.add",
+              value: record,
+            },
+          });
           if (record.recordType === "comment") commentsWritten += 1;
         }
       }
@@ -392,20 +406,12 @@ function readString(name, value) {
   return value;
 }
 
-function issueStorePath(id) {
-  return `collections/issues/${shaPrefix(id)}/${id}.md`;
-}
-
-function recordStorePath(id) {
-  return `collections/records/${shaPrefix(id)}/${id}.json`;
-}
-
-function shaPrefix(id) {
-  return createHash("sha1").update(id).digest("hex").slice(0, 2);
-}
-
 function isoFor(index, offsetMs = 0) {
   return new Date(Date.UTC(2026, 5, 10, 8, 0, 0) + index * 60_000 + offsetMs).toISOString();
+}
+
+function seedEventId(kind, id, index) {
+  return `evt_${kind}_${id.replace(/[^A-Za-z0-9._@+-]+/g, "_")}_${String(index + 1).padStart(5, "0")}`;
 }
 
 function bodyFor(number, labels) {
@@ -453,7 +459,7 @@ Usage:
   node packages/database/scripts/seed-cycle-database.mjs [options]
 
 Options:
-  --tickets <number>              Number of tickets to upsert. Default: 1000
+  --tickets <number>              Number of ticket create events to append. Default: 1000
   --comments-per-ticket <number>  Visible comments per ticket. Default: 1
   --batch-size <number>           Tickets per GitDB commit. Default: 100
   --prefix <value>                Stable ticket ID prefix. Default: PERF
@@ -466,5 +472,5 @@ Options:
   --help                          Show this help
 
 Environment variables with the CYCLE_SEED_* prefix are also supported.
-Rerunning with the same prefix updates the same stable ticket IDs.`);
+Use a fresh GitDB database or purge the target ref before rerunning with the same prefix.`);
 }

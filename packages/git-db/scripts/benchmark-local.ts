@@ -1,9 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { Effect } from "effect";
-import { GitDbFilesystem, GitDbLive, Store } from "../src/index.ts";
-import type { StoreCollection, StoreServiceShape } from "../src/store/Store.ts";
+import { Event as GitDbEvent, GitDbFilesystem, GitDbLive, Store } from "../src/index.ts";
+import type { StoreServiceShape } from "../src/store/Store.ts";
 
 type Backend = "cli" | "filesystem";
 
@@ -27,7 +26,7 @@ type Issue = {
 
 type SampleRead = {
   readonly id: string;
-  readonly value: Issue | null;
+  readonly value: unknown;
 };
 
 type Timed<A> = {
@@ -83,10 +82,9 @@ const gitString = (args: ReadonlyArray<string>): string =>
     encoding: "utf8",
   }).trim();
 
-const documentPath = (collection: string, id: string): string =>
-  `collections/${collection}/${createHash("sha1").update(id).digest("hex").slice(0, 2)}/${id}.json`;
-
 const issueId = (index: number): string => `issue-${String(index).padStart(6, "0")}`;
+
+const eventId = (index: number): string => `evt_${String(index).padStart(6, "0")}`;
 
 const issueAt = (index: number): Issue => ({
   assignee: assignees[index % assignees.length] ?? "alex",
@@ -113,39 +111,6 @@ const logPhase = (message: string): void => {
   console.log(`[${new Date().toISOString()}] ${message}`);
 };
 
-const collectPages = <T, E, R>(
-  page: (cursor: string | undefined) => Effect.Effect<
-    {
-      readonly entries: ReadonlyArray<T>;
-      readonly nextCursor?: string;
-    },
-    E,
-    R
-  >,
-): Effect.Effect<
-  {
-    readonly pages: number;
-    readonly rows: number;
-  },
-  E,
-  R
-> =>
-  Effect.gen(function* () {
-    let cursor: string | undefined;
-    let pages = 0;
-    let rows = 0;
-
-    do {
-      const next = yield* page(cursor);
-
-      pages += 1;
-      rows += next.entries.length;
-      cursor = next.nextCursor;
-    } while (cursor !== undefined);
-
-    return { pages, rows };
-  });
-
 const seed = (store: StoreServiceShape, options: Options) =>
   Effect.gen(function* () {
     if (!options.append) {
@@ -159,25 +124,32 @@ const seed = (store: StoreServiceShape, options: Options) =>
     let writes = 0;
     const reportEvery = Math.max(1000, Math.floor(options.count / 10));
 
-    logPhase(`staging ${options.count} issues`);
+    logPhase(`staging ${options.count} issue create events`);
 
     for (let index = 0; index < options.count; index += 1) {
       const id = issueId(index);
       const value = issueAt(index);
-      const path = documentPath("issues", id);
 
-      yield* tx.put(path, value);
+      yield* GitDbEvent.append(tx, {
+        aggregateId: id,
+        aggregateType: "issue",
+        eventId: eventId(index),
+        payload: {
+          op: "issue.create",
+          value,
+        },
+      });
       writes += 1;
 
       if ((index + 1) % reportEvery === 0 || index + 1 === options.count) {
-        logPhase(`staged ${index + 1}/${options.count} issues`);
+        logPhase(`staged ${index + 1}/${options.count} events`);
       }
     }
 
     logPhase("writing GitDB snapshot");
 
     const snapshot = yield* tx.commit({
-      message: `Seed ${options.count} benchmark issues`,
+      message: `Seed ${options.count} benchmark issue events`,
     });
 
     return {
@@ -188,51 +160,56 @@ const seed = (store: StoreServiceShape, options: Options) =>
 
 const benchmark = (store: StoreServiceShape, options: Options) =>
   Effect.gen(function* () {
-    const issues = yield* store.collection<Issue>("issues");
-
-    logPhase("benchmarking cold first collection page");
+    logPhase("benchmarking cold event list");
 
     const coldFirstPage: Timed<ReadonlyArray<string>> = yield* timeEffect(
-      issues
-        .page({ limit: options.pageSize })
-        .pipe(Effect.map((page) => page.entries.map((entry) => entry.id))),
+      GitDbEvent.list(store).pipe(
+        Effect.map((events) => events.slice(0, options.pageSize).map((event) => event.eventId)),
+      ),
     );
 
-    logPhase("benchmarking warm first collection page");
+    logPhase("benchmarking warm event list");
 
     const warmFirstPage: Timed<ReadonlyArray<string>> = yield* timeEffect(
-      issues
-        .page({ limit: options.pageSize })
-        .pipe(Effect.map((page) => page.entries.map((entry) => entry.id))),
+      GitDbEvent.list(store).pipe(
+        Effect.map((events) => events.slice(0, options.pageSize).map((event) => event.eventId)),
+      ),
     );
 
-    logPhase("benchmarking cached collection page navigation");
+    logPhase("benchmarking event list pagination in memory");
 
     const pageNavigation: Timed<{ readonly pages: number; readonly rows: number }> =
-      yield* timeEffect(collectPages((cursor) => issues.page({ cursor, limit: options.pageSize })));
+      yield* timeEffect(
+        GitDbEvent.list(store).pipe(
+          Effect.map((events) => ({
+            pages: Math.ceil(events.length / options.pageSize),
+            rows: events.length,
+          })),
+        ),
+      );
 
     logPhase("benchmarking sample point reads");
 
     const randomReads: Timed<ReadonlyArray<SampleRead>> = yield* timeEffect(
-      readSamples(issues, options.count),
+      readSamples(store, options.count),
     );
 
-    logPhase("benchmarking full collection list with cached structure");
+    logPhase("benchmarking full event list");
 
-    const fullCollectionList: Timed<number> = yield* timeEffect(
-      issues.list().pipe(Effect.map((entries) => entries.length)),
+    const fullEventList: Timed<number> = yield* timeEffect(
+      GitDbEvent.list(store).pipe(Effect.map((entries) => entries.length)),
     );
 
     return {
       coldFirstPage,
-      fullCollectionList,
+      fullEventList,
       pageNavigation,
       randomReads,
       warmFirstPage,
     };
   });
 
-const readSamples = (collection: StoreCollection<Issue>, count: number) =>
+const readSamples = (store: StoreServiceShape, count: number) =>
   Effect.gen(function* () {
     const positions = [
       0,
@@ -245,10 +222,16 @@ const readSamples = (collection: StoreCollection<Issue>, count: number) =>
 
     for (const position of positions) {
       const id = issueId(Math.max(0, Math.min(count - 1, position)));
+      const path = yield* GitDbEvent.path({
+        aggregateId: id,
+        aggregateType: "issue",
+        eventId: eventId(Math.max(0, Math.min(count - 1, position))),
+      });
+      const document = yield* store.get(path);
 
       output.push({
         id,
-        value: yield* collection.get(id),
+        value: document?.json() ?? null,
       });
     }
 
@@ -303,20 +286,20 @@ const program = Effect.gen(function* () {
   printTimed(
     "seed transaction",
     seeded,
-    `${seeded.result.writes} documents, snapshot ${seeded.result.snapshotId}`,
+    `${seeded.result.writes} events, snapshot ${seeded.result.snapshotId}`,
   );
   printTimed(
-    "cold collection page",
+    "cold event list",
     results.coldFirstPage,
     `${results.coldFirstPage.result.length} ids: ${results.coldFirstPage.result.slice(0, 5).join(", ")}`,
   );
   printTimed(
-    "warm collection page",
+    "warm event list",
     results.warmFirstPage,
     `${results.warmFirstPage.result.length} ids: ${results.warmFirstPage.result.slice(0, 5).join(", ")}`,
   );
   printTimed(
-    "cached collection pages",
+    "event list pages",
     results.pageNavigation,
     `${results.pageNavigation.result.rows} rows over ${results.pageNavigation.result.pages} pages`,
   );
@@ -324,13 +307,20 @@ const program = Effect.gen(function* () {
     "sample point reads",
     results.randomReads,
     results.randomReads.result
-      .map((sample) => `${sample.id}:${sample.value?.status ?? "missing"}`)
+      .map((sample) => {
+        const value =
+          sample.value !== null && typeof sample.value === "object" && "value" in sample.value
+            ? (sample.value as { readonly value?: Issue }).value
+            : undefined;
+
+        return `${sample.id}:${value?.status ?? "missing"}`;
+      })
       .join(", "),
   );
   printTimed(
-    "full collection list",
-    results.fullCollectionList,
-    `${results.fullCollectionList.result} rows`,
+    "full event list",
+    results.fullEventList,
+    `${results.fullEventList.result} rows`,
   );
   printMemory();
 });

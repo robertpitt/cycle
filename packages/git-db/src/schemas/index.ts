@@ -1,4 +1,3 @@
-export * as Collection from "./Collection.ts";
 export * as Document from "./Document.ts";
 export * as Identifier from "./Identifier.ts";
 export * as Path from "./Path.ts";

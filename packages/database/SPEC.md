@@ -29,8 +29,8 @@ choice and expose enough information for callers and conformance tests to reason
 ## 3. Problem Statement
 
 `@cycle/ticket-db` exposes ticket domain operations directly over GitDB collections. That model is
-durable and local-first, but read-heavy application workflows must still work through document
-collections, tree indexes, and snapshot history rather than through a relational query model.
+durable and local-first, but read-heavy application workflows must still work through event replay,
+tree indexes, and snapshot history rather than through a relational query model.
 
 Cycle needs a database package that lets the application treat repository work data like a normal
 ticketing database while preserving GitDB as the only durable repository storage layer. The
@@ -149,18 +149,24 @@ watched ref: refs/gitdb/cycle/main
 The implementation MUST poll the local ref `refs/gitdb/cycle/main` for each opened repository.
 Missing refs MUST be treated as an empty repository database until the first write creates the ref.
 
-### 7.3 Existing Data Compatibility
+### 7.3 Event Store Boundary
 
-The package MUST read the existing Cycle GitDB collection model:
+The package MUST read and write the Cycle GitDB event model only. Committed domain state is
+represented by immutable event files under the GitDB event namespace, and SQLite state MUST be
+rebuilt by folding those events.
 
-- `issues`: committed issue documents, primarily Markdown with structured frontmatter.
-- `records`: linked records for comments, status changes, provenance, executions, reviews, imports,
-  conflicts, and extension record types.
-- `drafts`: durable draft sessions stored in GitDB.
+The package MUST NOT read or write the removed collection document model:
 
-The package SHOULD support legacy JSON issue documents long enough to migrate existing local data.
-When a legacy JSON issue is updated through the new package, the write path SHOULD serialize the
-issue back as the current Markdown issue format.
+- `collections/issues`
+- `collections/records`
+- `collections/drafts`
+- `collections/users`
+- `collections/labels`
+- `collections/views`
+- `collections/templates`
+- `metadata/repository.json`
+
+There is no in-package compatibility or migration path for the removed collection model.
 
 ### 7.4 Draft Boundary
 
@@ -502,9 +508,9 @@ write(repository_id, command):
   acquire repository write lock
   active_snapshot = projection_state.active_snapshot_id
   gitdb_tx = begin GitDB transaction at refs/gitdb/cycle/main
-  current_domain_state = read required current documents from GitDB or active SQLite
+  current_domain_state = read required current state from active SQLite
   validate command against domain rules
-  serialize changed issue/record documents
+  append immutable domain event files
   commit gitdb_tx with author, committer, and message
   new_snapshot = committed snapshot id
   resync repository from active_snapshot to new_snapshot
@@ -677,11 +683,10 @@ Conformance tests MUST cover:
 12. Commit graph parent-edge materialization.
 13. Invalid issue object skipped with warning while other tickets remain queryable.
 14. Invalid comment skipped with warning while the ticket remains queryable.
-15. Legacy issue read and update-to-Markdown migration.
-16. Draft commit writes to GitDB and appears in SQLite only after commit.
-17. GitDB pointer conflict mapped to a typed database failure.
-18. Full rebuild fallback when incremental diff is unavailable.
-19. Package shutdown closes polling fibers and SQLite resources.
+15. Draft commit writes to GitDB and appears in SQLite only after commit.
+16. GitDB pointer conflict mapped to a typed database failure.
+17. Full rebuild fallback when incremental diff is unavailable.
+18. Package shutdown closes polling fibers and SQLite resources.
 
 ## 18. Implementation Checklist
 

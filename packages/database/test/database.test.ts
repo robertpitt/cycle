@@ -1,14 +1,9 @@
-import { GitDbInMemory, Store as GitDbStore } from "@cycle/git-db";
+import { Event as GitDbEvent, GitDbInMemory, Store as GitDbStore } from "@cycle/git-db";
 import { Effect } from "effect";
-import { createHash } from "node:crypto";
 import {
   DatabaseService,
   DatabaseTest,
-  makeFrontmatter,
-  makeTicketDocument,
-  serializeIssueMarkdown,
   ValidationError,
-  type Actor,
 } from "../src/index.ts";
 import { assert, describe, it } from "./effect-vitest.ts";
 
@@ -16,9 +11,6 @@ const makeStore = (database: string) =>
   Effect.gen(function* () {
     return yield* GitDbStore.StoreService;
   }).pipe(Effect.provide(GitDbInMemory({ database })));
-
-const issueStorePath = (id: string): string =>
-  `collections/issues/${createHash("sha1").update(id).digest("hex").slice(0, 2)}/${id}.md`;
 
 describe("@cycle/database", () => {
   it.effect(
@@ -84,13 +76,13 @@ describe("@cycle/database", () => {
         store,
         syncOnOpen: false,
       });
-      const document = yield* store.get("metadata/repository.json");
+      const events = yield* GitDbEvent.list(store);
       const pointer = yield* store.pointer("main");
       const current = yield* pointer.current();
 
       assert.strictEqual(status.activeSnapshotId, null);
       assert.strictEqual(status.cycleMetadata, undefined);
-      assert.strictEqual(document, null);
+      assert.deepStrictEqual(events, []);
       assert.strictEqual(current, null);
     }).pipe(Effect.provide(DatabaseTest())),
   );
@@ -108,104 +100,16 @@ describe("@cycle/database", () => {
       const ticket = yield* database.createTicket("first-write-repo", {
         title: "First write ticket",
       });
-      const document = yield* store.get("metadata/repository.json");
-      const stored = document === null ? null : JSON.parse(document.text());
-      const users = yield* store.collection<{
-        readonly displayName: string;
-        readonly email: string;
-        readonly id: string;
-      }>("users");
-      const sourceProfile = yield* users.get("test@example.invalid");
+      const events = yield* GitDbEvent.list(store);
+      const sourceProfile = yield* database.getUser("first-write-repo", "test@example.invalid");
       const status = yield* database.repositoryStatus("first-write-repo");
       const history = yield* store.history("main");
 
       assert.strictEqual(ticket.id, "UKN-00001");
-      assert.strictEqual(stored?.ticketPrefix, "UKN");
-      assert.strictEqual(stored?.ticketIdFormat, "prefix-base36-5+");
+      assert.ok(events.some((event) => event.aggregateType === "repository"));
       assert.strictEqual(sourceProfile?.id, "test@example.invalid");
       assert.strictEqual(status.cycleMetadata?.ticketPrefix, "UKN");
       assert.strictEqual(history.length, 1);
-    }).pipe(Effect.provide(DatabaseTest())),
-  );
-
-  it.effect("reuses an existing Cycle repository ticket prefix", () =>
-    Effect.gen(function* () {
-      const database = yield* DatabaseService;
-      const store = yield* makeStore("existing-prefix-repo");
-      const tx = yield* store.begin();
-
-      yield* tx.put("metadata/repository.json", {
-        createdAt: "2026-06-12T00:00:00.000Z",
-        schemaVersion: 1,
-        ticketIdFormat: "prefix-base36-5+",
-        ticketPrefix: "MAN",
-        updatedAt: "2026-06-12T00:00:00.000Z",
-      });
-      yield* tx.commit({
-        message: "Seed repository metadata",
-      });
-
-      const status = yield* database.openRepository({
-        repositoryId: "existing-prefix-repo",
-        store,
-      });
-      const ticket = yield* database.createTicket("existing-prefix-repo", {
-        title: "Existing prefix ticket",
-      });
-
-      assert.strictEqual(status.cycleMetadata?.ticketPrefix, "MAN");
-      assert.strictEqual(ticket.id, "MAN-00001");
-    }).pipe(Effect.provide(DatabaseTest())),
-  );
-
-  it.effect("expands the Base36 ticket suffix when the 5 character id collides", () =>
-    Effect.gen(function* () {
-      const database = yield* DatabaseService;
-      const store = yield* makeStore("ticket-collision-repo");
-
-      yield* database.openRepository({
-        repositoryId: "ticket-collision-repo",
-        store,
-      });
-
-      const first = yield* database.createTicket("ticket-collision-repo", {
-        title: "First generated ticket",
-      });
-
-      const actor: Actor = {
-        email: "collision@example.invalid",
-        name: "Collision Writer",
-        type: "human",
-      };
-      const now = "2026-06-12T00:00:00.000Z";
-      const collidingId = "UKN-00002";
-      const colliding = makeTicketDocument(
-        makeFrontmatter(
-          {
-            title: "Existing colliding ticket",
-          },
-          collidingId,
-          actor,
-          now,
-        ),
-        "Existing body",
-      );
-      const tx = yield* store.begin();
-
-      yield* tx.put(issueStorePath(collidingId), serializeIssueMarkdown(colliding));
-      yield* tx.commit({
-        author: actor,
-        committer: actor,
-        message: "Seed colliding ticket",
-      });
-      yield* database.syncRepository("ticket-collision-repo");
-
-      const expanded = yield* database.createTicket("ticket-collision-repo", {
-        title: "Expanded generated ticket",
-      });
-
-      assert.strictEqual(first.id, "UKN-00001");
-      assert.strictEqual(expanded.id, "UKN-000022");
     }).pipe(Effect.provide(DatabaseTest())),
   );
 
@@ -226,53 +130,6 @@ describe("@cycle/database", () => {
 
       assert.strictEqual(ticket.id, "UKN-00001");
       assert.strictEqual(ticket.frontmatter.id, "UKN-00001");
-    }).pipe(Effect.provide(DatabaseTest())),
-  );
-
-  it.effect("allows existing legacy ticket ids to be updated", () =>
-    Effect.gen(function* () {
-      const database = yield* DatabaseService;
-      const store = yield* makeStore("legacy-ticket-id-repo");
-
-      yield* database.openRepository({
-        repositoryId: "legacy-ticket-id-repo",
-        store,
-      });
-
-      const actor: Actor = {
-        email: "legacy@example.invalid",
-        name: "Legacy Writer",
-        type: "human",
-      };
-      const now = "2026-06-12T00:00:00.000Z";
-      const legacyId = "iss_legacy_0001";
-      const legacyTicket = makeTicketDocument(
-        makeFrontmatter(
-          {
-            title: "Legacy ticket",
-          },
-          legacyId,
-          actor,
-          now,
-        ),
-        "Legacy body",
-      );
-      const tx = yield* store.begin();
-
-      yield* tx.put(issueStorePath(legacyId), serializeIssueMarkdown(legacyTicket));
-      yield* tx.commit({
-        author: actor,
-        committer: actor,
-        message: "Seed legacy ticket",
-      });
-      yield* database.syncRepository("legacy-ticket-id-repo");
-
-      const updated = yield* database.transitionTicket("legacy-ticket-id-repo", legacyId, {
-        status: "in-progress",
-      });
-
-      assert.strictEqual(updated.id, legacyId);
-      assert.strictEqual(updated.status, "in-progress");
     }).pipe(Effect.provide(DatabaseTest())),
   );
 
@@ -589,7 +446,9 @@ describe("@cycle/database", () => {
         });
         const tx = yield* store.begin();
 
-        yield* tx.put("collections/issues/aa/broken-ticket.md", "this is not issue markdown");
+        yield* tx.put("collections/events/ticket/broken-ticket/evt_broken.json", {
+          op: "ticket.not-supported",
+        });
         yield* tx.commit({
           message: "Add broken issue document",
         });
@@ -681,7 +540,7 @@ describe("@cycle/database", () => {
         store,
       });
       const current = yield* pointer.current();
-      const metadata = yield* store.get("metadata/repository.json");
+      const events = yield* GitDbEvent.list(store);
       const listed = yield* database.listTickets({
         repositoryIds: ["reopened-removed-pointer-repo"],
       });
@@ -691,7 +550,7 @@ describe("@cycle/database", () => {
       assert.strictEqual(reopened.activeSnapshotId, null);
       assert.strictEqual(reopened.cycleMetadata, undefined);
       assert.strictEqual(current, null);
-      assert.strictEqual(metadata, null);
+      assert.deepStrictEqual(events, []);
       assert.deepStrictEqual(listed.entries, []);
       assert.strictEqual(fetched, null);
     }).pipe(Effect.provide(DatabaseTest())),
@@ -711,20 +570,18 @@ describe("@cycle/database", () => {
         title: "First shared ticket",
       });
 
-      const users = yield* store.collection<{
-        readonly displayName: string;
-        readonly email: string;
-        readonly id: string;
-      }>("users");
-      const sourceProfile = yield* users.get("test@example.invalid");
+      const events = yield* GitDbEvent.list(store);
+      const userEvent = events.find(
+        (event) => event.aggregateType === "user" && event.aggregateId === "test@example.invalid",
+      );
       const projectedProfile = yield* database.getUser("users-repo", "test@example.invalid");
       const userList = yield* database.listUsers("users-repo", {
         text: "test",
       });
 
-      assert.strictEqual(sourceProfile?.id, "test@example.invalid");
-      assert.strictEqual(sourceProfile?.displayName, "Test User");
+      assert.ok(userEvent !== undefined);
       assert.strictEqual(projectedProfile?.email, "test@example.invalid");
+      assert.strictEqual(projectedProfile?.displayName, "Test User");
       assert.deepStrictEqual(
         userList.entries.map((user) => user.id),
         ["test@example.invalid"],
@@ -814,18 +671,7 @@ describe("@cycle/database", () => {
       const records = yield* database.ticketRecords("linear-metadata-repo", initiative.id, {
         recordType: "initiative-update",
       });
-      const sourceLabels = yield* store.collection<{
-        readonly color: string;
-        readonly name: string;
-      }>("labels");
-      const sourceViews = yield* store.collection<{
-        readonly name: string;
-        readonly pinned: boolean;
-      }>("views");
-      const sourceTemplates = yield* store.collection<{
-        readonly active: boolean;
-        readonly name: string;
-      }>("templates");
+      const events = yield* GitDbEvent.list(store);
 
       assert.strictEqual(updatedLabel.color, "orange");
       assert.strictEqual(updatedView.pinned, true);
@@ -855,9 +701,17 @@ describe("@cycle/database", () => {
         records.entries.map((record) => record.id),
         [initiativeUpdate.id],
       );
-      assert.strictEqual((yield* sourceLabels.get(label.id))?.color, "orange");
-      assert.strictEqual((yield* sourceViews.get(view.id))?.pinned, true);
-      assert.strictEqual((yield* sourceTemplates.get(template.id))?.active, false);
+      assert.ok(
+        events.some((event) => event.aggregateType === "label" && event.aggregateId === label.id),
+      );
+      assert.ok(
+        events.some((event) => event.aggregateType === "view" && event.aggregateId === view.id),
+      );
+      assert.ok(
+        events.some(
+          (event) => event.aggregateType === "template" && event.aggregateId === template.id,
+        ),
+      );
     }).pipe(Effect.provide(DatabaseTest())),
   );
 

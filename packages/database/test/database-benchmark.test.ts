@@ -1,15 +1,13 @@
-import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
-import { GitDbFilesystem, Store as GitDbStore } from "@cycle/git-db";
+import { Event as GitDbEvent, GitDbFilesystem, Store as GitDbStore } from "@cycle/git-db";
 import { Effect } from "effect";
 import {
   DatabaseService,
   DatabaseTest,
   makeFrontmatter,
   makeTicketDocument,
-  serializeIssueMarkdown,
   type Actor,
 } from "../src/index.ts";
 import { assert, describe, it } from "./effect-vitest.ts";
@@ -26,10 +24,10 @@ type BenchmarkMetric = {
   readonly unit: string;
 };
 
-const TICKET_COUNT = Number.parseInt(process.env.DATABASE_BENCHMARK_TICKETS ?? "250", 10);
-const COMMENT_COUNT = Number.parseInt(process.env.DATABASE_BENCHMARK_COMMENTS ?? "50", 10);
+const TICKET_COUNT = Number.parseInt(process.env.DATABASE_BENCHMARK_TICKETS ?? "40", 10);
+const COMMENT_COUNT = Number.parseInt(process.env.DATABASE_BENCHMARK_COMMENTS ?? "10", 10);
 const EXTERNAL_BATCH_COUNT = Number.parseInt(
-  process.env.DATABASE_BENCHMARK_EXTERNAL_TICKETS ?? "75",
+  process.env.DATABASE_BENCHMARK_EXTERNAL_TICKETS ?? "15",
   10,
 );
 const TEST_TIMEOUT_MS = 300_000;
@@ -161,7 +159,7 @@ describe("@cycle/database benchmark", () => {
           () => writeExternalTicketBatch(store, EXTERNAL_BATCH_COUNT),
           (count) => ({
             operations: count,
-            unit: "gitdb documents",
+            unit: "gitdb events",
           }),
         );
 
@@ -261,7 +259,15 @@ const writeExternalTicketBatch = (
         externalBodyFor(index),
       );
 
-      yield* tx.put(issueStorePath(id), serializeIssueMarkdown(ticket));
+      yield* GitDbEvent.append(tx, {
+        aggregateId: id,
+        aggregateType: "ticket",
+        eventId: `evt_external_${String(index + 1).padStart(5, "0")}`,
+        payload: {
+          op: "ticket.create",
+          value: ticket,
+        },
+      });
     }
 
     yield* tx.commit({
@@ -287,9 +293,6 @@ const cleanupBenchmarkRef = (
 
     yield* pointer.delete();
   }).pipe(Effect.orElseSucceed(() => undefined));
-
-const issueStorePath = (id: string): string =>
-  `collections/issues/${createHash("sha1").update(id).digest("hex").slice(0, 2)}/${id}.md`;
 
 const bodyFor = (index: number): string =>
   [

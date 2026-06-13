@@ -1,4 +1,3 @@
-export * as Collection from "./Collection.ts";
 export * as Document from "./Document.ts";
 export * as Layer from "./Layer.ts";
 export * as Pointer from "./Pointer.ts";

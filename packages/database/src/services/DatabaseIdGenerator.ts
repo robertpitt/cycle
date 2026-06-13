@@ -4,6 +4,7 @@ import { validationError } from "../errors.ts";
 
 export type DatabaseIdGeneratorShape = {
   readonly draftId: Effect.Effect<string, DatabaseFailure>;
+  readonly eventId: Effect.Effect<string, DatabaseFailure>;
   readonly labelId: Effect.Effect<string, DatabaseFailure>;
   readonly recordId: Effect.Effect<string, DatabaseFailure>;
   readonly templateId: Effect.Effect<string, DatabaseFailure>;
@@ -19,6 +20,7 @@ export class DatabaseIdGenerator extends Context.Service<
 export const makeDeterministicIdGenerator = (prefix = "test"): DatabaseIdGeneratorShape => {
   let ticket = 0;
   let draft = 0;
+  let event = 0;
   let label = 0;
   let record = 0;
   let template = 0;
@@ -35,6 +37,7 @@ export const makeDeterministicIdGenerator = (prefix = "test"): DatabaseIdGenerat
 
   return {
     draftId: Effect.sync(() => next("drf", ++draft)),
+    eventId: Effect.sync(() => next("evt", ++event)),
     labelId: Effect.sync(() => next("lbl", ++label)),
     recordId: Effect.sync(() => next("rec", ++record)),
     templateId: Effect.sync(() => next("tpl", ++template)),
@@ -72,6 +75,7 @@ export const DatabaseIdGeneratorLive = Layer.effect(
 
     return DatabaseIdGenerator.of({
       draftId: makeId("drf"),
+      eventId: makeId("evt"),
       labelId: makeId("lbl"),
       recordId: makeId("rec"),
       templateId: makeId("tpl"),

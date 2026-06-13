@@ -1,14 +1,12 @@
-import { type CollectionOptions, type Store as GitDbStore, type SyncResult } from "@cycle/git-db";
+import { Event as GitDbEvent, type Store as GitDbStore, type SyncResult } from "@cycle/git-db";
 import { Cause, Context, Effect, Fiber, Layer, Queue, Result } from "effect";
 import {
   CURRENT_SCHEMA_VERSION,
   defaultIssueBody,
   makeFrontmatter,
+  makeIssueFrontmatter,
   makeTicketDocument,
   normalizeKey,
-  parseIssueMarkdown,
-  parseLegacyIssueJson,
-  serializeIssueMarkdown,
   stripUndefined,
   updatedDateKey,
   updateTicketDocument,
@@ -31,6 +29,7 @@ import {
   type IssueTemplatePage,
   type IssueTemplateQuery,
   type IssueRelation,
+  type IssueFrontmatter,
   type LabelDefinitionDocument,
   type LabelDefinitionPage,
   type LabelDefinitionQuery,
@@ -91,18 +90,77 @@ type RepositoryRuntime = {
   readonly worktreePath?: string;
 };
 
-type SourceDocument = {
-  readonly bytes: string;
-  readonly id: string;
-  readonly path: string;
-};
-
 type CommitChange = {
   readonly changeType: "added" | "deleted" | "modified";
   readonly objectId?: string;
   readonly objectType: string;
   readonly path: string;
   readonly ticketId?: string;
+};
+
+type DatabaseEventPayload =
+  | {
+      readonly op: "repository.metadata.set";
+      readonly value: CycleRepositoryMetadata;
+    }
+  | {
+      readonly op: "ticket.create" | "ticket.replace";
+      readonly value: TicketDocument;
+    }
+  | {
+      readonly field: keyof IssueFrontmatter | "body";
+      readonly op: "ticket.update";
+      readonly value: unknown;
+    }
+  | {
+      readonly op: "ticket.archive" | "ticket.delete" | "ticket.restore";
+      readonly reason?: string;
+    }
+  | {
+      readonly op: "record.add";
+      readonly value: LinkedRecord;
+    }
+  | {
+      readonly op: "draft.create" | "draft.update" | "draft.commit";
+      readonly value: TicketDraftDocument;
+    }
+  | {
+      readonly op: "user.upsert";
+      readonly value: UserProfileDocument;
+    }
+  | {
+      readonly op: "label.upsert";
+      readonly value: LabelDefinitionDocument;
+    }
+  | {
+      readonly op: "view.upsert";
+      readonly value: SavedViewDocument;
+    }
+  | {
+      readonly op: "view.delete";
+    }
+  | {
+      readonly op: "template.upsert";
+      readonly value: IssueTemplateDocument;
+    };
+
+type FoldedEvents = {
+  cycleMetadata?: CycleRepositoryMetadata;
+  readonly drafts: Map<string, TicketDraftDocument>;
+  readonly labels: Map<string, LabelDefinitionDocument>;
+  readonly records: Map<string, LinkedRecord>;
+  readonly templates: Map<string, IssueTemplateDocument>;
+  readonly tickets: Map<string, TicketDocument>;
+  readonly users: Map<string, UserProfileDocument>;
+  readonly views: Map<string, SavedViewDocument>;
+  readonly warnings: ReadonlyArray<MaterializationWarning>;
+};
+
+type EventContext = {
+  readonly actor?: Actor;
+  readonly path: string;
+  readonly snapshotId: string;
+  readonly timestamp: string;
 };
 
 export type DatabaseServiceOptions = {
@@ -373,31 +431,10 @@ export class DatabaseService extends Context.Service<DatabaseService, DatabaseSe
   "@cycle/database/DatabaseService",
 ) {}
 
-const ISSUE_COLLECTION = "issues";
-const RECORD_COLLECTION = "records";
-const DRAFT_COLLECTION = "drafts";
-const USER_COLLECTION = "users";
-const LABEL_COLLECTION = "labels";
-const VIEW_COLLECTION = "views";
-const TEMPLATE_COLLECTION = "templates";
 const DEFAULT_POINTER = "main";
 const DEFAULT_TICKET_PREFIX = "UKN";
-const REPOSITORY_METADATA_PATH = "metadata/repository.json";
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;
-const LEGACY_TICKET_ID_PATTERN = /^iss_[A-Za-z0-9._-]+$/u;
 const TICKET_ID_PATTERN = /^[A-Z0-9]{2,5}-[0-9A-Z]{5,}$/u;
-
-const issueCollectionOptions: CollectionOptions<TicketDocument> = {
-  codec: {
-    decode: (document) => parseIssueMarkdown(document.text()),
-    encode: serializeIssueMarkdown,
-  },
-  extension: "md",
-};
-
-const legacyIssueCollectionOptions: CollectionOptions<TicketDocument> = {
-  extension: "json",
-};
 
 const makeDatabaseBackgroundRunner = Effect.gen(function* () {
   const queue = yield* Queue.unbounded<DatabaseBackgroundTask>();
@@ -788,7 +825,61 @@ export const makeDatabaseService = (
       return written.result;
     });
 
+  const appendEvent = (
+    tx: GitDbStore.Transaction,
+    aggregateType: string,
+    aggregateId: string,
+    payload: DatabaseEventPayload,
+  ): Effect.Effect<string, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const eventId = yield* nextEventId(ids);
+
+      return yield* storage(
+        `append ${aggregateType} event`,
+        GitDbEvent.append(tx, {
+          aggregateId,
+          aggregateType,
+          eventId,
+          payload: stripUndefined(payload) as Readonly<Record<string, unknown>>,
+        }),
+      );
+    });
+
+  const appendTicketUpdateEvents = (
+    tx: GitDbStore.Transaction,
+    current: TicketDocument,
+    next: TicketDocument,
+  ): Effect.Effect<void, DatabaseFailure> =>
+    Effect.gen(function* () {
+      if (current.body !== next.body) {
+        yield* appendEvent(tx, "ticket", next.id, {
+          field: "body",
+          op: "ticket.update",
+          value: next.body,
+        });
+      }
+
+      const fields = new Set([
+        ...Object.keys(current.frontmatter),
+        ...Object.keys(next.frontmatter),
+      ] as Array<keyof IssueFrontmatter>);
+
+      for (const field of [...fields].sort()) {
+        const before = current.frontmatter[field];
+        const after = next.frontmatter[field];
+
+        if (JSON.stringify(before) === JSON.stringify(after)) continue;
+
+        yield* appendEvent(tx, "ticket", next.id, {
+          field,
+          op: "ticket.update",
+          value: after ?? null,
+        });
+      }
+    });
+
   const ensureActorUserProfile = (
+    repository: RepositoryRuntime,
     tx: GitDbStore.Transaction,
     actor: Actor,
     now: string,
@@ -802,11 +893,7 @@ export const makeDatabaseService = (
       }
 
       const userId = yield* normalizeUserIdEffect(actor.email);
-      const users = yield* storage(
-        "open user transaction collection",
-        tx.collection<UserProfileDocument>(USER_COLLECTION),
-      );
-      const existing = yield* storage("read actor user profile", users.get(userId));
+      const existing = projection.getUser(repository.repositoryId, userId);
 
       if (existing !== null && existing.displayName === actor.name) return;
       if (existing !== null && existing.updatedAt > now) return;
@@ -825,63 +912,14 @@ export const makeDatabaseService = (
         updatedAt: now,
       };
 
-      yield* storage(
-        "put actor user profile",
-        users.put(userId, stripUndefined(next) as UserProfileDocument),
-      );
-    });
-
-  const readCycleRepositoryMetadata = (
-    store: GitDbStore.StoreServiceShape,
-    from?: string,
-  ): Effect.Effect<CycleRepositoryMetadata | undefined, DatabaseFailure> =>
-    Effect.gen(function* () {
-      const document = yield* storage(
-        "read Cycle repository metadata",
-        from === undefined
-          ? store.get(REPOSITORY_METADATA_PATH)
-          : store.get(REPOSITORY_METADATA_PATH, { from }),
-      );
-
-      return document === null
-        ? undefined
-        : yield* parseCycleRepositoryMetadataTextEffect(document.text());
-    });
-
-  const ensureCycleRepositoryMetadataInTransaction = (
-    tx: GitDbStore.Transaction,
-    now: string,
-  ): Effect.Effect<
-    {
-      readonly created: boolean;
-      readonly metadata: CycleRepositoryMetadata;
-    },
-    DatabaseFailure
-  > =>
-    Effect.gen(function* () {
-      const existing = yield* storage(
-        "read transactional Cycle repository metadata",
-        tx.get(REPOSITORY_METADATA_PATH),
-      );
-
-      if (existing !== null) {
-        return {
-          created: false,
-          metadata: yield* parseCycleRepositoryMetadataTextEffect(existing.text()),
-        };
-      }
-
-      const metadata = makeCycleRepositoryMetadata(DEFAULT_TICKET_PREFIX, now);
-
-      yield* storage("put Cycle repository metadata", tx.put(REPOSITORY_METADATA_PATH, metadata));
-
-      return {
-        created: true,
-        metadata,
-      };
+      yield* appendEvent(tx, "user", userId, {
+        op: "user.upsert",
+        value: stripUndefined(next) as UserProfileDocument,
+      });
     });
 
   const ensureDefaultWorkflowMetadataInTransaction = (
+    repository: RepositoryRuntime,
     tx: GitDbStore.Transaction,
     actor: Actor,
     now: string,
@@ -893,48 +931,57 @@ export const makeDatabaseService = (
     DatabaseFailure
   > =>
     Effect.gen(function* () {
-      const metadata = yield* ensureCycleRepositoryMetadataInTransaction(tx, now);
+      const metadata =
+        repository.cycleMetadata ?? makeCycleRepositoryMetadata(DEFAULT_TICKET_PREFIX, now);
       const actorUserId =
         actor.type === "human" && actor.email !== undefined && actor.email.trim().length > 0
           ? yield* normalizeUserIdEffect(actor.email)
           : undefined;
       const defaults = defaultRepositoryMetadata(actor, now, actorUserId);
-      const labels = yield* storage(
-        "open default label transaction collection",
-        tx.collection<LabelDefinitionDocument>(LABEL_COLLECTION),
-      );
-      const views = yield* storage(
-        "open default view transaction collection",
-        tx.collection<SavedViewDocument>(VIEW_COLLECTION),
-      );
-      const templates = yield* storage(
-        "open default template transaction collection",
-        tx.collection<IssueTemplateDocument>(TEMPLATE_COLLECTION),
-      );
-      let changed = metadata.created;
+      let changed = repository.cycleMetadata === undefined;
+
+      if (repository.cycleMetadata === undefined) {
+        yield* appendEvent(tx, "repository", "_", {
+          op: "repository.metadata.set",
+          value: metadata,
+        });
+      }
 
       for (const label of defaults.labels) {
-        if ((yield* storage("read default label", labels.get(label.id))) === null) {
-          yield* storage("put default label", labels.put(label.id, label));
+        if (
+          !projection
+            .listLabels(repository.repositoryId)
+            .entries.some((entry) => entry.id === label.id)
+        ) {
+          yield* appendEvent(tx, "label", label.id, {
+            op: "label.upsert",
+            value: label,
+          });
           changed = true;
         }
       }
       for (const view of defaults.views) {
-        if ((yield* storage("read default view", views.get(view.id))) === null) {
-          yield* storage("put default view", views.put(view.id, view));
+        if (projection.getView(repository.repositoryId, view.id) === null) {
+          yield* appendEvent(tx, "view", view.id, {
+            op: "view.upsert",
+            value: view,
+          });
           changed = true;
         }
       }
       for (const template of defaults.templates) {
-        if ((yield* storage("read default template", templates.get(template.id))) === null) {
-          yield* storage("put default template", templates.put(template.id, template));
+        if (projection.getTemplate(repository.repositoryId, template.id) === null) {
+          yield* appendEvent(tx, "template", template.id, {
+            op: "template.upsert",
+            value: template,
+          });
           changed = true;
         }
       }
 
       return {
         changed,
-        metadata: metadata.metadata,
+        metadata,
       };
     });
 
@@ -946,7 +993,7 @@ export const makeDatabaseService = (
   ): Effect.Effect<GitDbStore.Transaction, DatabaseFailure> =>
     Effect.gen(function* () {
       const tx = yield* storage(`begin ${label}`, repository.store.begin());
-      yield* ensureDefaultWorkflowMetadataInTransaction(tx, actor, now);
+      yield* ensureDefaultWorkflowMetadataInTransaction(repository, tx, actor, now);
       return tx;
     });
 
@@ -955,10 +1002,6 @@ export const makeDatabaseService = (
   ): Effect.Effect<string, DatabaseFailure> =>
     Effect.gen(function* () {
       const prefix = repository.cycleMetadata?.ticketPrefix ?? DEFAULT_TICKET_PREFIX;
-      const issues = yield* storage(
-        "open issue collection for ticket id generation",
-        repository.store.collection<TicketDocument>(ISSUE_COLLECTION, issueCollectionOptions),
-      );
 
       for (let attempt = 0; attempt < 100; attempt += 1) {
         const seed = yield* normalizeTicketSeedEffect(yield* ids.ticketId);
@@ -968,10 +1011,7 @@ export const makeDatabaseService = (
 
           if (!TICKET_ID_PATTERN.test(candidate)) continue;
           if (projection.getTicket(repository.repositoryId, candidate) !== null) continue;
-
-          const existing = yield* storage("check ticket id collision", issues.get(candidate));
-
-          if (existing === null) return candidate;
+          return candidate;
         }
       }
 
@@ -992,9 +1032,14 @@ export const makeDatabaseService = (
             "begin seed default repository metadata",
             repository.store.begin(),
           );
-          const defaults = yield* ensureDefaultWorkflowMetadataInTransaction(tx, actor, now);
+          const defaults = yield* ensureDefaultWorkflowMetadataInTransaction(
+            repository,
+            tx,
+            actor,
+            now,
+          );
 
-          yield* ensureActorUserProfile(tx, actor, now);
+          yield* ensureActorUserProfile(repository, tx, actor, now);
 
           if (!defaults.changed) {
             yield* tx.abort();
@@ -1040,15 +1085,7 @@ export const makeDatabaseService = (
             const recordId = yield* ids.recordId;
             const statusRecordId = yield* ids.recordId;
             const tx = yield* beginWriteTransaction(repository, "create ticket", actor, now);
-            const issues = yield* storage(
-              "open issue transaction collection",
-              tx.collection<TicketDocument>(ISSUE_COLLECTION, issueCollectionOptions),
-            );
-            const records = yield* storage(
-              "open record transaction collection",
-              tx.collection<LinkedRecord>(RECORD_COLLECTION),
-            );
-            yield* ensureActorUserProfile(tx, actor, now);
+            yield* ensureActorUserProfile(repository, tx, actor, now);
             const provenance = initialProvenanceRecord(
               id,
               makeRecordId(id, "provenance", recordId),
@@ -1064,9 +1101,18 @@ export const makeDatabaseService = (
               ticket.status,
             );
 
-            yield* storage("put ticket", issues.put(id, ticket));
-            yield* storage("put provenance record", records.put(provenance.id, provenance));
-            yield* storage("put status-change record", records.put(status.id, status));
+            yield* appendEvent(tx, "ticket", id, {
+              op: "ticket.create",
+              value: ticket,
+            });
+            yield* appendEvent(tx, "record", provenance.id, {
+              op: "record.add",
+              value: provenance,
+            });
+            yield* appendEvent(tx, "record", status.id, {
+              op: "record.add",
+              value: status,
+            });
 
             const snapshot = yield* storage(
               "commit create ticket",
@@ -1120,32 +1166,16 @@ export const makeDatabaseService = (
         (repository) =>
           Effect.gen(function* () {
             const tx = yield* beginWriteTransaction(repository, "update ticket", actor, now);
-            const issues = yield* storage(
-              "open issue transaction collection",
-              tx.collection<TicketDocument>(ISSUE_COLLECTION, issueCollectionOptions),
-            );
-            const legacyIssues = yield* storage(
-              "open legacy issue transaction collection",
-              tx.collection<TicketDocument>(ISSUE_COLLECTION, legacyIssueCollectionOptions),
-            );
-            const records = yield* storage(
-              "open record transaction collection",
-              tx.collection<LinkedRecord>(RECORD_COLLECTION),
-            );
-            yield* ensureActorUserProfile(tx, actor, now);
+            yield* ensureActorUserProfile(repository, tx, actor, now);
 
-            yield* storage("put updated ticket", issues.put(ticketId, next));
-            yield* storage("delete legacy issue", legacyIssues.delete(ticketId));
+            yield* appendTicketUpdateEvents(tx, current, next);
 
             if (next.status !== current.status) {
               const recordId = makeRecordId(ticketId, "status-change", yield* ids.recordId);
-              yield* storage(
-                "put status-change record",
-                records.put(
-                  recordId,
-                  statusChangeRecord(ticketId, recordId, actor, now, current.status, next.status),
-                ),
-              );
+              yield* appendEvent(tx, "record", recordId, {
+                op: "record.add",
+                value: statusChangeRecord(ticketId, recordId, actor, now, current.status, next.status),
+              });
             }
 
             const snapshot = yield* storage(
@@ -1182,26 +1212,27 @@ export const makeDatabaseService = (
       (repository) =>
         Effect.gen(function* () {
           const tx = yield* beginWriteTransaction(repository, command, actor, now);
-          const issues = yield* storage(
-            `open issue transaction collection for ${command}`,
-            tx.collection<TicketDocument>(ISSUE_COLLECTION, issueCollectionOptions),
-          );
-          const legacyIssues = yield* storage(
-            `open legacy issue transaction collection for ${command}`,
-            tx.collection<TicketDocument>(ISSUE_COLLECTION, legacyIssueCollectionOptions),
-          );
-          const records = yield* storage(
-            `open record transaction collection for ${command}`,
-            tx.collection<LinkedRecord>(RECORD_COLLECTION),
-          );
-          yield* ensureActorUserProfile(tx, actor, now);
+          yield* ensureActorUserProfile(repository, tx, actor, now);
 
           for (const ticket of tickets) {
-            yield* storage(`put ticket for ${command}`, issues.put(ticket.id, ticket));
-            yield* storage(`delete legacy issue for ${command}`, legacyIssues.delete(ticket.id));
+            if (command === "archiveTicket") {
+              yield* appendEvent(tx, "ticket", ticket.id, { op: "ticket.archive" });
+            } else if (command === "deleteTicket") {
+              yield* appendEvent(tx, "ticket", ticket.id, { op: "ticket.delete" });
+            } else if (command === "restoreTicket") {
+              yield* appendEvent(tx, "ticket", ticket.id, { op: "ticket.restore" });
+            } else {
+              yield* appendEvent(tx, "ticket", ticket.id, {
+                op: "ticket.replace",
+                value: ticket,
+              });
+            }
           }
           for (const record of linkedRecords) {
-            yield* storage(`put record for ${command}`, records.put(record.id, record));
+            yield* appendEvent(tx, "record", record.id, {
+              op: "record.add",
+              value: record,
+            });
           }
 
           const snapshot = yield* storage(
@@ -1531,21 +1562,20 @@ export const makeDatabaseService = (
         (repository) =>
           Effect.gen(function* () {
             const tx = yield* beginWriteTransaction(repository, "add record", actor, now);
-            const issues = yield* storage(
-              "open issue transaction collection",
-              tx.collection<TicketDocument>(ISSUE_COLLECTION, issueCollectionOptions),
-            );
-            const records = yield* storage(
-              "open record transaction collection",
-              tx.collection<LinkedRecord>(RECORD_COLLECTION),
-            );
-            yield* ensureActorUserProfile(tx, actor, now);
+            yield* ensureActorUserProfile(repository, tx, actor, now);
 
             if (input.userVisible !== false) {
-              yield* storage("put ticket activity timestamp", issues.put(ticketId, nextTicket));
+              yield* appendEvent(tx, "ticket", ticketId, {
+                field: "updatedAt",
+                op: "ticket.update",
+                value: now,
+              });
             }
 
-            yield* storage("put linked record", records.put(record.id, record));
+            yield* appendEvent(tx, "record", record.id, {
+              op: "record.add",
+              value: record,
+            });
 
             const snapshot = yield* storage(
               "commit add record",
@@ -1569,26 +1599,9 @@ export const makeDatabaseService = (
   ): Effect.Effect<TicketDocument | null, DatabaseFailure> =>
     Effect.gen(function* () {
       const repository = yield* getRepository(repositoryId);
-      const issues = yield* storage(
-        "open issue collection for revision read",
-        repository.store.collection<TicketDocument>(ISSUE_COLLECTION, issueCollectionOptions),
-      );
-      const ticket = yield* storage(
-        "read ticket revision",
-        issues.get(ticketId, { from: snapshotId }),
-      );
+      const folded = yield* foldRepositoryEvents(repository, snapshotId);
 
-      if (ticket !== null) return ticket;
-
-      const legacyIssues = yield* storage(
-        "open legacy issue collection for revision read",
-        repository.store.collection<TicketDocument>(ISSUE_COLLECTION, legacyIssueCollectionOptions),
-      );
-
-      return yield* storage(
-        "read legacy ticket revision",
-        legacyIssues.get(ticketId, { from: snapshotId }),
-      );
+      return folded.tickets.get(ticketId) ?? null;
     });
 
   const ticketDiff = (
@@ -1652,13 +1665,12 @@ export const makeDatabaseService = (
         (repository) =>
           Effect.gen(function* () {
             const tx = yield* beginWriteTransaction(repository, "create draft", actor, now);
-            const drafts = yield* storage(
-              "open draft transaction collection",
-              tx.collection<TicketDraftDocument>(DRAFT_COLLECTION),
-            );
-            yield* ensureActorUserProfile(tx, actor, now);
+            yield* ensureActorUserProfile(repository, tx, actor, now);
 
-            yield* storage("put draft", drafts.put(draftId, draft));
+            yield* appendEvent(tx, "draft", draftId, {
+              op: "draft.create",
+              value: draft,
+            });
 
             const snapshot = yield* storage(
               "commit create draft",
@@ -1694,16 +1706,12 @@ export const makeDatabaseService = (
         (repository) =>
           Effect.gen(function* () {
             const tx = yield* beginWriteTransaction(repository, "update draft", actor, now);
-            const drafts = yield* storage(
-              "open draft transaction collection",
-              tx.collection<TicketDraftDocument>(DRAFT_COLLECTION),
-            );
-            const current = yield* storage("read draft", drafts.get(draftId));
+            const current = (yield* foldRepositoryEvents(repository)).drafts.get(draftId) ?? null;
 
             if (current === null) {
               return yield* Effect.fail(validationError("draftId", "draft not found"));
             }
-            yield* ensureActorUserProfile(tx, actor, now);
+            yield* ensureActorUserProfile(repository, tx, actor, now);
 
             const next: TicketDraftDocument = {
               ...current,
@@ -1711,7 +1719,10 @@ export const makeDatabaseService = (
               updatedAt: now,
             };
 
-            yield* storage("put updated draft", drafts.put(draftId, next));
+            yield* appendEvent(tx, "draft", draftId, {
+              op: "draft.update",
+              value: next,
+            });
 
             const snapshot = yield* storage(
               "commit update draft",
@@ -1746,24 +1757,12 @@ export const makeDatabaseService = (
         (repository) =>
           Effect.gen(function* () {
             const tx = yield* beginWriteTransaction(repository, "commit draft", actor, now);
-            const drafts = yield* storage(
-              "open draft transaction collection",
-              tx.collection<TicketDraftDocument>(DRAFT_COLLECTION),
-            );
-            const issues = yield* storage(
-              "open issue transaction collection",
-              tx.collection<TicketDocument>(ISSUE_COLLECTION, issueCollectionOptions),
-            );
-            const records = yield* storage(
-              "open record transaction collection",
-              tx.collection<LinkedRecord>(RECORD_COLLECTION),
-            );
-            const draft = yield* storage("read draft", drafts.get(draftId));
+            const draft = (yield* foldRepositoryEvents(repository)).drafts.get(draftId) ?? null;
 
             if (draft === null) {
               return yield* Effect.fail(validationError("draftId", "draft not found"));
             }
-            yield* ensureActorUserProfile(tx, actor, now);
+            yield* ensureActorUserProfile(repository, tx, actor, now);
 
             const ticket = makeTicketDocument(
               makeFrontmatter(draft.input, ticketId, actor, now),
@@ -1787,10 +1786,26 @@ export const makeDatabaseService = (
             );
 
             yield* validateTicket(ticket);
-            yield* storage("put ticket from draft", issues.put(ticketId, ticket));
-            yield* storage("put provenance record", records.put(provenance.id, provenance));
-            yield* storage("put status-change record", records.put(status.id, status));
-            yield* storage("delete committed draft", drafts.delete(draftId));
+            yield* appendEvent(tx, "ticket", ticketId, {
+              op: "ticket.create",
+              value: ticket,
+            });
+            yield* appendEvent(tx, "record", provenance.id, {
+              op: "record.add",
+              value: provenance,
+            });
+            yield* appendEvent(tx, "record", status.id, {
+              op: "record.add",
+              value: status,
+            });
+            yield* appendEvent(tx, "draft", draftId, {
+              op: "draft.commit",
+              value: {
+                ...draft,
+                status: "committed",
+                updatedAt: now,
+              },
+            });
 
             const snapshot = yield* storage(
               "commit draft",
@@ -1842,13 +1857,12 @@ export const makeDatabaseService = (
         (repository) =>
           Effect.gen(function* () {
             const tx = yield* beginWriteTransaction(repository, "upsert user", actor, now);
-            const users = yield* storage(
-              "open user transaction collection",
-              tx.collection<UserProfileDocument>(USER_COLLECTION),
-            );
 
-            yield* ensureActorUserProfile(tx, actor, now);
-            yield* storage("put user profile", users.put(userId, user));
+            yield* ensureActorUserProfile(repository, tx, actor, now);
+            yield* appendEvent(tx, "user", userId, {
+              op: "user.upsert",
+              value: user,
+            });
 
             const snapshot = yield* storage(
               "commit upsert user",
@@ -1900,13 +1914,12 @@ export const makeDatabaseService = (
         (repository) =>
           Effect.gen(function* () {
             const tx = yield* beginWriteTransaction(repository, "upsert label", actor, now);
-            const labels = yield* storage(
-              "open label transaction collection",
-              tx.collection<LabelDefinitionDocument>(LABEL_COLLECTION),
-            );
 
-            yield* ensureActorUserProfile(tx, actor, now);
-            yield* storage("put label", labels.put(labelId, label));
+            yield* ensureActorUserProfile(repository, tx, actor, now);
+            yield* appendEvent(tx, "label", labelId, {
+              op: "label.upsert",
+              value: label,
+            });
 
             const snapshot = yield* storage(
               "commit upsert label",
@@ -1952,13 +1965,12 @@ export const makeDatabaseService = (
         (repository) =>
           Effect.gen(function* () {
             const tx = yield* beginWriteTransaction(repository, "archive label", actor, now);
-            const labels = yield* storage(
-              "open label transaction collection",
-              tx.collection<LabelDefinitionDocument>(LABEL_COLLECTION),
-            );
 
-            yield* ensureActorUserProfile(tx, actor, now);
-            yield* storage("put archived label", labels.put(labelId, next));
+            yield* ensureActorUserProfile(repository, tx, actor, now);
+            yield* appendEvent(tx, "label", labelId, {
+              op: "label.upsert",
+              value: next,
+            });
 
             const snapshot = yield* storage(
               "commit archive label",
@@ -2012,13 +2024,12 @@ export const makeDatabaseService = (
         (repository) =>
           Effect.gen(function* () {
             const tx = yield* beginWriteTransaction(repository, "create view", actor, now);
-            const views = yield* storage(
-              "open view transaction collection",
-              tx.collection<SavedViewDocument>(VIEW_COLLECTION),
-            );
 
-            yield* ensureActorUserProfile(tx, actor, now);
-            yield* storage("put saved view", views.put(viewId, view));
+            yield* ensureActorUserProfile(repository, tx, actor, now);
+            yield* appendEvent(tx, "view", viewId, {
+              op: "view.upsert",
+              value: view,
+            });
 
             const snapshot = yield* storage(
               "commit create view",
@@ -2072,13 +2083,12 @@ export const makeDatabaseService = (
         (repository) =>
           Effect.gen(function* () {
             const tx = yield* beginWriteTransaction(repository, "update view", actor, now);
-            const views = yield* storage(
-              "open view transaction collection",
-              tx.collection<SavedViewDocument>(VIEW_COLLECTION),
-            );
 
-            yield* ensureActorUserProfile(tx, actor, now);
-            yield* storage("put updated view", views.put(viewId, next));
+            yield* ensureActorUserProfile(repository, tx, actor, now);
+            yield* appendEvent(tx, "view", viewId, {
+              op: "view.upsert",
+              value: next,
+            });
 
             const snapshot = yield* storage(
               "commit update view",
@@ -2115,13 +2125,11 @@ export const makeDatabaseService = (
         (repository) =>
           Effect.gen(function* () {
             const tx = yield* beginWriteTransaction(repository, "delete view", actor, now);
-            const views = yield* storage(
-              "open view transaction collection",
-              tx.collection<SavedViewDocument>(VIEW_COLLECTION),
-            );
 
-            yield* ensureActorUserProfile(tx, actor, now);
-            yield* storage("delete view", views.delete(viewId));
+            yield* ensureActorUserProfile(repository, tx, actor, now);
+            yield* appendEvent(tx, "view", viewId, {
+              op: "view.delete",
+            });
 
             const snapshot = yield* storage(
               "commit delete view",
@@ -2172,13 +2180,12 @@ export const makeDatabaseService = (
         (repository) =>
           Effect.gen(function* () {
             const tx = yield* beginWriteTransaction(repository, "create template", actor, now);
-            const templates = yield* storage(
-              "open template transaction collection",
-              tx.collection<IssueTemplateDocument>(TEMPLATE_COLLECTION),
-            );
 
-            yield* ensureActorUserProfile(tx, actor, now);
-            yield* storage("put template", templates.put(templateId, template));
+            yield* ensureActorUserProfile(repository, tx, actor, now);
+            yield* appendEvent(tx, "template", templateId, {
+              op: "template.upsert",
+              value: template,
+            });
 
             const snapshot = yield* storage(
               "commit create template",
@@ -2231,13 +2238,12 @@ export const makeDatabaseService = (
         (repository) =>
           Effect.gen(function* () {
             const tx = yield* beginWriteTransaction(repository, "update template", actor, now);
-            const templates = yield* storage(
-              "open template transaction collection",
-              tx.collection<IssueTemplateDocument>(TEMPLATE_COLLECTION),
-            );
 
-            yield* ensureActorUserProfile(tx, actor, now);
-            yield* storage("put updated template", templates.put(templateId, next));
+            yield* ensureActorUserProfile(repository, tx, actor, now);
+            yield* appendEvent(tx, "template", templateId, {
+              op: "template.upsert",
+              value: next,
+            });
 
             const snapshot = yield* storage(
               "commit update template",
@@ -2406,7 +2412,7 @@ export const makeDatabaseService = (
         existing?.poller?.cancel();
         yield* sqlite("register repository", () => projection.registerRepository(input));
 
-        const cycleMetadata = yield* readCycleRepositoryMetadata(input.store);
+        const cycleMetadata = undefined;
 
         const poller =
           input.pollIntervalMs === false || backgroundRunner === undefined
@@ -2536,182 +2542,37 @@ export const DatabaseInMemory = DatabaseTest;
 
 const buildMaterialization = (
   repository: RepositoryRuntime,
-  previousSnapshotId: string | null,
+  _previousSnapshotId: string | null,
   currentSnapshotId: string,
 ) =>
   Effect.gen(function* () {
-    const fullRebuild = previousSnapshotId === null;
-    const issueDocs = fullRebuild
-      ? yield* listSourceDocuments(repository.store, "collections/issues", currentSnapshotId, [
-          ".md",
-          ".json",
-        ])
-      : yield* changedDocuments(repository.store, previousSnapshotId, currentSnapshotId, "issues");
-    const recordDocs = fullRebuild
-      ? yield* listSourceDocuments(repository.store, "collections/records", currentSnapshotId, [
-          ".json",
-        ])
-      : yield* changedDocuments(repository.store, previousSnapshotId, currentSnapshotId, "records");
-    const userDocs = fullRebuild
-      ? yield* listSourceDocuments(repository.store, "collections/users", currentSnapshotId, [
-          ".json",
-        ])
-      : yield* changedDocuments(repository.store, previousSnapshotId, currentSnapshotId, "users");
-    const labelDocs = fullRebuild
-      ? yield* listSourceDocuments(repository.store, "collections/labels", currentSnapshotId, [
-          ".json",
-        ])
-      : yield* changedDocuments(repository.store, previousSnapshotId, currentSnapshotId, "labels");
-    const viewDocs = fullRebuild
-      ? yield* listSourceDocuments(repository.store, "collections/views", currentSnapshotId, [
-          ".json",
-        ])
-      : yield* changedDocuments(repository.store, previousSnapshotId, currentSnapshotId, "views");
-    const templateDocs = fullRebuild
-      ? yield* listSourceDocuments(repository.store, "collections/templates", currentSnapshotId, [
-          ".json",
-        ])
-      : yield* changedDocuments(
-          repository.store,
-          previousSnapshotId,
-          currentSnapshotId,
-          "templates",
-        );
-    const metadataDocument = yield* storage(
-      "read Cycle repository metadata for materialization",
-      repository.store.get(REPOSITORY_METADATA_PATH, { from: currentSnapshotId }),
-    );
-    const cycleMetadata =
-      metadataDocument === null
-        ? undefined
-        : yield* parseCycleRepositoryMetadataTextEffect(metadataDocument.text());
-    const warnings: Array<MaterializationWarning> = [];
-    const tickets: Array<{ readonly path: string; readonly value: TicketDocument }> = [];
-    const records: Array<{ readonly path: string; readonly value: LinkedRecord }> = [];
-    const users: Array<{ readonly path: string; readonly value: UserProfileDocument }> = [];
-    const labels: Array<{ readonly path: string; readonly value: LabelDefinitionDocument }> = [];
-    const views: Array<{ readonly path: string; readonly value: SavedViewDocument }> = [];
-    const templates: Array<{ readonly path: string; readonly value: IssueTemplateDocument }> = [];
-    const deletedTickets: Array<string> = [];
-    const deletedRecords: Array<string> = [];
-    const deletedUsers: Array<string> = [];
-    const deletedLabels: Array<string> = [];
-    const deletedViews: Array<string> = [];
-    const deletedTemplates: Array<string> = [];
+    const folded = yield* foldRepositoryEvents(repository, currentSnapshotId);
+    const tickets = [...folded.tickets.values()].map((ticket) => ({
+      path: eventAggregatePath("ticket", ticket.id),
+      value: ticket,
+    }));
+    const records = [...folded.records.values()].map((record) => ({
+      path: eventAggregatePath("record", record.id),
+      value: record,
+    }));
+    const users = [...folded.users.values()].map((user) => ({
+      path: eventAggregatePath("user", user.id),
+      value: user,
+    }));
+    const labels = [...folded.labels.values()].map((label) => ({
+      path: eventAggregatePath("label", label.id),
+      value: label,
+    }));
+    const views = [...folded.views.values()].map((view) => ({
+      path: eventAggregatePath("view", view.id),
+      value: view,
+    }));
+    const templates = [...folded.templates.values()].map((template) => ({
+      path: eventAggregatePath("template", template.id),
+      value: template,
+    }));
+    const warnings = [...folded.warnings];
     const now = nowIso();
-
-    for (const doc of issueDocs.documents) {
-      try {
-        const ticket = doc.path.endsWith(".json")
-          ? parseLegacyIssueJson(JSON.parse(doc.bytes))
-          : parseIssueMarkdown(doc.bytes);
-
-        validateTicketSync(ticket);
-        tickets.push({ path: doc.path, value: ticket });
-      } catch (error) {
-        deletedTickets.push(doc.id);
-        warnings.push(
-          warning(
-            repository.repositoryId,
-            currentSnapshotId,
-            doc.path,
-            "ticket",
-            doc.id,
-            error,
-            now,
-          ),
-        );
-      }
-    }
-
-    for (const doc of recordDocs.documents) {
-      try {
-        const record = parseRecord(JSON.parse(doc.bytes));
-
-        records.push({ path: doc.path, value: record });
-      } catch (error) {
-        deletedRecords.push(doc.id);
-        warnings.push(
-          warning(
-            repository.repositoryId,
-            currentSnapshotId,
-            doc.path,
-            "record",
-            doc.id,
-            error,
-            now,
-          ),
-        );
-      }
-    }
-
-    for (const doc of userDocs.documents) {
-      try {
-        const user = parseUserProfile(JSON.parse(doc.bytes));
-
-        users.push({ path: doc.path, value: user });
-      } catch (error) {
-        deletedUsers.push(doc.id);
-        warnings.push(
-          warning(repository.repositoryId, currentSnapshotId, doc.path, "user", doc.id, error, now),
-        );
-      }
-    }
-
-    for (const doc of labelDocs.documents) {
-      try {
-        const label = parseLabelDefinition(JSON.parse(doc.bytes));
-
-        labels.push({ path: doc.path, value: label });
-      } catch (error) {
-        deletedLabels.push(doc.id);
-        warnings.push(
-          warning(
-            repository.repositoryId,
-            currentSnapshotId,
-            doc.path,
-            "label",
-            doc.id,
-            error,
-            now,
-          ),
-        );
-      }
-    }
-
-    for (const doc of viewDocs.documents) {
-      try {
-        const view = parseSavedView(JSON.parse(doc.bytes));
-
-        views.push({ path: doc.path, value: view });
-      } catch (error) {
-        deletedViews.push(doc.id);
-        warnings.push(
-          warning(repository.repositoryId, currentSnapshotId, doc.path, "view", doc.id, error, now),
-        );
-      }
-    }
-
-    for (const doc of templateDocs.documents) {
-      try {
-        const template = parseIssueTemplate(JSON.parse(doc.bytes));
-
-        templates.push({ path: doc.path, value: template });
-      } catch (error) {
-        deletedTemplates.push(doc.id);
-        warnings.push(
-          warning(
-            repository.repositoryId,
-            currentSnapshotId,
-            doc.path,
-            "template",
-            doc.id,
-            error,
-            now,
-          ),
-        );
-      }
-    }
 
     const ticketIds = new Set(tickets.map((ticket) => ticket.value.id));
     for (const ticket of tickets) {
@@ -2733,27 +2594,20 @@ const buildMaterialization = (
       }
     }
 
-    deletedTickets.push(...issueDocs.deletedIds);
-    deletedRecords.push(...recordDocs.deletedIds);
-    deletedUsers.push(...userDocs.deletedIds);
-    deletedLabels.push(...labelDocs.deletedIds);
-    deletedViews.push(...viewDocs.deletedIds);
-    deletedTemplates.push(...templateDocs.deletedIds);
-
     const commits = yield* buildCommitRows(repository, currentSnapshotId);
     const commitChanges = yield* buildCommitChanges(repository, currentSnapshotId);
 
     return {
       commitChanges,
       commits,
-      cycleMetadata,
-      deletedRecords,
-      deletedTickets,
-      deletedLabels,
-      deletedTemplates,
-      deletedUsers,
-      deletedViews,
-      fullRebuild,
+      cycleMetadata: folded.cycleMetadata,
+      deletedRecords: [],
+      deletedTickets: [],
+      deletedLabels: [],
+      deletedTemplates: [],
+      deletedUsers: [],
+      deletedViews: [],
+      fullRebuild: true,
       labels,
       records,
       templates,
@@ -2764,96 +2618,317 @@ const buildMaterialization = (
     };
   });
 
-const changedDocuments = (
-  store: GitDbStore.StoreServiceShape,
-  previousSnapshotId: string,
-  currentSnapshotId: string,
-  collection: "issues" | "labels" | "records" | "templates" | "users" | "views",
-) =>
+const emptyFoldedEvents = (): FoldedEvents => ({
+  drafts: new Map(),
+  labels: new Map(),
+  records: new Map(),
+  templates: new Map(),
+  tickets: new Map(),
+  users: new Map(),
+  views: new Map(),
+  warnings: [],
+});
+
+const eventAggregatePath = (aggregateType: string, aggregateId: string): string =>
+  `${GitDbEvent.EVENT_ROOT}/${aggregateType}/${aggregateId}`;
+
+const foldRepositoryEvents = (
+  repository: RepositoryRuntime,
+  snapshotId?: string,
+): Effect.Effect<FoldedEvents, DatabaseFailure> =>
   Effect.gen(function* () {
-    const diff = yield* storage(
-      "diff snapshots",
-      store.diff(previousSnapshotId, currentSnapshotId),
-    );
-    const changes = [...diff.added, ...diff.modified, ...diff.deleted].filter((change) =>
-      change.path.startsWith(`collections/${collection}/`),
-    );
-    const documents: Array<SourceDocument> = [];
-    const deletedIds: Array<string> = [];
+    const currentSnapshotId =
+      snapshotId ?? (yield* storage("resolve current snapshot", repository.store.resolveSnapshotId()));
 
-    for (const change of changes) {
-      if (!isDocumentPath(change.path)) continue;
+    if (currentSnapshotId === null) return emptyFoldedEvents();
 
-      const id = idFromPath(change.path);
+    const history = yield* storage("read event history", repository.store.history(currentSnapshotId));
+    const folded = emptyFoldedEvents();
+    const warnings: Array<MaterializationWarning> = [];
 
-      if (change.newObjectId === undefined) {
-        deletedIds.push(id);
-        continue;
-      }
-
-      const document = yield* storage(
-        "read changed document",
-        store.get(change.path, { from: currentSnapshotId }),
+    for (const snapshot of history.slice().reverse()) {
+      const introduced = yield* storage(
+        "read introduced events",
+        GitDbEvent.introduced(repository.store, snapshot),
       );
+      const timestamp = snapshot.createdAt ?? nowIso();
+      const actor = actorFromSnapshot(snapshot);
 
-      if (document !== null) {
-        documents.push({
-          bytes: document.text(),
-          id,
-          path: change.path,
-        });
+      for (const event of introduced) {
+        if (event.change.newObjectId === undefined) {
+          warnings.push(
+            warning(
+              repository.repositoryId,
+              snapshot.id,
+              event.path,
+              event.aggregateType,
+              event.aggregateId,
+              new Error("event file was deleted"),
+              nowIso(),
+              "event-deleted",
+            ),
+          );
+          continue;
+        }
+
+        if (event.change.oldObjectId !== undefined) {
+          warnings.push(
+            warning(
+              repository.repositoryId,
+              snapshot.id,
+              event.path,
+              event.aggregateType,
+              event.aggregateId,
+              new Error("event file was modified"),
+              nowIso(),
+              "event-modified",
+            ),
+          );
+          continue;
+        }
+
+        const document = yield* storage(
+          "read event document",
+          repository.store.get(event.path, { from: snapshot.id }),
+        );
+
+        if (document === null) continue;
+
+        try {
+          applyDatabaseEvent(folded, event.aggregateType, event.aggregateId, document.json(), {
+            actor,
+            path: event.path,
+            snapshotId: snapshot.id,
+            timestamp,
+          });
+        } catch (error) {
+          warnings.push(
+            warning(
+              repository.repositoryId,
+              snapshot.id,
+              event.path,
+              event.aggregateType,
+              event.aggregateId,
+              error,
+              nowIso(),
+            ),
+          );
+        }
       }
     }
 
-    return { deletedIds, documents };
+    return {
+      ...folded,
+      warnings,
+    };
   });
 
-const listSourceDocuments = (
-  store: GitDbStore.StoreServiceShape,
-  root: string,
-  snapshotId: string,
-  extensions: ReadonlyArray<string>,
-): Effect.Effect<
-  {
-    readonly deletedIds: ReadonlyArray<string>;
-    readonly documents: ReadonlyArray<SourceDocument>;
-  },
-  DatabaseFailure
-> =>
-  Effect.gen(function* () {
-    const documents: Array<SourceDocument> = [];
+const applyDatabaseEvent = (
+  folded: FoldedEvents,
+  aggregateType: string,
+  aggregateId: string,
+  payload: unknown,
+  context: EventContext,
+): void => {
+  if (payload === null || typeof payload !== "object") {
+    throw new Error("event payload must be an object");
+  }
 
-    const visit = (path: string): Effect.Effect<void, DatabaseFailure> =>
-      Effect.gen(function* () {
-        const entries = yield* storage(
-          "list source documents",
-          store.list(path, { from: snapshotId }),
-        );
+  const event = payload as DatabaseEventPayload;
 
-        for (const entry of entries) {
-          if (entry.type === "tree") {
-            yield* visit(entry.path);
-          } else if (extensions.some((extension) => entry.path.endsWith(extension))) {
-            const document = yield* storage(
-              "read source document",
-              store.get(entry.path, { from: snapshotId }),
-            );
+  switch (event.op) {
+    case "repository.metadata.set": {
+      folded.cycleMetadata = parseCycleRepositoryMetadata(event.value, context.timestamp);
+      return;
+    }
+    case "ticket.create":
+    case "ticket.replace": {
+      const ticket = parseTicketValue(event.value);
 
-            if (document !== null) {
-              documents.push({
-                bytes: document.text(),
-                id: idFromPath(entry.path),
-                path: entry.path,
-              });
-            }
-          }
-        }
-      });
+      folded.tickets.set(aggregateId, ticket);
+      return;
+    }
+    case "ticket.update": {
+      const ticket = folded.tickets.get(aggregateId);
 
-    yield* visit(root).pipe(Effect.orElseSucceed(() => undefined));
+      if (ticket === undefined) throw new Error(`ticket does not exist: ${aggregateId}`);
 
-    return { deletedIds: [], documents };
-  });
+      folded.tickets.set(aggregateId, applyTicketFieldUpdate(ticket, event.field, event.value));
+      return;
+    }
+    case "ticket.archive": {
+      const ticket = requireTicket(folded, aggregateId);
+      const actor = context.actor ?? ticket.frontmatter.createdBy;
+
+      folded.tickets.set(
+        aggregateId,
+        updateTicketDocument(ticket, {
+          ...ticket.frontmatter,
+          archivedAt: context.timestamp,
+          archivedBy: actor,
+          updatedAt: context.timestamp,
+        }),
+      );
+      return;
+    }
+    case "ticket.delete": {
+      const ticket = requireTicket(folded, aggregateId);
+      const actor = context.actor ?? ticket.frontmatter.createdBy;
+
+      folded.tickets.set(
+        aggregateId,
+        updateTicketDocument(ticket, {
+          ...ticket.frontmatter,
+          deletedAt: context.timestamp,
+          deletedBy: actor,
+          updatedAt: context.timestamp,
+        }),
+      );
+      return;
+    }
+    case "ticket.restore": {
+      const ticket = requireTicket(folded, aggregateId);
+
+      folded.tickets.set(
+        aggregateId,
+        updateTicketDocument(ticket, {
+          ...ticket.frontmatter,
+          archivedAt: undefined,
+          archivedBy: undefined,
+          deletedAt: undefined,
+          deletedBy: undefined,
+          updatedAt: context.timestamp,
+        }),
+      );
+      return;
+    }
+    case "record.add": {
+      const record = parseRecord(event.value);
+
+      folded.records.set(record.id, record);
+      return;
+    }
+    case "draft.create":
+    case "draft.update":
+    case "draft.commit": {
+      const draft = parseDraft(event.value);
+
+      folded.drafts.set(draft.id, draft);
+      return;
+    }
+    case "user.upsert": {
+      const user = parseUserProfile(event.value);
+
+      folded.users.set(user.id, user);
+      return;
+    }
+    case "label.upsert": {
+      const label = parseLabelDefinition(event.value);
+
+      folded.labels.set(label.id, label);
+      return;
+    }
+    case "view.upsert": {
+      const view = parseSavedView(event.value);
+
+      folded.views.set(view.id, view);
+      return;
+    }
+    case "view.delete": {
+      folded.views.delete(aggregateId);
+      return;
+    }
+    case "template.upsert": {
+      const template = parseIssueTemplate(event.value);
+
+      folded.templates.set(template.id, template);
+      return;
+    }
+  }
+
+  throw new Error(`unsupported event operation: ${String((payload as { readonly op?: unknown }).op)}`);
+};
+
+const parseTicketValue = (input: unknown): TicketDocument => {
+  if (input === null || typeof input !== "object") throw new Error("ticket must be an object");
+
+  const value = input as Partial<TicketDocument>;
+
+  if (value.frontmatter === undefined || typeof value.body !== "string") {
+    throw new Error("ticket is missing required fields");
+  }
+
+  const ticket = makeTicketDocument(makeIssueFrontmatter(value.frontmatter), value.body);
+
+  validateTicketSync(ticket);
+
+  return ticket;
+};
+
+const requireTicket = (folded: FoldedEvents, ticketId: string): TicketDocument => {
+  const ticket = folded.tickets.get(ticketId);
+
+  if (ticket === undefined) throw new Error(`ticket does not exist: ${ticketId}`);
+
+  return ticket;
+};
+
+const applyTicketFieldUpdate = (
+  ticket: TicketDocument,
+  field: keyof IssueFrontmatter | "body",
+  value: unknown,
+): TicketDocument => {
+  if (field === "body") return updateTicketDocument(ticket, ticket.frontmatter, String(value ?? ""));
+
+  const frontmatter = {
+    ...ticket.frontmatter,
+    [field]: value === null ? undefined : value,
+  } as IssueFrontmatter;
+
+  return updateTicketDocument(ticket, frontmatter);
+};
+
+const parseDraft = (input: unknown): TicketDraftDocument => {
+  if (input === null || typeof input !== "object") throw new Error("draft must be an object");
+
+  const value = input as Partial<TicketDraftDocument>;
+
+  if (
+    typeof value.id !== "string" ||
+    value.input === undefined ||
+    typeof value.createdAt !== "string" ||
+    typeof value.updatedAt !== "string" ||
+    value.createdBy === undefined ||
+    (value.status !== "open" && value.status !== "committed")
+  ) {
+    throw new Error("draft is missing required fields");
+  }
+
+  return {
+    createdAt: value.createdAt,
+    createdBy: value.createdBy,
+    id: value.id,
+    input: value.input,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    status: value.status,
+    updatedAt: value.updatedAt,
+  };
+};
+
+const actorFromSnapshot = (snapshot: {
+  readonly author?: { readonly email?: string; readonly name?: string };
+  readonly committer?: { readonly email?: string; readonly name?: string };
+}): Actor | undefined => {
+  const identity = snapshot.author ?? snapshot.committer;
+
+  if (identity?.name === undefined) return undefined;
+
+  return {
+    email: identity.email,
+    name: identity.name,
+    type: identity.email === undefined ? "agent" : "human",
+  };
+};
 
 const buildCommitRows = (repository: RepositoryRuntime, snapshotId: string) =>
   Effect.gen(function* () {
@@ -2907,30 +2982,9 @@ const buildCommitChanges = (repository: RepositoryRuntime, snapshotId: string) =
 
 const initialCommitChanges = (store: GitDbStore.StoreServiceShape, snapshotId: string) =>
   Effect.gen(function* () {
-    const issueDocs = yield* listSourceDocuments(store, "collections/issues", snapshotId, [
-      ".md",
-      ".json",
-    ]);
-    const recordDocs = yield* listSourceDocuments(store, "collections/records", snapshotId, [
-      ".json",
-    ]);
-    const userDocs = yield* listSourceDocuments(store, "collections/users", snapshotId, [".json"]);
-    const labelDocs = yield* listSourceDocuments(store, "collections/labels", snapshotId, [
-      ".json",
-    ]);
-    const viewDocs = yield* listSourceDocuments(store, "collections/views", snapshotId, [".json"]);
-    const templateDocs = yield* listSourceDocuments(store, "collections/templates", snapshotId, [
-      ".json",
-    ]);
+    const events = yield* storage("list initial event changes", GitDbEvent.list(store, { from: snapshotId }));
 
-    return [
-      ...issueDocs.documents.map((doc) => pathChange("added" as const, doc.path, doc.id)),
-      ...recordDocs.documents.map((doc) => pathChange("added" as const, doc.path, doc.id)),
-      ...userDocs.documents.map((doc) => pathChange("added" as const, doc.path, doc.id)),
-      ...labelDocs.documents.map((doc) => pathChange("added" as const, doc.path, doc.id)),
-      ...viewDocs.documents.map((doc) => pathChange("added" as const, doc.path, doc.id)),
-      ...templateDocs.documents.map((doc) => pathChange("added" as const, doc.path, doc.id)),
-    ];
+    return events.map((event) => eventPathChange("added", event.path));
   });
 
 const diffCommitChanges = (
@@ -2941,44 +2995,31 @@ const diffCommitChanges = (
   Effect.gen(function* () {
     const diff = yield* storage("diff commit changes", store.diff(previousSnapshotId, snapshotId));
     const changes = [
-      ...diff.added.map((change) => pathChange("added" as const, change.path)),
-      ...diff.modified.map((change) => pathChange("modified" as const, change.path)),
-      ...diff.deleted.map((change) => pathChange("deleted" as const, change.path)),
+      ...diff.added.map((change) => eventPathChange("added" as const, change.path)),
+      ...diff.modified.map((change) => eventPathChange("modified" as const, change.path)),
+      ...diff.deleted.map((change) => eventPathChange("deleted" as const, change.path)),
     ].filter((change) => change.objectType !== "unknown");
 
     return changes;
   });
 
-const pathChange = (
+const eventPathChange = (
   changeType: "added" | "deleted" | "modified",
   path: string,
-  id = idFromPath(path),
 ): CommitChange => {
-  const isIssue = path.startsWith("collections/issues/");
-  const isRecord = path.startsWith("collections/records/");
-  const isUser = path.startsWith("collections/users/");
-  const isLabel = path.startsWith("collections/labels/");
-  const isView = path.startsWith("collections/views/");
-  const isTemplate = path.startsWith("collections/templates/");
+  const event = GitDbEvent.parseEventPath(path);
 
   return {
     changeType,
-    objectId: id,
-    objectType: isIssue
-      ? "ticket"
-      : isRecord
-        ? "record"
-        : isUser
-          ? "user"
-          : isLabel
-            ? "label"
-            : isView
-              ? "view"
-              : isTemplate
-                ? "template"
-                : "unknown",
+    objectId: event?.aggregateId,
+    objectType: event?.aggregateType ?? "unknown",
     path,
-    ticketId: isIssue ? id : isRecord ? ticketIdFromRecordId(id) : undefined,
+    ticketId:
+      event?.aggregateType === "ticket"
+        ? event.aggregateId
+        : event?.aggregateType === "record"
+          ? ticketIdFromRecordId(event.aggregateId)
+          : undefined,
   };
 };
 
@@ -3009,7 +3050,7 @@ const validateTicketSync = (ticket: TicketDocument): void => {
 };
 
 const validateTicketId = (field: string, value: string): void => {
-  if (!TICKET_ID_PATTERN.test(value) && !LEGACY_TICKET_ID_PATTERN.test(value)) {
+  if (!TICKET_ID_PATTERN.test(value)) {
     throw new Error(`${field} must match PREFIX-BASE36 format`);
   }
 };
@@ -3541,17 +3582,6 @@ const makeCycleRepositoryMetadata = (prefix: string, now: string): CycleReposito
   updatedAt: now,
 });
 
-const parseCycleRepositoryMetadataTextEffect = (
-  text: string,
-): Effect.Effect<CycleRepositoryMetadata, DatabaseFailure> =>
-  Effect.try({
-    catch: (cause) =>
-      cause instanceof Error
-        ? validationError("repository.metadata", cause.message, cause)
-        : validationError("repository.metadata", "invalid repository metadata", cause),
-    try: () => JSON.parse(text) as unknown,
-  }).pipe(Effect.flatMap(parseCycleRepositoryMetadataEffect));
-
 const parseCycleRepositoryMetadataEffect = (
   input: unknown,
 ): Effect.Effect<CycleRepositoryMetadata, DatabaseFailure> =>
@@ -3805,14 +3835,6 @@ const ticketIdFromRecordId = (recordId: string): string | undefined => {
   return recordId.slice(0, marker);
 };
 
-const idFromPath = (path: string): string => {
-  const file = path.split("/").at(-1) ?? path;
-
-  return file.replace(/\.(json|md)$/u, "");
-};
-
-const isDocumentPath = (path: string): boolean => /\.(json|md)$/u.test(path);
-
 const warning = (
   repositoryId: string,
   snapshotId: string,
@@ -3839,6 +3861,12 @@ const gitIdentity = (actor: Actor) => ({
 });
 
 const nowIso = (): string => new Date().toISOString();
+
+const nextEventId = (ids: DatabaseIdGeneratorShape): Effect.Effect<string, DatabaseFailure> => {
+  const maybeIds = ids as Partial<DatabaseIdGeneratorShape>;
+
+  return maybeIds.eventId ?? ids.recordId;
+};
 
 const storage = <A, E>(
   operation: string,

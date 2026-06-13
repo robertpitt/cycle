@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import { BranchNamespace, PointerName } from "@cycle/git/schemas";
-import { DatabaseName, ShardLength } from "./Identifier.ts";
+import { DatabaseName } from "./Identifier.ts";
 
 export const Options = Schema.Struct({
   allowBranchNamespace: Schema.optional(Schema.Boolean),
@@ -9,7 +9,6 @@ export const Options = Schema.Struct({
   defaultPointer: Schema.optional(Schema.String),
   gitDir: Schema.optional(Schema.String),
   namespace: Schema.optional(Schema.String),
-  shardLength: Schema.optional(Schema.Number),
   verifyGitDir: Schema.optional(Schema.Boolean),
 });
 export type Options = typeof Options.Type;
@@ -20,7 +19,6 @@ export class Store extends Schema.Class<Store>("@cycle/git-db/Store")({
   defaultPointer: PointerName,
   gitDir: Schema.String,
   namespace: BranchNamespace,
-  shardLength: ShardLength,
 }) {
   get refPrefix(): string {
     return `${this.namespace}/${this.database}`;
