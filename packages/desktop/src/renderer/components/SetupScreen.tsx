@@ -1,7 +1,5 @@
-import { BrandMark } from "@cycle/ui/atoms";
 import {
-  AppShellRoot,
-  InitialSetupCard,
+  InitialSetupScreen,
   type InitialSetupHarness,
   type InitialSetupStep,
 } from "@cycle/ui/organisms";
@@ -40,36 +38,29 @@ export const SetupScreen = ({
   setSetupStep,
   setupStep,
 }: SetupScreenProps) => (
-  <AppShellRoot className="grid min-h-screen place-items-center p-6">
-    <div className="grid w-full justify-items-center gap-6">
-      <BrandMark />
-      <InitialSetupCard
-        detectingHarnesses={agentProvidersQuery.isLoading}
-        email={email}
-        enabledHarnessIds={enabledHarnessIds}
-        error={
-          completeOnboarding.error instanceof Error ? completeOnboarding.error.message : undefined
-        }
-        fullName={fullName}
-        harnessNotice={harnessNotice}
-        harnesses={harnesses}
-        onBack={() => setSetupStep("profile")}
-        onEmailChange={setEmail}
-        onFinish={() => completeOnboarding.mutate()}
-        onFullNameChange={setFullName}
-        onHarnessEnabledChange={(id, enabled) => {
-          if (!isAgentProviderId(id)) return;
-          setEnabledHarnessIds((current) => {
-            const next = new Set(current);
-            if (enabled) next.add(id);
-            else next.delete(id);
-            return next;
-          });
-        }}
-        onNext={() => setSetupStep("harnesses")}
-        saving={completeOnboarding.isPending}
-        step={setupStep}
-      />
-    </div>
-  </AppShellRoot>
+  <InitialSetupScreen
+    detectingHarnesses={agentProvidersQuery.isLoading}
+    email={email}
+    enabledHarnessIds={enabledHarnessIds}
+    error={completeOnboarding.error instanceof Error ? completeOnboarding.error.message : undefined}
+    fullName={fullName}
+    harnessNotice={harnessNotice}
+    harnesses={harnesses}
+    onBack={() => setSetupStep("profile")}
+    onEmailChange={setEmail}
+    onFinish={() => completeOnboarding.mutate()}
+    onFullNameChange={setFullName}
+    onHarnessEnabledChange={(id, enabled) => {
+      if (!isAgentProviderId(id)) return;
+      setEnabledHarnessIds((current) => {
+        const next = new Set(current);
+        if (enabled) next.add(id);
+        else next.delete(id);
+        return next;
+      });
+    }}
+    onNext={() => setSetupStep("harnesses")}
+    saving={completeOnboarding.isPending}
+    step={setupStep}
+  />
 );

@@ -23,6 +23,22 @@ const makeStore = (database: string) =>
     return yield* GitDbStore.StoreService;
   }).pipe(Effect.provide(GitDbInMemory({ database })));
 
+const countEventDocumentReads = (
+  store: GitDbStore.StoreServiceShape,
+  counter: {
+    eventDocumentReads: number;
+  },
+): GitDbStore.StoreServiceShape => ({
+  ...store,
+  get: (path, options) => {
+    if (path.startsWith(`${GitDbEvent.EVENT_ROOT}/`)) {
+      counter.eventDocumentReads += 1;
+    }
+
+    return store.get(path, options);
+  },
+});
+
 const TestCrypto = Layer.succeed(
   Crypto.Crypto,
   Crypto.make({
@@ -973,6 +989,75 @@ describe("@cycle/database", () => {
         ),
       );
       assert.ok(repositoryHistory.entries.every((entry) => !entry.message?.includes(ticket.id)));
+    }).pipe(Effect.provide(DatabaseTest())),
+  );
+
+  it.effect("incrementally replays commits added after the active snapshot", () =>
+    Effect.gen(function* () {
+      const database = yield* DatabaseService;
+      const baseStore = yield* makeStore("incremental-replay-repo");
+      const counter = { eventDocumentReads: 0 };
+      const store = countEventDocumentReads(baseStore, counter);
+
+      yield* database.openRepository({
+        repositoryId: "incremental-replay-repo",
+        store,
+      });
+
+      let firstTicketId = "";
+      for (let index = 0; index < 5; index += 1) {
+        const ticket = yield* database.createTicket("incremental-replay-repo", {
+          title: `Incremental replay ticket ${index + 1}`,
+        });
+
+        if (index === 0) {
+          firstTicketId = ticket.id;
+        }
+      }
+
+      counter.eventDocumentReads = 0;
+      yield* appendExternalTicketUpdate(store, {
+        eventId: "evt_external_priority",
+        field: "priority",
+        ticketId: firstTicketId,
+        value: "high",
+      });
+
+      const status = yield* database.syncRepository("incremental-replay-repo");
+      const updated = yield* database.getTicket("incremental-replay-repo", firstTicketId);
+      const history = yield* database.repositoryHistory("incremental-replay-repo");
+
+      assert.strictEqual(status.status, "ready");
+      assert.strictEqual(updated?.frontmatter.priority, "high");
+      assert.strictEqual(counter.eventDocumentReads, 1);
+      assert.ok(history.entries.length >= 6);
+    }).pipe(Effect.provide(DatabaseTest())),
+  );
+
+  it.effect("materializes ticket writes from the committed snapshot delta", () =>
+    Effect.gen(function* () {
+      const database = yield* DatabaseService;
+      const baseStore = yield* makeStore("write-delta-repo");
+      const counter = { eventDocumentReads: 0 };
+      const store = countEventDocumentReads(baseStore, counter);
+
+      yield* database.openRepository({
+        repositoryId: "write-delta-repo",
+        store,
+      });
+
+      yield* database.createTicket("write-delta-repo", {
+        title: "Initial ticket seeds defaults",
+      });
+
+      counter.eventDocumentReads = 0;
+      const ticket = yield* database.createTicket("write-delta-repo", {
+        title: "Delta materialized ticket",
+      });
+      const projected = yield* database.getTicket("write-delta-repo", ticket.id);
+
+      assert.strictEqual(projected?.id, ticket.id);
+      assert.strictEqual(counter.eventDocumentReads, 3);
     }).pipe(Effect.provide(DatabaseTest())),
   );
 

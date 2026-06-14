@@ -396,6 +396,14 @@ export class Projection {
     return rows.map(repositoryStatusFromRow);
   }
 
+  maxCommitSequence(repositoryId: string): number {
+    const row = this.db
+      .prepare("SELECT MAX(sequence) AS sequence FROM commits WHERE repository_id = ?")
+      .get(repositoryId) as { readonly sequence: number | null } | undefined;
+
+    return row?.sequence ?? 0;
+  }
+
   markSyncStarted(repositoryId: string, now: string): void {
     this.db
       .prepare(
@@ -1452,6 +1460,43 @@ export class Projection {
     return row === undefined ? null : userFromRow(row);
   }
 
+  usersByRecipientLookupKeys(
+    repositoryId: string,
+    lookupKeys: ReadonlyArray<string>,
+  ): ReadonlyArray<UserProfileDocument> {
+    const normalized = [
+      ...new Set(lookupKeys.map((key) => key.trim().toLowerCase()).filter((key) => key.length > 0)),
+    ];
+
+    if (normalized.length === 0) return [];
+
+    const lookupPlaceholders = placeholders(normalized.length);
+    const aliasFilters = normalized.map(() => "lower(aliases_json) LIKE ?").join(" OR ");
+    const aliasParams = normalized.map((key) => `%"${key.replaceAll('"', '\\"')}"%`);
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM users
+         WHERE repository_id = ?
+           AND disabled_at IS NULL
+           AND (
+             lower(user_id) IN (${lookupPlaceholders})
+             OR lower(email) IN (${lookupPlaceholders})
+             OR lower(display_name) IN (${lookupPlaceholders})
+             OR (${aliasFilters})
+           )
+         ORDER BY user_id ASC`,
+      )
+      .all(
+        repositoryId,
+        ...normalized,
+        ...normalized,
+        ...normalized,
+        ...aliasParams,
+      ) as unknown as ReadonlyArray<UserRow>;
+
+    return rows.map(userFromRow);
+  }
+
   listUsers(repositoryId: string, query: UserProfileQuery = {}): UserProfilePage {
     const limit = normalizeLimit(query.limit);
     const cursor = decodeCursor(query.cursor);
@@ -1692,7 +1737,11 @@ export class Projection {
   }
 
   ticketVisible(repositoryId: string, ticketId: string): boolean {
-    return this.getTicket(repositoryId, ticketId) !== null;
+    const row = this.db
+      .prepare("SELECT 1 FROM tickets WHERE repository_id = ? AND ticket_id = ?")
+      .get(repositoryId, ticketId);
+
+    return row !== undefined;
   }
 
   recordVisible(repositoryId: string, recordId: string): boolean {

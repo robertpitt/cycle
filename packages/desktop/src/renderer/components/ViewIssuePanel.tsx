@@ -1,18 +1,15 @@
 import { ViewIssue, type ViewIssueActivityEvent, type ViewIssueComment } from "@cycle/ui/organisms";
-import { cn } from "@cycle/ui/utils";
+import { Button, DateTime, Input } from "@cycle/ui/atoms";
 import {
-  AlertTriangle,
-  BarChart3,
-  CalendarDays,
-  Check,
-  Circle,
-  CircleCheck,
-  CircleDashed,
-  CircleOff,
-  Gauge,
-  LoaderCircle,
-  UserRound,
-} from "lucide-react";
+  IssueAssigneeMark,
+  IssuePriorityMark,
+  IssuePropertyOptionMenu,
+  IssuePropertyPopover,
+  IssueStatusMark,
+  PanelState,
+  type IssuePropertyMenuOption,
+} from "@cycle/ui/molecules";
+import { BarChart3, CalendarDays, Gauge } from "lucide-react";
 import * as React from "react";
 import type {
   CreateTicketInput,
@@ -54,32 +51,24 @@ const initialsForName = (name: string): string =>
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
 
-const formatDate = (value: string | undefined): string | undefined => {
+const formatDate = (value: string | undefined): React.ReactNode => {
   if (!value) return undefined;
 
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return undefined;
-
-  return new Intl.DateTimeFormat(undefined, {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(date);
+  return <DateTime dateStyle="short" fallback={value} format="date" value={value} />;
 };
 
-const formatActivityTimestamp = (value: string | undefined): string | undefined => {
+const formatActivityTimestamp = (value: string | undefined): React.ReactNode => {
   if (!value) return undefined;
 
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return undefined;
-
-  return new Intl.DateTimeFormat(undefined, {
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(date);
+  return (
+    <DateTime
+      dateStyle="medium"
+      fallback={value}
+      format="datetime"
+      timeStyle="short"
+      value={value}
+    />
+  );
 };
 
 const getCommentBody = (record: LinkedRecord): string => {
@@ -186,37 +175,15 @@ const issueActivity = (
 
 const issueHistoryPageLimit = 100;
 
-const renderPanelState = (message: string, icon: "error" | "loading") => (
-  <div className="grid min-h-full place-items-center p-8">
-    <div className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 text-sm text-muted-foreground shadow-card">
-      {icon === "loading" ? (
-        <LoaderCircle aria-hidden className="size-4 animate-spin" />
-      ) : (
-        <AlertTriangle aria-hidden className="size-4 text-warning" />
-      )}
-      {message}
-    </div>
-  </div>
+const renderPanelState = (message: string, kind: "error" | "loading") => (
+  <PanelState kind={kind} message={message} />
 );
 
 const propertyIconClassName = "size-4 text-muted-foreground";
 const propertyMenuIconClassName = "size-4";
-const propertyTriggerClassName =
-  "grid size-6 place-items-center rounded-md text-muted-foreground transition hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-45";
-const propertyPanelClassName =
-  "absolute left-0 top-full z-50 mt-1 overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-elevated";
-const propertyInputClassName =
-  "h-9 min-w-0 rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground outline-none transition placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover";
 
 const priorityOptions = ["none", "urgent", "high", "medium", "low"] as const;
 const statusOptions = ["backlog", "todo", "in-progress", "done", "canceled"] as const;
-
-type PropertyMenuOption = {
-  readonly icon?: React.ReactNode;
-  readonly label: React.ReactNode;
-  readonly rightMeta?: React.ReactNode;
-  readonly value: string;
-};
 
 const titleForValue = (value: string): string =>
   value
@@ -227,234 +194,6 @@ const titleForValue = (value: string): string =>
 
 const priorityLabel = (priority: string): string =>
   priority === "none" ? "No priority" : titleForValue(priority);
-
-const useOutsideClose = ({
-  onClose,
-  open,
-  ref,
-}: {
-  readonly onClose: () => void;
-  readonly open: boolean;
-  readonly ref: React.RefObject<HTMLElement | null>;
-}) => {
-  React.useEffect(() => {
-    if (!open) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (event.target instanceof Node && ref.current?.contains(event.target)) return;
-      onClose();
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [onClose, open, ref]);
-};
-
-const StatusIcon = ({ status }: { readonly status: string }) => {
-  if (status === "done" || status === "closed") {
-    return <CircleCheck aria-hidden className={propertyMenuIconClassName} />;
-  }
-
-  if (status === "backlog") {
-    return <CircleDashed aria-hidden className={propertyMenuIconClassName} />;
-  }
-
-  if (status === "canceled") {
-    return <CircleOff aria-hidden className={propertyMenuIconClassName} />;
-  }
-
-  return <Circle aria-hidden className={propertyMenuIconClassName} />;
-};
-
-const PriorityBars = ({ priority }: { readonly priority: string }) => {
-  const level = priority === "high" ? 3 : priority === "medium" ? 2 : 1;
-
-  if (priority === "none") {
-    return <span className="text-xs font-semibold leading-none text-muted-foreground">--</span>;
-  }
-
-  if (priority === "urgent") {
-    return (
-      <span className="grid size-5 place-items-center rounded-sm bg-muted-foreground text-xs font-bold leading-none text-background">
-        !
-      </span>
-    );
-  }
-
-  return (
-    <span aria-hidden className="flex h-5 items-end gap-0.5 text-muted-foreground">
-      {[1, 2, 3].map((bar) => (
-        <span
-          className="w-1.5 rounded-sm bg-current data-[muted=true]:opacity-35"
-          data-muted={bar > level}
-          key={bar}
-          style={{
-            height: `${bar * 5 + 4}px`,
-          }}
-        />
-      ))}
-    </span>
-  );
-};
-
-const AssigneeMark = ({ name }: { readonly name?: string }) => {
-  if (!name) return <UserRound aria-hidden className={propertyMenuIconClassName} />;
-
-  return (
-    <span className="grid size-5 place-items-center rounded-full bg-subtle text-[10px] font-semibold text-muted-foreground">
-      {initialsForName(name)}
-    </span>
-  );
-};
-
-const IssuePropertyOptionMenu = ({
-  children,
-  disabled = false,
-  label,
-  onChange,
-  options,
-  value,
-  widthClassName = "w-[260px]",
-}: {
-  readonly children: React.ReactNode;
-  readonly disabled?: boolean;
-  readonly label: string;
-  readonly onChange: (value: string) => void;
-  readonly options: readonly PropertyMenuOption[];
-  readonly value: string;
-  readonly widthClassName?: string;
-}) => {
-  const [open, setOpen] = React.useState(false);
-  const ref = React.useRef<HTMLDivElement>(null);
-  const close = React.useCallback(() => setOpen(false), []);
-
-  useOutsideClose({
-    onClose: close,
-    open,
-    ref,
-  });
-
-  return (
-    <div className="relative inline-flex" ref={ref}>
-      <button
-        aria-expanded={open}
-        aria-haspopup="menu"
-        aria-label={label}
-        className={cn(propertyTriggerClassName, open && "bg-subtle text-foreground shadow-sm")}
-        disabled={disabled}
-        onClick={() => setOpen((current) => !current)}
-        title={label}
-        type="button"
-      >
-        {children}
-      </button>
-      {open ? (
-        <div
-          className={cn(propertyPanelClassName, "max-h-72 overflow-y-auto p-2", widthClassName)}
-          role="menu"
-        >
-          {options.map((option) => {
-            const selected = option.value === value;
-
-            return (
-              <button
-                aria-checked={selected}
-                className={cn(
-                  "grid min-h-10 w-full grid-cols-[1.5rem_minmax(0,1fr)_auto_auto] items-center gap-3 rounded-lg px-2 text-left text-sm text-foreground transition hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover",
-                  selected && "bg-subtle",
-                )}
-                key={option.value}
-                onClick={() => {
-                  if (!selected) onChange(option.value);
-                  close();
-                }}
-                role="menuitemradio"
-                type="button"
-              >
-                <span className="grid size-6 place-items-center text-muted-foreground">
-                  {option.icon}
-                </span>
-                <span className="min-w-0 truncate font-medium">{option.label}</span>
-                <span className="grid size-4 place-items-center text-muted-foreground">
-                  {selected ? <Check aria-hidden className="size-4" /> : null}
-                </span>
-                {option.rightMeta ? (
-                  <span className="min-w-5 text-right text-xs font-medium text-muted-foreground">
-                    {option.rightMeta}
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-    </div>
-  );
-};
-
-const IssuePropertyPopover = ({
-  children,
-  disabled = false,
-  label,
-  onOpenChange,
-  trigger,
-  widthClassName = "w-[260px]",
-}: {
-  readonly children: (close: () => void) => React.ReactNode;
-  readonly disabled?: boolean;
-  readonly label: string;
-  readonly onOpenChange?: (open: boolean) => void;
-  readonly trigger: React.ReactNode;
-  readonly widthClassName?: string;
-}) => {
-  const [open, setOpenState] = React.useState(false);
-  const ref = React.useRef<HTMLDivElement>(null);
-  const setOpen = React.useCallback(
-    (nextOpen: boolean) => {
-      setOpenState(nextOpen);
-      onOpenChange?.(nextOpen);
-    },
-    [onOpenChange],
-  );
-  const close = React.useCallback(() => setOpen(false), [setOpen]);
-
-  useOutsideClose({
-    onClose: close,
-    open,
-    ref,
-  });
-
-  return (
-    <div className="relative inline-flex" ref={ref}>
-      <button
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        aria-label={label}
-        className={cn(propertyTriggerClassName, open && "bg-subtle text-foreground shadow-sm")}
-        disabled={disabled}
-        onClick={() => setOpen(!open)}
-        title={label}
-        type="button"
-      >
-        {trigger}
-      </button>
-      {open ? (
-        <div className={cn(propertyPanelClassName, "p-3", widthClassName)} role="dialog">
-          {children(close)}
-        </div>
-      ) : null}
-    </div>
-  );
-};
 
 const IssueDueDateControl = ({
   disabled = false,
@@ -494,31 +233,28 @@ const IssueDueDateControl = ({
         >
           <label className="grid gap-1.5 text-sm font-medium text-foreground">
             <span>Due date</span>
-            <input
+            <Input
               aria-label="Issue due date"
-              className={propertyInputClassName}
               onChange={(event) => setDraft(event.currentTarget.value)}
               type="date"
               value={draft}
             />
           </label>
           <div className="flex items-center justify-between gap-2">
-            <button
-              className="rounded-md px-2 py-1 text-sm font-medium text-muted-foreground transition hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
+            <Button
               onClick={() => {
                 if (value.length > 0) onChange(null);
                 close();
               }}
+              size="sm"
               type="button"
+              variant="ghost"
             >
               Clear
-            </button>
-            <button
-              className="rounded-md bg-primary px-3 py-1 text-sm font-semibold text-primary-foreground transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
-              type="submit"
-            >
+            </Button>
+            <Button size="sm" type="submit">
               Apply
-            </button>
+            </Button>
           </div>
         </form>
       )}
@@ -564,9 +300,8 @@ const IssueEstimateControl = ({
         >
           <label className="grid gap-1.5 text-sm font-medium text-foreground">
             <span>Estimate</span>
-            <input
+            <Input
               aria-label="Issue estimate"
-              className={propertyInputClassName}
               inputMode="decimal"
               onChange={(event) => setDraft(event.currentTarget.value)}
               placeholder="None"
@@ -574,22 +309,20 @@ const IssueEstimateControl = ({
             />
           </label>
           <div className="flex items-center justify-between gap-2">
-            <button
-              className="rounded-md px-2 py-1 text-sm font-medium text-muted-foreground transition hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
+            <Button
               onClick={() => {
                 if (value.length > 0) onChange(null);
                 close();
               }}
+              size="sm"
               type="button"
+              variant="ghost"
             >
               Clear
-            </button>
-            <button
-              className="rounded-md bg-primary px-3 py-1 text-sm font-semibold text-primary-foreground transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
-              type="submit"
-            >
+            </Button>
+            <Button size="sm" type="submit">
               Apply
-            </button>
+            </Button>
           </div>
         </form>
       )}
@@ -695,23 +428,23 @@ export const ViewIssuePanel = ({
       ? ""
       : String(issue.frontmatter.estimate);
   const statusMenuOptions = statusOptions.map((status) => ({
-    icon: <StatusIcon status={status} />,
+    icon: <IssueStatusMark status={status} />,
     label: titleForValue(status),
     value: status,
-  }));
+  })) satisfies readonly IssuePropertyMenuOption[];
   const priorityMenuOptions = priorityOptions.map((priority) => ({
-    icon: <PriorityBars priority={priority} />,
+    icon: <IssuePriorityMark priority={priority} size="md" />,
     label: priorityLabel(priority),
     value: priority,
-  }));
+  })) satisfies readonly IssuePropertyMenuOption[];
   const assigneeMenuOptions = [
     {
-      icon: <AssigneeMark />,
+      icon: <IssueAssigneeMark />,
       label: "No assignee",
       value: "none",
     },
     ...users.map((user) => ({
-      icon: <AssigneeMark name={user.displayName} />,
+      icon: <IssueAssigneeMark name={user.displayName} />,
       label: user.displayName,
       rightMeta: user.email,
       value: user.id,
@@ -719,13 +452,13 @@ export const ViewIssuePanel = ({
     ...(rawAssignee && !userMap.has(rawAssignee)
       ? [
           {
-            icon: <AssigneeMark name={rawAssignee} />,
+            icon: <IssueAssigneeMark name={rawAssignee} />,
             label: rawAssignee,
             value: rawAssignee,
           },
         ]
       : []),
-  ];
+  ] satisfies readonly IssuePropertyMenuOption[];
   const issueProperties = [
     {
       icon: (
@@ -737,10 +470,9 @@ export const ViewIssuePanel = ({
             updateFrontmatter({ status }, `Updated ${issue.id} status to ${status}`);
           }}
           options={statusMenuOptions}
+          trigger={<IssueStatusMark status={issue.frontmatter.status} />}
           value={issue.frontmatter.status}
-        >
-          <StatusIcon status={issue.frontmatter.status} />
-        </IssuePropertyOptionMenu>
+        />
       ),
       id: "status",
       label: "Status",
@@ -756,10 +488,9 @@ export const ViewIssuePanel = ({
             updateFrontmatter({ priority }, `Updated ${issue.id} priority to ${priority}`);
           }}
           options={priorityMenuOptions}
+          trigger={<IssuePriorityMark priority={issue.frontmatter.priority} size="md" />}
           value={issue.frontmatter.priority}
-        >
-          <PriorityBars priority={issue.frontmatter.priority} />
-        </IssuePropertyOptionMenu>
+        />
       ),
       id: "priority",
       label: "Priority",
@@ -776,11 +507,10 @@ export const ViewIssuePanel = ({
             updateFrontmatter({ assignee: nextAssignee }, `Updated ${issue.id} assignee`);
           }}
           options={assigneeMenuOptions}
+          trigger={<IssueAssigneeMark name={assigneeName} />}
           value={rawAssignee || "none"}
           widthClassName="w-[300px]"
-        >
-          <AssigneeMark name={assigneeName} />
-        </IssuePropertyOptionMenu>
+        />
       ),
       id: "assignee",
       label: "Assignee",

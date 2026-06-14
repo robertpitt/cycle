@@ -72,6 +72,7 @@ type QueryInput = Readonly<Record<string, unknown>>;
 const API_URL_STORAGE_KEY = "cycle.api.baseUrl";
 const API_TOKEN_STORAGE_KEY = "cycle.api.token";
 const DEV_PROXY_BASE_URL = "/cycle-api";
+const REPOSITORY_ISSUE_CURSOR_KEY = "__cycleRepositoryIssueCursors";
 
 export class CycleApiRequestError extends Error {
   readonly code: string;
@@ -459,15 +460,40 @@ const listIssuesForRepositories = async (
   repositoryIds: ReadonlyArray<string>,
   query: QueryInput,
 ): Promise<TicketPage> => {
+  const repositoryCursor = decodeRepositoryIssueCursor(query.cursor);
+  const fallbackCursor = repositoryCursor === undefined ? query.cursor : undefined;
+  const { cursor: _cursor, ...baseQuery } = query;
   const pages = await Promise.all(
-    repositoryIds.map((repositoryId) => listIssuesForRepository(repositoryId, query)),
+    repositoryIds.map(async (repositoryId) => {
+      const cursor =
+        repositoryCursor === undefined ? fallbackCursor : repositoryCursor[repositoryId];
+
+      if (repositoryCursor !== undefined && cursor === undefined) return undefined;
+
+      const page = await listIssuesForRepository(repositoryId, {
+        ...baseQuery,
+        ...(typeof cursor === "string" ? { cursor } : {}),
+      });
+
+      return {
+        page,
+        repositoryId,
+      };
+    }),
   );
+  const nextCursors = Object.fromEntries(
+    pages.flatMap((entry) =>
+      entry?.page.nextCursor === undefined ? [] : [[entry.repositoryId, entry.page.nextCursor]],
+    ),
+  );
+  const nextCursor = encodeRepositoryIssueCursor(nextCursors);
 
   return {
     entries: sortIssueEntries(
-      pages.flatMap((entryPage) => entryPage.entries),
+      pages.flatMap((entry) => entry?.page.entries ?? []),
       query,
     ),
+    ...(nextCursor === undefined ? {} : { nextCursor }),
   };
 };
 
@@ -547,6 +573,39 @@ const repositoryIdsFromIssueQuery = (query: QueryInput): ReadonlyArray<string> |
 const withoutRepositoryIds = (query: QueryInput): QueryInput => {
   const { repositoryIds: _repositoryIds, ...rest } = query;
   return rest;
+};
+
+const decodeRepositoryIssueCursor = (
+  cursor: unknown,
+): Readonly<Record<string, string>> | undefined => {
+  if (typeof cursor !== "string") return undefined;
+
+  try {
+    const parsed = JSON.parse(cursor) as unknown;
+    if (!isRecord(parsed)) return undefined;
+
+    const cursors = parsed[REPOSITORY_ISSUE_CURSOR_KEY];
+    if (!isRecord(cursors)) return undefined;
+
+    return Object.fromEntries(
+      Object.entries(cursors).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0,
+      ),
+    );
+  } catch {
+    return undefined;
+  }
+};
+
+const encodeRepositoryIssueCursor = (
+  cursors: Readonly<Record<string, string>>,
+): string | undefined => {
+  const entries = Object.entries(cursors).filter(([, cursor]) => cursor.length > 0);
+  if (entries.length === 0) return undefined;
+
+  return JSON.stringify({
+    [REPOSITORY_ISSUE_CURSOR_KEY]: Object.fromEntries(entries),
+  });
 };
 
 const addIssueRecord = async (repositoryId: string, input: QueryInput): Promise<unknown> => {

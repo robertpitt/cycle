@@ -5,28 +5,23 @@ import type {
   TicketQuery,
   UserProfileDocument,
 } from "@cycle/contracts";
-import { Avatar, AvatarFallback, Button, IconButton, Input } from "@cycle/ui/atoms";
+import { Button, DateTime, IconButton, Input, Select } from "@cycle/ui/atoms";
+import {
+  IssueAssigneeMark,
+  IssuePriorityMark,
+  IssuePropertyOptionMenu,
+  IssueStatusMark,
+  type IssuePropertyMenuOption,
+} from "@cycle/ui/molecules";
 import { IssuesList, type IssuesListGroup, type IssuesListProps } from "@cycle/ui/organisms";
 import { cn } from "@cycle/ui/utils";
-import {
-  Check,
-  Circle,
-  CircleCheck,
-  CircleDashed,
-  CircleOff,
-  CircleUserRound,
-  Plus,
-  Save,
-  Search,
-  SlidersHorizontal,
-  X,
-} from "lucide-react";
+import { Plus, Save, Search, SlidersHorizontal, X } from "lucide-react";
 import * as React from "react";
 import type { ProfileConfig } from "../../shared/AppConfig.ts";
 import { useCreateSavedViewMutation } from "../mutations/index.ts";
 import { useUpdateIssueMutation } from "../mutations/useUpdateIssueMutation.ts";
 import { labelColorClassName } from "../screens/workspace/createIssueOptions.tsx";
-import { useIssueListQuery } from "../queries/issues.ts";
+import { useIssueListInfiniteQuery } from "../queries/issues.ts";
 import { useLabelListQuery, useSavedViewListQuery, useUserListQuery } from "../queries/metadata.ts";
 
 type IssuesPanelProps = {
@@ -92,6 +87,7 @@ const groupingOptions: readonly IssueMenuOption[] = [
 
 const statusOrder = ["in-progress", "todo", "backlog", "done", "canceled"] as const;
 const priorityOrder = ["none", "urgent", "high", "medium", "low"] as const;
+const allIssuesViewValue = "__all_issues__";
 
 const normalizeValue = (value: unknown, fallback = "none"): string => {
   if (value === null || value === undefined) return fallback;
@@ -106,14 +102,6 @@ const titleForValue = (value: string): string =>
     .filter(Boolean)
     .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
     .join(" ");
-
-const initialsForName = (name: string): string =>
-  name
-    .split(/\s+/u)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
 
 const countBy = (
   issues: readonly TicketDocument[],
@@ -158,224 +146,15 @@ const statusTone = (status: string): IssuesListProps["rows"][number]["statusTone
   }
 };
 
-const formatIssueDate = (issue: TicketDocument) => {
-  const date = new Date(issue.frontmatter.updatedAt);
-
-  if (Number.isNaN(date.getTime())) {
-    return undefined;
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric",
-    month: "short",
-  }).format(date);
-};
-
-const PriorityBars = ({ priority }: { readonly priority: string }) => {
-  const level = priority === "urgent" ? 4 : priority === "high" ? 3 : priority === "medium" ? 2 : 1;
-
-  if (priority === "none") {
-    return <span className="text-sm font-semibold leading-none text-muted-foreground">--</span>;
-  }
-
-  if (priority === "urgent") {
-    return (
-      <span className="grid size-4 place-items-center rounded-sm bg-destructive text-[11px] font-bold text-destructive-foreground">
-        !
-      </span>
-    );
-  }
-
-  return (
-    <span aria-hidden className="flex h-5 items-end gap-0.5 text-muted-foreground">
-      {[1, 2, 3].map((bar) => (
-        <span
-          className="w-1.5 rounded-sm bg-current data-[muted=true]:opacity-35"
-          data-muted={bar > level}
-          key={bar}
-          style={{
-            height: `${bar * 5 + 4}px`,
-          }}
-        />
-      ))}
-    </span>
-  );
-};
-
-const StatusIcon = ({ status }: { readonly status: string }) => {
-  const className =
-    status === "in-progress"
-      ? "text-warning"
-      : status === "done" || status === "closed"
-        ? "text-primary"
-        : status === "canceled"
-          ? "text-muted-foreground"
-          : "text-muted-foreground";
-
-  if (status === "done" || status === "closed") {
-    return <CircleCheck aria-hidden className={cn("size-4", className)} strokeWidth={2.4} />;
-  }
-
-  if (status === "backlog") {
-    return <CircleDashed aria-hidden className={cn("size-4", className)} strokeWidth={2.2} />;
-  }
-
-  if (status === "canceled") {
-    return <CircleOff aria-hidden className={cn("size-4", className)} strokeWidth={2.4} />;
-  }
-
-  return <Circle aria-hidden className={cn("size-4", className)} strokeWidth={2.4} />;
-};
-
-const AssigneeAvatar = ({ assignee }: { readonly assignee?: string | null }) => {
-  if (!assignee || assignee === "none") {
-    return <CircleUserRound aria-hidden className="size-4 text-muted-foreground" />;
-  }
-
-  return (
-    <Avatar className="size-6">
-      <AvatarFallback className="text-[10px]">{initialsForName(assignee)}</AvatarFallback>
-    </Avatar>
-  );
-};
-
-const stopRowActivation = (event: React.SyntheticEvent) => {
-  event.stopPropagation();
-};
-
-const useOutsideClose = ({
-  onClose,
-  open,
-  ref,
-}: {
-  readonly onClose: () => void;
-  readonly open: boolean;
-  readonly ref: React.RefObject<HTMLElement | null>;
-}) => {
-  React.useEffect(() => {
-    if (!open) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (event.target instanceof Node && ref.current?.contains(event.target)) return;
-      onClose();
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [onClose, open, ref]);
-};
-
-const IssueFieldMenu = ({
-  align = "start",
-  children,
-  disabled = false,
-  label,
-  onSelect,
-  options,
-  value,
-  widthClassName = "w-[260px]",
-}: {
-  readonly align?: "end" | "start";
-  readonly children: React.ReactNode;
-  readonly disabled?: boolean;
-  readonly label: string;
-  readonly onSelect: (option: IssueMenuOption) => void;
-  readonly options: readonly IssueMenuOption[];
-  readonly value: string;
-  readonly widthClassName?: string;
-}) => {
-  const [open, setOpen] = React.useState(false);
-  const ref = React.useRef<HTMLDivElement>(null);
-  const close = React.useCallback(() => setOpen(false), []);
-
-  useOutsideClose({
-    onClose: close,
-    open,
-    ref,
-  });
-
-  const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    event.stopPropagation();
-    if (event.key === "Escape") close();
-  };
-
-  return (
-    <div
-      className="relative inline-flex"
-      onClick={stopRowActivation}
-      onKeyDown={handleMenuKeyDown}
-      onPointerDown={stopRowActivation}
-      ref={ref}
-    >
-      <button
-        aria-expanded={open}
-        aria-haspopup="menu"
-        aria-label={label}
-        className={cn(
-          "grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-          open && "bg-subtle text-foreground",
-        )}
-        disabled={disabled}
-        onClick={() => setOpen((current) => !current)}
-        type="button"
-      >
-        {children}
-      </button>
-      {open ? (
-        <div
-          className={cn(
-            "absolute top-full z-50 mt-2 overflow-hidden rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-elevated",
-            align === "end" ? "right-0" : "left-0",
-            widthClassName,
-          )}
-          role="menu"
-        >
-          {options.map((option) => {
-            const selected = option.id === value;
-            return (
-              <button
-                aria-checked={selected}
-                className={cn(
-                  "grid min-h-10 w-full grid-cols-[1.5rem_minmax(0,1fr)_auto_auto] items-center gap-3 rounded-lg px-2 text-left text-sm text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                  selected && "bg-subtle",
-                )}
-                key={option.id}
-                onClick={() => {
-                  onSelect(option);
-                  close();
-                }}
-                role="menuitemradio"
-                type="button"
-              >
-                <span className="grid size-6 place-items-center text-muted-foreground">
-                  {option.icon}
-                </span>
-                <span className="min-w-0 truncate font-medium">{option.label}</span>
-                <span className="grid size-4 place-items-center text-muted-foreground">
-                  {selected ? <Check aria-hidden className="size-4" /> : null}
-                </span>
-                {option.rightMeta ? (
-                  <span className="min-w-5 text-right text-xs font-medium text-muted-foreground">
-                    {option.rightMeta}
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-    </div>
-  );
-};
+const menuOptionsForIssueProperty = (
+  options: readonly IssueMenuOption[],
+): readonly IssuePropertyMenuOption[] =>
+  options.map((option) => ({
+    icon: option.icon,
+    label: option.label,
+    rightMeta: option.rightMeta,
+    value: option.id,
+  }));
 
 const IssuePriorityControl = ({
   issue,
@@ -393,23 +172,23 @@ const IssuePriorityControl = ({
   });
 
   return (
-    <IssueFieldMenu
+    <IssuePropertyOptionMenu
       disabled={updateIssue.isPending}
       label={`Change priority for ${issue.id}`}
-      onSelect={(option) => {
-        if (option.id === priority) return;
+      onChange={(nextPriority) => {
+        if (nextPriority === priority) return;
         updateIssue.mutate({
           frontmatter: {
-            priority: option.id,
+            priority: nextPriority,
           },
-          message: `Updated ${issue.id} priority to ${option.id}`,
+          message: `Updated ${issue.id} priority to ${nextPriority}`,
         });
       }}
-      options={options}
+      options={menuOptionsForIssueProperty(options)}
+      stopPropagation
+      trigger={<IssuePriorityMark priority={priority} />}
       value={priority}
-    >
-      <PriorityBars priority={priority} />
-    </IssueFieldMenu>
+    />
   );
 };
 
@@ -429,23 +208,23 @@ const IssueStatusControl = ({
   });
 
   return (
-    <IssueFieldMenu
+    <IssuePropertyOptionMenu
       disabled={updateIssue.isPending}
       label={`Change status for ${issue.id}`}
-      onSelect={(option) => {
-        if (option.id === status) return;
+      onChange={(nextStatus) => {
+        if (nextStatus === status) return;
         updateIssue.mutate({
           frontmatter: {
-            status: option.id,
+            status: nextStatus,
           },
-          message: `Updated ${issue.id} status to ${option.id}`,
+          message: `Updated ${issue.id} status to ${nextStatus}`,
         });
       }}
-      options={options}
+      options={menuOptionsForIssueProperty(options)}
+      stopPropagation
+      trigger={<IssueStatusMark status={status} />}
       value={status}
-    >
-      <StatusIcon status={status} />
-    </IssueFieldMenu>
+    />
   );
 };
 
@@ -467,126 +246,60 @@ const IssueAssigneeControl = ({
   });
 
   return (
-    <IssueFieldMenu
+    <IssuePropertyOptionMenu
       align="end"
       disabled={updateIssue.isPending}
       label={`Change assignee for ${issue.id}`}
-      onSelect={(option) => {
-        if (option.id === assignee) return;
+      onChange={(nextAssignee) => {
+        if (nextAssignee === assignee) return;
         updateIssue.mutate({
           frontmatter: {
-            assignee: option.id === "none" ? null : option.id,
+            assignee: nextAssignee === "none" ? null : nextAssignee,
           },
           message: `Updated ${issue.id} assignee`,
         });
       }}
-      options={options}
+      options={menuOptionsForIssueProperty(options)}
+      stopPropagation
+      trigger={<IssueAssigneeMark name={assigneeLabel ?? issue.frontmatter.assignee} size="md" />}
       value={assignee}
       widthClassName="w-[280px]"
-    >
-      <AssigneeAvatar assignee={assigneeLabel ?? issue.frontmatter.assignee} />
-    </IssueFieldMenu>
-  );
-};
-
-const ViewOptionsMenu = ({
-  grouping,
-  onGroupingChange,
-}: {
-  readonly grouping: IssueGrouping;
-  readonly onGroupingChange: (grouping: IssueGrouping) => void;
-}) => {
-  const [open, setOpen] = React.useState(false);
-  const ref = React.useRef<HTMLDivElement>(null);
-  const close = React.useCallback(() => setOpen(false), []);
-
-  useOutsideClose({
-    onClose: close,
-    open,
-    ref,
-  });
-
-  return (
-    <div className="relative inline-flex" ref={ref}>
-      <IconButton
-        aria-expanded={open}
-        aria-haspopup="menu"
-        className={open ? "bg-subtle text-foreground shadow-card" : undefined}
-        icon={<SlidersHorizontal aria-hidden className="size-4" />}
-        label="View options"
-        onClick={() => setOpen((current) => !current)}
-        size="sm"
-        title="View options"
-        variant="ghost"
-      />
-      {open ? (
-        <div
-          className="absolute right-0 top-full z-50 mt-2 w-[240px] overflow-hidden rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-elevated"
-          role="menu"
-        >
-          <div className="px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">Grouping</div>
-          {groupingOptions.map((option) => {
-            const selected = option.id === grouping;
-            return (
-              <button
-                aria-checked={selected}
-                className={cn(
-                  "grid min-h-10 w-full grid-cols-[minmax(0,1fr)_1.25rem] items-center gap-3 rounded-lg px-2 text-left text-sm text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                  selected && "bg-subtle",
-                )}
-                key={option.id}
-                onClick={() => {
-                  onGroupingChange(option.id as IssueGrouping);
-                  close();
-                }}
-                role="menuitemradio"
-                type="button"
-              >
-                <span className="min-w-0 truncate font-medium">{option.label}</span>
-                <span className="grid size-5 place-items-center text-muted-foreground">
-                  {selected ? <Check aria-hidden className="size-5" /> : null}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-    </div>
+    />
   );
 };
 
 const statusDefinitions = (counts: ReadonlyMap<string, number>): readonly IssueGroupDefinition[] =>
   [
     {
-      icon: <StatusIcon status="in-progress" />,
+      icon: <IssueStatusMark status="in-progress" />,
       id: "in-progress",
       label: "In Progress",
       rightMeta: counts.get("in-progress") ?? 0,
       title: "In Progress",
     },
     {
-      icon: <StatusIcon status="todo" />,
+      icon: <IssueStatusMark status="todo" />,
       id: "todo",
       label: "Todo",
       rightMeta: counts.get("todo") ?? 0,
       title: "Todo",
     },
     {
-      icon: <StatusIcon status="backlog" />,
+      icon: <IssueStatusMark status="backlog" />,
       id: "backlog",
       label: "Backlog",
       rightMeta: counts.get("backlog") ?? 0,
       title: "Backlog",
     },
     {
-      icon: <StatusIcon status="done" />,
+      icon: <IssueStatusMark status="done" />,
       id: "done",
       label: "Done",
       rightMeta: counts.get("done") ?? 0,
       title: "Done",
     },
     {
-      icon: <StatusIcon status="canceled" />,
+      icon: <IssueStatusMark status="canceled" />,
       id: "canceled",
       label: "Canceled",
       rightMeta: counts.get("canceled") ?? 0,
@@ -597,7 +310,7 @@ const statusDefinitions = (counts: ReadonlyMap<string, number>): readonly IssueG
       .filter((status) => !statusOrder.includes(status as (typeof statusOrder)[number]))
       .sort()
       .map((status) => ({
-        icon: <StatusIcon status={status} />,
+        icon: <IssueStatusMark status={status} />,
         id: status,
         label: titleForValue(status),
         rightMeta: counts.get(status) ?? 0,
@@ -610,35 +323,35 @@ const priorityDefinitions = (
 ): readonly IssueGroupDefinition[] =>
   [
     {
-      icon: <PriorityBars priority="none" />,
+      icon: <IssuePriorityMark priority="none" />,
       id: "none",
       label: "No priority",
       rightMeta: counts.get("none") ?? 0,
       title: "No priority",
     },
     {
-      icon: <PriorityBars priority="urgent" />,
+      icon: <IssuePriorityMark priority="urgent" />,
       id: "urgent",
       label: "Urgent",
       rightMeta: counts.get("urgent") ?? 0,
       title: "Urgent",
     },
     {
-      icon: <PriorityBars priority="high" />,
+      icon: <IssuePriorityMark priority="high" />,
       id: "high",
       label: "High",
       rightMeta: counts.get("high") ?? 0,
       title: "High",
     },
     {
-      icon: <PriorityBars priority="medium" />,
+      icon: <IssuePriorityMark priority="medium" />,
       id: "medium",
       label: "Medium",
       rightMeta: counts.get("medium") ?? 0,
       title: "Medium",
     },
     {
-      icon: <PriorityBars priority="low" />,
+      icon: <IssuePriorityMark priority="low" />,
       id: "low",
       label: "Low",
       rightMeta: counts.get("low") ?? 0,
@@ -649,7 +362,7 @@ const priorityDefinitions = (
       .filter((priority) => !priorityOrder.includes(priority as (typeof priorityOrder)[number]))
       .sort()
       .map((priority) => ({
-        icon: <PriorityBars priority={priority} />,
+        icon: <IssuePriorityMark priority={priority} />,
         id: priority,
         label: titleForValue(priority),
         rightMeta: counts.get(priority) ?? 0,
@@ -688,7 +401,7 @@ const assigneeDefinitions = ({
 
   return [
     {
-      icon: <AssigneeAvatar />,
+      icon: <IssueAssigneeMark />,
       id: "none",
       label: "No assignee",
       rightMeta: counts.get("none") ?? 0,
@@ -697,7 +410,7 @@ const assigneeDefinitions = ({
     ...[...assignees.entries()]
       .sort((a, b) => a[1].localeCompare(b[1]))
       .map(([id, name]) => ({
-        icon: <AssigneeAvatar assignee={name} />,
+        icon: <IssueAssigneeMark name={name} size="md" />,
         id,
         label: name,
         rightMeta: counts.get(id) ?? 0,
@@ -779,7 +492,7 @@ const issueRow = ({
         repositoryId={repositoryId}
       />
     ),
-    date: formatIssueDate(issue),
+    date: <DateTime fallback={null} format="compactDate" value={issue.frontmatter.updatedAt} />,
     id: issue.id,
     meta: [
       ...(showRepositoryMeta && repositoryDisplayName
@@ -890,8 +603,14 @@ export const IssuesPanel = ({
       ...(text.length > 0 ? { text } : {}),
     } satisfies Omit<TicketQuery, "repositoryIds">;
   }, [activeSavedView, query, searchText]);
-  const issuesQuery = useIssueListQuery(repositoryId, effectiveQuery, repositoryIds);
-  const issues = issuesQuery.data?.entries ?? [];
+  const issuesQuery = useIssueListInfiniteQuery(repositoryId, effectiveQuery, repositoryIds);
+  const issues = React.useMemo(
+    () => issuesQuery.data?.pages.flatMap((page) => page.entries) ?? [],
+    [issuesQuery.data],
+  );
+  const issueCount = issuesQuery.data
+    ? `${issues.length}${issuesQuery.hasNextPage ? "+" : ""}`
+    : undefined;
   const labels = labelsQuery.data?.entries ?? [];
   const users = usersQuery.data?.entries ?? [];
   const labelMap = React.useMemo(() => new Map(labels.map((label) => [label.id, label])), [labels]);
@@ -1103,19 +822,24 @@ export const IssuesPanel = ({
             />
           </label>
           {savedViewControlsVisible ? (
-            <select
+            <Select
               aria-label="Saved view"
-              className="h-9 max-w-56 rounded-md border border-border bg-popover px-3 text-sm font-medium text-foreground shadow-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              onChange={(event) => setLocalActiveViewId(event.currentTarget.value || undefined)}
-              value={activeViewId ?? ""}
-            >
-              <option value="">All issues</option>
-              {savedViews.map((view) => (
-                <option key={view.id} value={view.id}>
-                  {view.name}
-                </option>
-              ))}
-            </select>
+              className="max-w-56"
+              items={[
+                {
+                  label: "All issues",
+                  value: allIssuesViewValue,
+                },
+                ...savedViews.map((view) => ({
+                  label: view.name,
+                  value: view.id,
+                })),
+              ]}
+              onValueChange={(value) => {
+                setLocalActiveViewId(value && value !== allIssuesViewValue ? value : undefined);
+              }}
+              value={activeViewId ?? allIssuesViewValue}
+            />
           ) : null}
           {savedViewControlsVisible && activeViewId ? (
             <IconButton
@@ -1142,12 +866,20 @@ export const IssuesPanel = ({
               Save view
             </Button>
           ) : null}
-          <ViewOptionsMenu grouping={grouping} onGroupingChange={setGrouping} />
+          <IssuePropertyOptionMenu
+            align="end"
+            label="View options"
+            onChange={(value) => setGrouping(value as IssueGrouping)}
+            options={menuOptionsForIssueProperty(groupingOptions)}
+            trigger={<SlidersHorizontal aria-hidden className="size-4" />}
+            value={grouping}
+            widthClassName="w-[240px]"
+          />
         </div>
       </div>
       <IssuesList
         className="bg-transparent"
-        count={issuesQuery.data ? String(issuesQuery.data.entries.length) : undefined}
+        count={issueCount}
         density="comfortable"
         emptyState={
           loadingRepository
@@ -1167,6 +899,21 @@ export const IssuesPanel = ({
         showHeader={false}
         title={title}
       />
+      {issuesQuery.hasNextPage ? (
+        <div className="mt-3 flex justify-center">
+          <Button
+            loading={issuesQuery.isFetchingNextPage}
+            loadingLabel="Loading more issues"
+            onClick={() => {
+              void issuesQuery.fetchNextPage();
+            }}
+            size="sm"
+            variant="outline"
+          >
+            Load more issues
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 };

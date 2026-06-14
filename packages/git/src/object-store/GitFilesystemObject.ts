@@ -59,9 +59,22 @@ export const readObjectUncached = (
       return packed;
     }
 
-    const compressed = yield* runtime.fs
-      .readFile(objectPath)
-      .pipe(Effect.mapError(mapFsError("filesystem readObject", objectPath)));
+    const readResult = yield* runtime.fs.readFile(objectPath).pipe(
+      Effect.map((bytes) => ({ bytes, type: "loose" }) as const),
+      Effect.catch((cause) =>
+        readPackedObject(runtime, gitDir, id).pipe(
+          Effect.flatMap((packed) =>
+            packed === null
+              ? Effect.fail(mapFsError("filesystem readObject", objectPath)(cause))
+              : Effect.succeed({ object: packed, type: "packed" } as const),
+          ),
+        ),
+      ),
+    );
+
+    if (readResult.type === "packed") return readResult.object;
+
+    const compressed = readResult.bytes;
     const raw = yield* inflate(compressed, "filesystem readObject");
     const headerEnd = raw.indexOf(0);
 

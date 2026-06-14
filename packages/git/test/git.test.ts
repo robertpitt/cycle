@@ -279,6 +279,12 @@ describe("@cycle/git", () => {
         const isCommit = yield* cli.isCommit(first.store, second.commit);
         const isAncestor = yield* cli.isAncestor(first.store, first.commit, second.commit);
         const mergeBase = yield* cli.mergeBase(first.store, first.commit, second.commit);
+        const cliOnly = yield* writeSnapshot(
+          cli,
+          repo,
+          "Packed before filesystem read",
+          second.commit,
+        );
 
         assert.strictEqual(firstRef, first.commit);
         assert.strictEqual(bytesToString(firstBlob), "Create ticket\n");
@@ -300,7 +306,9 @@ describe("@cycle/git", () => {
 
         yield* git(repo, ["gc"]);
         const packedBlob = yield* filesystem.readBlob(first.store, first.blob);
+        const packedCliOnlyBlob = yield* filesystem.readBlob(first.store, cliOnly.blob);
         assert.strictEqual(bytesToString(packedBlob), "Create ticket\n");
+        assert.strictEqual(bytesToString(packedCliOnlyBlob), "Packed before filesystem read\n");
       }),
     ),
   );

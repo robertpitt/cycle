@@ -1,5 +1,6 @@
 import { Event as GitDbEvent, type Store as GitDbStore, type SyncResult } from "@cycle/git-db";
-import { Cause, Context, Effect, Fiber, Layer, Queue, Result } from "effect";
+import { performance } from "node:perf_hooks";
+import { Cause, Context, Effect, Fiber, Layer, Queue } from "effect";
 import {
   CURRENT_SCHEMA_VERSION,
   defaultIssueBody,
@@ -154,10 +155,32 @@ type DatabaseEventPayload =
     };
 
 type FoldedEvents = {
+  readonly changedLabels: Set<string>;
+  readonly changedRecords: Set<string>;
+  readonly changedTemplates: Set<string>;
+  readonly changedTickets: Set<string>;
+  readonly changedUsers: Set<string>;
+  readonly changedViews: Set<string>;
+  readonly commitChanges: Array<{
+    readonly changes: ReadonlyArray<CommitChange>;
+    readonly repositoryId: string;
+    readonly snapshotId: string;
+  }>;
   cycleMetadata?: CycleRepositoryMetadata;
+  readonly deletedLabels: Set<string>;
+  readonly deletedRecords: Set<string>;
+  readonly deletedTemplates: Set<string>;
+  readonly deletedTickets: Set<string>;
+  readonly deletedUsers: Set<string>;
+  readonly deletedViews: Set<string>;
   readonly drafts: Map<string, TicketDraftDocument>;
   readonly inboxSources: Array<InboxSourceEvent>;
   readonly labels: Map<string, LabelDefinitionDocument>;
+  readonly nonAdditiveEvents: Array<{
+    readonly path: string;
+    readonly reason: "event-deleted" | "event-modified";
+    readonly snapshotId: string;
+  }>;
   readonly records: Map<string, LinkedRecord>;
   readonly templates: Map<string, IssueTemplateDocument>;
   readonly tickets: Map<string, TicketDocument>;
@@ -203,6 +226,24 @@ type InboxSourceEventInput = InboxSourceEvent extends infer Source
     : never
   : never;
 
+type GitDbSnapshot = {
+  readonly author?: GitDbIdentity;
+  readonly committer?: GitDbIdentity;
+  readonly createdAt?: string;
+  readonly id: string;
+  readonly message?: string;
+  readonly parents: ReadonlyArray<string>;
+  readonly root: string;
+};
+
+type GitDbIdentity = {
+  readonly date: string;
+  readonly email: string;
+  readonly name: string;
+  readonly timestamp: number;
+  readonly timezone: string;
+};
+
 export type DatabaseServiceOptions = {
   readonly backgroundRunner?: DatabaseBackgroundRunner;
   readonly logger?: (event: DatabaseLogEvent) => void;
@@ -246,6 +287,8 @@ type DatabaseLogEvent = {
   readonly repositoryId?: string;
   readonly scope: "database";
 };
+
+type MaterializationTrace = (message: string, data?: Readonly<Record<string, unknown>>) => void;
 
 export type DatabaseServiceShape = {
   readonly addComment: (
@@ -607,6 +650,143 @@ export const makeDatabaseService = (
     });
   };
 
+  const materializeSnapshotDelta = (
+    repository: RepositoryRuntime,
+    previousSnapshotId: string | null,
+    currentSnapshotId: string,
+  ): Effect.Effect<RepositoryStatus, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const repositoryId = repository.repositoryId;
+      const materializationStartedAt = performance.now();
+      const materialization = yield* buildMaterialization(
+        projection,
+        repository,
+        previousSnapshotId,
+        currentSnapshotId,
+        (message, data) => log(repositoryId, message, data),
+      ).pipe(
+        Effect.mapError((error) =>
+          materializationError(repositoryId, "failed to build materialization plan", error),
+        ),
+      );
+
+      log(repositoryId, "sync materialization plan built", {
+        buildMs: elapsedMs(materializationStartedAt),
+        commitChanges: materialization.commitChanges.length,
+        commits: materialization.commits.length,
+        deletedRecords: materialization.deletedRecords.length,
+        deletedTickets: materialization.deletedTickets.length,
+        fullRebuild: materialization.fullRebuild,
+        inboxItems: materialization.inboxItems.length,
+        previousSnapshotId,
+        records: materialization.records.length,
+        snapshotId: currentSnapshotId,
+        tickets: materialization.tickets.length,
+        warnings: materialization.warnings.length,
+      });
+
+      const applyStartedAt = performance.now();
+      return yield* sqlite("apply materialization", () =>
+        projection.transaction(() => {
+          if (materialization.fullRebuild) {
+            projection.clearRepositoryProjection(repositoryId);
+          }
+
+          for (const ticketId of materialization.deletedTickets) {
+            projection.deleteTicket(repositoryId, ticketId);
+          }
+          for (const recordId of materialization.deletedRecords) {
+            projection.deleteRecord(repositoryId, recordId);
+          }
+          for (const userId of materialization.deletedUsers) {
+            projection.deleteUser(repositoryId, userId);
+          }
+          for (const labelId of materialization.deletedLabels) {
+            projection.deleteLabel(repositoryId, labelId);
+          }
+          for (const viewId of materialization.deletedViews) {
+            projection.deleteView(repositoryId, viewId);
+          }
+          for (const templateId of materialization.deletedTemplates) {
+            projection.deleteTemplate(repositoryId, templateId);
+          }
+          for (const ticket of materialization.tickets) {
+            projection.upsertTicket({
+              path: ticket.path,
+              repositoryId,
+              snapshotId: currentSnapshotId,
+              ticket: ticket.value,
+            });
+          }
+          for (const user of materialization.users) {
+            projection.upsertUser({
+              repositoryId,
+              snapshotId: currentSnapshotId,
+              user: user.value,
+            });
+          }
+          for (const label of materialization.labels) {
+            projection.upsertLabel({
+              label: label.value,
+              repositoryId,
+              snapshotId: currentSnapshotId,
+            });
+          }
+          for (const view of materialization.views) {
+            projection.upsertView({
+              repositoryId,
+              snapshotId: currentSnapshotId,
+              view: view.value,
+            });
+          }
+          for (const template of materialization.templates) {
+            projection.upsertTemplate({
+              repositoryId,
+              snapshotId: currentSnapshotId,
+              template: template.value,
+            });
+          }
+          for (const record of materialization.records) {
+            if (projection.ticketVisible(repositoryId, record.value.issueId)) {
+              projection.upsertRecord({
+                record: record.value,
+                repositoryId,
+                snapshotId: currentSnapshotId,
+              });
+            }
+          }
+          for (const commit of materialization.commits) {
+            projection.upsertCommit(commit);
+          }
+          for (const commitChange of materialization.commitChanges) {
+            projection.replaceCommitChanges(commitChange);
+          }
+          for (const warning of materialization.warnings) {
+            projection.addWarning(warning);
+          }
+          for (const inboxItem of materialization.inboxItems) {
+            projection.upsertInboxItem(inboxItem);
+          }
+
+          projection.setCycleRepositoryMetadata(repositoryId, materialization.cycleMetadata);
+          const status = projection.activateSnapshot({
+            completedAt: nowIso(),
+            repositoryId,
+            snapshotId: currentSnapshotId,
+          });
+          setRepositoryCycleMetadata(repository, materialization.cycleMetadata);
+          log(repositoryId, "sync completed", {
+            activeGeneration: status.activeGeneration,
+            applyMs: elapsedMs(applyStartedAt),
+            snapshotId: status.activeSnapshotId,
+            status: status.status,
+            warningCount: status.warningCount,
+          });
+          return status;
+        }),
+      );
+    });
+
   const syncRepository = (repositoryId: string): Effect.Effect<RepositoryStatus, DatabaseFailure> =>
     Effect.gen(function* () {
       const repository = yield* getRepository(repositoryId);
@@ -665,140 +845,7 @@ export const makeDatabaseService = (
           });
         }
 
-        const materializationResult = yield* buildMaterialization(
-          repository,
-          previous,
-          current.id,
-        ).pipe(
-          Effect.mapError((error) =>
-            materializationError(repositoryId, "failed to build materialization plan", error),
-          ),
-          Effect.result,
-        );
-
-        if (Result.isFailure(materializationResult)) {
-          yield* sqlite("mark sync failed", () =>
-            projection.markSyncFailed(repositoryId, materializationResult.failure.message),
-          );
-          log(repositoryId, "sync materialization plan failed", {
-            error: materializationResult.failure.message,
-          });
-          return yield* Effect.fail(materializationResult.failure);
-        }
-
-        const materialization = materializationResult.success;
-        log(repositoryId, "sync materialization plan built", {
-          commitChanges: materialization.commitChanges.length,
-          commits: materialization.commits.length,
-          deletedRecords: materialization.deletedRecords.length,
-          deletedTickets: materialization.deletedTickets.length,
-          fullRebuild: materialization.fullRebuild,
-          inboxItems: materialization.inboxItems.length,
-          previousSnapshotId: previous,
-          records: materialization.records.length,
-          snapshotId: current.id,
-          tickets: materialization.tickets.length,
-          warnings: materialization.warnings.length,
-        });
-
-        return yield* sqlite("apply materialization", () =>
-          projection.transaction(() => {
-            if (materialization.fullRebuild) {
-              projection.clearRepositoryProjection(repositoryId);
-            }
-
-            for (const ticketId of materialization.deletedTickets) {
-              projection.deleteTicket(repositoryId, ticketId);
-            }
-            for (const recordId of materialization.deletedRecords) {
-              projection.deleteRecord(repositoryId, recordId);
-            }
-            for (const userId of materialization.deletedUsers) {
-              projection.deleteUser(repositoryId, userId);
-            }
-            for (const labelId of materialization.deletedLabels) {
-              projection.deleteLabel(repositoryId, labelId);
-            }
-            for (const viewId of materialization.deletedViews) {
-              projection.deleteView(repositoryId, viewId);
-            }
-            for (const templateId of materialization.deletedTemplates) {
-              projection.deleteTemplate(repositoryId, templateId);
-            }
-            for (const ticket of materialization.tickets) {
-              projection.upsertTicket({
-                path: ticket.path,
-                repositoryId,
-                snapshotId: current.id,
-                ticket: ticket.value,
-              });
-            }
-            for (const user of materialization.users) {
-              projection.upsertUser({
-                repositoryId,
-                snapshotId: current.id,
-                user: user.value,
-              });
-            }
-            for (const label of materialization.labels) {
-              projection.upsertLabel({
-                label: label.value,
-                repositoryId,
-                snapshotId: current.id,
-              });
-            }
-            for (const view of materialization.views) {
-              projection.upsertView({
-                repositoryId,
-                snapshotId: current.id,
-                view: view.value,
-              });
-            }
-            for (const template of materialization.templates) {
-              projection.upsertTemplate({
-                repositoryId,
-                snapshotId: current.id,
-                template: template.value,
-              });
-            }
-            for (const record of materialization.records) {
-              if (projection.ticketVisible(repositoryId, record.value.issueId)) {
-                projection.upsertRecord({
-                  record: record.value,
-                  repositoryId,
-                  snapshotId: current.id,
-                });
-              }
-            }
-            for (const commit of materialization.commits) {
-              projection.upsertCommit(commit);
-            }
-            for (const commitChange of materialization.commitChanges) {
-              projection.replaceCommitChanges(commitChange);
-            }
-            for (const warning of materialization.warnings) {
-              projection.addWarning(warning);
-            }
-            for (const inboxItem of materialization.inboxItems) {
-              projection.upsertInboxItem(inboxItem);
-            }
-
-            projection.setCycleRepositoryMetadata(repositoryId, materialization.cycleMetadata);
-            const status = projection.activateSnapshot({
-              completedAt: nowIso(),
-              repositoryId,
-              snapshotId: current.id,
-            });
-            setRepositoryCycleMetadata(repository, materialization.cycleMetadata);
-            log(repositoryId, "sync completed", {
-              activeGeneration: status.activeGeneration,
-              snapshotId: status.activeSnapshotId,
-              status: status.status,
-              warningCount: status.warningCount,
-            });
-            return status;
-          }),
-        );
+        return yield* materializeSnapshotDelta(repository, previous, current.id);
       }).pipe(
         Effect.catch((error) =>
           sqlite("mark sync failed", () =>
@@ -850,13 +897,18 @@ export const makeDatabaseService = (
       const previous = projection.repositoryStatus(repositoryId).activeSnapshotId;
       const written = yield* write(repository);
 
-      yield* syncRepository(repositoryId).pipe(
+      yield* materializeSnapshotDelta(repository, previous, written.snapshotId).pipe(
+        Effect.catch((error) =>
+          sqlite("mark sync failed", () =>
+            projection.markSyncFailed(repositoryId, error.message),
+          ).pipe(Effect.andThen(Effect.fail(error))),
+        ),
         Effect.mapError((error) =>
           consistencyError({
             cause: error,
             command,
             committedSnapshotId: written.snapshotId,
-            message: `write committed but SQLite resync failed for ${command}`,
+            message: `write committed but SQLite delta materialization failed for ${command}`,
             objectId,
             previousSnapshotId: previous,
             repositoryId,
@@ -2678,51 +2730,125 @@ export const DatabaseTest = (prefix?: string) =>
   );
 
 const buildMaterialization = (
+  projection: Projection,
   repository: RepositoryRuntime,
-  _previousSnapshotId: string | null,
+  previousSnapshotId: string | null,
   currentSnapshotId: string,
+  trace?: MaterializationTrace,
 ) =>
   Effect.gen(function* () {
-    const folded = yield* foldRepositoryEvents(repository, currentSnapshotId);
-    const tickets = [...folded.tickets.values()].map((ticket) => ({
+    let history = yield* readMaterializationHistory(
+      projection,
+      repository,
+      previousSnapshotId,
+      currentSnapshotId,
+      trace,
+    );
+    const foldStartedAt = performance.now();
+    let folded = yield* foldRepositoryEvents(repository, currentSnapshotId, trace, {
+      history: history.snapshots,
+      seed: history.fullRebuild
+        ? emptyFoldedEvents()
+        : seedIncrementalFoldedEvents(projection, repository.repositoryId),
+      seedFromProjection: history.fullRebuild
+        ? undefined
+        : {
+            projection,
+            repositoryId: repository.repositoryId,
+          },
+    });
+
+    if (!history.fullRebuild && folded.nonAdditiveEvents.length > 0) {
+      trace?.("sync materialization falling back to full rebuild", {
+        nonAdditiveEvents: folded.nonAdditiveEvents.length,
+        previousSnapshotId,
+        snapshotId: currentSnapshotId,
+      });
+      history = {
+        fullRebuild: true,
+        sequenceStart: 0,
+        snapshots: yield* storage(
+          "read full event history",
+          repository.store.history(currentSnapshotId),
+        ),
+      };
+      folded = yield* foldRepositoryEvents(repository, currentSnapshotId, trace, {
+        history: history.snapshots,
+        seed: emptyFoldedEvents(),
+      });
+    }
+
+    trace?.("sync materialization fold completed", {
+      foldMs: elapsedMs(foldStartedAt),
+      fullRebuild: history.fullRebuild,
+      labels: folded.labels.size,
+      replayedCommits: history.snapshots.length,
+      records: folded.records.size,
+      templates: folded.templates.size,
+      tickets: folded.tickets.size,
+      users: folded.users.size,
+      views: folded.views.size,
+      warnings: folded.warnings.length,
+    });
+
+    const assembleStartedAt = performance.now();
+    const ticketValues = history.fullRebuild
+      ? [...folded.tickets.values()]
+      : valuesForIds(folded.tickets, folded.changedTickets);
+    const recordValues = history.fullRebuild
+      ? [...folded.records.values()]
+      : valuesForIds(folded.records, folded.changedRecords);
+    const userValues = history.fullRebuild
+      ? [...folded.users.values()]
+      : valuesForIds(folded.users, folded.changedUsers);
+    const labelValues = history.fullRebuild
+      ? [...folded.labels.values()]
+      : valuesForIds(folded.labels, folded.changedLabels);
+    const viewValues = history.fullRebuild
+      ? [...folded.views.values()]
+      : valuesForIds(folded.views, folded.changedViews);
+    const templateValues = history.fullRebuild
+      ? [...folded.templates.values()]
+      : valuesForIds(folded.templates, folded.changedTemplates);
+    const tickets = ticketValues.map((ticket) => ({
       path: eventAggregatePath("ticket", ticket.id),
       value: ticket,
     }));
-    const records = [...folded.records.values()].map((record) => ({
+    const records = recordValues.map((record) => ({
       path: eventAggregatePath("record", record.id),
       value: record,
     }));
-    const users = [...folded.users.values()].map((user) => ({
+    const users = userValues.map((user) => ({
       path: eventAggregatePath("user", user.id),
       value: user,
     }));
-    const labels = [...folded.labels.values()].map((label) => ({
+    const labels = labelValues.map((label) => ({
       path: eventAggregatePath("label", label.id),
       value: label,
     }));
-    const views = [...folded.views.values()].map((view) => ({
+    const views = viewValues.map((view) => ({
       path: eventAggregatePath("view", view.id),
       value: view,
     }));
-    const templates = [...folded.templates.values()].map((template) => ({
+    const templates = templateValues.map((template) => ({
       path: eventAggregatePath("template", template.id),
       value: template,
     }));
     const warnings = [...folded.warnings];
     const now = nowIso();
 
-    const ticketIds = new Set(tickets.map((ticket) => ticket.value.id));
-    for (const ticket of tickets) {
-      for (const childId of ticket.value.frontmatter.children ?? []) {
+    const ticketIds = new Set(folded.tickets.keys());
+    for (const ticket of folded.tickets.values()) {
+      for (const childId of ticket.frontmatter.children ?? []) {
         if (ticketIds.has(childId)) continue;
 
         warnings.push(
           warning(
             repository.repositoryId,
             currentSnapshotId,
-            ticket.path,
+            eventAggregatePath("ticket", ticket.id),
             "ticket",
-            ticket.value.id,
+            ticket.id,
             new Error(`unknown child issue id: ${childId}`),
             now,
             "unknown-child-issue",
@@ -2730,22 +2856,59 @@ const buildMaterialization = (
         );
       }
     }
+    trace?.("sync materialization documents assembled", {
+      assembleMs: elapsedMs(assembleStartedAt),
+      labels: labels.length,
+      records: records.length,
+      templates: templates.length,
+      tickets: tickets.length,
+      users: users.length,
+      views: views.length,
+      warnings: warnings.length,
+    });
 
-    const commits = yield* buildCommitRows(repository, currentSnapshotId);
-    const commitChanges = yield* buildCommitChanges(repository, currentSnapshotId);
-    const inboxItems = deriveInboxItems(repository.repositoryId, folded);
+    const commitsStartedAt = performance.now();
+    const commits = buildCommitRows(repository, history.snapshots, history.sequenceStart);
+    trace?.("sync materialization commits built", {
+      commits: commits.length,
+      commitsMs: elapsedMs(commitsStartedAt),
+    });
+
+    const commitChangesStartedAt = performance.now();
+    const commitChanges = folded.commitChanges;
+    trace?.("sync materialization commit changes built", {
+      commitChanges: commitChanges.length,
+      commitChangesMs: elapsedMs(commitChangesStartedAt),
+    });
+
+    const inboxStartedAt = performance.now();
+    const inboxUsers = history.fullRebuild
+      ? [...folded.users.values()]
+      : mergeUsers(
+          userValues,
+          projection.usersByRecipientLookupKeys(
+            repository.repositoryId,
+            inboxRecipientLookupKeys(folded),
+          ),
+        );
+    const inboxItems = deriveInboxItems(repository.repositoryId, folded, inboxUsers);
+    trace?.("sync materialization inbox derived", {
+      inboxItems: inboxItems.length,
+      inboxMs: elapsedMs(inboxStartedAt),
+      users: inboxUsers.length,
+    });
 
     return {
       commitChanges,
       commits,
       cycleMetadata: folded.cycleMetadata,
-      deletedRecords: [],
-      deletedTickets: [],
-      deletedLabels: [],
-      deletedTemplates: [],
-      deletedUsers: [],
-      deletedViews: [],
-      fullRebuild: true,
+      deletedRecords: history.fullRebuild ? [] : [...folded.deletedRecords],
+      deletedTickets: history.fullRebuild ? [] : [...folded.deletedTickets],
+      deletedLabels: history.fullRebuild ? [] : [...folded.deletedLabels],
+      deletedTemplates: history.fullRebuild ? [] : [...folded.deletedTemplates],
+      deletedUsers: history.fullRebuild ? [] : [...folded.deletedUsers],
+      deletedViews: history.fullRebuild ? [] : [...folded.deletedViews],
+      fullRebuild: history.fullRebuild,
       inboxItems,
       labels,
       records,
@@ -2757,10 +2920,160 @@ const buildMaterialization = (
     };
   });
 
+const readMaterializationHistory = (
+  projection: Projection,
+  repository: RepositoryRuntime,
+  previousSnapshotId: string | null,
+  currentSnapshotId: string,
+  trace?: MaterializationTrace,
+): Effect.Effect<
+  {
+    readonly fullRebuild: boolean;
+    readonly sequenceStart: number;
+    readonly snapshots: ReadonlyArray<GitDbSnapshot>;
+  },
+  DatabaseFailure
+> =>
+  Effect.gen(function* () {
+    if (previousSnapshotId === null) {
+      const history = yield* storage(
+        "read full event history",
+        repository.store.history(currentSnapshotId),
+      );
+      trace?.("sync materialization selected full rebuild", {
+        commits: history.length,
+        reason: "no-previous-snapshot",
+        snapshotId: currentSnapshotId,
+      });
+
+      return {
+        fullRebuild: true,
+        sequenceStart: 0,
+        snapshots: history,
+      };
+    }
+
+    const incremental = yield* readHistorySince(repository, currentSnapshotId, previousSnapshotId);
+
+    if (!incremental.reachedPrevious) {
+      trace?.("sync materialization selected full rebuild", {
+        commits: incremental.snapshots.length,
+        previousSnapshotId,
+        reason: "previous-snapshot-not-in-history",
+        snapshotId: currentSnapshotId,
+      });
+
+      return {
+        fullRebuild: true,
+        sequenceStart: 0,
+        snapshots: incremental.snapshots,
+      };
+    }
+
+    const sequenceStart = projection.maxCommitSequence(repository.repositoryId);
+    trace?.("sync materialization selected incremental replay", {
+      commits: incremental.snapshots.length,
+      previousSequence: sequenceStart,
+      previousSnapshotId,
+      snapshotId: currentSnapshotId,
+    });
+
+    return {
+      fullRebuild: false,
+      sequenceStart,
+      snapshots: incremental.snapshots,
+    };
+  });
+
+const readHistorySince = (
+  repository: RepositoryRuntime,
+  currentSnapshotId: string,
+  previousSnapshotId: string,
+): Effect.Effect<
+  {
+    readonly reachedPrevious: boolean;
+    readonly snapshots: ReadonlyArray<GitDbSnapshot>;
+  },
+  DatabaseFailure
+> =>
+  Effect.gen(function* () {
+    const seen = new Set<string>();
+    const stack = [currentSnapshotId];
+    const snapshots: Array<GitDbSnapshot> = [];
+    let reachedPrevious = false;
+
+    while (stack.length > 0) {
+      const id = stack.shift();
+
+      if (id === undefined) continue;
+      if (id === previousSnapshotId) {
+        reachedPrevious = true;
+        continue;
+      }
+      if (seen.has(id)) continue;
+
+      seen.add(id);
+
+      const snapshot = yield* storage("read repository snapshot", repository.store.snapshot(id));
+      snapshots.push(snapshot);
+
+      for (const parent of snapshot.parents) {
+        if (parent === previousSnapshotId) {
+          reachedPrevious = true;
+          continue;
+        }
+        if (!seen.has(parent)) {
+          stack.push(parent);
+        }
+      }
+    }
+
+    return {
+      reachedPrevious,
+      snapshots,
+    };
+  });
+
+const seedIncrementalFoldedEvents = (
+  projection: Projection,
+  repositoryId: string,
+): FoldedEvents => {
+  const folded = emptyFoldedEvents();
+  const status = projection.repositoryStatus(repositoryId);
+
+  folded.cycleMetadata = status.cycleMetadata;
+
+  return folded;
+};
+
+const valuesForIds = <A>(
+  values: ReadonlyMap<string, A>,
+  ids: ReadonlySet<string>,
+): ReadonlyArray<A> =>
+  [...ids].flatMap((id) => {
+    const value = values.get(id);
+
+    return value === undefined ? [] : [value];
+  });
+
 const emptyFoldedEvents = (): FoldedEvents => ({
+  changedLabels: new Set(),
+  changedRecords: new Set(),
+  changedTemplates: new Set(),
+  changedTickets: new Set(),
+  changedUsers: new Set(),
+  changedViews: new Set(),
+  commitChanges: [],
+  deletedLabels: new Set(),
+  deletedRecords: new Set(),
+  deletedTemplates: new Set(),
+  deletedTickets: new Set(),
+  deletedUsers: new Set(),
+  deletedViews: new Set(),
   drafts: new Map(),
   inboxSources: [],
   labels: new Map(),
+  nonAdditiveEvents: [],
   records: new Map(),
   templates: new Map(),
   tickets: new Map(),
@@ -2775,6 +3088,15 @@ const eventAggregatePath = (aggregateType: string, aggregateId: string): string 
 const foldRepositoryEvents = (
   repository: RepositoryRuntime,
   snapshotId?: string,
+  trace?: MaterializationTrace,
+  options: {
+    readonly history?: ReadonlyArray<GitDbSnapshot>;
+    readonly seed?: FoldedEvents;
+    readonly seedFromProjection?: {
+      readonly projection: Projection;
+      readonly repositoryId: string;
+    };
+  } = {},
 ): Effect.Effect<FoldedEvents, DatabaseFailure> =>
   Effect.gen(function* () {
     const currentSnapshotId =
@@ -2783,23 +3105,45 @@ const foldRepositoryEvents = (
 
     if (currentSnapshotId === null) return emptyFoldedEvents();
 
-    const history = yield* storage(
-      "read event history",
-      repository.store.history(currentSnapshotId),
-    );
-    const folded = emptyFoldedEvents();
-    const warnings: Array<MaterializationWarning> = [];
+    const historyStartedAt = performance.now();
+    const history =
+      options.history ??
+      (yield* storage("read event history", repository.store.history(currentSnapshotId)));
+    trace?.("sync event history read", {
+      commits: history.length,
+      historyMs: elapsedMs(historyStartedAt),
+      snapshotId: currentSnapshotId,
+    });
+    const folded = options.seed ?? emptyFoldedEvents();
+    const warnings: Array<MaterializationWarning> = [...folded.warnings];
+    let documentsRead = 0;
+    let introducedEvents = 0;
+    let processedCommits = 0;
+    const foldStartedAt = performance.now();
 
     for (const snapshot of history.slice().reverse()) {
       const introduced = yield* storage(
         "read introduced events",
         GitDbEvent.introduced(repository.store, snapshot),
       );
+      introducedEvents += introduced.length;
+      folded.commitChanges.push({
+        changes: introduced.map((event) =>
+          eventPathChange(changeTypeFromDiff(event.change), event.path),
+        ),
+        repositoryId: repository.repositoryId,
+        snapshotId: snapshot.id,
+      });
       const timestamp = snapshot.createdAt ?? nowIso();
       const actor = actorFromSnapshot(snapshot);
 
       for (const event of introduced) {
         if (event.change.newObjectId === undefined) {
+          folded.nonAdditiveEvents.push({
+            path: event.path,
+            reason: "event-deleted",
+            snapshotId: snapshot.id,
+          });
           warnings.push(
             warning(
               repository.repositoryId,
@@ -2816,6 +3160,11 @@ const foldRepositoryEvents = (
         }
 
         if (event.change.oldObjectId !== undefined) {
+          folded.nonAdditiveEvents.push({
+            path: event.path,
+            reason: "event-modified",
+            snapshotId: snapshot.id,
+          });
           warnings.push(
             warning(
               repository.repositoryId,
@@ -2837,9 +3186,23 @@ const foldRepositoryEvents = (
         );
 
         if (document === null) continue;
+        documentsRead += 1;
 
         try {
-          applyDatabaseEvent(folded, event.aggregateType, event.aggregateId, document.json(), {
+          const payload = document.json();
+
+          if (options.seedFromProjection !== undefined) {
+            seedFoldedEventFromProjection(
+              folded,
+              options.seedFromProjection.projection,
+              options.seedFromProjection.repositoryId,
+              event.aggregateType,
+              event.aggregateId,
+              payload,
+            );
+          }
+
+          applyDatabaseEvent(folded, event.aggregateType, event.aggregateId, payload, {
             actor,
             path: event.path,
             snapshotId: snapshot.id,
@@ -2859,6 +3222,20 @@ const foldRepositoryEvents = (
           );
         }
       }
+      processedCommits += 1;
+      if (processedCommits % 10 === 0 || processedCommits === history.length) {
+        trace?.("sync event fold progress", {
+          commitsProcessed: processedCommits,
+          commitsTotal: history.length,
+          documentsRead,
+          foldMs: elapsedMs(foldStartedAt),
+          introducedEvents,
+          labels: folded.labels.size,
+          records: folded.records.size,
+          tickets: folded.tickets.size,
+          warnings: warnings.length,
+        });
+      }
     }
 
     return {
@@ -2866,6 +3243,47 @@ const foldRepositoryEvents = (
       warnings,
     };
   });
+
+const seedFoldedEventFromProjection = (
+  folded: FoldedEvents,
+  projection: Projection,
+  repositoryId: string,
+  aggregateType: string,
+  aggregateId: string,
+  payload: unknown,
+): void => {
+  if (payload === null || typeof payload !== "object") return;
+
+  const event = payload as Partial<DatabaseEventPayload>;
+  const seedTicket = (ticketId: string): void => {
+    if (folded.tickets.has(ticketId)) return;
+
+    const ticket = projection.getTicket(repositoryId, ticketId);
+    if (ticket !== null) {
+      folded.tickets.set(ticketId, ticket);
+    }
+  };
+
+  if (
+    aggregateType === "ticket" &&
+    (event.op === "ticket.replace" ||
+      event.op === "ticket.update" ||
+      event.op === "ticket.archive" ||
+      event.op === "ticket.delete" ||
+      event.op === "ticket.restore")
+  ) {
+    seedTicket(aggregateId);
+    return;
+  }
+
+  if (event.op === "record.add") {
+    const record = event.value as Partial<LinkedRecord> | undefined;
+
+    if (record !== undefined && typeof record.issueId === "string") {
+      seedTicket(record.issueId);
+    }
+  }
+};
 
 const applyDatabaseEvent = (
   folded: FoldedEvents,
@@ -2891,6 +3309,8 @@ const applyDatabaseEvent = (
       const ticket = parseTicketValue(event.value);
 
       folded.tickets.set(aggregateId, ticket);
+      folded.deletedTickets.delete(aggregateId);
+      folded.changedTickets.add(aggregateId);
       pushInboxSource(folded, {
         actor: context.actor,
         after: ticket,
@@ -2910,6 +3330,7 @@ const applyDatabaseEvent = (
 
       const next = applyTicketFieldUpdate(ticket, event.field, event.value);
       folded.tickets.set(aggregateId, next);
+      folded.changedTickets.add(aggregateId);
       pushInboxSource(folded, {
         actor: context.actor,
         after: next,
@@ -2936,6 +3357,7 @@ const applyDatabaseEvent = (
           updatedAt: context.timestamp,
         }),
       );
+      folded.changedTickets.add(aggregateId);
       return;
     }
     case "ticket.delete": {
@@ -2951,6 +3373,7 @@ const applyDatabaseEvent = (
           updatedAt: context.timestamp,
         }),
       );
+      folded.changedTickets.add(aggregateId);
       return;
     }
     case "ticket.restore": {
@@ -2967,12 +3390,15 @@ const applyDatabaseEvent = (
           updatedAt: context.timestamp,
         }),
       );
+      folded.changedTickets.add(aggregateId);
       return;
     }
     case "record.add": {
       const record = parseRecord(event.value);
 
       folded.records.set(record.id, record);
+      folded.deletedRecords.delete(record.id);
+      folded.changedRecords.add(record.id);
       pushInboxSource(folded, {
         actor: context.actor,
         eventPath: context.path,
@@ -2996,28 +3422,38 @@ const applyDatabaseEvent = (
       const user = parseUserProfile(event.value);
 
       folded.users.set(user.id, user);
+      folded.deletedUsers.delete(user.id);
+      folded.changedUsers.add(user.id);
       return;
     }
     case "label.upsert": {
       const label = parseLabelDefinition(event.value);
 
       folded.labels.set(label.id, label);
+      folded.deletedLabels.delete(label.id);
+      folded.changedLabels.add(label.id);
       return;
     }
     case "view.upsert": {
       const view = parseSavedView(event.value);
 
       folded.views.set(view.id, view);
+      folded.deletedViews.delete(view.id);
+      folded.changedViews.add(view.id);
       return;
     }
     case "view.delete": {
       folded.views.delete(aggregateId);
+      folded.changedViews.delete(aggregateId);
+      folded.deletedViews.add(aggregateId);
       return;
     }
     case "template.upsert": {
       const template = parseIssueTemplate(event.value);
 
       folded.templates.set(template.id, template);
+      folded.deletedTemplates.delete(template.id);
+      folded.changedTemplates.add(template.id);
       return;
     }
   }
@@ -3039,8 +3475,69 @@ type InboxRecipient = {
   readonly userId: string;
 };
 
-const deriveInboxItems = (repositoryId: string, folded: FoldedEvents): ReadonlyArray<InboxItem> => {
-  const resolver = makeInboxRecipientResolver([...folded.users.values()]);
+const mergeUsers = (
+  ...groups: ReadonlyArray<ReadonlyArray<UserProfileDocument>>
+): ReadonlyArray<UserProfileDocument> => {
+  const users = new Map<string, UserProfileDocument>();
+
+  for (const group of groups) {
+    for (const user of group) {
+      users.set(user.id, user);
+    }
+  }
+
+  return [...users.values()];
+};
+
+const inboxRecipientLookupKeys = (folded: FoldedEvents): ReadonlyArray<string> => {
+  const keys = new Set<string>();
+  const add = (value: string | undefined): void => {
+    if (value === undefined) return;
+    for (const key of recipientLookupKeys(value)) {
+      keys.add(key);
+    }
+  };
+  const addActor = (actor: Actor | undefined): void => {
+    add(actor?.email);
+    add(actor?.name);
+  };
+
+  for (const source of folded.inboxSources) {
+    if (
+      source.op === "ticket.create" ||
+      source.op === "ticket.update" ||
+      source.op === "ticket.replace"
+    ) {
+      for (const mention of extractMentionTags(ticketMentionText(source.after))) {
+        add(mention.normalized);
+      }
+      add(inboxAssigneeValue(source.after));
+      continue;
+    }
+
+    if (source.op === "record.add" && normalizeKey(source.record.recordType) === "comment") {
+      const ticket = source.ticket ?? folded.tickets.get(source.record.issueId);
+      const body = commentPayloadBody(source.record.payload);
+
+      for (const mention of extractMentionTags(body)) {
+        add(mention.normalized);
+      }
+      if (ticket !== undefined && ticket !== null) {
+        add(inboxAssigneeValue(ticket));
+        addActor(ticket.frontmatter.createdBy);
+      }
+    }
+  }
+
+  return [...keys];
+};
+
+const deriveInboxItems = (
+  repositoryId: string,
+  folded: FoldedEvents,
+  users: ReadonlyArray<UserProfileDocument>,
+): ReadonlyArray<InboxItem> => {
+  const resolver = makeInboxRecipientResolver(users);
   const items = new Map<string, InboxItem>();
 
   const addItem = (
@@ -3347,81 +3844,37 @@ const actorFromSnapshot = (snapshot: {
   };
 };
 
-const buildCommitRows = (repository: RepositoryRuntime, snapshotId: string) =>
-  Effect.gen(function* () {
-    const history = yield* storage("read repository history", repository.store.history(snapshotId));
-
-    return history
-      .slice()
-      .reverse()
-      .map((snapshot, index) => ({
-        authorEmail: snapshot.author?.email,
-        authorName: snapshot.author?.name,
-        committedAt: snapshot.createdAt,
-        committerEmail: snapshot.committer?.email,
-        committerName: snapshot.committer?.name,
-        message: snapshot.message,
-        parentIds: snapshot.parents,
-        repositoryId: repository.repositoryId,
-        rootTreeId: snapshot.root,
-        sequence: index + 1,
-        snapshotId: snapshot.id,
-      }));
-  });
-
-const buildCommitChanges = (repository: RepositoryRuntime, snapshotId: string) =>
-  Effect.gen(function* () {
-    const history = yield* storage(
-      "read history for changes",
-      repository.store.history(snapshotId),
-    );
-    const rows: Array<{
-      readonly changes: ReadonlyArray<CommitChange>;
-      readonly repositoryId: string;
-      readonly snapshotId: string;
-    }> = [];
-
-    for (const snapshot of history) {
-      const changes =
-        snapshot.parents[0] === undefined
-          ? yield* initialCommitChanges(repository.store, snapshot.id)
-          : yield* diffCommitChanges(repository.store, snapshot.parents[0], snapshot.id);
-
-      rows.push({
-        changes,
-        repositoryId: repository.repositoryId,
-        snapshotId: snapshot.id,
-      });
-    }
-
-    return rows;
-  });
-
-const initialCommitChanges = (store: GitDbStore.StoreServiceShape, snapshotId: string) =>
-  Effect.gen(function* () {
-    const events = yield* storage(
-      "list initial event changes",
-      GitDbEvent.list(store, { from: snapshotId }),
-    );
-
-    return events.map((event) => eventPathChange("added", event.path));
-  });
-
-const diffCommitChanges = (
-  store: GitDbStore.StoreServiceShape,
-  previousSnapshotId: string,
-  snapshotId: string,
+const buildCommitRows = (
+  repository: RepositoryRuntime,
+  history: ReadonlyArray<GitDbSnapshot>,
+  sequenceStart: number,
 ) =>
-  Effect.gen(function* () {
-    const diff = yield* storage("diff commit changes", store.diff(previousSnapshotId, snapshotId));
-    const changes = [
-      ...diff.added.map((change) => eventPathChange("added" as const, change.path)),
-      ...diff.modified.map((change) => eventPathChange("modified" as const, change.path)),
-      ...diff.deleted.map((change) => eventPathChange("deleted" as const, change.path)),
-    ].filter((change) => change.objectType !== "unknown");
+  history
+    .slice()
+    .reverse()
+    .map((snapshot, index) => ({
+      authorEmail: snapshot.author?.email,
+      authorName: snapshot.author?.name,
+      committedAt: snapshot.createdAt,
+      committerEmail: snapshot.committer?.email,
+      committerName: snapshot.committer?.name,
+      message: snapshot.message,
+      parentIds: snapshot.parents,
+      repositoryId: repository.repositoryId,
+      rootTreeId: snapshot.root,
+      sequence: sequenceStart + index + 1,
+      snapshotId: snapshot.id,
+    }));
 
-    return changes;
-  });
+const changeTypeFromDiff = (change: {
+  readonly newObjectId?: string;
+  readonly oldObjectId?: string;
+}): "added" | "deleted" | "modified" =>
+  change.newObjectId === undefined
+    ? "deleted"
+    : change.oldObjectId === undefined
+      ? "added"
+      : "modified";
 
 const eventPathChange = (
   changeType: "added" | "deleted" | "modified",
@@ -4270,6 +4723,8 @@ const gitIdentity = (actor: Actor) => ({
 });
 
 const nowIso = (): string => new Date().toISOString();
+
+const elapsedMs = (startedAt: number): number => Number((performance.now() - startedAt).toFixed(2));
 
 const nextEventId = (ids: DatabaseIdGeneratorShape): Effect.Effect<string, DatabaseFailure> => {
   const maybeIds = ids as Partial<DatabaseIdGeneratorShape>;

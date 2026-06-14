@@ -1,23 +1,16 @@
-import { Avatar, AvatarFallback } from "@cycle/ui/atoms";
-import type { PropertyPickerSection } from "@cycle/ui/molecules";
+import {
+  IssueAssigneeMark,
+  IssuePriorityMark,
+  IssueStatusMark,
+  type PropertyPickerSection,
+} from "@cycle/ui/molecules";
 import { cn } from "@cycle/ui/utils";
 import type {
   IssueTemplateDocument,
   LabelDefinitionDocument,
   UserProfileDocument,
 } from "@cycle/contracts";
-import {
-  Box,
-  CalendarPlus,
-  Circle,
-  CircleCheck,
-  CircleDashed,
-  CircleOff,
-  CircleUserRound,
-  FileText,
-  Link2,
-  Repeat2,
-} from "lucide-react";
+import { Box, CalendarPlus, CircleDashed, FileText, Link2, Repeat2 } from "lucide-react";
 import type { ProfileConfig, RepositoryRecord } from "../../../shared/AppConfig.ts";
 
 export type CreateIssueDialogOptionSections = {
@@ -29,29 +22,6 @@ export type CreateIssueDialogOptionSections = {
   readonly statusSections: readonly PropertyPickerSection[];
   readonly templateSections: readonly PropertyPickerSection[];
 };
-
-const initialsForName = (name: string): string =>
-  name
-    .split(/\s+/u)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
-
-const PriorityBars = ({ level }: { readonly level: 1 | 2 | 3 }) => (
-  <span aria-hidden className="flex h-5 items-end gap-0.5 text-muted-foreground">
-    {[1, 2, 3].map((bar) => (
-      <span
-        className="w-1.5 rounded-sm bg-current data-[muted=true]:opacity-35"
-        data-muted={bar > level}
-        key={bar}
-        style={{
-          height: `${bar * 5 + 4}px`,
-        }}
-      />
-    ))}
-  </span>
-);
 
 export const labelColorClassName = (color: string | undefined): string => {
   switch (color?.trim().toLowerCase()) {
@@ -91,13 +61,7 @@ const createAssigneeSections = ({
   const displayName = profile?.displayName.trim();
   const projectedOptions =
     users?.map((user) => ({
-      icon: (
-        <Avatar className="size-6">
-          <AvatarFallback className="text-[10px]">
-            {initialsForName(user.displayName)}
-          </AvatarFallback>
-        </Avatar>
-      ),
+      icon: <IssueAssigneeMark name={user.displayName} size="md" />,
       id: user.id,
       label: user.displayName,
       rightMeta: user.email,
@@ -106,13 +70,7 @@ const createAssigneeSections = ({
     projectedOptions.length === 0 && displayName && displayName.length > 0
       ? [
           {
-            icon: (
-              <Avatar className="size-6">
-                <AvatarFallback className="text-[10px]">
-                  {initialsForName(displayName)}
-                </AvatarFallback>
-              </Avatar>
-            ),
+            icon: <IssueAssigneeMark name={displayName} size="md" />,
             id: displayName,
             label: displayName,
             rightMeta: "1",
@@ -125,7 +83,7 @@ const createAssigneeSections = ({
       id: "assignee",
       options: [
         {
-          icon: <CircleUserRound aria-hidden className="size-5" strokeWidth={2} />,
+          icon: <IssueAssigneeMark size="md" />,
           id: "none",
           label: "No assignee",
           rightMeta: "0",
@@ -259,35 +217,31 @@ export const createIssueDialogOptionSections = ({
       id: "priority",
       options: [
         {
-          icon: <span className="font-semibold text-muted-foreground">--</span>,
+          icon: <IssuePriorityMark priority="none" size="md" />,
           id: "none",
           label: "No priority",
           rightMeta: "0",
         },
         {
-          icon: (
-            <span className="grid size-5 place-items-center rounded-sm bg-muted-foreground text-xs font-bold text-background">
-              !
-            </span>
-          ),
+          icon: <IssuePriorityMark priority="urgent" size="md" />,
           id: "urgent",
           label: "Urgent",
           rightMeta: "1",
         },
         {
-          icon: <PriorityBars level={3} />,
+          icon: <IssuePriorityMark priority="high" size="md" />,
           id: "high",
           label: "High",
           rightMeta: "2",
         },
         {
-          icon: <PriorityBars level={2} />,
+          icon: <IssuePriorityMark priority="medium" size="md" />,
           id: "medium",
           label: "Medium",
           rightMeta: "3",
         },
         {
-          icon: <PriorityBars level={1} />,
+          icon: <IssuePriorityMark priority="low" size="md" />,
           id: "low",
           label: "Low",
           rightMeta: "4",
@@ -301,33 +255,31 @@ export const createIssueDialogOptionSections = ({
       id: "status",
       options: [
         {
-          icon: <CircleDashed aria-hidden className="size-5" strokeWidth={2.2} />,
+          icon: <IssueStatusMark status="backlog" size="md" />,
           id: "backlog",
           label: "Backlog",
           rightMeta: "1",
         },
         {
-          icon: <Circle aria-hidden className="size-5" strokeWidth={2.4} />,
+          icon: <IssueStatusMark status="todo" size="md" />,
           id: "todo",
           label: "Todo",
           rightMeta: "2",
         },
         {
-          icon: <Circle aria-hidden className="size-5 text-warning" strokeWidth={2.4} />,
+          icon: <IssueStatusMark status="in-progress" size="md" />,
           id: "in-progress",
           label: "In Progress",
           rightMeta: "3",
         },
         {
-          icon: <CircleCheck aria-hidden className="size-5 text-primary" strokeWidth={2.4} />,
+          icon: <IssueStatusMark status="done" size="md" />,
           id: "done",
           label: "Done",
           rightMeta: "4",
         },
         {
-          icon: (
-            <CircleOff aria-hidden className="size-5 text-muted-foreground" strokeWidth={2.4} />
-          ),
+          icon: <IssueStatusMark status="canceled" size="md" />,
           id: "canceled",
           label: "Canceled",
           rightMeta: "5",

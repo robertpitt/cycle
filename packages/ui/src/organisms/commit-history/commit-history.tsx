@@ -63,11 +63,11 @@ export type CommitHistoryProps = Omit<React.HTMLAttributes<HTMLDivElement>, "tit
 const densityClassNames = {
   compact: {
     avatar: "size-7",
-    body: "px-3 py-2.5",
+    body: "px-3 py-2",
     fallback: "text-[10px]",
     markerTop: "mt-3",
     rowGap: "gap-2.5",
-    time: "pt-2.5",
+    time: "pt-3",
   },
   comfortable: {
     avatar: "size-8",
@@ -166,7 +166,7 @@ const StateTransition = ({ transition }: { readonly transition: CommitHistoryTra
   }
 
   return (
-    <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 rounded-md border border-border/80 bg-background/70 px-2 py-1.5">
+    <div className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-1.5 rounded-md border border-border/80 bg-background/70 px-1.5 py-1">
       {transition.label ? (
         <span className={cn("mr-1 shrink-0 text-muted-foreground", typography.meta)}>
           {transition.label}
@@ -333,10 +333,10 @@ const CommitHistoryRow = ({
               {item.commitTitle}
             </p>
           ) : null}
-          {item.transition ? <StateTransition transition={item.transition} /> : null}
-          {item.meta && item.meta.length > 0 ? (
-            <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              {item.meta.map((meta, index) => (
+          {item.transition || (item.meta && item.meta.length > 0) ? (
+            <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+              {item.transition ? <StateTransition transition={item.transition} /> : null}
+              {item.meta?.map((meta, index) => (
                 <span className="min-w-0 truncate" key={index}>
                   {meta}
                 </span>
@@ -349,7 +349,7 @@ const CommitHistoryRow = ({
   );
 
   return (
-    <li className="grid min-w-0 grid-cols-[1.25rem_minmax(0,1fr)] gap-2 sm:grid-cols-[minmax(7rem,9rem)_1.25rem_minmax(0,1fr)] sm:gap-3">
+    <li className="grid min-w-0 grid-cols-[1.25rem_minmax(0,1fr)] gap-2 py-1 sm:grid-cols-[minmax(7rem,9rem)_1.25rem_minmax(0,1fr)] sm:gap-3">
       <TimelineTimestamp
         className={cn("hidden text-right sm:block", densityClassNames[density].time)}
         dateTime={dateTime}
@@ -381,7 +381,7 @@ const CommitHistoryRow = ({
 const loadingRows = (count: number, density: ComponentDensity) =>
   Array.from({ length: count }, (_, index) => (
     <li
-      className="grid min-w-0 grid-cols-[1.25rem_minmax(0,1fr)] gap-2 sm:grid-cols-[minmax(7rem,9rem)_1.25rem_minmax(0,1fr)] sm:gap-3"
+      className="grid min-w-0 grid-cols-[1.25rem_minmax(0,1fr)] gap-2 py-1 sm:grid-cols-[minmax(7rem,9rem)_1.25rem_minmax(0,1fr)] sm:gap-3"
       key={index}
     >
       <div className={cn("hidden sm:block", densityClassNames[density].time)}>
@@ -407,7 +407,7 @@ const loadingRows = (count: number, density: ComponentDensity) =>
               <Skeleton className="h-5 w-16" />
             </div>
             <Skeleton className="mt-2 h-4 w-2/3" />
-            <Skeleton className="mt-2 h-8 w-full max-w-md" />
+            <Skeleton className="mt-1.5 h-6 w-full max-w-md" />
           </div>
         </div>
       </div>
@@ -460,7 +460,7 @@ export const CommitHistory = React.forwardRef<HTMLDivElement, CommitHistoryProps
             {headerAction ? <div className="shrink-0">{headerAction}</div> : null}
           </header>
         ) : null}
-        <div className={cn("px-4", showHeader ? "py-4" : "py-1")}>
+        <div className={cn("px-4", showHeader ? "py-3" : "py-1")}>
           {loading ? (
             <ol aria-label="Loading commit history" className="grid gap-0" role="status">
               {loadingRows(loadingItemCount, density)}

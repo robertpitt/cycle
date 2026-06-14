@@ -353,31 +353,7 @@ const makeStore = (runtime: StoreRuntime): StoreServiceShape => {
       Effect.gen(function* () {
         const snapshotA = yield* snapshotOrResolve(store, a);
         const snapshotB = yield* snapshotOrResolve(store, b);
-        const left = yield* Tree.flattenTree(adapter, snapshotA.root);
-        const right = yield* Tree.flattenTree(adapter, snapshotB.root);
-        const added: Array<Change> = [];
-        const modified: Array<Change> = [];
-        const deleted: Array<Change> = [];
-        const paths = new Set([...left.keys(), ...right.keys()]);
-
-        for (const path of [...paths].sort()) {
-          const oldObjectId = left.get(path);
-          const newObjectId = right.get(path);
-
-          if (oldObjectId === undefined && newObjectId !== undefined) {
-            added.push({ newObjectId, path });
-          } else if (oldObjectId !== undefined && newObjectId === undefined) {
-            deleted.push({ oldObjectId, path });
-          } else if (
-            oldObjectId !== undefined &&
-            newObjectId !== undefined &&
-            oldObjectId !== newObjectId
-          ) {
-            modified.push({ newObjectId, oldObjectId, path });
-          }
-        }
-
-        return { added, deleted, modified } satisfies ChangeSet;
+        return yield* diffSnapshotTrees(adapter, snapshotA.root, snapshotB.root);
       }),
     get: (path, options: ReadOptions = {}) =>
       Effect.gen(function* () {
@@ -1261,6 +1237,127 @@ const snapshotTouchesPath = (
 
     return current !== previous;
   });
+
+const diffSnapshotTrees = (
+  adapter: StoreGit,
+  leftRoot: ObjectId,
+  rightRoot: ObjectId,
+): Effect.Effect<ChangeSet, GitDbError> =>
+  Effect.gen(function* () {
+    const changes: {
+      added: Array<Change>;
+      deleted: Array<Change>;
+      modified: Array<Change>;
+    } = {
+      added: [],
+      deleted: [],
+      modified: [],
+    };
+
+    yield* diffTreeEntries(adapter, leftRoot, rightRoot, "", changes);
+
+    return {
+      added: changes.added.sort(compareChangesByPath),
+      deleted: changes.deleted.sort(compareChangesByPath),
+      modified: changes.modified.sort(compareChangesByPath),
+    };
+  });
+
+const diffTreeEntries = (
+  adapter: StoreGit,
+  leftTree: ObjectId,
+  rightTree: ObjectId,
+  prefix: string,
+  changes: {
+    readonly added: Array<Change>;
+    readonly deleted: Array<Change>;
+    readonly modified: Array<Change>;
+  },
+): Effect.Effect<void, GitDbError> =>
+  Effect.gen(function* () {
+    if (leftTree === rightTree) return;
+
+    const left = entriesByName(yield* adapter.readTree(leftTree));
+    const right = entriesByName(yield* adapter.readTree(rightTree));
+    const names = [...new Set([...left.keys(), ...right.keys()])].sort();
+
+    for (const name of names) {
+      const leftEntry = left.get(name);
+      const rightEntry = right.get(name);
+      const path = joinStorePath(prefix, name);
+
+      if (leftEntry === undefined && rightEntry !== undefined) {
+        yield* collectAdded(adapter, rightEntry, path, changes.added);
+        continue;
+      }
+
+      if (leftEntry !== undefined && rightEntry === undefined) {
+        yield* collectDeleted(adapter, leftEntry, path, changes.deleted);
+        continue;
+      }
+
+      if (leftEntry === undefined || rightEntry === undefined) continue;
+      if (leftEntry.objectId === rightEntry.objectId && leftEntry.type === rightEntry.type) {
+        continue;
+      }
+
+      if (leftEntry.type === "tree" && rightEntry.type === "tree") {
+        yield* diffTreeEntries(adapter, leftEntry.objectId, rightEntry.objectId, path, changes);
+        continue;
+      }
+
+      if (leftEntry.type === "blob" && rightEntry.type === "blob") {
+        changes.modified.push({
+          newObjectId: rightEntry.objectId,
+          oldObjectId: leftEntry.objectId,
+          path,
+        });
+        continue;
+      }
+
+      yield* collectDeleted(adapter, leftEntry, path, changes.deleted);
+      yield* collectAdded(adapter, rightEntry, path, changes.added);
+    }
+  });
+
+const collectAdded = (
+  adapter: StoreGit,
+  entry: TreeEntry,
+  path: string,
+  output: Array<Change>,
+): Effect.Effect<void, GitDbError> =>
+  Effect.gen(function* () {
+    if (entry.type === "blob") {
+      output.push({ newObjectId: entry.objectId, path });
+      return;
+    }
+
+    for (const [nestedPath, objectId] of yield* Tree.flattenTree(adapter, entry.objectId, path)) {
+      output.push({ newObjectId: objectId, path: nestedPath });
+    }
+  });
+
+const collectDeleted = (
+  adapter: StoreGit,
+  entry: TreeEntry,
+  path: string,
+  output: Array<Change>,
+): Effect.Effect<void, GitDbError> =>
+  Effect.gen(function* () {
+    if (entry.type === "blob") {
+      output.push({ oldObjectId: entry.objectId, path });
+      return;
+    }
+
+    for (const [nestedPath, objectId] of yield* Tree.flattenTree(adapter, entry.objectId, path)) {
+      output.push({ oldObjectId: objectId, path: nestedPath });
+    }
+  });
+
+const entriesByName = (entries: ReadonlyArray<TreeEntry>): Map<string, TreeEntry> =>
+  new Map(entries.map((entry) => [entry.name, entry]));
+
+const compareChangesByPath = (a: Change, b: Change): number => a.path.localeCompare(b.path);
 
 const listStoreEntries = (
   store: StoreServiceShape,

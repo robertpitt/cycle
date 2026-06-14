@@ -7,6 +7,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "import:jira-board": "node scripts/import-jira-board-export.mjs",
     "seed:cycle": "node scripts/seed-cycle-database.mjs",
     "seed:sample-tickets": "node scripts/import-sample-tickets.mjs",
     "test": "vitest run",

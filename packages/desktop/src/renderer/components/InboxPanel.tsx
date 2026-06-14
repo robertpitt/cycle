@@ -1,4 +1,5 @@
 import type { InboxReason, InboxStatus } from "@cycle/contracts";
+import { PanelState } from "@cycle/ui/molecules";
 import { InboxList, type InboxListEntry } from "@cycle/ui/organisms";
 import * as React from "react";
 import type { ProfileConfig, RepositoryRecord } from "../../shared/AppConfig.ts";
@@ -73,9 +74,7 @@ export const InboxPanel = ({ onIssueSelect, profile, repositories }: InboxPanelP
 
   if (!profile?.email) {
     return (
-      <div className="grid min-h-full place-items-center rounded-lg border border-border bg-surface p-8 text-center text-sm text-muted-foreground">
-        Configure your profile email in settings before opening the inbox.
-      </div>
+      <PanelState message="Configure your profile email in settings before opening the inbox." />
     );
   }
 
