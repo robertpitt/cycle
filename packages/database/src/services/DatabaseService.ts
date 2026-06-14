@@ -246,7 +246,6 @@ type GitDbIdentity = {
 
 export type DatabaseServiceOptions = {
   readonly backgroundRunner?: DatabaseBackgroundRunner;
-  readonly logger?: (event: DatabaseLogEvent) => void;
   readonly projectionPath?: string;
 };
 
@@ -281,14 +280,10 @@ type DatabaseBackgroundScheduleMessage =
       readonly label: string;
     };
 
-type DatabaseLogEvent = {
-  readonly data?: Readonly<Record<string, unknown>>;
-  readonly message: string;
-  readonly repositoryId?: string;
-  readonly scope: "database";
-};
-
-type MaterializationTrace = (message: string, data?: Readonly<Record<string, unknown>>) => void;
+type MaterializationTrace = (
+  message: string,
+  data?: Readonly<Record<string, unknown>>,
+) => Effect.Effect<void>;
 
 export type DatabaseServiceShape = {
   readonly addComment: (
@@ -530,6 +525,27 @@ const DEFAULT_TICKET_PREFIX = "UKN";
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;
 const TICKET_ID_PATTERN = /^[A-Z0-9]{2,5}-[0-9A-Z]{5,}$/u;
 
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+const isRemotePushRejection = (error: unknown): boolean => {
+  if (typeof error !== "object" || error === null) return false;
+
+  const record = error as {
+    readonly _tag?: unknown;
+    readonly message?: unknown;
+    readonly stderr?: unknown;
+  };
+
+  if (record._tag !== "RemotePushError") return false;
+
+  const text = `${String(record.message ?? "")}\n${String(record.stderr ?? "")}`;
+
+  return /fetch first|non-fast-forward|remote contains work|stale info|updates were rejected/iu.test(
+    text,
+  );
+};
+
 const makeDatabaseBackgroundRunner = Effect.gen(function* () {
   const queue = yield* Queue.unbounded<DatabaseBackgroundTask>();
   const scheduleQueue = yield* Queue.unbounded<DatabaseBackgroundScheduleMessage>();
@@ -545,6 +561,7 @@ const makeDatabaseBackgroundRunner = Effect.gen(function* () {
               cause: Cause.pretty(cause),
               label: task.label,
               scope: "database",
+              service: "database",
             }),
           ),
         ),
@@ -618,18 +635,16 @@ export const makeDatabaseService = (
     repositoryId: string | undefined,
     message: string,
     data?: Readonly<Record<string, unknown>>,
-  ): void => {
-    try {
-      options.logger?.({
-        ...(data === undefined ? {} : { data }),
-        message,
+  ): Effect.Effect<void> =>
+    Effect.logInfo(message).pipe(
+      Effect.annotateLogs({
+        ...(data === undefined ? {} : data),
         ...(repositoryId === undefined ? {} : { repositoryId }),
-        scope: "database",
-      });
-    } catch {
-      // Logging must never affect database behavior.
-    }
-  };
+        service: "database",
+      }),
+    );
+  const repositoryState = (status: RepositoryStatus): string =>
+    status.activeSnapshotId === null ? "no_snapshot" : status.status;
 
   const getRepository = (repositoryId: string): Effect.Effect<RepositoryRuntime, DatabaseFailure> =>
     Effect.sync(() => repositories.get(repositoryId)).pipe(
@@ -639,6 +654,31 @@ export const makeDatabaseService = (
           : Effect.succeed(repository),
       ),
     );
+
+  const pushStore = (repository: RepositoryRuntime): Effect.Effect<SyncResult, unknown> =>
+    repository.store
+      .sync({
+        mode: "push",
+        onDiverged: "error",
+        pointers: [DEFAULT_POINTER],
+      })
+      .pipe(
+        Effect.catch((error) =>
+          isRemotePushRejection(error)
+            ? log(repository.repositoryId, "repository push rejected: rebasing before retry", {
+                error: errorMessage(error),
+              }).pipe(
+                Effect.andThen(
+                  repository.store.sync({
+                    mode: "full",
+                    onDiverged: "rebase",
+                    pointers: [DEFAULT_POINTER],
+                  }),
+                ),
+              )
+            : Effect.fail(error),
+        ),
+      );
 
   const setRepositoryCycleMetadata = (
     repository: RepositoryRuntime,
@@ -670,7 +710,7 @@ export const makeDatabaseService = (
         ),
       );
 
-      log(repositoryId, "sync materialization plan built", {
+      yield* log(repositoryId, "sync materialization plan built", {
         buildMs: elapsedMs(materializationStartedAt),
         commitChanges: materialization.commitChanges.length,
         commits: materialization.commits.length,
@@ -686,7 +726,7 @@ export const makeDatabaseService = (
       });
 
       const applyStartedAt = performance.now();
-      return yield* sqlite("apply materialization", () =>
+      const status = yield* sqlite("apply materialization", () =>
         projection.transaction(() => {
           if (materialization.fullRebuild) {
             projection.clearRepositoryProjection(repositoryId);
@@ -775,16 +815,17 @@ export const makeDatabaseService = (
             snapshotId: currentSnapshotId,
           });
           setRepositoryCycleMetadata(repository, materialization.cycleMetadata);
-          log(repositoryId, "sync completed", {
-            activeGeneration: status.activeGeneration,
-            applyMs: elapsedMs(applyStartedAt),
-            snapshotId: status.activeSnapshotId,
-            status: status.status,
-            warningCount: status.warningCount,
-          });
           return status;
         }),
       );
+      yield* log(repositoryId, "sync completed", {
+        activeGeneration: status.activeGeneration,
+        applyMs: elapsedMs(applyStartedAt),
+        repositoryState: repositoryState(status),
+        snapshotId: status.activeSnapshotId,
+        warningCount: status.warningCount,
+      });
+      return status;
     });
 
   const syncRepository = (repositoryId: string): Effect.Effect<RepositoryStatus, DatabaseFailure> =>
@@ -793,7 +834,7 @@ export const makeDatabaseService = (
       const now = nowIso();
 
       yield* sqlite("mark sync started", () => projection.markSyncStarted(repositoryId, now));
-      log(repositoryId, "sync started", {
+      yield* log(repositoryId, "sync started", {
         displayName: repository.displayName,
         gitDir: repository.gitDir,
         worktreePath: repository.worktreePath,
@@ -807,7 +848,7 @@ export const makeDatabaseService = (
         const previous = projection.repositoryStatus(repositoryId).activeSnapshotId;
 
         if (current === null) {
-          log(repositoryId, "sync found no current GitDB snapshot", {
+          yield* log(repositoryId, "sync found no current GitDB snapshot", {
             previousSnapshotId: previous,
           });
           const status = yield* sqlite("clear projection for missing GitDB snapshot", () =>
@@ -822,16 +863,16 @@ export const makeDatabaseService = (
             }),
           );
           setRepositoryCycleMetadata(repository, undefined);
-          log(repositoryId, "sync cleared projection for missing GitDB snapshot", {
+          yield* log(repositoryId, "sync cleared projection for missing GitDB snapshot", {
             activeGeneration: status.activeGeneration,
             activeSnapshotId: status.activeSnapshotId,
-            status: status.status,
+            repositoryState: repositoryState(status),
           });
           return status;
         }
 
         if (previous === current.id) {
-          log(repositoryId, "sync snapshot unchanged", {
+          yield* log(repositoryId, "sync snapshot unchanged", {
             snapshotId: current.id,
           });
           return yield* sqlite("refresh active snapshot", () => {
@@ -851,13 +892,7 @@ export const makeDatabaseService = (
           sqlite("mark sync failed", () =>
             projection.markSyncFailed(repositoryId, error.message),
           ).pipe(
-            Effect.andThen(
-              Effect.sync(() => {
-                log(repositoryId, "sync failed", {
-                  error: error.message,
-                });
-              }),
-            ),
+            Effect.andThen(log(repositoryId, "sync failed", { error: error.message })),
             Effect.andThen(Effect.fail(error)),
           ),
         ),
@@ -867,14 +902,7 @@ export const makeDatabaseService = (
   const pushRepository = (repositoryId: string): Effect.Effect<SyncResult, DatabaseFailure> =>
     Effect.gen(function* () {
       const repository = yield* getRepository(repositoryId);
-      const result = yield* storage(
-        "push repository",
-        repository.store.sync({
-          mode: "full",
-          onDiverged: "error",
-          pointers: [DEFAULT_POINTER],
-        }),
-      );
+      const result = yield* storage("push repository", pushStore(repository));
       yield* syncRepository(repositoryId);
       return result;
     });
@@ -895,7 +923,14 @@ export const makeDatabaseService = (
     Effect.gen(function* () {
       const repository = yield* getRepository(repositoryId);
       const previous = projection.repositoryStatus(repositoryId).activeSnapshotId;
+      const writeStartedAt = performance.now();
       const written = yield* write(repository);
+      yield* log(repositoryId, "write committed", {
+        command,
+        commitMs: elapsedMs(writeStartedAt),
+        objectId,
+        snapshotId: written.snapshotId,
+      });
 
       yield* materializeSnapshotDelta(repository, previous, written.snapshotId).pipe(
         Effect.catch((error) =>
@@ -2759,11 +2794,12 @@ const buildMaterialization = (
     });
 
     if (!history.fullRebuild && folded.nonAdditiveEvents.length > 0) {
-      trace?.("sync materialization falling back to full rebuild", {
-        nonAdditiveEvents: folded.nonAdditiveEvents.length,
-        previousSnapshotId,
-        snapshotId: currentSnapshotId,
-      });
+      if (trace !== undefined)
+        yield* trace("sync materialization falling back to full rebuild", {
+          nonAdditiveEvents: folded.nonAdditiveEvents.length,
+          previousSnapshotId,
+          snapshotId: currentSnapshotId,
+        });
       history = {
         fullRebuild: true,
         sequenceStart: 0,
@@ -2778,18 +2814,19 @@ const buildMaterialization = (
       });
     }
 
-    trace?.("sync materialization fold completed", {
-      foldMs: elapsedMs(foldStartedAt),
-      fullRebuild: history.fullRebuild,
-      labels: folded.labels.size,
-      replayedCommits: history.snapshots.length,
-      records: folded.records.size,
-      templates: folded.templates.size,
-      tickets: folded.tickets.size,
-      users: folded.users.size,
-      views: folded.views.size,
-      warnings: folded.warnings.length,
-    });
+    if (trace !== undefined)
+      yield* trace("sync materialization fold completed", {
+        foldMs: elapsedMs(foldStartedAt),
+        fullRebuild: history.fullRebuild,
+        labels: folded.labels.size,
+        replayedCommits: history.snapshots.length,
+        records: folded.records.size,
+        templates: folded.templates.size,
+        tickets: folded.tickets.size,
+        users: folded.users.size,
+        views: folded.views.size,
+        warnings: folded.warnings.length,
+      });
 
     const assembleStartedAt = performance.now();
     const ticketValues = history.fullRebuild
@@ -2856,30 +2893,33 @@ const buildMaterialization = (
         );
       }
     }
-    trace?.("sync materialization documents assembled", {
-      assembleMs: elapsedMs(assembleStartedAt),
-      labels: labels.length,
-      records: records.length,
-      templates: templates.length,
-      tickets: tickets.length,
-      users: users.length,
-      views: views.length,
-      warnings: warnings.length,
-    });
+    if (trace !== undefined)
+      yield* trace("sync materialization documents assembled", {
+        assembleMs: elapsedMs(assembleStartedAt),
+        labels: labels.length,
+        records: records.length,
+        templates: templates.length,
+        tickets: tickets.length,
+        users: users.length,
+        views: views.length,
+        warnings: warnings.length,
+      });
 
     const commitsStartedAt = performance.now();
     const commits = buildCommitRows(repository, history.snapshots, history.sequenceStart);
-    trace?.("sync materialization commits built", {
-      commits: commits.length,
-      commitsMs: elapsedMs(commitsStartedAt),
-    });
+    if (trace !== undefined)
+      yield* trace("sync materialization commits built", {
+        commits: commits.length,
+        commitsMs: elapsedMs(commitsStartedAt),
+      });
 
     const commitChangesStartedAt = performance.now();
     const commitChanges = folded.commitChanges;
-    trace?.("sync materialization commit changes built", {
-      commitChanges: commitChanges.length,
-      commitChangesMs: elapsedMs(commitChangesStartedAt),
-    });
+    if (trace !== undefined)
+      yield* trace("sync materialization commit changes built", {
+        commitChanges: commitChanges.length,
+        commitChangesMs: elapsedMs(commitChangesStartedAt),
+      });
 
     const inboxStartedAt = performance.now();
     const inboxUsers = history.fullRebuild
@@ -2892,11 +2932,12 @@ const buildMaterialization = (
           ),
         );
     const inboxItems = deriveInboxItems(repository.repositoryId, folded, inboxUsers);
-    trace?.("sync materialization inbox derived", {
-      inboxItems: inboxItems.length,
-      inboxMs: elapsedMs(inboxStartedAt),
-      users: inboxUsers.length,
-    });
+    if (trace !== undefined)
+      yield* trace("sync materialization inbox derived", {
+        inboxItems: inboxItems.length,
+        inboxMs: elapsedMs(inboxStartedAt),
+        users: inboxUsers.length,
+      });
 
     return {
       commitChanges,
@@ -2940,11 +2981,12 @@ const readMaterializationHistory = (
         "read full event history",
         repository.store.history(currentSnapshotId),
       );
-      trace?.("sync materialization selected full rebuild", {
-        commits: history.length,
-        reason: "no-previous-snapshot",
-        snapshotId: currentSnapshotId,
-      });
+      if (trace !== undefined)
+        yield* trace("sync materialization selected full rebuild", {
+          commits: history.length,
+          reason: "no-previous-snapshot",
+          snapshotId: currentSnapshotId,
+        });
 
       return {
         fullRebuild: true,
@@ -2956,12 +2998,13 @@ const readMaterializationHistory = (
     const incremental = yield* readHistorySince(repository, currentSnapshotId, previousSnapshotId);
 
     if (!incremental.reachedPrevious) {
-      trace?.("sync materialization selected full rebuild", {
-        commits: incremental.snapshots.length,
-        previousSnapshotId,
-        reason: "previous-snapshot-not-in-history",
-        snapshotId: currentSnapshotId,
-      });
+      if (trace !== undefined)
+        yield* trace("sync materialization selected full rebuild", {
+          commits: incremental.snapshots.length,
+          previousSnapshotId,
+          reason: "previous-snapshot-not-in-history",
+          snapshotId: currentSnapshotId,
+        });
 
       return {
         fullRebuild: true,
@@ -2971,12 +3014,13 @@ const readMaterializationHistory = (
     }
 
     const sequenceStart = projection.maxCommitSequence(repository.repositoryId);
-    trace?.("sync materialization selected incremental replay", {
-      commits: incremental.snapshots.length,
-      previousSequence: sequenceStart,
-      previousSnapshotId,
-      snapshotId: currentSnapshotId,
-    });
+    if (trace !== undefined)
+      yield* trace("sync materialization selected incremental replay", {
+        commits: incremental.snapshots.length,
+        previousSequence: sequenceStart,
+        previousSnapshotId,
+        snapshotId: currentSnapshotId,
+      });
 
     return {
       fullRebuild: false,
@@ -3109,11 +3153,12 @@ const foldRepositoryEvents = (
     const history =
       options.history ??
       (yield* storage("read event history", repository.store.history(currentSnapshotId)));
-    trace?.("sync event history read", {
-      commits: history.length,
-      historyMs: elapsedMs(historyStartedAt),
-      snapshotId: currentSnapshotId,
-    });
+    if (trace !== undefined)
+      yield* trace("sync event history read", {
+        commits: history.length,
+        historyMs: elapsedMs(historyStartedAt),
+        snapshotId: currentSnapshotId,
+      });
     const folded = options.seed ?? emptyFoldedEvents();
     const warnings: Array<MaterializationWarning> = [...folded.warnings];
     let documentsRead = 0;
@@ -3224,17 +3269,18 @@ const foldRepositoryEvents = (
       }
       processedCommits += 1;
       if (processedCommits % 10 === 0 || processedCommits === history.length) {
-        trace?.("sync event fold progress", {
-          commitsProcessed: processedCommits,
-          commitsTotal: history.length,
-          documentsRead,
-          foldMs: elapsedMs(foldStartedAt),
-          introducedEvents,
-          labels: folded.labels.size,
-          records: folded.records.size,
-          tickets: folded.tickets.size,
-          warnings: warnings.length,
-        });
+        if (trace !== undefined)
+          yield* trace("sync event fold progress", {
+            commitsProcessed: processedCommits,
+            commitsTotal: history.length,
+            documentsRead,
+            foldMs: elapsedMs(foldStartedAt),
+            introducedEvents,
+            labels: folded.labels.size,
+            records: folded.records.size,
+            tickets: folded.tickets.size,
+            warnings: warnings.length,
+          });
       }
     }
 

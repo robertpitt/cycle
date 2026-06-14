@@ -8,10 +8,8 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { Effect, Layer } from "effect";
-import { DesktopRuntime } from "../platform/DesktopRuntime.ts";
 import { Profile } from "../shared/Profile.ts";
 import { cycleDatabasePath } from "./CycleDirectory.ts";
-import { DesktopLogger } from "./DesktopLoggerLive.ts";
 
 const DesktopDatabaseIdentityLive = Layer.effect(
   DatabaseIdentity,
@@ -53,8 +51,6 @@ const DesktopDatabaseIdGeneratorLive = Layer.succeed(
 
 export const DesktopDatabaseLive = Layer.unwrap(
   Effect.gen(function* () {
-    const logger = yield* DesktopLogger;
-    const runtime = yield* DesktopRuntime;
     const projectionPath = yield* cycleDatabasePath;
 
     yield* Effect.tryPromise({
@@ -63,16 +59,6 @@ export const DesktopDatabaseLive = Layer.unwrap(
     });
 
     return DatabaseLiveWithOptions({
-      logger: (event) => {
-        runtime.run(
-          "database.log",
-          logger.info(event.message, {
-            ...(event.repositoryId === undefined ? {} : { repositoryId: event.repositoryId }),
-            ...(event.data === undefined ? {} : event.data),
-            scope: event.scope,
-          }),
-        );
-      },
       projectionPath,
     }).pipe(
       Layer.provide(Layer.mergeAll(DesktopDatabaseIdentityLive, DesktopDatabaseIdGeneratorLive)),

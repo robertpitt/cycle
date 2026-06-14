@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { defaultLayer as CycleLoggingLive } from "@cycle/logging";
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { Effect } from "effect";
 import {
@@ -41,11 +42,14 @@ if ((flags.transport ?? env.CYCLE_MCP_TRANSPORT) === "http") {
   ).pipe(
     Effect.flatMap(() => Effect.never),
     Effect.scoped,
-    Effect.provide(NodeServices.layer),
+    Effect.provide([NodeServices.layer, CycleLoggingLive()]),
     NodeRuntime.runMain,
   );
 } else {
-  runCycleMcpStdio(common).pipe(Effect.provide(NodeServices.layer), NodeRuntime.runMain);
+  runCycleMcpStdio(common).pipe(
+    Effect.provide([NodeServices.layer, CycleLoggingLive()]),
+    NodeRuntime.runMain,
+  );
 }
 
 function parseFlags(args: ReadonlyArray<string>): Record<string, string | undefined> {

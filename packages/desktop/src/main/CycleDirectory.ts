@@ -20,7 +20,7 @@ export const cycleCliConfigPathFromHome = (homeDirectory: string): string =>
   join(cycleDirectoryPath(homeDirectory), cycleCliConfigFileName);
 
 export const cycleLogPathFromHome = (homeDirectory: string): string =>
-  join(cycleDirectoryPath(homeDirectory), "logs", "main.log");
+  join(cycleDirectoryPath(homeDirectory), "logs", "cycle.jsonl");
 
 const homeDirectory = Effect.gen(function* () {
   const app = yield* ElectronApp;

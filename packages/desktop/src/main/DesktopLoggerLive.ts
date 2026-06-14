@@ -1,11 +1,13 @@
-import { mkdir, appendFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { CycleLogFile, logDebug, logError, logInfo, logWarning } from "@cycle/logging";
 import { Context, Effect, Layer } from "effect";
-import { cycleLogPath } from "./CycleDirectory.ts";
 
 export type DesktopLogLevel = "debug" | "error" | "info" | "warn";
 
 export type DesktopLoggerService = {
+  readonly debug: (
+    message: string,
+    fields?: Readonly<Record<string, unknown>>,
+  ) => Effect.Effect<void>;
   readonly error: (
     message: string,
     fields?: Readonly<Record<string, unknown>>,
@@ -25,42 +27,23 @@ export class DesktopLogger extends Context.Service<DesktopLogger, DesktopLoggerS
   "@cycle/desktop/DesktopLogger",
 ) {}
 
-const serialize = (
-  level: DesktopLogLevel,
-  message: string,
-  fields: Readonly<Record<string, unknown>> = {},
-): string => {
-  const timestamp = new Date().toISOString();
-  const payload = Object.keys(fields).length === 0 ? "" : ` ${JSON.stringify(fields)}`;
-
-  return `[${timestamp}] ${level.toUpperCase()} ${message}${payload}\n`;
-};
-
 export const DesktopLoggerLive = Layer.effect(
   DesktopLogger,
   Effect.gen(function* () {
-    const logPath = yield* cycleLogPath;
+    const logFile = yield* CycleLogFile;
+    const fields = (input: Readonly<Record<string, unknown>> = {}) => ({
+      ...input,
+      component: input.component ?? "desktop",
+    });
 
-    const write = (
-      level: DesktopLogLevel,
-      message: string,
-      fields?: Readonly<Record<string, unknown>>,
-    ): Effect.Effect<void> =>
-      Effect.tryPromise({
-        try: async () => {
-          await mkdir(dirname(logPath), { recursive: true });
-          await appendFile(logPath, serialize(level, message, fields), "utf8");
-        },
-        catch: () => undefined,
-      }).pipe(Effect.orElseSucceed(() => undefined));
-
-    yield* write("info", "desktop logger initialized", { logPath });
+    yield* logInfo("desktop", "desktop logger initialized", { logPath: logFile.pathSync });
 
     return DesktopLogger.of({
-      error: (message, fields) => write("error", message, fields),
-      info: (message, fields) => write("info", message, fields),
-      path: Effect.succeed(logPath),
-      warn: (message, fields) => write("warn", message, fields),
+      debug: (message, input) => logDebug("desktop", message, fields(input)),
+      error: (message, input) => logError("desktop", message, fields(input)),
+      info: (message, input) => logInfo("desktop", message, fields(input)),
+      path: logFile.path,
+      warn: (message, input) => logWarning("desktop", message, fields(input)),
     });
   }),
 );

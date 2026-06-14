@@ -30,6 +30,7 @@
     "@cycle/database": "workspace:*",
     "@cycle/git": "workspace:*",
     "@cycle/git-db": "workspace:*",
+    "@cycle/logging": "workspace:*",
     "@cycle/ui": "workspace:*",
     "@cycle/usecases": "workspace:*",
     "@tanstack/react-query": "^5.101.0",

@@ -11,6 +11,7 @@ export type GitRunOptions = {
   readonly allowFailure?: boolean;
   readonly env?: Record<string, string | undefined>;
   readonly input?: Uint8Array | string;
+  readonly quietAllowedFailure?: boolean;
 };
 
 export type GitRunResult = {
@@ -125,7 +126,18 @@ const runGit = <E extends GitRunError>(
         return yield* Effect.fail(makeError(operationArgs, result, undefined));
       }
 
-      yield* Effect.logDebug("git command completed").pipe(Effect.annotateLogs(resultAnnotations));
+      if (result.status !== 0 && options.quietAllowedFailure === true) {
+        yield* Effect.logTrace("git optional command had no result").pipe(
+          Effect.annotateLogs({
+            ...resultAnnotations,
+            expected: true,
+          }),
+        );
+      } else {
+        yield* Effect.logDebug("git command completed").pipe(
+          Effect.annotateLogs(resultAnnotations),
+        );
+      }
 
       return result;
     }),
@@ -152,6 +164,7 @@ const gitLogAnnotations = (
   operation: formatOperation(args),
   ref: refFromArgs(args),
   remote: remoteFromArgs(args),
+  service: "git",
   status: result?.status ?? null,
   stderr: result === undefined ? null : sanitizeStderr(bytesToString(result.stderr)),
   stderrBytes: result?.stderr.byteLength ?? 0,
@@ -173,7 +186,9 @@ const refFromArgs = (args: ReadonlyArray<string>): string | null => {
 };
 
 const remoteFromArgs = (args: ReadonlyArray<string>): string | null => {
-  const [command, remote] = args;
+  const [command, ...rest] = args;
 
-  return command === "fetch" || command === "push" ? (remote ?? null) : null;
+  return command === "fetch" || command === "push"
+    ? (rest.find((arg) => !arg.startsWith("-")) ?? null)
+    : null;
 };

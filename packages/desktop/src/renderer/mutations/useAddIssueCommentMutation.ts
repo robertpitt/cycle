@@ -40,8 +40,8 @@ export const useAddIssueCommentMutation = ({
         },
       });
     },
-    onSuccess: async () => {
-      await Promise.all([
+    onSuccess: () => {
+      void Promise.all([
         queryClient.invalidateQueries({
           queryKey: issueRecordsQueryKey(repositoryId, issueId),
         }),

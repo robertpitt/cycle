@@ -6,7 +6,6 @@ import { promisify } from "node:util";
 import { DatabaseService, type DatabaseServiceShape, type RepositoryStatus } from "@cycle/database";
 import { GitRepository } from "@cycle/git";
 import { Effect, Layer } from "effect";
-import { TestClock } from "effect/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { DesktopRuntimeLive } from "../src/platform/DesktopRuntimeLive.ts";
 import { defaultAppConfig, type RepositoryRecord } from "../src/shared/AppConfig.ts";
@@ -93,8 +92,35 @@ const addOriginWithCycleRef = async (repositoryPath: string): Promise<string> =>
   return remote;
 };
 
+const addLocalCycleRef = async (repositoryPath: string): Promise<void> => {
+  await execFileAsync("git", ["update-ref", "refs/gitdb/cycle/main", "HEAD"], {
+    cwd: repositoryPath,
+  });
+};
+
+const addOriginWithoutCycleRef = async (repositoryPath: string): Promise<string> => {
+  const remoteRoot = await makeTempDir();
+  const remote = join(remoteRoot, "origin.git");
+
+  await execFileAsync("git", ["clone", "--bare", repositoryPath, remote], {
+    cwd: repositoryPath,
+  });
+  await execFileAsync("git", ["remote", "add", "origin", remote], {
+    cwd: repositoryPath,
+  });
+
+  return remote;
+};
+
+type LogEvent = {
+  readonly fields?: Readonly<Record<string, unknown>>;
+  readonly level: "debug" | "error" | "info" | "warn";
+  readonly message: string;
+};
+
 type MakeLayerOptions = {
   readonly defaultRemote?: string | ((repository: RepositoryRecord) => string | undefined);
+  readonly logs?: Array<LogEvent>;
   readonly syncRepository?: (repositoryId: string) => Effect.Effect<RepositoryStatus, unknown>;
 };
 
@@ -175,6 +201,16 @@ const makeLayer = (
         ? undefined
         : options.defaultRemote(repository)
       : options.defaultRemote;
+  const recordLog =
+    (level: LogEvent["level"]) =>
+    (message: string, fields?: Readonly<Record<string, unknown>>): Effect.Effect<void> =>
+      Effect.sync(() => {
+        options.logs?.push({
+          ...(fields === undefined ? {} : { fields }),
+          level,
+          message,
+        });
+      });
 
   const preferences = Layer.succeed(ElectronPreferences)(
     ElectronPreferences.of({
@@ -266,10 +302,11 @@ const makeLayer = (
 
   const logger = Layer.succeed(DesktopLogger)(
     DesktopLogger.of({
-      error: () => Effect.void,
-      info: () => Effect.void,
-      path: Effect.succeed(join(repositories[0]?.path ?? "", "main.log")),
-      warn: () => Effect.void,
+      debug: recordLog("debug"),
+      error: recordLog("error"),
+      info: recordLog("info"),
+      path: Effect.succeed(join(repositories[0]?.path ?? "", "cycle.jsonl")),
+      warn: recordLog("warn"),
     }),
   );
 
@@ -311,7 +348,7 @@ describe("DesktopBootstrapLive", () => {
     ]);
   });
 
-  it("starts background remote sync for configured repositories even when autoSync is false", async () => {
+  it("publishes in the background after a local change notification", async () => {
     const repositoryPath = await makeTempDir();
     await initializeRepositoryWithCommit(repositoryPath);
     await addOriginWithCycleRef(repositoryPath);
@@ -325,15 +362,107 @@ describe("DesktopBootstrapLive", () => {
           const bootstrap = yield* DesktopBootstrap;
           yield* bootstrap.start();
           yield* waitUntil(
-            () => events.filter((event) => event === `syncRepository:${repository.id}`).length >= 3,
-            "background sync did not run",
+            () => events.filter((event) => event === `syncRepository:${repository.id}`).length >= 1,
+            "repository did not open",
+          );
+          yield* bootstrap.notifyRepositoryChanged(repository.id);
+          yield* waitUntil(
+            () => events.filter((event) => event === `syncRepository:${repository.id}`).length >= 2,
+            "background publish did not run",
           );
         }),
       ).pipe(Effect.provide(makeLayer(repository, events, { defaultRemote: "origin" }))),
     );
 
     expect(events).not.toContain("shouldAutoSyncRepository");
-    expect(events.filter((event) => event === `syncRepository:${repository.id}`).length).toBe(3);
+    expect(
+      events.filter((event) => event === `syncRepository:${repository.id}`).length,
+    ).toBeGreaterThan(1);
+  });
+
+  it("summarizes skipped and synced repositories during background publish", async () => {
+    const skippedRepositoryPath = await makeTempDir();
+    const syncedRepositoryPath = await makeTempDir();
+    await initializeRepositoryWithCommit(skippedRepositoryPath);
+    await initializeRepositoryWithCommit(syncedRepositoryPath);
+    await addLocalCycleRef(skippedRepositoryPath);
+    await addOriginWithoutCycleRef(syncedRepositoryPath);
+    await addLocalCycleRef(syncedRepositoryPath);
+
+    const events: Array<string> = [];
+    const logs: Array<LogEvent> = [];
+    const skippedRepository = {
+      ...makeRepository(skippedRepositoryPath),
+      id: "repo-skipped",
+    };
+    const syncedRepository = {
+      ...makeRepository(syncedRepositoryPath),
+      id: "repo-synced",
+    };
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const bootstrap = yield* DesktopBootstrap;
+          yield* bootstrap.start();
+          yield* waitUntilEffect(
+            () =>
+              bootstrap
+                .status()
+                .pipe(
+                  Effect.map((snapshot) =>
+                    snapshot.repositories.every((repository) => repository.stage === "ready"),
+                  ),
+                ),
+            "repositories did not open",
+          );
+          yield* bootstrap.notifyRepositoryChanged(skippedRepository.id);
+          yield* bootstrap.notifyRepositoryChanged(syncedRepository.id);
+          yield* waitUntil(
+            () =>
+              logs.some(
+                (log) =>
+                  log.message === "bootstrap remote sync phase completed" &&
+                  log.fields?.remoteSkipped === 1 &&
+                  log.fields?.remoteSynced === 1,
+              ),
+            "background publish summary was not logged",
+          );
+        }),
+      ).pipe(
+        Effect.provide(
+          makeLayer([skippedRepository, syncedRepository], events, {
+            defaultRemote: (repository) =>
+              repository.id === syncedRepository.id ? "origin" : undefined,
+            logs,
+            syncRepository: (repositoryId) =>
+              Effect.sync(() => {
+                events.push(`syncRepository:${repositoryId}`);
+                return repositoryStatus(repositoryId, "ready", "snapshot-local");
+              }),
+          }),
+        ),
+      ),
+    );
+
+    const summary = logs.find(
+      (log) =>
+        log.message === "bootstrap remote sync phase completed" &&
+        log.fields?.remoteSkipped === 1 &&
+        log.fields?.remoteSynced === 1,
+    )?.fields;
+
+    expect(summary).toEqual(
+      expect.objectContaining({
+        ready: 2,
+        remoteFailed: 0,
+        remoteMissingGitDbRefs: 0,
+        remoteSkipped: 1,
+        remoteSynced: 1,
+        repositories: 2,
+        warnings: 0,
+      }),
+    );
   });
 
   it("keeps background sync running for other repositories when one remote fails", async () => {
@@ -341,6 +470,7 @@ describe("DesktopBootstrapLive", () => {
     const goodRepositoryPath = await makeTempDir();
     await initializeRepositoryWithCommit(badRepositoryPath);
     await initializeRepositoryWithCommit(goodRepositoryPath);
+    await addLocalCycleRef(badRepositoryPath);
     await addOriginWithCycleRef(goodRepositoryPath);
 
     const events: Array<string> = [];
@@ -360,16 +490,32 @@ describe("DesktopBootstrapLive", () => {
           yield* bootstrap.start();
           yield* waitUntilEffect(
             () =>
+              bootstrap
+                .status()
+                .pipe(
+                  Effect.map((snapshot) =>
+                    snapshot.repositories.every((repository) => repository.stage === "ready"),
+                  ),
+                ),
+            "repositories did not open",
+          );
+          yield* bootstrap.notifyRepositoryChanged(badRepository.id);
+          yield* bootstrap.notifyRepositoryChanged(goodRepository.id);
+          yield* waitUntilEffect(
+            () =>
               bootstrap.status().pipe(
                 Effect.map((snapshot) => {
                   const bad = snapshot.repositories.find(
                     (repository) => repository.repositoryId === badRepository.id,
                   );
+                  const good = snapshot.repositories.find(
+                    (repository) => repository.repositoryId === goodRepository.id,
+                  );
                   const goodSyncCount = events.filter(
                     (event) => event === `syncRepository:${goodRepository.id}`,
                   ).length;
 
-                  return bad?.error !== undefined && goodSyncCount >= 3;
+                  return bad?.error !== undefined && good?.stage === "ready" && goodSyncCount > 1;
                 }),
               ),
             "background sync failure did not stay isolated",
@@ -386,9 +532,9 @@ describe("DesktopBootstrapLive", () => {
       ),
     );
 
-    expect(events.filter((event) => event === `syncRepository:${goodRepository.id}`).length).toBe(
-      3,
-    );
+    expect(
+      events.filter((event) => event === `syncRepository:${goodRepository.id}`).length,
+    ).toBeGreaterThan(1);
     expect(status.repositories).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -407,6 +553,7 @@ describe("DesktopBootstrapLive", () => {
   it("does not overlap background sync work for the same repository", async () => {
     const repositoryPath = await makeTempDir();
     await initializeRepositoryWithCommit(repositoryPath);
+    await addLocalCycleRef(repositoryPath);
 
     const events: Array<string> = [];
     const repository = makeRepository(repositoryPath);
@@ -419,11 +566,16 @@ describe("DesktopBootstrapLive", () => {
         Effect.gen(function* () {
           const bootstrap = yield* DesktopBootstrap;
           yield* bootstrap.start();
+          yield* waitUntil(
+            () => events.some((event) => event === `syncRepository:${repository.id}`),
+            "repository did not open",
+          );
+          yield* bootstrap.notifyRepositoryChanged(repository.id);
+          yield* bootstrap.notifyRepositoryChanged(repository.id);
           yield* waitUntilYield(
             () => events.some((event) => event.startsWith("syncRepository:blocking")),
             "blocking background sync did not start",
           );
-          yield* TestClock.adjust("1 minute");
           yield* Effect.yieldNow;
         }),
       ).pipe(
@@ -443,15 +595,16 @@ describe("DesktopBootstrapLive", () => {
                 maxActiveSyncs = Math.max(maxActiveSyncs, activeSyncs);
                 events.push(`syncRepository:blocking:${repositoryId}:${syncCalls}`);
 
-                return yield* Effect.never;
+                yield* Effect.sleep(50);
+                activeSyncs -= 1;
+                return repositoryStatus(repositoryId, "ready", "snapshot-local");
               }),
           }),
         ),
-        Effect.provide(TestClock.layer({})),
       ),
     );
 
     expect(maxActiveSyncs).toBe(1);
-    expect(events.filter((event) => event.startsWith("syncRepository:blocking"))).toHaveLength(1);
+    expect(events.some((event) => event.startsWith("syncRepository:blocking"))).toBe(true);
   });
 });

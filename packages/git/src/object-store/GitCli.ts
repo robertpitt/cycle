@@ -130,8 +130,9 @@ export const layer = Layer.effect(
           Effect.flatMap((result) => parseCommit(id, bytesToString(result.stdout))),
         ),
       readRef: (store, name) =>
-        git(spawner, store.gitDir, store.cwd, ["show-ref", "--verify", "--hash", name], {
+        git(spawner, store.gitDir, store.cwd, ["rev-parse", "--verify", "--quiet", name], {
           allowFailure: true,
+          quietAllowedFailure: true,
         }).pipe(
           Effect.map((result) =>
             result.status === 0 ? bytesToString(result.stdout).trim() || null : null,

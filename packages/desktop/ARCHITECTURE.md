@@ -660,7 +660,7 @@ Error types:
 
 Logging:
 
-- `DesktopLoggerLive` writes to `~/.cycle/logs/main.log`.
+- `@cycle/logging.defaultLayer` writes Effect logs to `~/.cycle/logs/cycle.jsonl`.
 - Database events are forwarded to the desktop logger.
 - `DesktopRuntimeLive` logs failed queued tasks.
 - Electron window load/render failures are logged through Effect logs.

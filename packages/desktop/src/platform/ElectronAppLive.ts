@@ -14,6 +14,7 @@ const logSupervisionFailure = (
     Effect.annotateLogs({
       cause: Cause.pretty(cause),
       event,
+      service: "desktop",
       source,
     }),
   );
@@ -28,6 +29,7 @@ const superviseProcessEvents = (
         Effect.annotateLogs({
           error: event.error,
           event: event.type,
+          service: "desktop",
           source: "process",
         }),
         Effect.andThen(requestShutdown),

@@ -1,17 +1,23 @@
 import { startCycleApiServer, type RepositoryOpenRequest } from "@cycle/api";
-import { type RepositoryInput, type RepositoryMetadata } from "@cycle/contracts";
+import {
+  contractFor,
+  type CycleUseCase,
+  type RepositoryInput,
+  type RepositoryMetadata,
+} from "@cycle/contracts";
 import { GitRepository, type GitRepositoryMetadata } from "@cycle/git";
 import { GitDb, Store as GitDbStore } from "@cycle/git-db";
-import { UseCaseRunner } from "@cycle/usecases";
+import { logError } from "@cycle/logging";
+import { UseCaseRunner, type UseCaseRunnerShape } from "@cycle/usecases";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Effect } from "effect";
 import { DesktopRuntime } from "../platform/DesktopRuntime.ts";
 import { AppConfig, appConfigError, type RepositoryRecord } from "../shared/AppConfig.ts";
+import { DesktopBootstrap, type DesktopBootstrapService } from "../shared/Bootstrap.ts";
 import { LocalWorkspace } from "../shared/LocalWorkspace.ts";
 import { cycleCliConfigPathFromHome } from "./CycleDirectory.ts";
-import { DesktopLogger } from "./DesktopLoggerLive.ts";
 
 const LOCAL_PROJECTION_POLL_INTERVAL_MS = 60_000;
 
@@ -91,11 +97,39 @@ const repositoryById = (
 ): RepositoryRecord | undefined =>
   repositories.find((repository) => repository.id === repositoryId);
 
+const repositoryIdFromUseCase = (useCase: CycleUseCase): string | undefined => {
+  const input = useCase.input as unknown;
+  if (typeof input !== "object" || input === null || !("repository" in input)) return undefined;
+
+  const repository = (input as { readonly repository?: unknown }).repository;
+  if (typeof repository !== "object" || repository === null || !("id" in repository)) {
+    return undefined;
+  }
+
+  const id = (repository as { readonly id?: unknown }).id;
+  return typeof id === "string" && id.length > 0 ? id : undefined;
+};
+
+const runnerWithBackgroundPublish = (
+  runner: UseCaseRunnerShape,
+  bootstrap: DesktopBootstrapService,
+): UseCaseRunnerShape => ({
+  run: (useCase) => {
+    const effect = runner.run(useCase);
+    const contract = contractFor(useCase.name);
+    const repositoryId = repositoryIdFromUseCase(useCase as CycleUseCase);
+
+    if (contract.sideEffect !== "write" || repositoryId === undefined) return effect;
+
+    return effect.pipe(Effect.tap(() => bootstrap.notifyRepositoryChanged(repositoryId)));
+  },
+});
+
 export const startDesktopApi = Effect.fnUntraced(function* () {
   const appConfig = yield* AppConfig;
+  const bootstrap = yield* DesktopBootstrap;
   const gitRepository = yield* GitRepository;
   const localWorkspace = yield* LocalWorkspace;
-  const logger = yield* DesktopLogger;
   const runner = yield* UseCaseRunner;
   const runtime = yield* DesktopRuntime;
   const config = yield* appConfig.read();
@@ -104,7 +138,7 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
 
   yield* writeCliConfigToken(config.api.staticToken).pipe(
     Effect.catch((error) =>
-      logger.error("api cli config token write failed", {
+      logError("api", "api cli config token write failed", {
         error: error instanceof Error ? error.message : String(error),
       }),
     ),
@@ -148,7 +182,7 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
       }),
     );
 
-  const handle = yield* Effect.acquireRelease(
+  yield* Effect.acquireRelease(
     Effect.tryPromise({
       try: () =>
         startCycleApiServer({
@@ -165,7 +199,7 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
           },
           port: config.api.port === "auto" ? undefined : config.api.port,
           repositoryOpenInput,
-          runner,
+          runner: runnerWithBackgroundPublish(runner, bootstrap),
           runtimeFile: desktopApiRuntimeDiscoveryPath(),
           staticToken: config.api.staticToken,
         }),
@@ -177,16 +211,10 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
         catch: (cause) => cause,
       }).pipe(
         Effect.catch((error) =>
-          logger.error("api server shutdown failed", {
+          logError("api", "api server shutdown failed", {
             error: error instanceof Error ? error.message : String(error),
           }),
         ),
       ),
   );
-
-  yield* logger.info("api server started", {
-    baseUrl: handle.baseUrl,
-    runtimeFile: desktopApiRuntimeDiscoveryPath(),
-    scope: "api",
-  });
 });

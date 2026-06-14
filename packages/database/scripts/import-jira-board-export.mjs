@@ -40,14 +40,9 @@ function importJiraBoardExport(options) {
     name: options.actorName,
     type: "import",
   };
-  const databaseLayer = DatabaseLiveWithOptions({
-    ...(options.projectionPath === undefined ? {} : { projectionPath: options.projectionPath }),
-    logger: (event) =>
-      logMetric(`database.${event.message}`, {
-        ...(event.repositoryId === undefined ? {} : { repositoryId: event.repositoryId }),
-        ...(event.data === undefined ? {} : event.data),
-      }),
-  }).pipe(
+  const databaseLayer = DatabaseLiveWithOptions(
+    options.projectionPath === undefined ? {} : { projectionPath: options.projectionPath },
+  ).pipe(
     Layer.provide(
       Layer.mergeAll(DatabaseIdentityTest(importActor), DatabaseIdGeneratorDeterministic("jira")),
     ),

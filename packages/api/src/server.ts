@@ -1,4 +1,5 @@
 import { NodeHttpServer, NodeServices } from "@effect/platform-node";
+import { defaultLayer as CycleLoggingLive, logInfo } from "@cycle/logging";
 import { Context, Effect, Exit, FileSystem, Layer, Path, Scope } from "effect";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
 import {
@@ -27,7 +28,11 @@ export type CycleApiServerHandle = {
 export const startCycleApiServer = (
   options: CycleApiServerOptions,
 ): Promise<CycleApiServerHandle> =>
-  Effect.runPromise(startCycleApiServerEffect(options).pipe(Effect.provide(NodeServices.layer)));
+  Effect.runPromise(
+    startCycleApiServerEffect(options).pipe(
+      Effect.provide([NodeServices.layer, CycleLoggingLive()]),
+    ),
+  );
 
 export const startCycleApiServerEffect = (
   options: CycleApiServerOptions,
@@ -65,6 +70,12 @@ export const startCycleApiServerEffect = (
     }
 
     const baseUrl = `http://${host}:${server.address.port}`;
+    yield* logInfo("api", "api server started", {
+      baseUrl,
+      host,
+      port: server.address.port,
+      runtimeFile: options.runtimeFile ?? null,
+    });
 
     if (options.runtimeFile !== undefined) {
       const mcpPath = hostedMcpPath(serverOptions.mcp);
@@ -95,7 +106,8 @@ export const startCycleApiServerEffect = (
               const fs = yield* FileSystem.FileSystem;
               yield* fs.remove(options.runtimeFile, { force: true });
             }
-          }).pipe(Effect.provide(NodeServices.layer)),
+            yield* logInfo("api", "api server stopped", { baseUrl });
+          }).pipe(Effect.provide([NodeServices.layer, CycleLoggingLive()])),
         ),
       port: server.address.port,
       server,

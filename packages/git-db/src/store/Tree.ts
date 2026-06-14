@@ -17,7 +17,8 @@ export type MutableBlob = {
 };
 
 export type MutableTree = {
-  readonly entries: Map<string, MutableNode>;
+  dirty?: boolean;
+  entries?: Map<string, MutableNode>;
   readonly kind: "tree";
   readonly objectId?: ObjectId;
 };
@@ -34,31 +35,13 @@ export type PendingMutation =
     };
 
 export const loadMutableTree = (
-  git: GitTree,
+  _git: GitTree,
   treeId: ObjectId | null,
 ): Effect.Effect<MutableTree, GitDbError> =>
-  Effect.gen(function* () {
-    const root: MutableTree = {
-      entries: new Map(),
-      kind: "tree",
-      objectId: treeId ?? undefined,
-    };
-
-    if (treeId === null) return root;
-
-    for (const entry of yield* git.readTree(treeId)) {
-      if (entry.type === "tree") {
-        root.entries.set(entry.name, yield* loadMutableTree(git, entry.objectId));
-      } else {
-        root.entries.set(entry.name, {
-          kind: "blob",
-          mode: entry.mode,
-          objectId: entry.objectId,
-        });
-      }
-    }
-
-    return root;
+  Effect.succeed({
+    ...(treeId === null ? { entries: new Map<string, MutableNode>() } : {}),
+    kind: "tree",
+    objectId: treeId ?? undefined,
   });
 
 export const writeMutableTree = (
@@ -66,11 +49,14 @@ export const writeMutableTree = (
   tree: MutableTree,
 ): Effect.Effect<ObjectId, GitDbError> =>
   Effect.gen(function* () {
+    if (tree.dirty !== true && tree.objectId !== undefined) return tree.objectId;
+
+    const treeEntries = yield* entriesOf(git, tree);
     const entries: Array<TreeEntry> = [];
 
-    for (const [name, node] of tree.entries) {
+    for (const [name, node] of treeEntries) {
       if (node.kind === "tree") {
-        if (node.entries.size === 0) continue;
+        if (node.entries !== undefined && node.entries.size === 0) continue;
 
         entries.push({
           mode: "040000",
@@ -91,39 +77,78 @@ export const writeMutableTree = (
     return yield* git.writeTree(entries);
   });
 
-export const applyMutation = (root: MutableTree, path: string, mutation: PendingMutation): void => {
-  const segments = path.split("/");
+export const applyMutation = (
+  git: GitTree,
+  root: MutableTree,
+  path: string,
+  mutation: PendingMutation,
+): Effect.Effect<void, GitDbError> =>
+  Effect.gen(function* () {
+    const segments = path.split("/");
 
-  if (mutation.kind === "delete") {
-    deletePath(root, segments);
-    return;
-  }
+    if (mutation.kind === "delete") {
+      yield* deletePath(git, root, segments);
+      return;
+    }
 
-  setPath(root, segments, {
-    bytes: mutation.bytes,
-    kind: "blob",
-    mode: "100644",
+    yield* setPath(git, root, segments, {
+      bytes: mutation.bytes,
+      kind: "blob",
+      mode: "100644",
+    });
   });
-};
 
 export const nodeAtPath = (
+  git: Pick<GitTree, "readTree">,
   root: MutableTree,
   segments: ReadonlyArray<string>,
-): MutableNode | null => {
-  let current: MutableNode = root;
+): Effect.Effect<MutableNode | null, GitDbError> =>
+  Effect.gen(function* () {
+    let current: MutableNode = root;
 
-  for (const segment of segments) {
-    if (current.kind !== "tree") return null;
+    for (const segment of segments) {
+      if (current.kind !== "tree") return null;
 
-    const next = current.entries.get(segment);
+      const next = (yield* entriesOf(git, current)).get(segment);
 
-    if (next === undefined) return null;
+      if (next === undefined) return null;
 
-    current = next;
-  }
+      current = next;
+    }
 
-  return current;
-};
+    return current;
+  });
+
+export const entriesOf = (
+  git: Pick<GitTree, "readTree">,
+  tree: MutableTree,
+): Effect.Effect<Map<string, MutableNode>, GitDbError> =>
+  Effect.gen(function* () {
+    if (tree.entries !== undefined) return tree.entries;
+
+    const entries = new Map<string, MutableNode>();
+
+    if (tree.objectId !== undefined) {
+      for (const entry of yield* git.readTree(tree.objectId)) {
+        entries.set(
+          entry.name,
+          entry.type === "tree"
+            ? {
+                kind: "tree",
+                objectId: entry.objectId,
+              }
+            : {
+                kind: "blob",
+                mode: entry.mode,
+                objectId: entry.objectId,
+              },
+        );
+      }
+    }
+
+    tree.entries = entries;
+    return entries;
+  });
 
 export const entryAtPath = (
   git: Pick<GitTree, "readTree">,
@@ -190,44 +215,67 @@ export const flattenTree = (
     return output;
   });
 
-const setPath = (root: MutableTree, segments: ReadonlyArray<string>, node: MutableNode): void => {
-  let current = root;
+const setPath = (
+  git: GitTree,
+  root: MutableTree,
+  segments: ReadonlyArray<string>,
+  node: MutableNode,
+): Effect.Effect<void, GitDbError> =>
+  Effect.gen(function* () {
+    let current = root;
 
-  for (const segment of segments.slice(0, -1)) {
-    const existing = current.entries.get(segment);
+    for (const segment of segments.slice(0, -1)) {
+      const entries = yield* entriesOf(git, current);
+      const existing = entries.get(segment);
+      current.dirty = true;
 
-    if (existing?.kind === "tree") {
-      current = existing;
-      continue;
+      if (existing?.kind === "tree") {
+        current = existing;
+        continue;
+      }
+
+      const next: MutableTree = {
+        entries: new Map(),
+        dirty: true,
+        kind: "tree",
+      };
+      entries.set(segment, next);
+      current = next;
     }
 
-    const next: MutableTree = {
-      entries: new Map(),
-      kind: "tree",
-    };
-    current.entries.set(segment, next);
-    current = next;
-  }
+    const entries = yield* entriesOf(git, current);
+    entries.set(segments.at(-1) ?? "", node);
+    current.dirty = true;
+  });
 
-  current.entries.set(segments.at(-1) ?? "", node);
-};
+const deletePath = (
+  git: GitTree,
+  root: MutableTree,
+  segments: ReadonlyArray<string>,
+): Effect.Effect<boolean, GitDbError> =>
+  Effect.gen(function* () {
+    const [head, ...tail] = segments;
 
-const deletePath = (root: MutableTree, segments: ReadonlyArray<string>): boolean => {
-  const [head, ...tail] = segments;
+    if (head === undefined) return false;
 
-  if (head === undefined) return false;
+    const entries = yield* entriesOf(git, root);
 
-  if (tail.length === 0) return root.entries.delete(head);
+    if (tail.length === 0) {
+      const deleted = entries.delete(head);
+      if (deleted) root.dirty = true;
+      return deleted;
+    }
 
-  const child = root.entries.get(head);
+    const child = entries.get(head);
 
-  if (child?.kind !== "tree") return false;
+    if (child?.kind !== "tree") return false;
 
-  const deleted = deletePath(child, tail);
+    const deleted = yield* deletePath(git, child, tail);
 
-  if (child.entries.size === 0) {
-    root.entries.delete(head);
-  }
+    if (child.entries !== undefined && child.entries.size === 0) {
+      entries.delete(head);
+    }
 
-  return deleted;
-};
+    if (deleted) root.dirty = true;
+    return deleted;
+  });

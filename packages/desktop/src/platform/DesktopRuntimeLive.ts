@@ -11,7 +11,8 @@ const logTaskFailure = (label: string, cause: Cause.Cause<unknown>): Effect.Effe
     Effect.annotateLogs({
       cause: Cause.pretty(cause),
       label,
-      scope: "desktop-runtime",
+      component: "desktop-runtime",
+      service: "desktop",
     }),
   );
 

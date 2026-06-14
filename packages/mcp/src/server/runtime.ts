@@ -1,4 +1,5 @@
 import { NodeHttpServer, NodeRuntime, NodeServices } from "@effect/platform-node";
+import { defaultLayer as CycleLoggingLive, logInfo, logWarning } from "@cycle/logging";
 import { Context, Effect, Exit, Layer, Scope } from "effect";
 import {
   HttpMiddleware,
@@ -50,7 +51,7 @@ export const runCycleMcpStdio = (options: CycleMcpOptions): Effect.Effect<never,
   Layer.launch(makeCycleMcpStdioLayer(options));
 
 export const runCycleMcpStdioMain = (options: CycleMcpOptions): void => {
-  runCycleMcpStdio(options).pipe(NodeRuntime.runMain);
+  runCycleMcpStdio(options).pipe(Effect.provide(CycleLoggingLive()), NodeRuntime.runMain);
 };
 
 export const makeCycleMcpHttpLayer = (
@@ -78,7 +79,9 @@ export const startCycleMcpHttpServer = (
   options: CycleMcpHttpOptions,
 ): Promise<CycleMcpHttpServerHandle> =>
   Effect.runPromise(
-    startCycleMcpHttpServerEffect(options).pipe(Effect.provide(NodeServices.layer)),
+    startCycleMcpHttpServerEffect(options).pipe(
+      Effect.provide([NodeServices.layer, CycleLoggingLive()]),
+    ),
   );
 
 export const startCycleMcpHttpServerEffect = (
@@ -119,10 +122,21 @@ export const startCycleMcpHttpServerEffect = (
 
     const path = options.path ?? "/mcp";
     const baseUrl = `http://${host}:${server.address.port}`;
+    yield* logInfo("mcp", "mcp http server started", {
+      baseUrl,
+      path,
+      port: server.address.port,
+    });
 
     return {
       baseUrl,
-      close: () => Effect.runPromise(Scope.close(scope, Exit.void)),
+      close: () =>
+        Effect.runPromise(
+          Scope.close(scope, Exit.void).pipe(
+            Effect.andThen(logInfo("mcp", "mcp http server stopped", { baseUrl, path })),
+            Effect.provide(CycleLoggingLive()),
+          ),
+        ),
       path,
       port: server.address.port,
       server,
@@ -142,7 +156,9 @@ const httpCompatibilityLayer = (
   const token = mcpHttpToken(options);
   if (options.auth !== false && (token === undefined || token.length === 0)) {
     return Layer.effectDiscard(
-      Effect.fail(new Error("Cycle MCP HTTP auth requires a bearer token.")),
+      logWarning("mcp", "mcp http auth token missing").pipe(
+        Effect.andThen(Effect.fail(new Error("Cycle MCP HTTP auth requires a bearer token."))),
+      ),
     );
   }
 

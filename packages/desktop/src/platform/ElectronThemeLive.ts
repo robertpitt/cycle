@@ -24,6 +24,7 @@ const logSupervisionFailure = (event: string, cause: Cause.Cause<unknown>): Effe
     Effect.annotateLogs({
       cause: Cause.pretty(cause),
       event,
+      service: "desktop",
       source: "electron-theme",
     }),
   );

@@ -273,7 +273,7 @@ const gitDbOperation = <A, E, R>(
       gitDir: config.gitDir,
       namespace: config.namespace,
       operation,
-      scope: "git-db",
+      service: "gitdb",
       ...attributes,
     }),
   );
@@ -696,7 +696,11 @@ const makeTransaction = (
           }
 
           const root = yield* materialize(runtime, base, currentState);
-          const node = Tree.nodeAtPath(root, normalizedPath.split("/").filter(Boolean));
+          const node = yield* Tree.nodeAtPath(
+            runtime.adapter,
+            root,
+            normalizedPath.split("/").filter(Boolean),
+          );
 
           if (node === null || node.kind !== "blob") return null;
 
@@ -718,12 +722,16 @@ const makeTransaction = (
           const currentState = yield* getActiveState(state);
           const root = yield* materialize(runtime, base, currentState);
           const node = normalizedPath
-            ? Tree.nodeAtPath(root, normalizedPath.split("/").filter(Boolean))
+            ? yield* Tree.nodeAtPath(
+                runtime.adapter,
+                root,
+                normalizedPath.split("/").filter(Boolean),
+              )
             : root;
 
           if (node === null || node.kind !== "tree") return [];
 
-          return [...node.entries]
+          return [...(yield* Tree.entriesOf(runtime.adapter, node))]
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([entryName, entry]) => ({
               mode: entry.kind === "tree" ? "040000" : entry.mode,
@@ -788,11 +796,11 @@ const applyChangesToTree = (
   Effect.gen(function* () {
     for (const change of changesInSet(changes)) {
       if (change.newObjectId === undefined) {
-        Tree.applyMutation(root, change.path, { kind: "delete" });
+        yield* Tree.applyMutation(runtime.adapter, root, change.path, { kind: "delete" });
         continue;
       }
 
-      Tree.applyMutation(root, change.path, {
+      yield* Tree.applyMutation(runtime.adapter, root, change.path, {
         bytes: yield* runtime.adapter.readBlob(change.newObjectId),
         kind: "put",
       });
@@ -846,6 +854,97 @@ const mergeDivergedPointer = (
     });
 
     return snapshotId;
+  });
+
+const localSnapshotsSince = (
+  store: StoreServiceShape,
+  options: {
+    readonly fromExclusive: ObjectId;
+    readonly pointer: string;
+    readonly toInclusive: ObjectId;
+  },
+): Effect.Effect<ReadonlyArray<Snapshot>, GitDbError> =>
+  Effect.gen(function* () {
+    const snapshots: Array<Snapshot> = [];
+    let current = options.toInclusive;
+
+    while (current !== options.fromExclusive) {
+      const snapshot = yield* store.snapshot(current);
+      snapshots.push(snapshot);
+
+      const parent = snapshot.parents[0];
+      if (parent === undefined) {
+        return yield* Effect.fail(
+          syncConflict(options.pointer, options.toInclusive, options.fromExclusive),
+        );
+      }
+
+      current = parent;
+    }
+
+    return snapshots.reverse();
+  });
+
+const rebaseDivergedPointer = (
+  store: StoreServiceShape,
+  runtime: StoreRuntime,
+  options: {
+    readonly localBefore: ObjectId;
+    readonly localRef: string;
+    readonly mergeBase: ObjectId;
+    readonly pointer: string;
+    readonly remote: string;
+    readonly remoteBefore: ObjectId;
+  },
+): Effect.Effect<ObjectId, GitDbError> =>
+  Effect.gen(function* () {
+    const localChanges = yield* store.diff(options.mergeBase, options.localBefore);
+    const remoteChanges = yield* store.diff(options.mergeBase, options.remoteBefore);
+
+    if (hasMergeConflict(localChanges, remoteChanges)) {
+      return yield* Effect.fail(
+        syncConflict(options.pointer, options.localBefore, options.remoteBefore, options.mergeBase),
+      );
+    }
+
+    const localSnapshots = yield* localSnapshotsSince(store, {
+      fromExclusive: options.mergeBase,
+      pointer: options.pointer,
+      toInclusive: options.localBefore,
+    });
+    let rebasedSnapshotId = options.remoteBefore;
+
+    for (const snapshot of localSnapshots) {
+      const originalParent = snapshot.parents[0] ?? options.mergeBase;
+      const changes = yield* store.diff(originalParent, snapshot.id);
+      const base = yield* store.snapshot(rebasedSnapshotId);
+      const root = yield* Tree.loadMutableTree(runtime.adapter, base.root);
+
+      yield* applyChangesToTree(runtime, root, changes);
+
+      const tree = yield* Tree.writeMutableTree(runtime.adapter, root);
+      rebasedSnapshotId = yield* runtime.adapter.writeCommit({
+        author: snapshot.author,
+        committer: snapshot.committer,
+        message: snapshot.message,
+        parents: [rebasedSnapshotId],
+        tree,
+      });
+    }
+
+    yield* movePointerRef(
+      runtime,
+      options.localRef,
+      rebasedSnapshotId,
+      options.localBefore,
+      options.pointer,
+    );
+    yield* runtime.adapter.push({
+      refspecs: [`${options.localRef}:${options.localRef}`],
+      remote: options.remote,
+    });
+
+    return rebasedSnapshotId;
   });
 
 const sync = (
@@ -903,6 +1002,16 @@ const sync = (
           localAfter: localBefore ?? undefined,
           remoteAfter: undefined,
           status: "remote-deleted",
+        });
+        continue;
+      }
+
+      if (localBefore === null && remoteBefore === null) {
+        results.push({
+          ...resultBase,
+          localAfter: undefined,
+          remoteAfter: undefined,
+          status: "missing-remote-gitdb-ref",
         });
         continue;
       }
@@ -1056,6 +1165,25 @@ const sync = (
         continue;
       }
 
+      if (divergence === "rebase" && mergeBase !== null) {
+        const snapshotId = yield* rebaseDivergedPointer(store, runtime, {
+          localBefore,
+          localRef,
+          mergeBase,
+          pointer,
+          remote,
+          remoteBefore,
+        });
+
+        results.push({
+          ...resultBase,
+          localAfter: snapshotId,
+          remoteAfter: snapshotId,
+          status: "rebased",
+        });
+        continue;
+      }
+
       return yield* Effect.fail(
         syncConflict(pointer, localBefore, remoteBefore, mergeBase ?? undefined),
       );
@@ -1188,7 +1316,7 @@ const materialize = (
       const root = yield* Tree.loadMutableTree(runtime.adapter, base?.root ?? null);
 
       for (const [path, mutation] of state.mutations) {
-        Tree.applyMutation(root, path, mutation);
+        yield* Tree.applyMutation(runtime.adapter, root, path, mutation);
       }
 
       return root;

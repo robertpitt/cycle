@@ -115,27 +115,32 @@ export const makeUseCaseRunner = (database: UseCasePersistenceGatewayShape): Use
       Effect.map((value) => value as UseCaseSuccess<Name>),
     ) as Effect.Effect<UseCaseSuccess<Name>, UseCaseFailure>;
 
-    return applyDeadline(context, program).pipe(
-      Effect.tapCause((cause) => logUnexpectedUseCaseCause(annotations, cause)),
-      Effect.result,
-      Effect.timed,
-      Effect.tap(([duration, result]) =>
-        Effect.logInfo("usecase execution completed").pipe(
-          Effect.annotateLogs({
-            ...annotations,
-            durationMs: Duration.toMillis(duration),
-            failureTag: Result.isFailure(result) ? result.failure._tag : null,
-            result: Result.isSuccess(result) ? "success" : "failure",
+    return Effect.logDebug("usecase execution started").pipe(
+      Effect.annotateLogs(annotations),
+      Effect.andThen(
+        applyDeadline(context, program).pipe(
+          Effect.tapCause((cause) => logUnexpectedUseCaseCause(annotations, cause)),
+          Effect.result,
+          Effect.timed,
+          Effect.tap(([duration, result]) =>
+            Effect.logInfo("usecase execution completed").pipe(
+              Effect.annotateLogs({
+                ...annotations,
+                durationMs: Duration.toMillis(duration),
+                failureTag: Result.isFailure(result) ? result.failure._tag : null,
+                result: Result.isSuccess(result) ? "success" : "failure",
+              }),
+            ),
+          ),
+          Effect.flatMap(([, result]) =>
+            Result.isSuccess(result) ? Effect.succeed(result.success) : Effect.fail(result.failure),
+          ),
+          Effect.withSpan("cycle.usecase", {
+            attributes: annotations,
           }),
+          Effect.annotateLogs(annotations),
         ),
       ),
-      Effect.flatMap(([, result]) =>
-        Result.isSuccess(result) ? Effect.succeed(result.success) : Effect.fail(result.failure),
-      ),
-      Effect.withSpan("cycle.usecase", {
-        attributes: annotations,
-      }),
-      Effect.annotateLogs(annotations),
     );
   };
 
@@ -478,6 +483,7 @@ const useCaseExecutionAnnotations = <Name extends UseCaseName>(
   hasTraceContext: context.useCase.meta?.traceContext !== undefined,
   requestId: context.requestId,
   repositoryId: repositoryIdFromInput(context.useCase.input) ?? null,
+  service: "usecases",
   sideEffect,
   source: context.source,
   useCase: context.useCase.name,

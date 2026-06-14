@@ -38,6 +38,7 @@ export type BootstrapStatus = {
 
 export type DesktopBootstrapService = {
   readonly ensureRepositoryOpened: (repositoryId: string) => Effect.Effect<void, unknown>;
+  readonly notifyRepositoryChanged: (repositoryId: string) => Effect.Effect<void>;
   readonly pushRepositoryToRemote: (repositoryId: string) => Effect.Effect<SyncResult, unknown>;
   readonly start: () => Effect.Effect<void>;
   readonly status: () => Effect.Effect<BootstrapStatus>;

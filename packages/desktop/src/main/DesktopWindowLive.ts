@@ -58,7 +58,8 @@ export const DesktopWindowLive = Layer.effect(
               Effect.annotateLogs({
                 exitCode: details.exitCode,
                 reason: details.reason,
-                scope: "desktop-window",
+                component: "desktop-window",
+                service: "desktop",
               }),
             ),
           );
@@ -70,8 +71,9 @@ export const DesktopWindowLive = Layer.effect(
             Effect.logError("renderer load failed").pipe(
               Effect.annotateLogs({
                 code,
+                component: "desktop-window",
                 description,
-                scope: "desktop-window",
+                service: "desktop",
                 validatedUrl,
               }),
             ),

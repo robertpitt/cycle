@@ -6,6 +6,7 @@ import {
   type RepositoryInput,
   type UseCaseMeta,
 } from "@cycle/contracts";
+import { logInfo, logWarning } from "@cycle/logging";
 import { type UseCaseFailure } from "@cycle/usecases";
 import { Crypto, Effect, Result } from "effect";
 import { Headers, HttpServerResponse } from "effect/unstable/http";
@@ -28,11 +29,20 @@ export const runUseCase = (useCase: CycleUseCase): Effect.Effect<unknown, never,
       UseCaseFailure
     >;
     const result = yield* Effect.result(effect);
+    const fields = {
+      requestId: useCase.meta?.requestId ?? null,
+      useCase: useCase.name,
+    };
 
     if (Result.isFailure(result)) {
+      yield* logWarning("api", "api usecase request failed", {
+        ...fields,
+        failureTag: result.failure._tag,
+      });
       return errorResponseFromUseCaseFailure(result.failure);
     }
 
+    yield* logInfo("api", "api usecase request completed", fields);
     return result.success;
   });
 

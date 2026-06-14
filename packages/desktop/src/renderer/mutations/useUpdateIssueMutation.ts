@@ -46,8 +46,8 @@ export const useUpdateIssueMutation = ({
         tone: "danger",
       });
     },
-    onSuccess: async () => {
-      await Promise.all([
+    onSuccess: () => {
+      void Promise.all([
         queryClient.invalidateQueries({
           queryKey: issueDetailQueryKey(repositoryId, issueId),
         }),

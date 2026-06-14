@@ -16,9 +16,16 @@ export const layer = Layer.effect(
 
     const normalize = (repositoryPath: string): string => path.resolve(repositoryPath);
 
-    const gitOutput = (cwd: string, args: ReadonlyArray<string>) =>
+    const gitOutput = (
+      cwd: string,
+      args: ReadonlyArray<string>,
+      options: {
+        readonly quietAllowedFailure?: boolean;
+      } = {},
+    ) =>
       gitRaw(spawner, cwd, [...args], {
         allowFailure: true,
+        quietAllowedFailure: options.quietAllowedFailure,
       }).pipe(
         Effect.mapError((cause) =>
           gitRepositoryError(args.join(" "), cwd, "Unable to inspect Git repository.", {
@@ -28,14 +35,16 @@ export const layer = Layer.effect(
       );
 
     const optionalGitOutput = (cwd: string, args: ReadonlyArray<string>) =>
-      gitOutput(cwd, args).pipe(
+      gitOutput(cwd, args, { quietAllowedFailure: true }).pipe(
         Effect.map((result) =>
           result.status === 0 ? bytesToString(result.stdout).trim() || undefined : undefined,
         ),
       );
 
     const remoteList = (cwd: string) =>
-      gitOutput(cwd, ["config", "--get-regexp", "^remote\\..*\\.url$"]).pipe(
+      gitOutput(cwd, ["config", "--get-regexp", "^remote\\..*\\.url$"], {
+        quietAllowedFailure: true,
+      }).pipe(
         Effect.map((result): ReadonlyArray<GitRepositoryRemote> => {
           if (result.status !== 0) return [];
 

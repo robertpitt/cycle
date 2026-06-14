@@ -1,5 +1,6 @@
 import { UseCaseRunnerLive } from "@cycle/usecases";
 import { GitRepository } from "@cycle/git";
+import { defaultLayer as CycleLoggingLive } from "@cycle/logging";
 import { Layer } from "effect";
 import { BrowserWindowsLive } from "../platform/BrowserWindowsLive.ts";
 import { DesktopRuntimeLive } from "../platform/DesktopRuntimeLive.ts";
@@ -40,7 +41,7 @@ const ProfileServiceLive = ProfileLive.pipe(Layer.provide(AppConfigServiceLive))
 
 const GitRepositoryServiceLive = GitRepository.NodeLive;
 
-const DesktopLoggerServiceLive = DesktopLoggerLive.pipe(Layer.provide(ElectronAppServiceLive));
+const DesktopLoggerServiceLive = DesktopLoggerLive;
 
 const LocalWorkspaceServiceLive = LocalWorkspaceLive.pipe(
   Layer.provide(Layer.mergeAll(AppConfigServiceLive, GitRepositoryServiceLive)),
@@ -58,14 +59,7 @@ const ElectronPreferencesServiceLive = ElectronPreferences.defaultLayer.pipe(
 );
 
 const DesktopDatabaseServiceLive = DesktopDatabaseLive.pipe(
-  Layer.provide(
-    Layer.mergeAll(
-      ProfileServiceLive,
-      ElectronAppServiceLive,
-      DesktopLoggerServiceLive,
-      DesktopRuntimeLive,
-    ),
-  ),
+  Layer.provide(Layer.mergeAll(ProfileServiceLive, ElectronAppServiceLive)),
 );
 
 const UseCaseRunnerServiceLive = UseCaseRunnerLive.pipe(Layer.provide(DesktopDatabaseServiceLive));
@@ -83,7 +77,7 @@ const DatabaseConsumersLive = DesktopBootstrapLive.pipe(
   Layer.provide(DatabaseConsumerDependenciesLive),
 );
 
-export const DesktopLive = Layer.mergeAll(
+const DesktopServicesLive = Layer.mergeAll(
   DesktopRuntimeLive,
   ElectronAppServiceLive,
   ElectronThemeServiceLive,
@@ -99,3 +93,5 @@ export const DesktopLive = Layer.mergeAll(
   AgentProviderDetectorLive,
   DatabaseConsumersLive,
 );
+
+export const DesktopLive = DesktopServicesLive.pipe(Layer.provide(CycleLoggingLive()));

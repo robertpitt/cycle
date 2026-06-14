@@ -26,8 +26,8 @@ export const useCreateIssueMutation = ({ repositoryId }: UseCreateIssueMutationO
         },
       });
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
         queryKey: issueListRootQueryKey,
       });
     },

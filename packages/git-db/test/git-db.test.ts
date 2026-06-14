@@ -1,10 +1,14 @@
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { Effect } from "effect";
 import {
   Event as EventApi,
   GitDbFilesystem,
   GitDbInMemory,
+  GitDbLive,
   InvalidJsonDocumentError,
   InvalidNamespaceError,
   InvalidPathError,
@@ -19,6 +23,65 @@ import {
   TransactionInactiveError,
 } from "../src/index.ts";
 import { assert, describe, it } from "./effect-vitest.ts";
+
+const execFileAsync = promisify(execFile);
+
+const attemptPromise = <A>(try_: () => Promise<A>): Effect.Effect<A, unknown> =>
+  Effect.tryPromise({
+    catch: (cause) => cause,
+    try: try_,
+  });
+
+const cleanupDir = (dir: string): Effect.Effect<void, never> =>
+  attemptPromise(() => rm(dir, { force: true, recursive: true })).pipe(Effect.orDie);
+
+const withTempDir = <A, E, R>(
+  prefix: string,
+  f: (dir: string) => Effect.Effect<A, E, R>,
+): Effect.Effect<A, E | unknown, R> =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const dir = yield* Effect.acquireRelease(
+        attemptPromise(() => mkdtemp(path.join(os.tmpdir(), prefix))),
+        cleanupDir,
+      );
+
+      return yield* f(dir);
+    }),
+  );
+
+const git = (cwd: string, args: ReadonlyArray<string>): Effect.Effect<void, unknown> =>
+  attemptPromise(() => execFileAsync("git", [...args], { cwd })).pipe(Effect.asVoid);
+
+const storeFor = (repositoryPath: string) =>
+  StoreApi.StoreService.pipe(
+    Effect.provide(
+      GitDbLive({
+        cwd: repositoryPath,
+        database: "cycle",
+        gitDir: path.join(repositoryPath, ".git"),
+      }),
+    ),
+  );
+
+const commitDocument = (
+  store: StoreApi.StoreServiceShape,
+  filePath: string,
+  value: Readonly<Record<string, unknown>>,
+  message: string,
+) =>
+  Effect.gen(function* () {
+    const tx = yield* store.begin();
+    yield* tx.put(filePath, value);
+    return yield* tx.commit({ message });
+  });
+
+const documentOp = (document: { json: () => unknown } | null | undefined): unknown => {
+  const value = document?.json();
+  return typeof value === "object" && value !== null && "op" in value
+    ? (value as { readonly op?: unknown }).op
+    : undefined;
+};
 
 describe("@cycle/git-db", () => {
   it.effect("appends immutable canonical event files with blob deduplication", () =>
@@ -204,6 +267,118 @@ describe("@cycle/git-db", () => {
         },
       ]);
     }).pipe(Effect.provide(GitDbInMemory())),
+  );
+
+  it.effect("reports missing remote GitDB refs for explicitly requested empty pointers", () =>
+    Effect.gen(function* () {
+      const store = yield* StoreApi.StoreService;
+      const sync = yield* SyncApi.run(store, {
+        mode: "full",
+        pointers: ["main"],
+        remote: "origin",
+      });
+
+      assert.deepStrictEqual(sync.pointers, [
+        {
+          localAfter: undefined,
+          localBefore: undefined,
+          pointer: "main",
+          remoteAfter: undefined,
+          remoteBefore: undefined,
+          status: "missing-remote-gitdb-ref",
+        },
+      ]);
+    }).pipe(Effect.provide(GitDbInMemory())),
+  );
+
+  it.effect("rebases local GitDB commits onto fetched remote commits without merge commits", () =>
+    withTempDir("cycle-gitdb-rebase-", (root) =>
+      Effect.gen(function* () {
+        const remote = path.join(root, "origin.git");
+        const first = path.join(root, "first");
+        const second = path.join(root, "second");
+
+        yield* attemptPromise(() => mkdir(first));
+        yield* attemptPromise(() => mkdir(second));
+        yield* git(root, ["init", "--bare", remote]);
+        yield* git(first, ["init", "--initial-branch=main"]);
+        yield* git(first, ["remote", "add", "origin", remote]);
+        yield* git(second, ["init", "--initial-branch=main"]);
+        yield* git(second, ["remote", "add", "origin", remote]);
+
+        const firstStore = yield* storeFor(first);
+        const secondStore = yield* storeFor(second);
+        const base = yield* commitDocument(
+          firstStore,
+          "collections/events/ticket/TKT-1/evt-base.json",
+          { op: "base" },
+          "Base event",
+        );
+
+        yield* SyncApi.run(firstStore, {
+          mode: "full",
+          onDiverged: "error",
+          pointers: ["main"],
+          remote: "origin",
+        });
+        yield* SyncApi.run(secondStore, {
+          mode: "full",
+          onDiverged: "error",
+          pointers: ["main"],
+          remote: "origin",
+        });
+
+        const local = yield* commitDocument(
+          firstStore,
+          "collections/events/ticket/TKT-1/evt-local.json",
+          { op: "local" },
+          "Local event",
+        );
+        const remoteSnapshot = yield* commitDocument(
+          secondStore,
+          "collections/events/ticket/TKT-2/evt-remote.json",
+          { op: "remote" },
+          "Remote event",
+        );
+
+        yield* SyncApi.run(secondStore, {
+          mode: "full",
+          onDiverged: "error",
+          pointers: ["main"],
+          remote: "origin",
+        });
+
+        const sync = yield* SyncApi.run(firstStore, {
+          mode: "full",
+          onDiverged: "rebase",
+          pointers: ["main"],
+          remote: "origin",
+        });
+        const result = sync.pointers[0];
+
+        assert.strictEqual(result?.localBefore, local.id);
+        assert.strictEqual(result?.remoteBefore, remoteSnapshot.id);
+        assert.strictEqual(result?.status, "rebased");
+        assert.ok(result?.localAfter);
+
+        const rebased = yield* firstStore.snapshot(result.localAfter);
+        assert.deepStrictEqual(rebased.parents, [remoteSnapshot.id]);
+        assert.notStrictEqual(rebased.id, local.id);
+        assert.strictEqual(
+          documentOp(yield* firstStore.get("collections/events/ticket/TKT-1/evt-base.json")),
+          "base",
+        );
+        assert.strictEqual(
+          documentOp(yield* firstStore.get("collections/events/ticket/TKT-1/evt-local.json")),
+          "local",
+        );
+        assert.strictEqual(
+          documentOp(yield* firstStore.get("collections/events/ticket/TKT-2/evt-remote.json")),
+          "remote",
+        );
+        assert.deepStrictEqual(base.parents, []);
+      }),
+    ),
   );
 
   it.effect("reports typed errors for invalid paths, pointers, snapshots, and JSON", () =>

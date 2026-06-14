@@ -8,6 +8,7 @@ import { Effect, Layer } from "effect";
 import { afterEach, describe, it } from "vitest";
 import { DesktopRuntime } from "../src/platform/DesktopRuntime.ts";
 import { AppConfig, defaultAppConfig, type AppConfigState } from "../src/shared/AppConfig.ts";
+import { DesktopBootstrap } from "../src/shared/Bootstrap.ts";
 import { LocalWorkspace } from "../src/shared/LocalWorkspace.ts";
 import { startDesktopApi } from "../src/main/DesktopApi.ts";
 import { DesktopLogger } from "../src/main/DesktopLoggerLive.ts";
@@ -83,9 +84,10 @@ const makeLayer = (config: AppConfigState) =>
     Layer.succeed(
       DesktopLogger,
       DesktopLogger.of({
+        debug: () => Effect.void,
         error: () => Effect.void,
         info: () => Effect.void,
-        path: Effect.succeed("test-main.log"),
+        path: Effect.succeed("cycle.jsonl"),
         warn: () => Effect.void,
       }),
     ),
@@ -107,6 +109,23 @@ const makeLayer = (config: AppConfigState) =>
         removeRepository: () => Effect.succeed([]),
         updateRepositoryPreferences: () => Effect.succeed(null),
         upsertRepositoryPath: () => Effect.die("not implemented"),
+      }),
+    ),
+    Layer.succeed(
+      DesktopBootstrap,
+      DesktopBootstrap.of({
+        ensureRepositoryOpened: () => Effect.void,
+        notifyRepositoryChanged: () => Effect.void,
+        pushRepositoryToRemote: () => Effect.die("not implemented"),
+        start: () => Effect.void,
+        status: () =>
+          Effect.succeed({
+            blocking: false,
+            message: "ready",
+            phase: "ready",
+            repositories: [],
+          }),
+        syncRepositoryFromRemote: () => Effect.void,
       }),
     ),
     Layer.succeed(
