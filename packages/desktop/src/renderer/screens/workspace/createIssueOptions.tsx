@@ -1,5 +1,5 @@
 import { Avatar, AvatarFallback } from "@cycle/ui/atoms";
-import type { PropertyPickerSection } from "@cycle/ui/components/property-picker";
+import type { PropertyPickerSection } from "@cycle/ui/molecules";
 import { cn } from "@cycle/ui/utils";
 import type {
   IssueTemplateDocument,

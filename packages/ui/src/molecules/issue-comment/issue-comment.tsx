@@ -5,7 +5,7 @@ import { IconButton } from "../../atoms/icon-button/index.ts";
 import {
   MarkdownRenderer,
   type MarkdownReferenceHandlers,
-} from "../../components/markdown-renderer/index.ts";
+} from "../markdown-renderer/index.ts";
 import { cn } from "../../lib/cn.ts";
 import { typography } from "../../lib/styles.ts";
 import { MarkdownEditor } from "../markdown-editor/index.ts";

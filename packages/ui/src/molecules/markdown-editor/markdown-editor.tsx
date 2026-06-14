@@ -60,7 +60,7 @@ import { $findMatchingParent } from "@lexical/utils";
 import {
   MarkdownRenderer,
   type MarkdownReferenceHandlers,
-} from "../../components/markdown-renderer/index.ts";
+} from "../markdown-renderer/index.ts";
 import { cn } from "../../lib/cn.ts";
 import { getCycleReferenceHref, type CycleReferenceKind } from "../../lib/markdown-references.ts";
 import { focusRing, typography } from "../../lib/styles.ts";

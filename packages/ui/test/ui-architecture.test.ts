@@ -74,6 +74,25 @@ describe("@cycle/ui architecture", () => {
     expect(violations).toEqual([]);
   });
 
+  it("keeps the root barrel as the only broad component import surface", async () => {
+    const packageJson = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8")) as {
+      exports?: Record<string, string>;
+    };
+    const exportKeys = Object.keys(packageJson.exports ?? {});
+
+    expect(
+      exportKeys.filter((key) => key === "./components" || key.startsWith("./components/")),
+    ).toEqual([]);
+    await expect(readdir(join(srcRoot, "components"))).rejects.toThrow();
+
+    const rootIndex = await readFile(join(srcRoot, "index.ts"), "utf8");
+    expect(rootIndex).toContain('export * from "./atoms/index.ts";');
+    expect(rootIndex).toContain('export * from "./molecules/index.ts";');
+    expect(rootIndex).toContain('export * from "./organisms/index.ts";');
+    expect(rootIndex).toContain('export * from "./pages/index.ts";');
+    expect(rootIndex).toContain('export * from "./templates/index.ts";');
+  });
+
   it("maintains Storybook coverage for public components and reusable pages", async () => {
     const missingStories: Array<string> = [];
 

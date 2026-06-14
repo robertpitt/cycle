@@ -5,7 +5,8 @@ controls, composed data-display components, workspace layouts, and full-page pro
 desktop renderer and Storybook.
 
 The package is source-first inside this monorepo: exports point at `src/**/*.ts(x)` files and are
-consumed through workspace aliases such as `@cycle/ui/components` and `@cycle/ui/pages`.
+consumed through `@cycle/ui` for the full public surface or family paths such as `@cycle/ui/atoms`
+and `@cycle/ui/pages`.
 
 ## Contents
 
@@ -81,10 +82,16 @@ export const App = () => (
 );
 ```
 
-Use the narrowest public import path that matches the component family:
+Use `@cycle/ui` as the single broad import point when a consumer wants the full public surface:
 
 ```tsx
-import { Button, Input, Select } from "@cycle/ui/components";
+import { Button, Input, Select, WorkspaceAppShellPage, cn } from "@cycle/ui";
+```
+
+Use the narrowest family import path when a consumer wants a smaller import surface:
+
+```tsx
+import { Button, Input, Select } from "@cycle/ui/atoms";
 import { WorkspaceAppShellPage } from "@cycle/ui/pages";
 import { cn } from "@cycle/ui/utils";
 ```
@@ -92,8 +99,8 @@ import { cn } from "@cycle/ui/utils";
 Component-specific paths are available when a consumer wants a smaller import surface:
 
 ```tsx
-import { Button } from "@cycle/ui/components/button";
-import { Field, FieldInput, FieldLabel } from "@cycle/ui/components/field";
+import { Button } from "@cycle/ui/atoms/button";
+import { Field, FieldInput, FieldLabel } from "@cycle/ui/molecules/field";
 import { WorkspaceShell } from "@cycle/ui/organisms/workspace-shell";
 ```
 
@@ -116,7 +123,6 @@ The public export map in `package.json` exposes these groups:
 
 - `@cycle/ui`
 - `@cycle/ui/atoms` and `@cycle/ui/atoms/*`
-- `@cycle/ui/components` and `@cycle/ui/components/*`
 - `@cycle/ui/molecules` and `@cycle/ui/molecules/*`
 - `@cycle/ui/organisms` and `@cycle/ui/organisms/*`
 - `@cycle/ui/pages` and `@cycle/ui/pages/*`
@@ -168,6 +174,7 @@ Atoms:
 - `Button`
 - `Checkbox`
 - `ChipTrigger`
+- `DateTime`
 - `IconButton`
 - `Input`
 - `Kbd`
@@ -180,6 +187,7 @@ Atoms:
 - `StatusIndicator`
 - `Switch`
 - `Textarea`
+- `Text`
 
 Molecules:
 
@@ -187,16 +195,19 @@ Molecules:
 - `Card`
 - `ChipSelect`
 - `CommandField`
+- `DiffViewer`
 - `Dialog`
 - `Field`
 - `IssueGroupHeader`
 - `IssueListRow`
 - `IssueMetaChip`
+- `MarkdownRenderer`
 - `NavigationItem`
 - `OtpCodeField`
 - `PropertyPicker`
 - `SettingRow`
 - `ShellSidebarSection`
+- `SortableList`
 - `ViewTab`
 - `WorkItemRow`
 
@@ -216,9 +227,6 @@ Pages and workspace kits:
 - issue list/page examples
 - workspace welcome, sign-in, create/import, join, verify-device, settings, and shell pages
 - `WorkspaceAppShellPage`, used by the desktop renderer's default route
-
-The `components/` barrel re-exports public atoms, molecules, and organisms for consumers that do not
-need the atomic-design grouping.
 
 ## Storybook
 
@@ -251,7 +259,7 @@ state transitions, parsing, or non-trivial rendering logic.
 
 1. Add or edit the component under the right family directory.
 2. Export it from the local `index.ts`.
-3. If it is generally reusable, export it through `src/components/index.ts` as well.
+3. Export it through the family `index.ts`; the root `src/index.ts` re-exports all public families.
 4. Add or update the Storybook story next to the component.
 5. Keep public props aligned with the API rules below.
 6. Run the relevant checks:

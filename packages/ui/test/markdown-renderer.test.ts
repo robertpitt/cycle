@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { MarkdownRenderer } from "../src/components/markdown-renderer/index.ts";
+import { MarkdownRenderer } from "../src/molecules/markdown-renderer/index.ts";
 
 describe("MarkdownRenderer", () => {
   it("renders Cycle reference shorthand and explicit links as internal controls", () => {

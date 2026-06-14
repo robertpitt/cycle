@@ -18,7 +18,7 @@ import * as React from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "../../atoms/avatar/index.ts";
 import { Button } from "../../atoms/button/index.ts";
 import { IconButton } from "../../atoms/icon-button/index.ts";
-import type { MarkdownReferenceHandlers } from "../../components/markdown-renderer/index.ts";
+import type { MarkdownReferenceHandlers } from "../../molecules/markdown-renderer/index.ts";
 import { cn } from "../../lib/cn.ts";
 import { typography } from "../../lib/styles.ts";
 import { EditableText } from "../../molecules/editable-text/index.ts";

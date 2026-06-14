@@ -1,7 +1,7 @@
 import { AtSign, Eye, Paperclip, PencilLine } from "lucide-react";
 import * as React from "react";
 import { IconButton } from "../../atoms/icon-button/index.ts";
-import type { MarkdownReferenceHandlers } from "../../components/markdown-renderer/index.ts";
+import type { MarkdownReferenceHandlers } from "../markdown-renderer/index.ts";
 import { cn } from "../../lib/cn.ts";
 import { focusRing, typography } from "../../lib/styles.ts";
 import {

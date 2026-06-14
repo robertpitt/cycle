@@ -10,6 +10,7 @@ import {
 import * as React from "react";
 import { Badge } from "../../atoms/badge/index.ts";
 import { Checkbox } from "../../atoms/checkbox/index.ts";
+import { DateTime } from "../../atoms/date-time/index.ts";
 import { IconButton } from "../../atoms/icon-button/index.ts";
 import { Select } from "../../atoms/select/index.ts";
 import { Skeleton } from "../../atoms/skeleton/index.ts";
@@ -82,13 +83,6 @@ const reasonIcons = {
   comment_created: MessageCircle,
   mention: AtSign,
 } satisfies Record<InboxListReason, typeof AtSign>;
-
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  month: "short",
-});
 
 const loadingRows = () =>
   Array.from({ length: 6 }, (_, index) => (
@@ -347,15 +341,8 @@ const InboxRow = ({
         </Badge>
       </span>
       <span className="truncate text-right text-xs text-muted-foreground">
-        {formatEntryTime(entry.createdAt)}
+        <DateTime fallback={entry.createdAt} format="compactDateTime" value={entry.createdAt} />
       </span>
     </div>
   );
-};
-
-const formatEntryTime = (value: string): string => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-
-  return dateFormatter.format(date);
 };

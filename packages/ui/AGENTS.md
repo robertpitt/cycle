@@ -16,8 +16,9 @@ network calls, query clients, mutations, and routing hooks belong in consuming a
 - Put product regions, dialogs, sidebars, lists, toolbars, and shells in `src/organisms`.
 - Put full-screen examples and prototype compositions in `src/pages`.
 - Use `src/templates` only for reusable layout skeletons that are not product-specific.
-- Keep `src/components` as a convenience export surface. The atomic-design folders are the canonical
-  implementation locations.
+- Do not add a `src/components` re-export surface. The root `src/index.ts` is the single broad
+  import point, and the atomic-design folders are the canonical implementation and direct import
+  locations.
 
 Promote renderer UI into this package when it is reusable, presentational, and not coupled to app
 state. Keep renderer wrappers when they adapt app/domain data into UI props.
@@ -112,8 +113,8 @@ unless a component intentionally supports a narrower set.
 ## Export Rules
 
 - Every public component exports from its local `index.ts`.
-- Components in `atoms`, `molecules`, or `organisms` should also be available through
-  `src/components/index.ts`.
+- Components in `atoms`, `molecules`, `organisms`, `pages`, or `templates` must be reachable through
+  the root `src/index.ts` via family barrel exports.
 - Update `package.json` exports only when adding a new public path.
 - Keep `styles.css` listed in `sideEffects`.
 

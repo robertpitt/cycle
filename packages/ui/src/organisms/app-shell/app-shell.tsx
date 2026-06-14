@@ -136,7 +136,7 @@ export const AppShellSidebar = React.forwardRef<HTMLElement, AppShellSidebarProp
         {...props}
         ref={ref}
         className={cn(
-          "grid h-full min-h-0 grid-rows-[auto_1fr_auto] border-r border-border bg-sidebar text-sidebar-foreground",
+          "grid h-full min-h-0 grid-rows-[auto_1fr_auto] border-border bg-sidebar text-sidebar-foreground",
           collapsed ? "p-3" : "p-4",
           className,
         )}

@@ -10,8 +10,6 @@
     ".": "./src/index.ts",
     "./atoms": "./src/atoms/index.ts",
     "./atoms/*": "./src/atoms/*/index.ts",
-    "./components": "./src/components/index.ts",
-    "./components/*": "./src/components/*/index.ts",
     "./molecules": "./src/molecules/index.ts",
     "./molecules/*": "./src/molecules/*/index.ts",
     "./organisms": "./src/organisms/index.ts",

@@ -1,21 +1,27 @@
-# @cycle/ui Lexical Markdown Editor Specification
+# @cycle/ui Productionization Specification
 
 Status: Draft implementation specification
 
-Version: 0.1.0
+Version: 0.2.0
 
-Package: `@cycle/ui`
+Scope: `packages/ui` and `packages/desktop/src/renderer`
 
 ## 1. Purpose
 
-`@cycle/ui` MUST provide a reusable Lexical-backed Markdown editor for Cycle ticket bodies and
-comments. The editor MUST replace the current textarea-centered editing behavior while preserving
-the existing application contract: tickets and comments are read from and written to consumers as
-Markdown strings.
+`@cycle/ui` MUST become the first-class shared React UI system for Cycle product surfaces. It MUST
+own the reusable application UI, design-system primitives, product components, layouts, pages,
+templates, examples, styling contracts, and Storybook coverage needed by the desktop renderer and
+future Cycle applications.
 
-The implementation MUST live in `@cycle/ui`. Consuming applications such as `@cycle/desktop` MAY
-adapt app data, mutations, notifications, and routing around the editor, but they MUST NOT own the
-editor runtime, Markdown conversion, toolbar behavior, slash menu behavior, or editor examples.
+`@cycle/desktop` renderer code MUST become an adapter layer. It MAY own routes, providers, query and
+mutation hooks, IPC bridge access, app-specific state, DTO-to-UI mapping, notifications, and
+navigation. It MUST NOT remain the long-term owner of reusable product UI, local menu
+implementations, date formatting widgets, issue property controls, settings panels, list/detail
+views, or screen layouts that can be represented through props and callbacks.
+
+This specification replaces the previous narrow Lexical Markdown editor specification. The Markdown
+editor remains a required first-class component family under this broader UI productionization
+contract.
 
 ## 2. Normative Language
 
@@ -28,202 +34,689 @@ choice and expose enough information for callers, tests, and future maintainers 
 
 ## 3. Source Guidance
 
-Editor implementation work MUST follow these local and external sources:
+UI productionization work MUST follow these local sources:
 
 - `packages/ui/AGENTS.md`
 - `packages/ui/README.md`
-- `packages/desktop/ARCHITECTURE.md`
-- `packages/database/SPEC.md`
-- Lexical API documentation: `https://lexical.dev/docs/api/`
-- Lexical Markdown package documentation: `https://lexical.dev/docs/packages/lexical-markdown`
-- Lexical serialization documentation: `https://lexical.dev/docs/concepts/serialization`
-- Lexical React plugin documentation: `https://lexical.dev/docs/react/plugins`
+- `packages/desktop/README.md`
+- Root `SPEC.md` package-boundary rules for `@cycle/ui` and `@cycle/desktop`
+- Existing component implementations under `packages/ui/src`
+- Existing desktop renderer usage under `packages/desktop/src/renderer`
 
-Where this specification and `packages/ui/AGENTS.md` differ on component placement, exports, or UI
-package boundaries, `packages/ui/AGENTS.md` wins and this specification SHOULD be revised.
+Where this specification and `packages/ui/AGENTS.md` differ on component placement, API vocabulary,
+visual rules, accessibility, or export rules, `packages/ui/AGENTS.md` wins and this specification
+SHOULD be revised.
 
 ## 4. Problem Statement
 
-Cycle currently exposes Markdown ticket bodies and comment bodies through plain string contracts, but
-the shared UI edits those strings with textarea-based components. The current `IssueEditor` manually
-wraps selected text in Markdown syntax, and `IssueCommentComposer` is a separate textarea composer.
-This creates duplicated editing behavior, limits keyboard and accessibility affordances, and makes
-future editor features such as structured lists, slash commands, history, auto-linking, and richer
-paste handling harder to maintain consistently.
+Cycle's UI was developed quickly across `@cycle/ui` and the desktop renderer. The package already
+has atoms, molecules, organisms, pages, templates, design tokens, Storybook, and architecture tests,
+but the implementation is not yet production-standard as a shared UI library.
 
-Cycle needs one reusable editor system in `@cycle/ui` that:
+Current inconsistencies include:
 
-- edits Markdown ticket descriptions and comments with the same Lexical runtime
-- preserves existing Markdown persistence and desktop API contracts
-- gives ticket pages a full editor surface with toolbar, slash commands, attachments, and preview
-- gives comments a compact submit-focused editor surface
-- remains presentational and data-driven so desktop renderer code only passes values and callbacks
+- Desktop renderer components own reusable UI structures such as issues panels, view tables,
+  settings panels, repository history panels, issue property controls, empty states, and page
+  headers.
+- Renderer components mix React Query, mutations, route state, DTO adaptation, formatting, and
+  reusable JSX in the same files.
+- Date and time formatting is duplicated with ad hoc `Intl.DateTimeFormat` calls.
+- Typography is applied through one-off Tailwind classes instead of a strict shared text component
+  and text-role vocabulary.
+- Select, dropdown, autocomplete, chip picker, command picker, and local property menus do not share
+  one consistent interaction model.
+- Status, priority, assignee, label, metadata, table, loading, empty, and error states are repeated
+  with small visual differences.
+- Some UI components contain default product data that is useful for stories but unsafe as a shared
+  component contract.
+- Storybook coverage exists but is not yet the formal conformance surface for every first-class
+  component and state.
+
+Cycle needs a production-grade UI package where all reusable UI is data-driven, consistent,
+accessible, documented through Storybook, and consumed by desktop through thin adapters.
 
 ## 5. Goals
 
-The Lexical Markdown editor MUST:
+The productionized UI package MUST:
 
-1. Keep Markdown strings as the canonical public value type for ticket bodies and comment bodies.
-2. Use Lexical as the editing runtime for ticket descriptions, create-ticket descriptions, and
-   comment composition.
-3. Live entirely inside `@cycle/ui` except for consuming-app integration code that passes props and
-   callbacks.
-4. Preserve the existing `@cycle/desktop` persistence contract where `TicketDocument.body`,
-   `CreateTicketInput.body`, `UpdateTicketPatch.body`, and comment payload `body` remain strings.
-5. Provide one shared editor foundation that can render ticket and comment variants without
-   duplicating Markdown conversion or command behavior.
-6. Support controlled and uncontrolled React usage with `value`, `defaultValue`, `onValueChange`,
-   and commit/submit callbacks.
-7. Support the Cycle Markdown subset defined in Section 9.
-8. Provide accessible toolbar, slash menu, keyboard shortcut, focus, disabled, read-only, and error
-   states.
-9. Keep editor UI visually consistent with existing Cycle dense product surfaces and design tokens.
-10. Reuse `MarkdownRenderer` for preview/read-only rendering unless a replacement renderer is
-    explicitly specified and covered by equivalent tests.
-11. Include Storybook examples for both a ticket page/editor flow and a comment input flow.
-12. Provide deterministic tests for Markdown import/export, public callbacks, keyboard submit
-    behavior, and package-boundary conformance.
+1. Provide a strict atomic-design structure with first-class atoms, molecules, organisms, pages, and
+   templates.
+2. Move reusable desktop renderer UI into `@cycle/ui` as presentational components.
+3. Keep `@cycle/desktop` renderer responsible for routes, providers, query hooks, mutation hooks,
+   IPC bridge access, navigation, notifications, and DTO-to-UI mapping.
+4. Keep `@cycle/ui` free of application data fetching, React Query, Effect runtime ownership,
+   Electron APIs, persistence, routing hooks, and app package imports.
+5. Allow domain-shaped UI props such as `issue`, `repository`, `savedView`, and `comment` when those
+   shapes are defined locally in `@cycle/ui` and passed as plain data.
+6. Avoid importing `@cycle/contracts`, `@cycle/database`, `@cycle/api`, `@cycle/usecases`,
+   `@cycle/desktop`, or other non-UI Cycle runtime packages from `@cycle/ui`.
+7. Prefer breaking cleanup over backwards-compatible API clutter while `@cycle/desktop` is the only
+   consumer.
+8. Provide a required `Text` component that controls allowed semantic text roles, tones, truncation,
+   and rendering elements.
+9. Provide a required `DateTime` component that accepts `string | Date` values, supports an explicit
+   timezone, handles invalid values consistently, and replaces ad hoc UI date formatting.
+10. Provide one shared choice/popup foundation for `Select`, `DropdownMenu`, `Autocomplete`, and
+    multi-select/property picker behavior.
+11. Standardize status, priority, label, assignee, metadata, table, empty, loading, and error
+    presentation through reusable components.
+12. Keep Markdown strings as the public contract for Markdown editor and renderer components.
+13. Provide Storybook coverage for every first-class public component in one colocated story file
+    that demonstrates the component's meaningful states.
+14. Make conformance testable through architecture tests, import scans, Storybook builds, component
+    behavior tests, and desktop typechecks.
 
 ## 6. Non-Goals
 
-The Lexical Markdown editor v0.1 MUST NOT:
+The productionized UI package MUST NOT:
 
-1. Persist Lexical JSON, HTML, or editor-specific state in ticket or comment records.
-2. Change `@cycle/contracts`, `@cycle/database`, `@cycle/api`, or `@cycle/desktop` domain schemas to
-   add editor-specific payload fields.
-3. Add Electron, React Query, API client, Effect runtime, filesystem, upload, or network logic to
-   `@cycle/ui`.
-4. Implement collaborative editing, remote cursors, Yjs sync, or live multi-user comments.
-5. Execute raw HTML, scripts, embedded iframes, or user-provided Markdown code.
-6. Own attachment storage, file upload, image hosting, or mention search data fetching.
-7. Require a full document-editor feature set such as page layout, drag handles, complex table
-   builders, comments-on-selections, or cross-document embeds.
-8. Remove `MarkdownRenderer` before all current Markdown rendering behavior has an equivalent
-   tested replacement.
+1. Preserve old UI public APIs when a breaking API produces a cleaner and more consistent result.
+2. Own React Query clients, query keys, mutation instances, retries, invalidation, or app caching.
+3. Own Electron bridge calls, native dialogs, filesystem access, clipboard writes, or external link
+   opening. These actions MUST be exposed as callback props when needed.
+4. Own route parsing, URL construction, navigation history, route loaders, or React Router hooks.
+5. Import app-domain schema packages to reuse their types directly.
+6. Persist app data, write to local storage for product state, or perform network requests.
+7. Become a generic design system for unrelated products. Components SHOULD be optimized for Cycle's
+   dense, work-focused product UI.
+8. Add decorative marketing-page patterns, large hero compositions, gradient ornamentation, or
+   visual effects that are not part of the product UI.
+9. Require every tiny pure helper to become a component when a local helper keeps the code clearer.
+10. Require one public component to cover incompatible interaction models. Shared foundations are
+    preferred over unnatural prop overloads.
 
 ## 7. System Overview
 
 ### 7.1 Layer Position
 
-The editor sits in the presentation layer:
-
 ```text
-@cycle/database
-  TicketDocument.body: string
-  TicketDocument.bodyFormat: "markdown"
-  LinkedRecord payload body: string for comments
+@cycle/contracts / @cycle/api / @cycle/usecases
+  Domain schemas, usecase contracts, API execution, storage, and workflow policy
 
-@cycle/contracts / @cycle/api
-  Create/update/comment payload validation and transport
+@cycle/desktop main/preload
+  Electron lifecycle, IPC, native theme state, shell APIs, filesystem-safe platform behavior
 
 @cycle/desktop renderer
-  React Query, mutations, notifications, route state, desktop bridge
+  React Query, mutations, route state, DTO-to-UI mapping, callback wiring, app providers
 
 @cycle/ui
-  Lexical Markdown editor components, renderer, examples, styling
+  Theme, tokens, atoms, molecules, organisms, templates, pages, Markdown editor/renderer,
+  Storybook examples, component tests, and presentational UI contracts
 ```
 
-`@cycle/ui` MUST remain free of runtime application packages. Production source files in `@cycle/ui`
-MUST NOT import `@cycle/contracts`, `@cycle/database`, `@cycle/desktop`, `@cycle/api`,
-`@tanstack/react-query`, `effect`, `electron`, or `react-router`.
+`@cycle/ui` MUST be usable by future Cycle frontends without bringing in desktop runtime code.
 
-### 7.2 Main Components
+### 7.2 Desktop Adapter Rule
 
-The implementation MUST provide these component responsibilities. Exact file names are
-implementation-defined, but public exports MUST be stable and documented by local `index.ts` files.
+A desktop renderer component is valid when it primarily:
 
-- Markdown editor foundation: owns `LexicalComposer`, registered nodes, plugins, Markdown
-  transformers, import/export utilities, controlled value reconciliation, and editor error handling.
-- Markdown editor surface: renders the editable area, placeholder, focus frame, disabled/read-only
-  state, preview toggle, optional toolbar, optional slash menu, and optional footer actions.
-- Toolbar: exposes formatting commands for the supported Markdown subset through accessible icon
-  buttons with labels and tooltips/titles.
-- Slash menu: exposes block and insert commands with keyboard navigation, dismissal, and callback
-  hooks.
-- Ticket editor adapter: preserves or replaces the existing `IssueEditor` public role for ticket
-  descriptions while delegating editing to the shared Markdown editor foundation.
-- Comment composer adapter: upgrades `IssueCommentComposer` to use the shared Markdown editor in a
-  compact submit-focused configuration.
-- Renderer integration: continues to render saved Markdown through `MarkdownRenderer` or an
-  equivalent shared renderer.
-- Storybook examples: demonstrate the editor alone, ticket-page usage, create-ticket usage where
-  applicable, and comment composer usage.
+- calls query and mutation hooks
+- reads route parameters or navigation state
+- maps app DTOs into `@cycle/ui` prop shapes
+- passes callbacks into `@cycle/ui`
+- renders one or more `@cycle/ui` components
 
-### 7.3 External Dependencies
+A desktop renderer component SHOULD be migrated into `@cycle/ui` when it primarily:
 
-`@cycle/ui` MUST add Lexical dependencies only to the UI package. The minimum dependency set SHOULD
-include:
+- renders reusable layout, panels, tables, lists, cards, toolbars, dialogs, or forms
+- defines local icons, indicators, date formatting, empty states, or menus
+- contains product UI that could be rendered from props and callbacks
+- has no unavoidable dependency on route state, query state, mutation state, IPC, or app providers
 
-- `lexical`
-- `@lexical/react`
-- `@lexical/markdown`
-- `@lexical/rich-text`
-- `@lexical/list`
-- `@lexical/link`
-- `@lexical/code`
-- `@lexical/selection`
-- `@lexical/utils`
+### 7.3 First-Class Component Families
 
-The implementation MAY add `@lexical/table`, `@lexical/html`, or `@lexical/overflow` when required
-for the compatibility behavior in this specification. Lexical package versions MUST be kept aligned
-with each other.
+The following component families are REQUIRED before the UI package is considered productionized:
 
-## 8. Core Domain Model
+- Foundation atoms: `Text`, `DateTime`, `Button`, `IconButton`, `Input`, `Textarea`, `Checkbox`,
+  `Switch`, `Badge`, `Avatar`, `Kbd`, `Label`, `Separator`, `Skeleton`, `Spinner`, and
+  `StatusIndicator`.
+- Choice components: `Select`, `DropdownMenu`, `Autocomplete`, and multi-select/property picker
+  components built on one shared foundation.
+- Form composition: `Field` and field adapters for supported controls.
+- Feedback components: `Alert`, `Notification`, `EmptyState`, `PanelState`, loading states, and
+  error states.
+- Data display components: metadata lists, info rows, tables, issue rows, inbox rows, commit history
+  rows, status marks, priority marks, label swatches, assignee marks, and inline copy/action chips.
+- Product organisms: app shell, workspace shell, issues list, issues toolbar, issues sidebar, inbox
+  list, views table, repository history, settings panels, create issue dialog, view issue surface,
+  repository initialization dialog, and setup/onboarding surfaces.
+- Templates: reusable workspace, settings, list/detail, split-pane, centered-state, and app-shell
+  layout skeletons.
+- Pages: data-driven full-screen compositions used by desktop adapters and Storybook examples.
+- Markdown system: Markdown renderer, Lexical-backed Markdown editor, issue editor, and comment
+  composer.
 
-### 8.1 Markdown String
+## 8. Repository and Export Contract
 
-The public document value is a UTF-16 JavaScript string containing Markdown.
+### 8.1 Source Layout
 
-Required invariants:
+`@cycle/ui` production source MUST follow this layout:
 
-- Empty editor content MUST export as `""`.
-- Comment submit callbacks MUST receive a trimmed, non-empty Markdown string.
-- Ticket body save callbacks MUST receive the Markdown string as edited, except for normalization
-  defined in Section 8.4.
-- Consumers MUST NOT need to read Lexical `EditorState` to persist a ticket body or comment.
-- Editor internals MUST NOT expose mutable Lexical node instances through public component props.
+```text
+src/
+  atoms/        Low-level controls and semantic presentation primitives.
+  molecules/    Composed controls, compact data surfaces, and reusable field/picker patterns.
+  organisms/    Product regions, panels, dialogs, sidebars, lists, toolbars, and shells.
+  pages/        Full-screen data-driven product compositions and Storybook page examples.
+  templates/    Reusable layout skeletons with slots and no product data assumptions.
+  theme/        Theme provider and theme mode contracts.
+  lib/          Shared contracts, styles, utilities, formatting helpers, and internal foundations.
+  stories/      Cross-component examples that are not tied to one public component.
+  styles.css    Tailwind v4 entrypoint and Cycle design tokens.
+```
 
-### 8.2 Editor State
+The atomic-design folders are the canonical implementation locations. `src/components` MUST NOT
+exist as a re-export or implementation surface.
 
-Lexical `EditorState` is an internal runtime representation.
+### 8.2 Component Directory Contract
 
-The editor foundation MUST:
+Every public component MUST live in a kebab-case directory:
 
-- initialize Lexical state from the Markdown string value
-- export Markdown after user-visible content changes
-- preserve undo/redo history during normal editing
-- reset or re-import state when the controlled `value` changes to a materially different Markdown
-  string
-- avoid re-importing on every render when the controlled `value` is equivalent to the last exported
-  Markdown value
+```text
+src/<family>/<component-name>/
+  <component-name>.tsx
+  <component-name>.stories.tsx
+  index.ts
+  <component-name>.test.tsx        optional but REQUIRED for non-trivial behavior
+```
 
-### 8.3 Editor Modes
+Additional files MAY exist for local helpers, fixtures, or internal subcomponents. Internal files
+MUST NOT create undocumented public exports.
 
-The editor MUST support these modes:
+### 8.3 Export Rules
 
-- `ticket`: full description editing for issue detail and create-ticket surfaces.
-- `comment`: compact comment composition with submit behavior.
-- `readOnly`: rendered, selectable content with no mutation.
-- `disabled`: visibly inactive editing surface where user input and submit controls are disabled.
+Every public component MUST export from:
 
-Mode names in public props are implementation-defined, but the capabilities above MUST be expressible
-without application-specific wrappers.
+- its local `index.ts`
+- the canonical family barrel, such as `src/atoms/index.ts`
+- the root `src/index.ts` through the relevant family barrel
 
-### 8.4 Markdown Normalization
+Package export paths in `packages/ui/package.json` MUST stay aligned with the source layout.
 
-Markdown export MAY normalize syntax when the rendered meaning is unchanged. Examples include
-trailing whitespace trimming on submit, consistent list marker spacing, and consistent fenced-code
-backticks.
+Breaking export cleanup is allowed. When a public path is removed, desktop usage MUST be migrated in
+the same change set.
 
-The exporter MUST NOT silently delete user-authored text. Unsupported Markdown syntax MUST remain
-visible and editable as text, or MUST be converted to a semantically equivalent supported node.
+## 9. Component Taxonomy
 
-## 9. Markdown Capability Requirements
+### 9.1 Atoms
 
-### 9.1 Core Supported Subset
+Atoms are low-level semantic controls or presentation primitives. An atom MAY wrap an accessible
+primitive library when that primitive represents one control, but it MUST NOT encode product
+workflow, domain records, query state, or multi-region application layout.
 
-The editor MUST support import, editing, shortcut insertion, toolbar or command insertion, rendering,
-and export for:
+Examples:
+
+- `Text`
+- `DateTime`
+- `Button`
+- `IconButton`
+- `Input`
+- `Textarea`
+- `Checkbox`
+- `Switch`
+- `Badge`
+- `Avatar`
+- `Kbd`
+- `Separator`
+- `Skeleton`
+- `Spinner`
+- `StatusIndicator`
+
+Atoms MUST expose shared API vocabulary from `src/lib/contracts.ts` where applicable.
+
+### 9.2 Molecules
+
+Molecules compose atoms into reusable controls, form groups, compact data surfaces, or interaction
+patterns. A molecule MAY own local UI state such as open/closed state, search text, highlighted
+index, uncontrolled value, focus state, and local draft text. It MUST NOT own app state or app data
+fetching.
+
+Examples:
+
+- `Field`
+- `Select`
+- `DropdownMenu`
+- `Autocomplete`
+- `PropertyPicker`
+- `SearchInput`
+- `Alert`
+- `Notification`
+- `IssueMetaChip`
+- `IssueComment`
+- `MarkdownEditor`
+- `EmptyState`
+- `PanelState`
+
+### 9.3 Organisms
+
+Organisms are product regions made from atoms and molecules. They MAY represent Cycle concepts such
+as issues, repositories, inbox entries, views, comments, and settings when those concepts are passed
+as plain UI props. They MUST remain presentational.
+
+Examples:
+
+- `AppShell`
+- `WorkspaceShell`
+- `IssuesList`
+- `IssuesToolbar`
+- `InboxList`
+- `ViewsTable`
+- `RepositoryHistory`
+- `ApplicationSettingsPanel`
+- `RepositorySettingsPanel`
+- `ViewIssue`
+- `CreateIssueDialog`
+- `RepositoryInitialiseDialog`
+- `InitialSetup`
+
+Organisms MUST expose callbacks or slots for every visible action. They MUST NOT hard-code actions
+that a consuming application cannot replace.
+
+### 9.4 Templates
+
+Templates define reusable layout skeletons. A template MUST use slots and layout props rather than
+product records.
+
+Examples:
+
+- workspace app shell template
+- settings page template
+- list/detail template
+- split-pane template
+- centered state template
+- table page template
+
+Templates MUST NOT import product organisms when that would make the template product-specific.
+
+### 9.5 Pages
+
+Pages are full-screen compositions intended for app consumption or Storybook examples. A page MAY
+compose product organisms and MAY include realistic default demo data for stories only. Production
+page exports MUST remain data-driven and callback-driven.
+
+Pages MUST NOT call React Query hooks, route hooks, Electron bridge APIs, or app mutations.
+
+## 10. First-Class Component Criteria
+
+A component is first-class only when it has:
+
+1. A stable public TypeScript prop contract.
+2. App data passed in through props.
+3. Callback props or slots for visible actions.
+4. Controlled and uncontrolled value support when the user edits component-owned state and both
+   modes are practical.
+5. Shared semantic API names such as `tone`, `variant`, `appearance`, `size`, `density`, `selected`,
+   `active`, `disabled`, `invalid`, `loading`, `readOnly`, `required`, `value`, `defaultValue`, and
+   `onValueChange`.
+6. Accessible markup and keyboard behavior.
+7. Explicit loading, empty, error, disabled, selected, long-content, and narrow-layout states where
+   those states apply.
+8. One colocated Storybook file demonstrating all meaningful states.
+9. Tests for keyboard behavior, parsing, formatting, state transitions, or non-trivial rendering.
+10. No app runtime imports or app data fetching.
+
+Components that do not meet these criteria MUST remain internal or be completed before being exposed
+through a public barrel.
+
+## 11. Presentational Boundary
+
+### 11.1 Forbidden Production Imports
+
+Production source files in `@cycle/ui` MUST NOT import:
+
+- `@cycle/contracts`
+- `@cycle/database`
+- `@cycle/desktop`
+- `@cycle/git`
+- `@cycle/git-db`
+- `@cycle/usecases`
+- `@cycle/api`
+- `@tanstack/react-query`
+- `effect`
+- `electron`
+- `react-router`
+
+This restriction applies to type imports as well as runtime imports.
+
+### 11.2 Allowed UI Domain Shapes
+
+`@cycle/ui` MAY define local UI data types that use domain-shaped names. Examples include:
+
+- `IssueListItem`
+- `IssueStatusOption`
+- `IssuePriorityOption`
+- `RepositorySummary`
+- `SavedViewRow`
+- `InboxEntry`
+- `CommitHistoryItem`
+- `ViewIssueComment`
+
+These types MUST be renderer-safe plain data. They MUST NOT expose mutable query results, mutation
+objects, Effect values, Electron bridge objects, database documents, or transport clients.
+
+### 11.3 State Ownership
+
+`@cycle/ui` MAY own ephemeral presentation state:
+
+- controlled/uncontrolled form values
+- local drafts inside a form or popover
+- open/closed popup state
+- selected tab or item state when exposed through controlled props
+- highlighted option state
+- focus and hover state
+- local optimistic visual state that does not persist app data
+
+`@cycle/ui` MUST NOT own application state:
+
+- remote data loading
+- query invalidation
+- mutation retries
+- route history
+- repository selection persistence
+- desktop settings persistence
+- Electron native theme source
+- file system or clipboard side effects
+- API clients or bridge clients
+
+## 12. Shared API Vocabulary
+
+`src/lib/contracts.ts` MUST remain the canonical source for shared semantic API vocabulary.
+
+Required shared contracts:
+
+- `ComponentTone = "neutral" | "info" | "success" | "warning" | "danger" | "accent"`
+- `ComponentDensity = "compact" | "comfortable"`
+- `ComponentSize = "sm" | "md" | "lg"`
+- `ComponentAppearance = "soft" | "solid" | "outline"`
+- `ComponentActionVariant = "primary" | "secondary" | "outline" | "ghost" | "link"`
+
+Rules:
+
+- Use `tone` for semantic color intent.
+- Use `variant` only for structural or action treatment.
+- Use `appearance` for non-action visual treatment.
+- Use `danger`, not `destructive`, in new public APIs.
+- Use `size` for discrete control sizes.
+- Use `density` for repeated data surfaces.
+- Use `selected` for selected tabs, rows, and options.
+- Use `active` for navigation-current state.
+- Use `value`, `defaultValue`, and `onValueChange` for editable controlled components.
+- Use specific callback names for business actions, such as `onRowSelect`, `onIssueSelect`,
+  `onRepositorySelect`, `onCommentSubmit`, or `onCreateIssue`.
+
+New components MUST NOT introduce component-local equivalents such as `small`, `large`, `spacious`,
+`destructive`, `primaryTone`, or `onChangeValue` unless the component documents a necessary
+compatibility reason.
+
+## 13. Text Component Contract
+
+### 13.1 Purpose
+
+`Text` MUST be the primary way product components render semantic display text. It centralizes
+allowed text roles, color tones, truncation, wrapping, and HTML element selection.
+
+### 13.2 Public API
+
+The exact TypeScript names are implementation-defined, but `Text` MUST support:
+
+- `as?: keyof JSX.IntrinsicElements` or an equivalent constrained element prop
+- `variant?: TextVariant`
+- `tone?: ComponentTone | "foreground" | "muted" | "subtle" | "inherit"`
+- `truncate?: boolean | "line-clamp-2" | "line-clamp-3"`
+- `wrap?: "normal" | "nowrap" | "break" | "balance"`
+- `align?: "start" | "center" | "end"`
+- `children?: React.ReactNode`
+- `className?: string`
+
+Required `TextVariant` values:
+
+- `pageTitle`
+- `sectionTitle`
+- `panelTitle`
+- `body`
+- `bodyCompact`
+- `control`
+- `meta`
+- `code`
+
+### 13.3 Usage Rules
+
+Product organisms, pages, and templates MUST use `Text` for headings, descriptions, metadata,
+empty-state text, error text, and table text unless native control semantics make a direct element
+clearer.
+
+Direct Tailwind typography classes such as `text-sm`, `text-xs`, `text-base`, `font-semibold`,
+`leading-*`, and `tracking-*` SHOULD be isolated to:
+
+- `Text`
+- atom implementations that render native controls
+- Markdown renderer/editor content
+- code/preformatted content
+- documented migration allowlists
+
+## 14. DateTime Component Contract
+
+### 14.1 Purpose
+
+`DateTime` MUST provide consistent date, time, datetime, relative, compact, and ISO presentation for
+all UI components.
+
+### 14.2 Public API
+
+The exact TypeScript names are implementation-defined, but `DateTime` MUST support:
+
+- `value: string | Date | null | undefined`
+- `timeZone?: string`
+- `locale?: string | string[]`
+- `format?: "date" | "time" | "datetime" | "relative" | "compactDate" | "compactDateTime" | "iso"`
+- `fallback?: React.ReactNode`
+- `relativeBase?: string | Date`
+- `dateStyle?: Intl.DateTimeFormatOptions["dateStyle"]`
+- `timeStyle?: Intl.DateTimeFormatOptions["timeStyle"]`
+- `children?: never` unless a render-prop API is explicitly documented
+
+`DateTime` MAY also accept numeric epoch values if the implementation documents whether numbers are
+milliseconds or seconds. If numeric values are supported, milliseconds SHOULD be the default because
+JavaScript `Date` uses milliseconds.
+
+### 14.3 Behavior
+
+`DateTime` MUST:
+
+- parse valid ISO strings and `Date` instances
+- render `fallback` for `null`, `undefined`, empty strings, and invalid dates
+- include a valid `dateTime` attribute when rendering a `<time>` element
+- use the caller-supplied `timeZone` when provided
+- default to the user's runtime locale and local timezone when `locale` or `timeZone` is omitted
+- avoid throwing during render for invalid input
+
+Desktop renderer components MUST NOT duplicate date/time formatting for display once `DateTime` is
+available.
+
+### 14.4 Date Props in Product Components
+
+Any public UI prop that represents a display date or time SHOULD accept `string | Date | null |
+undefined`, unless a narrower type is required by a native input such as `<input type="date">`.
+
+Product components that render dates SHOULD either:
+
+- accept `dateTimeProps` or an equivalent prop bag that forwards `format`, `timeZone`, `locale`, and
+  `fallback` to `DateTime`; or
+- document their fixed date presentation when a component-specific format is necessary.
+
+Desktop adapters own conversion from app-specific date fields into these UI props. UI components
+MUST NOT require app DTOs solely to access date metadata.
+
+## 15. Choice, Dropdown, Select, and Autocomplete Contract
+
+### 15.1 Shared Foundation
+
+`@cycle/ui` MUST provide one shared choice foundation for option normalization, popup positioning,
+keyboard navigation, search filtering, item rendering, disabled items, selected indicators, section
+headers, empty states, loading states, and errors.
+
+The shared foundation MAY be public or internal. Public components built on it MUST include:
+
+- `Select` for single-value selection.
+- `DropdownMenu` for command/action menus with no persistent value.
+- `Autocomplete` or `Combobox` for searchable option selection and optional free-text entry.
+- `MultiSelect` or `PropertyPicker` for selecting multiple values and rendering compact trigger
+  summaries.
+
+This approach satisfies the consistency requirement without forcing one public component to carry
+incompatible command, selection, and free-text semantics.
+
+### 15.2 Option Model
+
+The choice foundation MUST normalize options into an equivalent of:
+
+```ts
+type ChoiceOption = {
+  readonly disabled?: boolean;
+  readonly description?: React.ReactNode;
+  readonly icon?: React.ReactNode;
+  readonly id: string;
+  readonly keywords?: readonly string[];
+  readonly label: React.ReactNode;
+  readonly rightMeta?: React.ReactNode;
+  readonly textValue?: string;
+  readonly tone?: ComponentTone;
+  readonly value?: string;
+};
+
+type ChoiceSection = {
+  readonly id: string;
+  readonly label?: React.ReactNode;
+  readonly options: readonly ChoiceOption[];
+};
+```
+
+`textValue` MUST be used for filtering and typeahead when `label` is not a plain string.
+
+### 15.3 Required Props
+
+Choice components MUST support the relevant subset of:
+
+- `sections` or `items`
+- `value`
+- `defaultValue`
+- `onValueChange`
+- `onOptionSelect`
+- `open`
+- `defaultOpen`
+- `onOpenChange`
+- `searchable`
+- `searchValue`
+- `defaultSearchValue`
+- `onSearchValueChange`
+- `placeholder`
+- `disabled`
+- `invalid`
+- `loading`
+- `error`
+- `emptyState`
+- `size`
+- `density`
+- `align`
+
+### 15.4 Migration Requirements
+
+The choice foundation MUST replace:
+
+- local `useOutsideClose` menu implementations in desktop UI
+- issue property option menus
+- view option menus
+- local searchable input-plus-menu implementations
+- duplicated chip picker behavior where it can be represented with shared option sections
+
+Existing `Select`, `ChipSelect`, and `PropertyPicker` MAY remain as public names, but their internal
+behavior SHOULD converge on the shared choice foundation.
+
+## 16. Data Display and Product Presentation Components
+
+### 16.1 Required Reusable Components
+
+The UI package MUST standardize these repeated presentation patterns:
+
+- `PageHeader` or equivalent header component for title, description, icon, meta, and actions.
+- `SectionHeader` for dense panel and section headings.
+- `EmptyState` for no-data and setup-required states.
+- `PanelState` for loading, error, empty, and unavailable panel bodies.
+- `InfoList` or `MetadataList` for label/value rows.
+- `DataTable` or table primitives for dense tables with loading, empty, error, selected, and
+  long-content states.
+- `SearchInput` for search fields with consistent icon, sizing, clear behavior, invalid state, and
+  accessibility.
+- `InlineActionChip` or equivalent for compact copy/open/action chips.
+- `PriorityIndicator` for none, low, medium, high, and urgent priority.
+- `IssueStatusIndicator` or a documented extension of `StatusIndicator` for backlog, todo,
+  in-progress, done, closed, canceled, and blocked states.
+- `LabelSwatch` for label color display and safe unknown-color fallback.
+- `AssigneeMark` or `UserAvatarLabel` for assignee initials, unknown user, and optional metadata.
+
+### 16.2 Domain Presentation Rules
+
+Product organisms MAY use Cycle domain terms in their prop names. They MUST keep those props as UI
+contracts rather than app schemas.
+
+For example, an issue list row MAY accept:
+
+```ts
+type IssueListItem = {
+  readonly assignee?: UserSummary | null;
+  readonly date?: string | Date | null;
+  readonly id: string;
+  readonly labels?: readonly LabelSummary[];
+  readonly priority?: string | null;
+  readonly repositoryId?: string;
+  readonly status?: string | null;
+  readonly title: React.ReactNode;
+};
+```
+
+The desktop adapter owns conversion from `TicketDocument` or API DTOs into `IssueListItem`.
+
+## 17. Markdown Editor and Renderer Contract
+
+### 17.1 Public Value Contract
+
+Markdown strings MUST remain the canonical public value type for ticket bodies, create-ticket
+descriptions, and comments.
+
+The Markdown system MUST NOT require consumers to persist Lexical JSON, HTML, or editor-specific
+state.
+
+### 17.2 Required Components
+
+The UI package MUST provide:
+
+- a shared Markdown editor foundation
+- a ticket/body editor variant
+- a compact comment composer variant
+- a safe Markdown renderer
+- Storybook examples for standalone editor, ticket editor, comment composer, and rendered Markdown
+
+### 17.3 Public Props
+
+Markdown editor components MUST support the relevant subset of:
+
+- `value?: string`
+- `defaultValue?: string`
+- `onValueChange?: (value: string) => void`
+- `onCommit?: (value: string) => void`
+- `onSubmit?: (value: string) => void`
+- `placeholder?: string`
+- `disabled?: boolean`
+- `readOnly?: boolean`
+- `autoFocus?: boolean`
+- `loading?: boolean`
+- `error?: React.ReactNode`
+- `onError?: (error: Error) => void`
+- callback-driven attachment, mention, tag, and issue-reference behavior
+
+### 17.4 Markdown Capability Requirements
+
+The editor and renderer MUST support:
 
 - paragraphs and soft line breaks
 - headings `#`, `##`, and `###`
@@ -231,382 +724,402 @@ and export for:
 - italic
 - strikethrough
 - inline code
-- fenced code blocks, preserving the optional language tag when present
+- fenced code blocks with optional language tags
 - blockquotes
 - unordered lists
 - ordered lists
 - task list items using `- [ ]` and `- [x]`
 - links
-- automatic URL linking in the editor and renderer
-- issue references matching Cycle's existing `#ABC-12345`-style reference pattern
+- automatic URL linking
+- Cycle issue references
 
-### 9.2 Compatibility Markdown
+The editor SHOULD preserve images, horizontal rules, GitHub-flavored Markdown tables, and raw HTML
+comments as source text when structured editing is not implemented.
 
-The editor SHOULD preserve the following Markdown forms when loaded from existing ticket bodies or
-comments:
+### 17.5 Safety
 
-- images using `![alt](url)`
-- horizontal rules
-- GitHub-flavored Markdown tables
-- raw HTML comments
+Markdown rendering MUST treat Markdown as untrusted user content. It MUST reject unsafe protocols,
+MUST NOT execute raw HTML or scripts, and MUST route external actions through callbacks where
+application behavior is required.
 
-The editor MAY expose these forms as plain Markdown text rather than structured rich nodes in v0.1,
-but it MUST NOT drop their source text on load or export. Structured image, table, and horizontal-rule
-editing MAY be implemented as optional extensions after the core subset passes validation.
+Desktop MUST NOT import Lexical directly.
 
-### 9.3 Excluded Formatting
+## 18. Desktop Renderer Migration Contract
 
-The core editor MUST NOT expose underline, text color, font family, font size, arbitrary HTML blocks,
-or alignment controls as first-class formatting actions unless a later spec defines a safe Markdown
-serialization and renderer contract for them.
+### 18.1 Target Renderer Shape
 
-Existing UI affordances that imply unsupported formatting SHOULD be removed, hidden, or converted to
-plain Markdown-compatible behavior during the upgrade.
+Desktop renderer modules SHOULD converge on this structure:
 
-### 9.4 Attachments and Mentions
+```text
+renderer/
+  App.tsx                         Providers and router mount.
+  Router.tsx                      Route declarations.
+  screens/                        Route adapters only.
+  components/                     Temporary adapter wrappers during migration.
+  queries/                        React Query hooks and query keys.
+  mutations/                      Mutation hooks and invalidation.
+  lib/                            DTO mapping, bridge access, app helpers.
+  notifications/                  Notification provider state.
+  shortcuts/                      Shortcut provider state.
+```
 
-Attachment and mention UI MUST remain callback-driven.
+Renderer UI files that remain after migration MUST be thin adapters. They SHOULD contain little or
+no Tailwind markup outside layout needed to mount UI package components.
 
-- The editor MAY render attachment, image, or mention buttons.
-- `@cycle/ui` MUST NOT upload files, inspect local filesystem paths, or fetch mention suggestions.
-- Consumers MAY pass callbacks or option lists for attachments and mentions.
-- If an attachment callback returns a Markdown URL, the editor MAY insert link or image Markdown.
-- If no provider is supplied, mention insertion MUST degrade to plain `@` text.
+### 18.2 Required UI Promotions
 
-## 10. Public Component Contract
+The implementation MUST evaluate and migrate reusable UI from these desktop renderer files:
 
-### 10.1 Shared Editor Props
+- `WorkspaceScreen.tsx`
+- `IssuesPanel.tsx`
+- `ViewIssuePanel.tsx`
+- `ViewsPanel.tsx`
+- `InboxPanel.tsx`
+- `RepositoryHistoryPanel.tsx`
+- `RepositorySettingsPanel.tsx`
+- `ApplicationSettingsPanel.tsx`
+- `SetupScreen.tsx`
+- `BootloaderScreen.tsx`
+- `AddRepositoryStep.tsx`
+- `RouteErrorScreen.tsx`
+- `NotFoundScreen.tsx`
 
-The shared Markdown editor public API MUST support:
+For each file, the migration MUST choose one of:
 
-- `value?: string`
-- `defaultValue?: string`
-- `onValueChange?: (value: string) => void`
-- `onCommit?: (value: string) => void`
-- `placeholder?: string`
+- move the reusable UI into `@cycle/ui` and leave a desktop adapter
+- replace the file with an existing `@cycle/ui` component
+- document why the file is desktop-specific and should remain in renderer
+
+### 18.3 Adapter Mapping
+
+Desktop adapters MUST map app DTOs into UI props before rendering UI components.
+
+Example target pattern:
+
+```tsx
+const issueQuery = useIssueDetailQuery(repositoryId, issueId);
+const updateIssue = useUpdateIssueMutation({ issueId, repositoryId });
+
+return (
+  <ViewIssuePage
+    issue={toViewIssueModel(issueQuery.data)}
+    loading={issueQuery.isLoading}
+    error={toErrorMessage(issueQuery.error)}
+    onTitleChange={(title) => updateIssue.mutate({ title })}
+  />
+);
+```
+
+UI components MUST NOT receive `issueQuery`, `updateIssue`, `queryClient`, or mutation result
+objects.
+
+## 19. Runtime Workflows
+
+### 19.1 Component Promotion Workflow
+
+When migrating UI from desktop to `@cycle/ui`, implementers MUST:
+
+1. Identify runtime dependencies in the desktop component.
+2. Split app state and side effects into a desktop adapter.
+3. Define a plain UI prop model in `@cycle/ui`.
+4. Move reusable JSX, styling, stateful controls, and layout into the appropriate UI family.
+5. Replace ad hoc text with `Text` where applicable.
+6. Replace ad hoc date formatting with `DateTime`.
+7. Replace local menus or pickers with the shared choice foundation.
+8. Add a colocated story file covering meaningful states.
+9. Add behavior tests for non-trivial interaction.
+10. Update desktop to render the new UI component through mapped props and callbacks.
+
+### 19.2 Controlled and Uncontrolled Values
+
+Editable components SHOULD support controlled and uncontrolled usage when practical.
+
+Controlled props MUST use:
+
+- `value`
+- `onValueChange`
+
+Uncontrolled initial props MUST use:
+
+- `defaultValue`
+
+Components that normalize input MUST document whether `onValueChange` emits raw input or normalized
+values.
+
+### 19.3 Loading, Empty, and Error States
+
+List, table, panel, and page components MUST expose loading, empty, error, and unavailable states
+through props. They MUST NOT infer remote loading from query objects.
+
+Required state props SHOULD include:
+
+- `loading?: boolean`
+- `error?: React.ReactNode`
+- `emptyState?: React.ReactNode`
 - `disabled?: boolean`
-- `readOnly?: boolean`
-- `autoFocus?: boolean`
-- `onError?: (error: Error) => void`
-- `onAttach?: (...args: unknown[]) => void`
-- variant or mode selection for ticket and comment layouts
 
-The exact TypeScript names are implementation-defined, but `IssueEditor` and
-`IssueCommentComposer` MUST continue to expose backwards-compatible string callbacks for current
-desktop usage.
+Components MUST keep these states visually consistent through shared `EmptyState`, `PanelState`, or
+equivalent components.
 
-### 10.2 Ticket Body Contract
+## 20. Styling and Layout Contract
 
-Ticket body editing MUST support the current `ViewIssue` flow:
+`@cycle/ui` MUST keep Cycle's product UI quiet, dense, and work-focused.
 
-- `ViewIssue` receives `description` or `defaultDescription` as a Markdown string.
-- The ticket editor displays that Markdown through Lexical.
-- Editing updates local editor state without requiring a desktop mutation on every keystroke.
-- The editor calls `onDescriptionSave(markdown)` on commit according to Section 11.3.
-- `@cycle/desktop` maps that string to `UpdateTicketPatch.body` without editor-specific conversion.
+Production components MUST:
 
-Create-ticket description editing SHOULD use the same shared editor foundation so new tickets and
-existing tickets have consistent Markdown behavior.
+- use tokens from `src/styles.css`
+- use `cn` from `@cycle/ui/utils`
+- use shared style helpers from `src/lib/styles.ts`
+- use `Text` for semantic display text
+- use `DateTime` for date/time display
+- use lucide icons where matching icons exist
+- keep card radius at `rounded-lg` or smaller unless an existing modal/dialog pattern requires
+  otherwise
+- define stable dimensions for rows, toolbar buttons, counters, icon buttons, grids, tables, and
+  list items
+- handle long labels, issue IDs, repository paths, URLs, branch names, emails, and metadata without
+  overlapping
+- avoid nested cards
+- avoid decorative orbs, bokeh blobs, generic gradient backgrounds, and one-note palettes
 
-### 10.3 Comment Contract
+Page sections SHOULD be full-width bands or unframed layouts with constrained inner content. Cards
+SHOULD be reserved for repeated items, dialogs, modals, and genuinely framed tools.
 
-Comment composition MUST support the current `ViewIssue` flow:
+## 21. Accessibility Contract
 
-- `IssueCommentComposer` receives optional `defaultValue` as Markdown.
-- The composer submits only when the trimmed Markdown is non-empty.
-- `onSubmit(markdown)` receives the trimmed Markdown string.
-- After a successful synchronous `onSubmit` call, the uncontrolled composer clears itself.
-- Controlled composers MUST let the parent decide when to clear `value`.
+Components MUST provide accessible behavior equivalent to first-class product controls.
 
-If `onSubmit` may fail asynchronously, the consuming application owns pending/error state and MAY
-control the editor value. `@cycle/ui` MUST provide disabled and pending-ready visual states, but it
-MUST NOT perform the mutation.
+Requirements:
 
-## 11. Runtime Workflows
-
-### 11.1 Initialization
-
-On mount, the editor MUST:
-
-1. Build the Lexical initial config with a stable namespace per editor component family.
-2. Register every node required by the supported Markdown subset.
-3. Import the initial Markdown string using the shared transformer set.
-4. Render the editable surface with placeholder text when the imported document is empty.
-5. Register Markdown shortcuts and command plugins after nodes are available.
-
-### 11.2 Editing and Export
-
-On user edits, the editor MUST:
-
-1. Let Lexical update its internal state.
-2. Export the current state to Markdown with the shared transformer set.
-3. Call `onValueChange` when the exported Markdown differs from the previous exported value.
-4. Keep toolbar and slash-menu state synchronized with the current selection.
-
-Markdown export SHOULD be debounced only for expensive derived UI. Public `onValueChange` semantics
-MUST be documented if batching or debouncing is used.
-
-### 11.3 Ticket Commit
-
-Ticket body editors MUST commit when:
-
-- the editor loses focus and the Markdown value changed
-- the user triggers an explicit save command, if one is rendered
-
-Ticket body editors SHOULD NOT submit on `Enter` or `Mod+Enter` by default because ticket
-descriptions are multiline documents. Escape MAY blur the editor or close the current popup before
-blur behavior runs.
-
-### 11.4 Comment Submit
-
-Comment editors MUST submit when:
-
-- the submit button is activated
-- `Mod+Enter` is pressed inside the editor
-
-Comment editors MUST insert a normal line break for plain `Enter`. `Shift+Enter` MAY insert a line
-break explicitly and MUST NOT submit.
-
-### 11.5 Preview and Read-Only Rendering
-
-Ticket editors SHOULD keep an explicit preview mode because existing issue pages expose preview
-behavior. Preview mode MUST render the same Markdown string that would be committed.
-
-Comment composers MAY omit preview mode in the compact default layout. If preview is available for
-comments, it MUST be driven by the same Markdown string and renderer as ticket preview.
-
-### 11.6 Paste and Drop
-
-The editor MUST treat pasted text as untrusted input.
-
-- Plain text paste MUST preserve user text.
-- Markdown text paste SHOULD remain Markdown-compatible after export.
-- HTML paste MAY use Lexical HTML import behavior, but persisted output MUST still be Markdown.
-- Dangerous protocols and raw executable content MUST NOT become clickable or executable content in
-  preview/rendered output.
-- File drop behavior MUST be disabled by default or delegated through `onAttach`.
-
-## 12. Keyboard and Accessibility Contract
-
-The editor MUST provide accessible behavior equivalent to other first-class `@cycle/ui` controls:
-
-- The editable region MUST expose a label through `aria-label`, `aria-labelledby`, or visible field
-  structure.
-- Placeholder text MUST not be the only accessible name when a better label is available.
-- Toolbar buttons MUST be native buttons with text labels via `aria-label`.
-- Slash-menu items MUST support keyboard navigation, selection, and Escape dismissal.
+- Interactive elements MUST render as native controls or links when possible.
+- Buttons MUST default to `type="button"`.
+- Icon-only buttons MUST require a text label and set `aria-label`.
+- Active navigation items MUST set `aria-current="page"`.
+- Tabs MUST expose `role="tab"`, `aria-selected`, and a tablist parent.
+- Expandable controls MUST set `aria-expanded`.
+- Menu and listbox components MUST provide keyboard navigation, Escape dismissal, and selected state
+  semantics.
+- Invalid controls MUST set `aria-invalid`.
+- Descriptions and errors MUST connect to controls with `aria-describedby`.
+- Validation errors SHOULD use `role="alert"`.
+- Loading indicators MUST expose a screen-reader label unless decorative.
 - Popups MUST not trap focus unless they behave as dialogs.
-- Disabled state MUST prevent editing and submit.
-- Read-only state MUST allow selection and copying.
-- `Mod+B`, `Mod+I`, and `Mod+K` SHOULD map to bold, italic, and link insertion.
-- Undo and redo MUST use Lexical history behavior.
-- The desktop shortcut registry MUST continue to ignore active editor targets because it already
-  treats `[contenteditable='true']` and `[role='textbox']` as editable.
+- Disabled state MUST prevent mutation.
+- Read-only state MUST allow selection and copying where text is present.
 
-## 13. Styling and Layout Contract
+## 22. Storybook Contract
 
-The editor MUST match Cycle UI conventions:
+Every public atom, molecule, organism, reusable template, and reusable page MUST have one colocated
+`.stories.tsx` file for that component.
 
-- Use `cn`, `focusRing`, `typography`, and design tokens from `src/lib`.
-- Use lucide icons for toolbar and action buttons where matching icons exist.
-- Keep controls compact and dense; do not create a marketing-style editor surface.
-- Define stable dimensions for toolbar buttons, footer buttons, and composer actions.
-- Avoid nested cards. Ticket page sections and comment composers MUST remain visually consistent with
-  the existing `ViewIssue` layout.
-- Long Markdown content, code blocks, links, and table text MUST not overflow the viewport without an
-  intentional scroll or wrap behavior.
+That story file MUST demonstrate all meaningful states for the component, including the applicable
+subset of:
 
-## 14. Integration Contracts
+- default
+- loading
+- empty
+- error
+- disabled
+- invalid
+- selected
+- active
+- read-only
+- long content
+- narrow viewport or constrained width
+- compact and comfortable density
+- light and dark theme when visual differences are meaningful
 
-### 14.1 `@cycle/ui`
+Story files MAY use multiple named stories, but they SHOULD include one high-signal `AllStates` or
+`States` story when that makes visual review easier.
 
-The UI package MUST own:
+Stories MUST use realistic sample data without making one hard-coded product record part of the
+component's production identity.
 
-- Lexical dependencies in `packages/ui/package.json`
-- Markdown transformers and editor utilities
-- editor components and adapters
-- editor styles
-- Storybook stories and examples
-- unit tests for editor behavior
+Storybook examples are not a replacement for behavior tests.
 
-New public components MUST export from their local `index.ts`, the relevant atomic group barrel, and
-`src/components/index.ts` according to `packages/ui/AGENTS.md`.
+## 23. Testing and Validation Matrix
 
-### 14.2 `@cycle/desktop`
+| Area                | Requirement                                                              | Validation                                                                  |
+| ------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| Package boundary    | UI source has no app/runtime imports                                     | Extend `packages/ui/test/ui-architecture.test.ts`                           |
+| Production deps     | UI package has no app/runtime production dependencies                    | Manifest scan in architecture test                                          |
+| Atomic layout       | Public components live under canonical family folders                    | File-system conformance test                                                |
+| Exports             | Public components export through local, family, and components barrels   | Barrel conformance test                                                     |
+| Storybook coverage  | Every public component has one colocated story file                      | Existing Storybook coverage test plus family/page/template coverage         |
+| Text usage          | Product organisms/pages avoid ad hoc typography classes                  | Import/style scan with documented allowlist                                 |
+| DateTime usage      | Display date formatting goes through `DateTime`                          | Scan for `Intl.DateTimeFormat` and date helpers outside allowlisted modules |
+| Choice consistency  | Menus/selects/autocomplete share the choice foundation                   | Component tests plus scan for local menu implementations                    |
+| Desktop thinness    | Renderer UI files become adapters around UI package components           | Import and markup audit; desktop typecheck                                  |
+| Controlled values   | Editable components support controlled/uncontrolled contracts            | React component tests                                                       |
+| Loading/empty/error | Lists, tables, panels, and pages expose consistent state props           | Storybook stories and component tests                                       |
+| Accessibility       | Controls expose labels, roles, keyboard behavior, and state attributes   | Testing Library tests and Storybook review                                  |
+| Markdown safety     | Unsafe Markdown does not execute or create unsafe links                  | Markdown renderer tests                                                     |
+| Markdown editor     | Markdown import/export and callbacks preserve string contracts           | Existing and expanded Markdown editor tests                                 |
+| Visual regression   | Components render all states without overlap at desktop/narrow widths    | Storybook build and targeted browser screenshots where practical            |
+| Desktop integration | Desktop adapters pass plain props and callbacks, not query/mutation objs | Typecheck, tests, and import scans                                          |
 
-Desktop renderer integration MUST remain thin:
+## 24. Failure Model and Recovery
 
-- pass ticket `issue.body` into `ViewIssue`
-- receive `onDescriptionSave(markdown)` and call `ticket.issue.update` with `patch.body`
-- receive `onCommentCreate(markdown)` and call `ticket.record.add` with payload `{ body: markdown }`
-- pass pending, disabled, or error props only where the UI component exposes them
-- keep query invalidation, notifications, route state, and Electron bridge usage in desktop code
+### 24.1 Invalid Props
 
-Desktop MUST NOT import Lexical directly for ticket or comment editing.
+Components MUST avoid throwing during render for common invalid display input such as missing text,
+invalid dates, empty option lists, unknown tones, unknown status values, or missing optional
+metadata. They SHOULD render documented fallback states.
 
-### 14.3 Renderer
+Developer mistakes that break required invariants MAY throw in development when that makes the
+problem clear, but production UI SHOULD prefer visible fallback states for user-facing surfaces.
 
-Saved Markdown MUST render through `MarkdownRenderer` or a replacement that preserves:
+### 24.2 Callback Failures
 
-- safe link protocol handling
-- external link callback behavior
-- Cycle issue reference link behavior
-- GFM task list and table rendering where currently supported
-- code block overflow handling
+`@cycle/ui` MUST NOT retry or recover app mutations. Consumers own persistence failure handling.
 
-If the editor uses a different internal renderer for editing, it MUST still export Markdown that the
-shared renderer can display correctly.
+Components MAY expose pending, disabled, error, and draft-preservation props so adapters can keep
+failed user input visible and prevent duplicate actions.
 
-## 15. Failure Model and Recovery
+### 24.3 Formatting Failures
 
-### 15.1 Lexical Runtime Errors
+`DateTime` MUST render fallback content for invalid values.
 
-The editor MUST provide a Lexical `onError` handler. Runtime errors MUST:
+`Text` MUST not alter child content beyond documented truncation, wrapping, tone, and semantic
+element behavior.
 
-- call the public `onError` callback when provided
-- avoid throwing uncaught errors during normal React rendering
-- preserve the last known Markdown string in component state
-- render a recoverable error state or fallback editor surface instead of a blank editor
+Markdown import/export failures MUST preserve the last known safe Markdown string and surface
+errors through `onError` where provided.
 
-### 15.2 Markdown Conversion Failures
+## 25. Security and Operational Safety
 
-Import or export failures MUST NOT commit partial empty content over a non-empty existing value.
+`@cycle/ui` MUST treat rendered user content as untrusted.
 
-When conversion fails, the editor SHOULD:
+Requirements:
 
-1. keep the previous exported Markdown string
-2. expose the error through `onError`
-3. keep user input visible if possible
-4. disable commit/submit only when the current value cannot be safely exported
-
-### 15.3 Unsupported Content
-
-Unsupported Markdown MUST be treated as content, not as an error. The implementation MAY normalize
-unsupported structures to plain text, but it MUST NOT silently discard user text.
-
-### 15.4 Consumer Mutation Failures
-
-`@cycle/ui` MUST NOT retry desktop or API mutations. Consumers own persistence failure handling.
-Components SHOULD support controlled values and disabled/pending props so consumers can keep failed
-comment drafts visible and prevent duplicate submits.
-
-## 16. Security and Safety
-
-The editor and renderer MUST treat Markdown as untrusted user content.
-
-- Raw HTML MUST NOT execute.
+- Markdown MUST NOT execute raw HTML, scripts, or unsafe URLs.
 - Link rendering MUST reject unsafe protocols such as `javascript:`.
-- External links MUST use safe `target` and `rel` behavior when rendered as anchors.
-- The UI package MUST NOT read local files from pasted or dropped content.
-- Attachment file lists MUST only be exposed through explicit callback props.
-- Error callbacks and logs MUST NOT include file contents or full pasted payloads unless the user
-  explicitly supplied them to that callback.
+- External link opening MUST be delegated through callbacks when desktop behavior is required.
+- UI components MUST NOT read local files or inspect filesystem paths.
+- File inputs and attachment controls MUST expose selected files only through explicit callbacks.
+- Clipboard writes MUST be delegated through callbacks unless a component is explicitly documented
+  as browser-only and safe.
+- Error props, Storybook data, and logs MUST NOT include secrets, file contents, or private local
+  paths unless explicitly supplied as display data by the consumer.
 
-## 17. Reference Algorithms
+## 26. Reference Algorithms
 
-### 17.1 Controlled Markdown Reconciliation
-
-```text
-state lastImportedMarkdown = normalizeForComparison(initialValue)
-state lastExportedMarkdown = initialValue
-
-onExternalValueChange(nextValue):
-  nextComparable = normalizeForComparison(nextValue)
-  if nextComparable == normalizeForComparison(lastExportedMarkdown):
-    return
-  if editorHasFocus and localContentDirty:
-    markPendingExternalValue(nextValue)
-    return
-  importMarkdownIntoLexical(nextValue)
-  lastImportedMarkdown = nextComparable
-  lastExportedMarkdown = nextValue
-
-onLexicalChange(editorState):
-  nextMarkdown = exportMarkdown(editorState)
-  if nextMarkdown != lastExportedMarkdown:
-    lastExportedMarkdown = nextMarkdown
-    onValueChange(nextMarkdown)
-```
-
-If a pending external value exists when the editor blurs, the implementation MUST either import it or
-surface an implementation-defined conflict policy. It MUST NOT overwrite local focused edits without
-documented behavior.
-
-### 17.2 Comment Submit
+### 26.1 Component Classification
 
 ```text
-submitComment():
-  markdown = exportCurrentMarkdown()
-  trimmed = trim(markdown)
-  if trimmed.length == 0:
-    keep focus in editor
-    return
-  onSubmit(trimmed)
-  if uncontrolled:
-    clear editor state
+classifyComponent(component):
+  if component imports query, mutation, route, Electron, API, or app runtime:
+    keep or create desktop adapter
+    extract presentational JSX into @cycle/ui where reusable
+
+  if component is one semantic control or display primitive:
+    place in atoms
+  else if component composes controls into a compact reusable pattern:
+    place in molecules
+  else if component is a product region, panel, list, table, dialog, sidebar, or shell:
+    place in organisms
+  else if component is a slot-based reusable layout skeleton:
+    place in templates
+  else if component is a full-screen data-driven composition:
+    place in pages
 ```
 
-### 17.3 Ticket Blur Commit
+### 26.2 Desktop Adapter Rendering
 
 ```text
-onTicketEditorBlur(event):
-  if focus moved into toolbar or slash menu:
-    return
-  markdown = exportCurrentMarkdown()
-  if markdown == lastCommittedMarkdown:
-    return
-  onCommit(markdown)
-  lastCommittedMarkdown = markdown
+renderDesktopRoute():
+  location = read route state
+  queryResult = call query hooks
+  mutations = create mutation hooks
+  uiProps = map queryResult.data and route state into @cycle/ui prop contracts
+  callbacks = map UI events into mutations, navigation, notifications, and IPC callbacks
+  render @cycle/ui page or organism with uiProps, loading, error, and callbacks
 ```
 
-## 18. Test and Validation Matrix
+The adapter MUST NOT pass query or mutation objects directly into UI components.
 
-| Area                   | Requirement                                                                             | Validation                                                        |
-| ---------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Package boundary       | UI source has no desktop/runtime imports                                                | Extend or keep `packages/ui/test/ui-architecture.test.ts` passing |
-| Dependencies           | Lexical packages are added only to `@cycle/ui` and versions align                       | Package manifest review and install lockfile review               |
-| Markdown import/export | Core subset round-trips through the shared transformer set                              | Vitest table-driven tests for every Section 9.1 construct         |
-| Compatibility Markdown | Images, horizontal rules, tables, and HTML comments are not dropped                     | Vitest fixture tests with existing Markdown examples              |
-| Controlled value       | External `value` changes import once without render loops                               | React component test                                              |
-| Uncontrolled value     | `defaultValue` initializes editor and local edits call `onValueChange`                  | React component test                                              |
-| Ticket commit          | Blur commits changed ticket Markdown and does not commit unchanged content              | React component test                                              |
-| Comment submit         | Button and `Mod+Enter` submit trimmed non-empty Markdown                                | React component test                                              |
-| Empty comments         | Empty or whitespace-only comments do not call `onSubmit`                                | React component test                                              |
-| Slash menu             | `/` opens commands, Escape closes, selection inserts Markdown-compatible blocks         | React component test or Storybook interaction test                |
-| Toolbar                | Bold, italic, link, list, quote, and code controls mutate selection                     | React component test                                              |
-| Accessibility          | Editor labels, toolbar labels, disabled/read-only states, and keyboard navigation exist | Testing Library queries plus manual Storybook review              |
-| Renderer safety        | Unsafe links are not clickable and issue references still route through callbacks       | Existing or new `MarkdownRenderer` tests                          |
-| Desktop integration    | Desktop passes strings and does not import Lexical                                      | Typecheck plus import scan                                        |
-| Storybook              | Editor, ticket page, and comment input examples exist                                   | `pnpm --filter @cycle/ui storybook:build`                         |
+### 26.3 Choice Filtering
 
-## 19. Implementation Checklist
+```text
+filterChoices(sections, searchText):
+  normalizedSearch = normalize(searchText)
+  if normalizedSearch is empty:
+    return sections
 
-An implementation is complete when:
+  for each option:
+    searchableText = normalize(option.textValue ?? textFromReactNode(option.label))
+    keywordText = normalize(join(option.keywords))
+    keep option if searchableText or keywordText contains normalizedSearch
 
-1. `packages/ui/package.json` includes the required Lexical dependencies.
-2. A shared Lexical Markdown editor foundation exists in `@cycle/ui`.
-3. The shared transformer set covers the core Markdown subset and compatibility fixtures.
-4. `IssueEditor` uses the Lexical foundation while preserving existing public string callbacks.
-5. `IssueCommentComposer` uses the Lexical foundation and supports compact comment submission.
-6. `ViewIssue` composes the upgraded ticket and comment editors without desktop-specific state.
-7. Create-ticket description editing uses the shared editor foundation or has a documented migration
-   reason if deferred.
-8. `MarkdownRenderer` remains compatible with editor output.
-9. Storybook includes standalone editor stories, ticket page examples, and comment input examples.
-10. Unit tests cover import/export, callbacks, keyboard behavior, and safety requirements.
-11. `pnpm --filter @cycle/ui test` passes.
-12. `pnpm --filter @cycle/ui typecheck` passes.
-13. `pnpm --filter @cycle/ui storybook:build` passes.
-14. `pnpm --filter @cycle/desktop typecheck` passes after desktop integration.
+  remove empty sections unless the component explicitly renders empty sections
+  preserve original option order
+```
 
-## 20. Optional Extensions
+Filtering MUST NOT mutate caller-provided option objects.
 
-The following features MAY be implemented after v0.1 core conformance:
+### 26.4 DateTime Formatting
 
-- structured image nodes with caller-provided upload/URL insertion
-- structured GFM table editing
-- mention suggestions with caller-provided local option lists
-- reusable Markdown diff rendering from Lexical state
-- character or byte limits using Lexical overflow behavior
-- a read-only Lexical renderer if it fully replaces `MarkdownRenderer` safety behavior
-- collaborative editing through Lexical/Yjs in a separate storage and sync specification
+```text
+formatDateTime(value, options):
+  if value is null, undefined, or empty:
+    return fallback
+
+  date = value is Date ? value : new Date(value)
+  if date is invalid:
+    return fallback
+
+  if options.format == "iso":
+    return date.toISOString()
+
+  if options.format == "relative":
+    return relative formatter using options.relativeBase or now
+
+  return Intl.DateTimeFormat(options.locale, {
+    dateStyle/timeStyle or preset-derived options,
+    timeZone: options.timeZone
+  }).format(date)
+```
+
+The component MUST render the formatted value in a `<time>` element with `dateTime` set to the ISO
+value when possible.
+
+## 27. Implementation Checklist
+
+Implementation is complete when:
+
+1. `packages/ui/SPEC.md`, `packages/ui/README.md`, and `packages/ui/AGENTS.md` agree on package role,
+   taxonomy, exports, and API vocabulary.
+2. `Text` exists and product components use it for semantic display text.
+3. `DateTime` exists and product date/time display uses it.
+4. The shared choice foundation exists.
+5. `Select`, `DropdownMenu`, `Autocomplete`, and multi-select/property picker components use the
+   shared choice foundation.
+6. Local desktop menu and picker implementations are removed or replaced by UI components.
+7. Reusable status, priority, label, assignee, empty-state, panel-state, search, table, metadata,
+   and inline-action components exist.
+8. Desktop renderer UI surfaces listed in Section 18.2 are migrated into `@cycle/ui` or documented
+   as desktop-specific adapters.
+9. Desktop adapters pass plain UI props and callbacks rather than query or mutation objects.
+10. Markdown editor and renderer continue to satisfy the Markdown string contract.
+11. Every public component has one colocated Storybook file covering meaningful states.
+12. Architecture tests enforce forbidden imports and production dependencies.
+13. Conformance tests cover file layout, exports, Storybook coverage, text/date usage allowlists,
+    choice behavior, controlled values, and Markdown safety.
+14. `pnpm --filter @cycle/ui test` passes.
+15. `pnpm --filter @cycle/ui typecheck` passes.
+16. `pnpm --filter @cycle/ui storybook:build` passes.
+17. `pnpm --filter @cycle/desktop typecheck` passes after desktop migration.
+
+## 28. Optional Extensions
+
+The following MAY be implemented after core productionization:
+
+- visual regression testing for Storybook states
+- generated component API documentation from TypeScript props
+- package-level lint rules for typography and date formatting
+- codemods for moving desktop UI into `@cycle/ui`
+- design token documentation pages
+- theming variants beyond light, dark, and system
+- virtualized list and table primitives
+- command palette built on the shared choice foundation
+- richer Markdown editor extensions such as structured images, table editing, and mention search
