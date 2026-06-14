@@ -389,6 +389,16 @@ describe("@cycle/database", () => {
         ),
       );
       assert.ok(allPaths.every((path) => path.startsWith("collections/events/")));
+      assert.ok(
+        allPaths.some((path) =>
+          path.startsWith(
+            `${GitDbEvent.aggregatePath({
+              aggregateId: ticket.id,
+              aggregateType: "ticket",
+            })}/`,
+          ),
+        ),
+      );
       assert.ok(!allPaths.some((path) => /(^|\/)(index|projection)s?(\/|\.|$)/u.test(path)));
       assert.strictEqual(new Set(allPaths).size, allPaths.length);
       assert.strictEqual(new Set(events.map((event) => event.path)).size, events.length);

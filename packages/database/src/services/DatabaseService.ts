@@ -3127,7 +3127,7 @@ const emptyFoldedEvents = (): FoldedEvents => ({
 });
 
 const eventAggregatePath = (aggregateType: string, aggregateId: string): string =>
-  `${GitDbEvent.EVENT_ROOT}/${aggregateType}/${aggregateId}`;
+  GitDbEvent.aggregatePath({ aggregateId, aggregateType });
 
 const foldRepositoryEvents = (
   repository: RepositoryRuntime,

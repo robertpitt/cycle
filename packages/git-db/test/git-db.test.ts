@@ -110,6 +110,7 @@ describe("@cycle/git-db", () => {
           value: "in-progress",
         },
       });
+      yield* tx.put("collections/events/ticket/UKN-00003/evt_legacy.json", payload);
 
       const snapshot = yield* tx.commit({
         message: "Append ticket status events",
@@ -128,12 +129,21 @@ describe("@cycle/git-db", () => {
         ),
         Effect.flip,
       );
+      const liveLikePath = yield* EventApi.path({
+        aggregateId: "UKN-A7ABC",
+        aggregateType: "ticket",
+        eventId: "evt_live_like",
+      });
 
       assert.ok(first !== null);
       assert.ok(second !== null);
       assert.strictEqual(first.text(), '{"field":"status","op":"update","value":"in-progress"}');
       assert.strictEqual(first.objectId, second.objectId);
       assert.ok(duplicate instanceof InvalidPathError);
+      assert.strictEqual(
+        liveLikePath,
+        "collections/events/ticket/A7/UKN-A7ABC/evt_live_like.json",
+      );
       assert.deepStrictEqual(
         events.map((event) => ({
           aggregateId: event.aggregateId,
@@ -147,7 +157,7 @@ describe("@cycle/git-db", () => {
             aggregateId: "UKN-00001",
             aggregateType: "ticket",
             eventId: "evt_00001",
-            path: "collections/events/ticket/UKN-00001/evt_00001.json",
+            path: "collections/events/ticket/00/UKN-00001/evt_00001.json",
             payload: {
               field: "status",
               op: "update",
@@ -158,7 +168,18 @@ describe("@cycle/git-db", () => {
             aggregateId: "UKN-00002",
             aggregateType: "ticket",
             eventId: "evt_00002",
-            path: "collections/events/ticket/UKN-00002/evt_00002.json",
+            path: "collections/events/ticket/00/UKN-00002/evt_00002.json",
+            payload: {
+              field: "status",
+              op: "update",
+              value: "in-progress",
+            },
+          },
+          {
+            aggregateId: "UKN-00003",
+            aggregateType: "ticket",
+            eventId: "evt_legacy",
+            path: "collections/events/ticket/UKN-00003/evt_legacy.json",
             payload: {
               field: "status",
               op: "update",

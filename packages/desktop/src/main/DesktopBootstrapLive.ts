@@ -54,7 +54,7 @@ type RemoteSyncOutcome =
     }
   | {
       readonly repositoryId: string;
-      readonly status: "deferred-retry" | "skipped-no-local-change" | "skipped-no-local-snapshot";
+      readonly status: "deferred-retry";
     };
 
 const nowIso = (): string => new Date().toISOString();
@@ -182,12 +182,6 @@ export const DesktopBootstrapLive = Layer.effect(
         remoteFailed: outcomes.filter((outcome) => outcome.status === "failed").length,
         remoteMissingGitDbRefs: outcomes.filter(
           (outcome) => outcome.status === "missing-remote-gitdb-ref",
-        ).length,
-        remoteSkippedNoLocalChange: outcomes.filter(
-          (outcome) => outcome.status === "skipped-no-local-change",
-        ).length,
-        remoteSkippedNoLocalSnapshot: outcomes.filter(
-          (outcome) => outcome.status === "skipped-no-local-snapshot",
         ).length,
         remoteSkipped: outcomes.filter((outcome) => outcome.status === "skipped-no-default-remote")
           .length,
@@ -779,7 +773,7 @@ export const DesktopBootstrapLive = Layer.effect(
       };
     };
 
-    const publishRepositoryIfChangedUnsafe = (
+    const syncRepositoryInBackgroundUnsafe = (
       repositoryId: string,
     ): Effect.Effect<RemoteSyncOutcome, unknown> =>
       Effect.gen(function* () {
@@ -794,28 +788,11 @@ export const DesktopBootstrapLive = Layer.effect(
         const lastSynced = remoteSyncedSnapshots.get(repositoryId);
         const changed = pendingRemoteSync.has(repositoryId) || lastSynced !== localSnapshot;
 
-        if (!changed) {
-          return {
-            repositoryId,
-            status: "skipped-no-local-change",
-          };
-        }
-
         const retry = remoteRetry.get(repositoryId);
         if (retry !== undefined && retry.nextRetryAt > Date.now()) {
           return {
             repositoryId,
             status: "deferred-retry",
-          };
-        }
-
-        if (localSnapshot === null) {
-          pendingRemoteSync.delete(repositoryId);
-          remoteSyncedSnapshots.set(repositoryId, null);
-          remoteRetry.delete(repositoryId);
-          return {
-            repositoryId,
-            status: "skipped-no-local-snapshot",
           };
         }
 
@@ -832,19 +809,24 @@ export const DesktopBootstrapLive = Layer.effect(
           };
         }
 
-        yield* logger.info("bootstrap remote publish detected local change", {
-          lastSyncedSnapshotId: lastSynced ?? null,
-          localSnapshotId: localSnapshot,
-          repositoryId,
-        });
+        yield* logger.info(
+          changed
+            ? "bootstrap remote publish detected local change"
+            : "bootstrap remote sync checking for remote changes",
+          {
+            lastSyncedSnapshotId: lastSynced ?? null,
+            localSnapshotId: localSnapshot,
+            repositoryId,
+          },
+        );
 
-        return yield* syncRepositoryFromRemoteUnsafe(repositoryId, { pushFirst: true });
+        return yield* syncRepositoryFromRemoteUnsafe(repositoryId, { pushFirst: changed });
       });
 
-    const publishRepositoryIfChanged = (
+    const syncRepositoryInBackground = (
       repositoryId: string,
     ): Effect.Effect<RemoteSyncOutcome, never> =>
-      runRemoteOperation(repositoryId, () => publishRepositoryIfChangedUnsafe(repositoryId)).pipe(
+      runRemoteOperation(repositoryId, () => syncRepositoryInBackgroundUnsafe(repositoryId)).pipe(
         Effect.catch((error) =>
           Effect.sync(() => {
             const runtime = opened.get(repositoryId);
@@ -856,7 +838,7 @@ export const DesktopBootstrapLive = Layer.effect(
             }
           }).pipe(
             Effect.andThen(
-              logger.error("bootstrap background repository publish failed", {
+              logger.error("bootstrap background repository sync failed", {
                 error: errorMessage(error),
                 repositoryId,
               }),
@@ -883,7 +865,7 @@ export const DesktopBootstrapLive = Layer.effect(
 
         const outcomes = yield* Effect.forEach(
           repositories,
-          (repository) => publishRepositoryIfChanged(repository.id),
+          (repository) => syncRepositoryInBackground(repository.id),
           {
             concurrency: BACKGROUND_REMOTE_SYNC_CONCURRENCY,
           },

@@ -34,6 +34,19 @@ export type EventChange = {
 };
 
 const safeEventSegment = /^[A-Za-z0-9_][A-Za-z0-9._@+-]*$/u;
+const shardedAggregateTypes = new Set(["ticket"]);
+
+export const aggregatePath = (
+  input: Pick<EventPathInput, "aggregateId" | "aggregateType">,
+): string => {
+  if (!shardedAggregateTypes.has(input.aggregateType)) {
+    return `${EVENT_ROOT}/${input.aggregateType}/${input.aggregateId}`;
+  }
+
+  return `${EVENT_ROOT}/${input.aggregateType}/${aggregateShard(input.aggregateId)}/${
+    input.aggregateId
+  }`;
+};
 
 export const canonicalJson = (value: unknown): Effect.Effect<string, GitDbError> =>
   Effect.try({
@@ -53,7 +66,7 @@ export const path = (input: EventPathInput): Effect.Effect<string, GitDbError> =
     const aggregateId = yield* validateEventSegment("aggregate id", input.aggregateId);
     const eventId = yield* validateEventSegment("event id", input.eventId);
 
-    return `${EVENT_ROOT}/${aggregateType}/${aggregateId}/${eventId}.json`;
+    return `${aggregatePath({ aggregateId, aggregateType })}/${eventId}.json`;
   });
 
 export const append = (
@@ -168,12 +181,23 @@ export const parseEventPath = (
   const rest = path.slice(prefix.length);
   const segments = rest.split("/");
 
-  if (segments.length !== 3) return null;
+  if (segments.length !== 3 && segments.length !== 4) return null;
 
-  const [aggregateType, aggregateId, filename] = segments;
+  const [aggregateType, first, second, third] = segments;
 
-  if (aggregateType === undefined || aggregateId === undefined || filename === undefined) {
+  if (aggregateType === undefined || first === undefined || second === undefined) {
     return null;
+  }
+
+  const aggregateId = third === undefined ? first : second;
+  const filename = third === undefined ? second : third;
+
+  if (third !== undefined) {
+    const shard = first;
+
+    if (!shardedAggregateTypes.has(aggregateType) || shard !== aggregateShard(aggregateId)) {
+      return null;
+    }
   }
 
   return {
@@ -182,6 +206,13 @@ export const parseEventPath = (
     eventId: filename.slice(0, -".json".length),
     path,
   };
+};
+
+const aggregateShard = (aggregateId: string): string => {
+  // Ticket ids are PREFIX-HASH; shard by the hash segment so repository prefixes do not hot-spot.
+  const shardSource = aggregateId.includes("-") ? aggregateId.split("-").at(-1)! : aggregateId;
+
+  return shardSource.slice(0, 2);
 };
 
 const validateEventSegment = (label: string, value: string): Effect.Effect<string, GitDbError> => {

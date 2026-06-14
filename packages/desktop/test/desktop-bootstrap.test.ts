@@ -92,6 +92,47 @@ const addOriginWithCycleRef = async (repositoryPath: string): Promise<string> =>
   return remote;
 };
 
+const advanceRemoteCycleRef = async (remote: string): Promise<string> => {
+  const cloneRoot = await makeTempDir();
+  const clone = join(cloneRoot, "remote-writer");
+  const fileName = `remote-${Date.now()}.txt`;
+
+  await execFileAsync("git", ["clone", remote, clone]);
+  await writeFile(join(clone, fileName), `remote update ${Date.now()}\n`);
+  await execFileAsync("git", ["add", fileName], { cwd: clone });
+  await execFileAsync(
+    "git",
+    [
+      "-c",
+      "user.name=Remote User",
+      "-c",
+      "user.email=remote@example.invalid",
+      "commit",
+      "-m",
+      "Remote GitDB update",
+    ],
+    { cwd: clone },
+  );
+
+  const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: clone });
+  const snapshot = stdout.trim();
+
+  await execFileAsync("git", ["update-ref", "refs/gitdb/cycle/main", snapshot], { cwd: clone });
+  await execFileAsync("git", ["push", "origin", "refs/gitdb/cycle/main:refs/gitdb/cycle/main"], {
+    cwd: clone,
+  });
+
+  return snapshot;
+};
+
+const readCycleRef = async (repositoryPath: string): Promise<string> => {
+  const { stdout } = await execFileAsync("git", ["rev-parse", "refs/gitdb/cycle/main"], {
+    cwd: repositoryPath,
+  });
+
+  return stdout.trim();
+};
+
 const addLocalCycleRef = async (repositoryPath: string): Promise<void> => {
   await execFileAsync("git", ["update-ref", "refs/gitdb/cycle/main", "HEAD"], {
     cwd: repositoryPath,
@@ -378,6 +419,66 @@ describe("DesktopBootstrapLive", () => {
     expect(
       events.filter((event) => event === `syncRepository:${repository.id}`).length,
     ).toBeGreaterThan(1);
+  });
+
+  it("fetches remote GitDB changes even when the local snapshot is unchanged", async () => {
+    const repositoryPath = await makeTempDir();
+    await initializeRepositoryWithCommit(repositoryPath);
+    const remote = await addOriginWithCycleRef(repositoryPath);
+    const initialSnapshot = await readCycleRef(repositoryPath);
+
+    const events: Array<string> = [];
+    const logs: Array<LogEvent> = [];
+    const repository = makeRepository(repositoryPath);
+    let syncCalls = 0;
+    let remoteSnapshot: string | undefined;
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const bootstrap = yield* DesktopBootstrap;
+          yield* bootstrap.start();
+          yield* waitUntilEffect(
+            () =>
+              Effect.tryPromise({
+                try: async () =>
+                  remoteSnapshot !== undefined &&
+                  (await readCycleRef(repositoryPath)) === remoteSnapshot,
+                catch: (cause) => cause,
+              }),
+            "background sync did not fetch the remote GitDB snapshot",
+          );
+        }),
+      ).pipe(
+        Effect.provide(
+          makeLayer(repository, events, {
+            defaultRemote: "origin",
+            logs,
+            syncRepository: (repositoryId) =>
+              Effect.tryPromise({
+                try: async () => {
+                  events.push(`syncRepository:${repositoryId}`);
+                  syncCalls += 1;
+
+                  if (syncCalls === 1) {
+                    remoteSnapshot = await advanceRemoteCycleRef(remote);
+                  }
+
+                  return repositoryStatus(repositoryId, "ready", await readCycleRef(repositoryPath));
+                },
+                catch: (cause) => cause,
+              }),
+          }),
+        ),
+      ),
+    );
+
+    expect(remoteSnapshot).toBeDefined();
+    expect(remoteSnapshot).not.toBe(initialSnapshot);
+    expect(await readCycleRef(repositoryPath)).toBe(remoteSnapshot);
+    expect(
+      logs.some((log) => log.message === "bootstrap remote sync checking for remote changes"),
+    ).toBe(true);
   });
 
   it("summarizes skipped and synced repositories during background publish", async () => {
