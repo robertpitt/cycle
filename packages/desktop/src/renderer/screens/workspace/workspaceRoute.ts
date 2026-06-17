@@ -1,6 +1,6 @@
 export const lastWorkspaceRouteStorageKey = "cycle.desktop.lastWorkspaceRoute.v1";
 
-type WorkspaceTopLevelPage = "inbox" | "initiatives" | "issues" | "settings" | "views";
+type WorkspaceTopLevelPage = "chat" | "inbox" | "initiatives" | "issues" | "settings" | "views";
 
 export type WorkspaceLocation =
   | {
@@ -29,6 +29,7 @@ export type WorkspaceLocation =
 export type WorkspaceRouteStorage = Pick<Storage, "getItem" | "setItem">;
 
 const topLevelPages = new Set<WorkspaceTopLevelPage>([
+  "chat",
   "inbox",
   "initiatives",
   "issues",

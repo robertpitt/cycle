@@ -36,7 +36,7 @@ import { DesktopRuntime, type DesktopRuntimeService } from "../platform/DesktopR
 import { electronSecurityError, type ElectronError } from "../platform/ElectronError.ts";
 import { ElectronShell } from "../platform/ElectronShell.ts";
 import { AppConfigError, DEFAULT_API_PORT, type ApiConfig } from "../shared/AppConfig.ts";
-import { AgentProviderDetector } from "../shared/AgentProviders.ts";
+import { AgentProviderDetector } from "@cycle/agents/detection";
 import type { ThemePreference } from "../shared/AppConfig.ts";
 import { DesktopBootstrap } from "../shared/Bootstrap.ts";
 import {

@@ -14,6 +14,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@cycle/agents": "workspace:*",
     "@cycle/contracts": "workspace:*",
     "@cycle/logging": "workspace:*",
     "@cycle/mcp": "workspace:*",

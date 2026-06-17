@@ -1,0 +1,53 @@
+import { detectAgentProviders } from "@cycle/agents/detection";
+import {
+  agentProviderProfileFromDetection,
+  staticAgentProviderProfile,
+  supportedAgentProviders,
+} from "@cycle/agents/providers";
+import type { AgentProviderProfile } from "@cycle/agents/types";
+import { Context, Effect, Layer } from "effect";
+
+export type AgentProviderProfilesShape = {
+  readonly list: () => Promise<readonly AgentProviderProfile[]>;
+};
+
+export class AgentProviderProfiles extends Context.Service<
+  AgentProviderProfiles,
+  AgentProviderProfilesShape
+>()("@cycle/api/AgentProviderProfiles") {}
+
+export const listLocalAgentProviderProfiles = async (): Promise<
+  readonly AgentProviderProfile[]
+> => {
+  const detected = await Effect.runPromise(
+    detectAgentProviders(process.env).pipe(Effect.catch(() => Effect.succeed(undefined))),
+  );
+
+  if (detected === undefined) {
+    const checkedAt = new Date().toISOString();
+    return supportedAgentProviders.map((provider) =>
+      staticAgentProviderProfile(provider.id, checkedAt),
+    );
+  }
+
+  return detected.map(agentProviderProfileFromDetection);
+};
+
+export const makeAgentProviderProfiles = (
+  list: () => Promise<readonly AgentProviderProfile[]> = listLocalAgentProviderProfiles,
+): AgentProviderProfilesShape => ({ list });
+
+export const AgentProviderProfilesLive = Layer.succeed(
+  AgentProviderProfiles,
+  AgentProviderProfiles.of(makeAgentProviderProfiles()),
+);
+
+export const AgentProviderProfilesTest = (
+  profiles: readonly AgentProviderProfile[] | (() => Promise<readonly AgentProviderProfile[]>),
+) =>
+  Layer.succeed(
+    AgentProviderProfiles,
+    AgentProviderProfiles.of(
+      makeAgentProviderProfiles(typeof profiles === "function" ? profiles : async () => profiles),
+    ),
+  );

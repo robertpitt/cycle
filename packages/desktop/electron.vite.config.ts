@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
 import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { connect } from "node:net";
+import type { Socket as NetSocket } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -91,6 +93,13 @@ const sendJson = (
   response.end(`${JSON.stringify(body)}\n`);
 };
 
+const writeChunk = async (response: ServerResponse, chunk: Uint8Array): Promise<void> => {
+  if (response.write(Buffer.from(chunk))) return;
+  await new Promise<void>((resolve) => {
+    response.once("drain", resolve);
+  });
+};
+
 const handleCycleApiProxyRequest = async (
   request: IncomingMessage,
   response: ServerResponse,
@@ -106,13 +115,34 @@ const handleCycleApiProxyRequest = async (
       headers: proxyHeadersFrom(request, target.token),
       method: request.method,
     });
-    const responseBody = Buffer.from(await apiResponse.arrayBuffer());
 
     response.statusCode = apiResponse.status;
     apiResponse.headers.forEach((value, key) => {
       response.setHeader(key, value);
     });
-    response.end(responseBody);
+    response.flushHeaders();
+
+    if (apiResponse.body === null) {
+      response.end();
+      return;
+    }
+
+    const reader = apiResponse.body.getReader();
+    request.on("close", () => {
+      void reader.cancel();
+    });
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value !== undefined) await writeChunk(response, value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    response.end();
   } catch (error) {
     sendJson(response, 503, {
       error: {
@@ -123,8 +153,98 @@ const handleCycleApiProxyRequest = async (
   }
 };
 
+const proxyUpgradeHeaderLines = (
+  request: IncomingMessage,
+  targetUrl: URL,
+  token: string,
+): readonly string[] => {
+  const headers = new Map<string, string>();
+
+  for (const [key, value] of Object.entries(request.headers)) {
+    if (value === undefined) continue;
+    const normalizedKey = key.toLowerCase();
+    if (
+      normalizedKey === "authorization" ||
+      normalizedKey === "connection" ||
+      normalizedKey === "host"
+    ) {
+      continue;
+    }
+    headers.set(key, Array.isArray(value) ? value.join(", ") : value);
+  }
+
+  headers.set("authorization", `Bearer ${token}`);
+  headers.set("connection", "Upgrade");
+  headers.set("host", targetUrl.host);
+  headers.set("upgrade", String(request.headers.upgrade ?? "websocket"));
+
+  return [...headers.entries()].map(([key, value]) => `${key}: ${value}`);
+};
+
+const handleCycleApiProxyUpgrade = (
+  request: IncomingMessage,
+  socket: NetSocket,
+  head: Buffer,
+): void => {
+  void readCycleApiProxyTarget()
+    .then((target) => {
+      const requestUrl = request.url ?? cycleApiProxyPrefix;
+      const targetPath = requestUrl.slice(cycleApiProxyPrefix.length) || "/";
+      const targetUrl = new URL(target.baseUrl);
+      if (targetUrl.protocol !== "http:") {
+        throw new Error("Cycle API WebSocket dev proxy only supports http targets.");
+      }
+
+      const upstream = connect({
+        host: targetUrl.hostname,
+        port: targetUrl.port.length > 0 ? Number(targetUrl.port) : 80,
+      });
+      const upstreamPath = targetPath.startsWith("/") ? targetPath : `/${targetPath}`;
+
+      upstream.on("connect", () => {
+        upstream.write(
+          [
+            `GET ${upstreamPath} HTTP/${request.httpVersion}`,
+            ...proxyUpgradeHeaderLines(request, targetUrl, target.token),
+            "",
+            "",
+          ].join("\r\n"),
+        );
+        if (head.length > 0) upstream.write(head);
+        socket.pipe(upstream).pipe(socket);
+      });
+      upstream.on("error", () => {
+        socket.destroy();
+      });
+      socket.on("error", () => {
+        upstream.destroy();
+      });
+    })
+    .catch((error) => {
+      socket.end(
+        [
+          "HTTP/1.1 503 Service Unavailable",
+          "content-type: application/json",
+          "connection: close",
+          "",
+          `${JSON.stringify({
+            error: {
+              code: "CYCLE_API_PROXY_UNAVAILABLE",
+              message: error instanceof Error ? error.message : "Cycle API proxy is unavailable.",
+            },
+          })}\n`,
+        ].join("\r\n"),
+      );
+    });
+};
+
 const cycleApiDevProxy = (): Plugin => ({
   configureServer(server) {
+    server.httpServer?.on("upgrade", (request, socket, head) => {
+      if (!request.url?.startsWith(cycleApiProxyPrefix)) return;
+      handleCycleApiProxyUpgrade(request, socket, head);
+    });
+
     server.middlewares.use((request, response, next) => {
       if (!request.url?.startsWith(cycleApiProxyPrefix)) {
         next();

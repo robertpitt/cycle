@@ -19,21 +19,36 @@ const logSupervisionFailure = (
     }),
   );
 
+const isExpectedAbortError = (error: unknown): boolean =>
+  error instanceof Error &&
+  error.name === "AbortError" &&
+  "code" in error &&
+  error.code === "ABORT_ERR";
+
 const superviseProcessEvents = (
   events: Queue.Dequeue<ProcessLifecycleEvent>,
   requestShutdown: Effect.Effect<void>,
 ): Effect.Effect<void, never, Scope.Scope> =>
   Queue.take(events).pipe(
     Effect.flatMap((event) =>
-      Effect.logError("process lifecycle event").pipe(
-        Effect.annotateLogs({
-          error: event.error,
-          event: event.type,
-          service: "desktop",
-          source: "process",
-        }),
-        Effect.andThen(requestShutdown),
-      ),
+      isExpectedAbortError(event.error)
+        ? Effect.logWarning("process lifecycle abort ignored").pipe(
+            Effect.annotateLogs({
+              error: event.error,
+              event: event.type,
+              service: "desktop",
+              source: "process",
+            }),
+          )
+        : Effect.logError("process lifecycle event").pipe(
+            Effect.annotateLogs({
+              error: event.error,
+              event: event.type,
+              service: "desktop",
+              source: "process",
+            }),
+            Effect.andThen(requestShutdown),
+          ),
     ),
     Effect.forever,
     Effect.forkScoped,

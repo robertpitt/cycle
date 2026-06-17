@@ -18,6 +18,7 @@ import {
   AddRepositoryStep,
   ApplicationSettingsPanel,
   BootloaderScreen,
+  ChatPanel,
   InboxPanel,
   IssuesPanel,
   PageBodyPlaceholder,
@@ -90,6 +91,7 @@ const activeItemIdForWorkspaceLocation = (location: WorkspaceLocation): string =
 
 const workspaceLocationForNavItemId = (itemId: string): WorkspaceLocation | undefined => {
   switch (itemId) {
+    case "chat":
     case "inbox":
     case "issues":
     case "settings":
@@ -169,6 +171,7 @@ export const WorkspaceScreen = () => {
     workspaceLocation.scope === "repository" ? workspaceLocation.repositoryId : undefined;
   const isGlobalIssuesPage =
     workspaceLocation.scope === "workspace" && workspaceLocation.page === "issues";
+  const isChatPage = workspaceLocation.scope === "workspace" && workspaceLocation.page === "chat";
   const isInboxPage = workspaceLocation.scope === "workspace" && workspaceLocation.page === "inbox";
   const isIssuesPage =
     isGlobalIssuesPage ||
@@ -530,6 +533,23 @@ export const WorkspaceScreen = () => {
         run: () =>
           navigateWorkspace({
             page: "issues",
+            scope: "workspace",
+          }),
+      }),
+      [navigateWorkspace, navigationShortcutsDisabled],
+    ),
+  );
+
+  useShortcutAction(
+    React.useMemo(
+      () => ({
+        bindings: [["g", "c"]],
+        disabled: navigationShortcutsDisabled,
+        id: "navigation.chat",
+        label: "Open chat",
+        run: () =>
+          navigateWorkspace({
+            page: "chat",
             scope: "workspace",
           }),
       }),
@@ -921,6 +941,12 @@ export const WorkspaceScreen = () => {
             >
               {isApplicationSettingsPage && appConfigQuery.data ? (
                 <ApplicationSettingsPanel appConfig={appConfigQuery.data} />
+              ) : isChatPage ? (
+                <ChatPanel
+                  agentProviders={detectedAgentProviders}
+                  profile={appConfigQuery.data?.profile}
+                  repositories={repositories}
+                />
               ) : hasRepositories && isRepositorySettingsPage && activeRepository ? (
                 <RepositorySettingsPanel
                   appConfig={appConfigQuery.data}

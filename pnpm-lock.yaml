@@ -21,8 +21,24 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/agents:
+    dependencies:
+      '@openai/codex-sdk':
+        specifier: 0.140.0
+        version: 0.140.0
+      effect:
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78
+    devDependencies:
+      vitest:
+        specifier: ^4.1.8
+        version: 4.1.8(@types/node@25.9.2)(vite@8.0.16(@types/node@25.9.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
   packages/api:
     dependencies:
+      '@cycle/agents':
+        specifier: workspace:*
+        version: link:../agents
       '@cycle/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -101,6 +117,9 @@ importers:
 
   packages/desktop:
     dependencies:
+      '@cycle/agents':
+        specifier: workspace:*
+        version: link:../agents
       '@cycle/api':
         specifier: workspace:*
         version: link:../api
@@ -1179,6 +1198,51 @@ packages:
     peerDependencies:
       '@emnapi/core': ^1.7.1
       '@emnapi/runtime': ^1.7.1
+
+  '@openai/codex-sdk@0.140.0':
+    resolution: {integrity: sha512-sHErDmCss08GMFo3FYVDFtVYiDpf1f3VRdhB4PBILBauZVYuFVYr3INvf6xc6t+oD2MbjuU+gtrw0it9aGesdA==}
+    engines: {node: '>=18'}
+
+  '@openai/codex@0.140.0':
+    resolution: {integrity: sha512-FMnN12kJzVPljMTYRydLCNgd0cXXmVasNSfq2PtS42RMEIxoQ3dHtMvmno35hu2tfwrKNAAPCm4s+2PaFTEBGg==}
+    engines: {node: '>=16'}
+    hasBin: true
+
+  '@openai/codex@0.140.0-darwin-arm64':
+    resolution: {integrity: sha512-KDyQHsxdc8FHZKziSBXs82ABgben/8lLPdhi2Nu+wj6qs2RAp4k/IvE8foafVnp3OeGqhtEFbhlZp0H4Dg/Slg==}
+    engines: {node: '>=16'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@openai/codex@0.140.0-darwin-x64':
+    resolution: {integrity: sha512-xA77AcKbP8BKxKqaJz8bqXtU1dUtanEKpWCMJ68LuYU054EC31BD7NftFe5/vpLUQR95fhRr7V9a91SLtCuLAg==}
+    engines: {node: '>=16'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@openai/codex@0.140.0-linux-arm64':
+    resolution: {integrity: sha512-rGOgWEONilm+pQoQgcGpPRzvnou1CawyBOe8gvtuS32PQ00Pn+9nZF4O7iKBVlNh6Jeun8kpdJSjFdULm2wr4A==}
+    engines: {node: '>=16'}
+    cpu: [arm64]
+    os: [linux]
+
+  '@openai/codex@0.140.0-linux-x64':
+    resolution: {integrity: sha512-7+N/cHB74nsDkOoL+VQVFVFRlfGj6GFSIAQHgs9DQIsvG+UdzWgUeeDE3l926taJqmzcP9NH8bysptKlZ2Ff6g==}
+    engines: {node: '>=16'}
+    cpu: [x64]
+    os: [linux]
+
+  '@openai/codex@0.140.0-win32-arm64':
+    resolution: {integrity: sha512-vs5Ed5OF+4671SZoO0MN5WoHl/K9aOSNzLgzbyyDyM7Jwm/PZYvF6OmIPRWf5AGatYqEOWt8Ovp5+df5PFPM7A==}
+    engines: {node: '>=16'}
+    cpu: [arm64]
+    os: [win32]
+
+  '@openai/codex@0.140.0-win32-x64':
+    resolution: {integrity: sha512-dP+nzd8UQ3Gdby+F5x0Sxd0hu6V9s6/cZYFsGtmmA6eCpU+IIu5tCOnUfgSu5HDw4BvXg046yd8Ihy5bOhwO4A==}
+    engines: {node: '>=16'}
+    cpu: [x64]
+    os: [win32]
 
   '@oxc-parser/binding-android-arm-eabi@0.127.0':
     resolution: {integrity: sha512-0LC7ye4hvqbIKxAzThzvswgHLFu2AURKzYLeSVvLdu2TBOYWQDmHnTqPLeA597BcUCxiLqLsS4CJ5uoI5WYWCQ==}
@@ -4429,6 +4493,37 @@ snapshots:
       '@emnapi/core': 1.9.2
       '@emnapi/runtime': 1.9.2
       '@tybys/wasm-util': 0.10.2
+    optional: true
+
+  '@openai/codex-sdk@0.140.0':
+    dependencies:
+      '@openai/codex': 0.140.0
+
+  '@openai/codex@0.140.0':
+    optionalDependencies:
+      '@openai/codex-darwin-arm64': '@openai/codex@0.140.0-darwin-arm64'
+      '@openai/codex-darwin-x64': '@openai/codex@0.140.0-darwin-x64'
+      '@openai/codex-linux-arm64': '@openai/codex@0.140.0-linux-arm64'
+      '@openai/codex-linux-x64': '@openai/codex@0.140.0-linux-x64'
+      '@openai/codex-win32-arm64': '@openai/codex@0.140.0-win32-arm64'
+      '@openai/codex-win32-x64': '@openai/codex@0.140.0-win32-x64'
+
+  '@openai/codex@0.140.0-darwin-arm64':
+    optional: true
+
+  '@openai/codex@0.140.0-darwin-x64':
+    optional: true
+
+  '@openai/codex@0.140.0-linux-arm64':
+    optional: true
+
+  '@openai/codex@0.140.0-linux-x64':
+    optional: true
+
+  '@openai/codex@0.140.0-win32-arm64':
+    optional: true
+
+  '@openai/codex@0.140.0-win32-x64':
     optional: true
 
   '@oxc-parser/binding-android-arm-eabi@0.127.0':

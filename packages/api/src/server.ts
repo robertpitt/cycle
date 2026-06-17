@@ -1,5 +1,9 @@
 import { NodeHttpServer, NodeServices } from "@effect/platform-node";
-import { defaultLayer as CycleLoggingLive, logInfo } from "@cycle/logging";
+import {
+  defaultLayer as CycleLoggingLive,
+  logInfo,
+  type CycleLogConfigInput,
+} from "@cycle/logging";
 import { Context, Effect, Exit, FileSystem, Layer, Path, Scope } from "effect";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
 import {
@@ -13,6 +17,7 @@ import {
 
 export type CycleApiServerOptions = CycleApiOptions & {
   readonly host?: "127.0.0.1" | "localhost";
+  readonly logging?: CycleLogConfigInput;
   readonly port?: number;
   readonly runtimeFile?: string;
 };
@@ -30,7 +35,7 @@ export const startCycleApiServer = (
 ): Promise<CycleApiServerHandle> =>
   Effect.runPromise(
     startCycleApiServerEffect(options).pipe(
-      Effect.provide([NodeServices.layer, CycleLoggingLive()]),
+      Effect.provide([NodeServices.layer, CycleLoggingLive(options.logging)]),
     ),
   );
 
@@ -107,7 +112,7 @@ export const startCycleApiServerEffect = (
               yield* fs.remove(options.runtimeFile, { force: true });
             }
             yield* logInfo("api", "api server stopped", { baseUrl });
-          }).pipe(Effect.provide([NodeServices.layer, CycleLoggingLive()])),
+          }).pipe(Effect.provide([NodeServices.layer, CycleLoggingLive(options.logging)])),
         ),
       port: server.address.port,
       server,

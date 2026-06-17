@@ -1,4 +1,5 @@
 export * from "./alert/index.ts";
+export * from "./agent-chat/index.ts";
 export * from "./card/index.ts";
 export * from "./chip-select/index.ts";
 export * from "./command-field/index.ts";

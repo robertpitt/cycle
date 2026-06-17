@@ -22,6 +22,7 @@ import {
 export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
   .add(
     HttpApiEndpoint.get("status", "/v1/status", { success: ResourceEnvelope }),
+    HttpApiEndpoint.get("autocomplete", "/v1/autocomplete", { success: ResourceEnvelope }),
     HttpApiEndpoint.get("listRepositories", "/v1/repositories", { success: CollectionEnvelope }),
     HttpApiEndpoint.post("openRepository", "/v1/repositories", {
       payload: AnyPayload,
@@ -46,6 +47,11 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
     HttpApiEndpoint.post("pushRepository", "/v1/repositories/:repositoryId/push", {
       params: RepositoryParams,
       success: AcceptedResourceEnvelope,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("listAgentProviders", "/v1/agents/providers", {
+      success: ResourceEnvelope,
     }),
   )
   .add(

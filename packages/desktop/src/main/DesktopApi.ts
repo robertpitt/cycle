@@ -5,6 +5,7 @@ import {
   type RepositoryInput,
   type RepositoryMetadata,
 } from "@cycle/contracts";
+import { cycleDatabasePath } from "@cycle/database";
 import { GitRepository, type GitRepositoryMetadata } from "@cycle/git";
 import { GitDb, Store as GitDbStore } from "@cycle/git-db";
 import { logError } from "@cycle/logging";
@@ -18,6 +19,8 @@ import { AppConfig, appConfigError, type RepositoryRecord } from "../shared/AppC
 import { DesktopBootstrap, type DesktopBootstrapService } from "../shared/Bootstrap.ts";
 import { LocalWorkspace } from "../shared/LocalWorkspace.ts";
 import { cycleCliConfigPathFromHome } from "./CycleDirectory.ts";
+import { makeDesktopAgentChatStore } from "./DesktopAgentChatStore.ts";
+import { makeDesktopAgentSessionStore } from "./DesktopAgentSessionStore.ts";
 
 const LOCAL_PROJECTION_POLL_INTERVAL_MS = 60_000;
 
@@ -184,30 +187,49 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
 
   yield* Effect.acquireRelease(
     Effect.tryPromise({
-      try: () =>
-        startCycleApiServer({
-          host: config.api.host,
-          mcp: {
-            apiToken: config.api.staticToken,
-            auth: { token: config.api.staticToken },
-            enabled: true,
-            env: {
-              ...process.env,
-              CYCLE_API_RUNTIME_FILE: desktopApiRuntimeDiscoveryPath(),
+      try: async () => {
+        const agentChatStore = makeDesktopAgentChatStore(cycleDatabasePath());
+        const agentSessionStore = makeDesktopAgentSessionStore(cycleDatabasePath());
+
+        try {
+          const handle = await startCycleApiServer({
+            agentChatStore,
+            agentSessionStore,
+            host: config.api.host,
+            logging: { console: false },
+            mcp: {
+              apiToken: config.api.staticToken,
+              auth: { token: config.api.staticToken },
+              enabled: true,
+              env: {
+                ...process.env,
+                CYCLE_API_RUNTIME_FILE: desktopApiRuntimeDiscoveryPath(),
+              },
+              path: "/mcp",
             },
-            path: "/mcp",
-          },
-          port: config.api.port === "auto" ? undefined : config.api.port,
-          repositoryOpenInput,
-          runner: runnerWithBackgroundPublish(runner, bootstrap),
-          runtimeFile: desktopApiRuntimeDiscoveryPath(),
-          staticToken: config.api.staticToken,
-        }),
+            port: config.api.port === "auto" ? undefined : config.api.port,
+            repositoryOpenInput,
+            runner: runnerWithBackgroundPublish(runner, bootstrap),
+            runtimeFile: desktopApiRuntimeDiscoveryPath(),
+            staticToken: config.api.staticToken,
+          });
+
+          return { agentChatStore, agentSessionStore, handle };
+        } catch (error) {
+          await agentChatStore.close?.();
+          await agentSessionStore.close?.();
+          throw error;
+        }
+      },
       catch: (cause) => cause,
     }),
-    (handle) =>
+    ({ agentChatStore, agentSessionStore, handle }) =>
       Effect.tryPromise({
-        try: () => handle.close(),
+        try: async () => {
+          await handle.close();
+          await agentChatStore.close?.();
+          await agentSessionStore.close?.();
+        },
         catch: (cause) => cause,
       }).pipe(
         Effect.catch((error) =>

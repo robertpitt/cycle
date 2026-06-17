@@ -1,4 +1,5 @@
 export * from "./add-repository-panel/index.ts";
+export * from "./agent-chat/index.ts";
 export * from "./app-loading-screen/index.ts";
 export * from "./app-message-screen/index.ts";
 export * from "./app-shell/index.ts";

@@ -37,6 +37,39 @@ export const CollectionEnvelope = Schema.Struct({
 
 export const AnyPayload = UnknownRecord;
 
+export const ChatMessagePayload = Schema.Struct({
+  content: Schema.String,
+  createdAt: Schema.optional(Schema.String),
+  id: Schema.optional(Schema.String),
+  role: Schema.Literals(["agent", "assistant", "system", "user"]),
+});
+
+export const ChatRepositoryPayload = Schema.Struct({
+  displayName: Schema.optional(Schema.String),
+  id: Schema.String,
+  path: Schema.optional(Schema.String),
+});
+
+export const ChatStreamOptionsPayload = Schema.Struct({
+  heartbeatMs: Schema.optional(Schema.Number),
+  includeArtifacts: Schema.optional(Schema.Boolean),
+  includeProgress: Schema.optional(Schema.Boolean),
+});
+
+export const ChatTurnPayload = Schema.Struct({
+  instructions: Schema.optional(Schema.String),
+  message: Schema.String,
+  messages: Schema.optional(Schema.Array(ChatMessagePayload)),
+  model: Schema.optional(Schema.String),
+  provider: Schema.optional(Schema.Literals(["codex", "claude", "opencode"])),
+  repositories: Schema.optional(Schema.Array(ChatRepositoryPayload)),
+  sessionId: Schema.optional(Schema.String),
+  stream: Schema.optional(ChatStreamOptionsPayload),
+  threadId: Schema.optional(Schema.String),
+});
+
+export const ChatThreadParams = { threadId: Schema.String };
+export const ChatMessageParams = { messageId: Schema.String, threadId: Schema.String };
 export const RepositoryParams = { repositoryId: Schema.String };
 export const IssueParams = { repositoryId: Schema.String, issueId: Schema.String };
 export const IssueRevisionParams = {

@@ -1,5 +1,13 @@
 import type { AppShellNavSection } from "@cycle/ui/organisms";
-import { History, Inbox, ListTodo, PanelsTopLeft, Settings, SquareKanban } from "lucide-react";
+import {
+  History,
+  Inbox,
+  ListTodo,
+  MessageSquare,
+  PanelsTopLeft,
+  Settings,
+  SquareKanban,
+} from "lucide-react";
 import type { RepositoryRecord } from "../../../shared/AppConfig.ts";
 
 const createRepositoryNavItems = (repositories: readonly RepositoryRecord[]) =>
@@ -69,6 +77,11 @@ export const createRendererNavSections = (
           icon: <Inbox aria-hidden className="size-4" />,
           id: "inbox",
           label: "Inbox",
+        },
+        {
+          icon: <MessageSquare aria-hidden className="size-4" />,
+          id: "chat",
+          label: "Chat",
         },
         {
           icon: <ListTodo aria-hidden className="size-4" />,
@@ -154,6 +167,8 @@ export const activePageTitleForNavItem = (
   }
 
   switch (activeItemId) {
+    case "chat":
+      return "Chat";
     case "issues":
       return "Issues";
     case "projects":

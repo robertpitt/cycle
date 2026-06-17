@@ -10,6 +10,7 @@ const WorkspaceRouteRedirect = () => {
 };
 
 const workspaceRoutePaths = [
+  "chat",
   "inbox",
   "issues",
   "initiatives",

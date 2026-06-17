@@ -33,6 +33,10 @@ describe("workspace route helpers", () => {
       page: "inbox",
       scope: "workspace",
     });
+    expect(parseWorkspacePath("/chat")).toEqual({
+      page: "chat",
+      scope: "workspace",
+    });
     expect(parseWorkspacePath("#/initiatives")).toEqual({
       page: "initiatives",
       scope: "workspace",

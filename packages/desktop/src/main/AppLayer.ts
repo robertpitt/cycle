@@ -94,4 +94,6 @@ const DesktopServicesLive = Layer.mergeAll(
   DatabaseConsumersLive,
 );
 
-export const DesktopLive = DesktopServicesLive.pipe(Layer.provide(CycleLoggingLive()));
+export const DesktopLive = DesktopServicesLive.pipe(
+  Layer.provide(CycleLoggingLive({ console: false })),
+);

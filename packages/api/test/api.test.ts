@@ -1,9 +1,12 @@
 import { strict as assert } from "node:assert";
+import { defaultAgentCapabilities } from "@cycle/agents/providers";
+import type { AgentProviderProfile, AgentService, AgentTurnRequest } from "@cycle/agents/types";
 import { type CycleUseCase, type TicketDocument } from "@cycle/contracts";
 import { type UseCaseRunnerShape } from "@cycle/usecases";
 import { Effect } from "effect";
 import { describe, it } from "vitest";
-import { makeCycleApi, startCycleApiServer } from "../src/index.ts";
+import { makeAgentActiveTurnDirectory } from "../src/agents/services/AgentActiveTurnDirectory.ts";
+import { makeCycleApi, startCycleApiServer, type AgentChatStoreShape } from "../src/index.ts";
 
 const repository = { id: "test-repository" };
 const token = "test-token";
@@ -37,6 +40,7 @@ const makeIssue = (id: string, title: string, body: string): TicketDocument =>
     id,
     parent: "",
     priority: "normal",
+    repositoryId: repository.id,
     schemaVersion: 1,
     status: "todo",
     title,
@@ -44,7 +48,7 @@ const makeIssue = (id: string, title: string, body: string): TicketDocument =>
     updatedDate: "2026-06-12",
   }) as TicketDocument;
 
-const makeTestApi = () => {
+const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) => {
   const calls: Array<string> = [];
   const issues: Array<TicketDocument> = [];
   const runner: UseCaseRunnerShape = {
@@ -79,6 +83,13 @@ const makeTestApi = () => {
             return {
               entries: issues,
             } as never;
+          case "IssueSearch":
+            return {
+              entries: issues.map((issue) => ({
+                matchedFields: ["title"],
+                ticket: issue,
+              })),
+            } as never;
           case "IssueTransition": {
             const input = (useCase.input as any).input as {
               readonly id: string;
@@ -106,6 +117,7 @@ const makeTestApi = () => {
 
   return {
     api: makeCycleApi({
+      ...options,
       runner,
       staticToken: token,
     }),
@@ -122,7 +134,212 @@ const authed = (body?: unknown): RequestInit => ({
   },
 });
 
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+type ChatTestMessage = {
+  readonly commandId?: string;
+  readonly payload?: unknown;
+  readonly threadId?: string;
+  readonly type?: string;
+};
+
+type TestThreadRecord = Parameters<AgentChatStoreShape["upsertThread"]>[0];
+type TestMessageRecord = Parameters<AgentChatStoreShape["upsertMessage"]>[0];
+type TestTurnRecord = Parameters<NonNullable<AgentChatStoreShape["upsertTurn"]>>[0];
+type TestActivityRecord = Parameters<NonNullable<AgentChatStoreShape["upsertActivity"]>>[0];
+type TestQuestionRecord = Parameters<NonNullable<AgentChatStoreShape["upsertQuestion"]>>[0];
+type TestEventInput = Parameters<NonNullable<AgentChatStoreShape["appendEvent"]>>[0];
+
+const makeInMemoryAgentChatStore = (): AgentChatStoreShape => {
+  const threads = new Map<string, TestThreadRecord>();
+  const messages = new Map<string, TestMessageRecord>();
+  const turns = new Map<string, TestTurnRecord>();
+  const activities = new Map<string, TestActivityRecord>();
+  const questions = new Map<string, TestQuestionRecord>();
+  const events = new Map<string, TestEventInput & { readonly sequence: number }>();
+
+  const listMessages = async (threadId: string) =>
+    [...messages.values()]
+      .filter((message) => message.threadId === threadId)
+      .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0));
+
+  const nextMessageSequence = (threadId: string): number =>
+    Math.max(
+      -1,
+      ...[...messages.values()]
+        .filter((message) => message.threadId === threadId)
+        .map((message) => message.sequence ?? -1),
+    ) + 1;
+
+  const nextEventSequence = (threadId: string): number =>
+    Math.max(
+      0,
+      ...[...events.values()]
+        .filter((event) => event.threadId === threadId)
+        .map((event) => event.sequence),
+    ) + 1;
+
+  return {
+    appendEvent: async (input) => {
+      const event = {
+        ...input,
+        sequence: nextEventSequence(input.threadId),
+      };
+      events.set(`${event.threadId}:${event.eventId}`, event);
+      return event;
+    },
+    getThread: async (threadId) => {
+      const thread = threads.get(threadId);
+      if (thread === undefined) return undefined;
+      return {
+        ...thread,
+        messages: await listMessages(threadId),
+      };
+    },
+    listActivities: async (threadId) =>
+      [...activities.values()].filter((activity) => activity.threadId === threadId),
+    listEventsAfter: async (threadId, sequence) =>
+      [...events.values()]
+        .filter((event) => event.threadId === threadId && event.sequence > sequence)
+        .sort((left, right) => left.sequence - right.sequence),
+    listMessages,
+    listQuestions: async (threadId) =>
+      [...questions.values()].filter((question) => question.threadId === threadId),
+    listThreads: async () =>
+      Promise.all(
+        [...threads.values()].map(async (thread) => ({
+          ...thread,
+          messages: await listMessages(thread.id),
+        })),
+      ),
+    listTurns: async (threadId) =>
+      [...turns.values()].filter((turn) => turn.threadId === threadId),
+    upsertActivity: async (activity) => {
+      activities.set(`${activity.threadId}:${activity.id}`, activity);
+      return activity;
+    },
+    upsertMessage: async (message) => {
+      const key = `${message.threadId}:${message.id}`;
+      const existing = messages.get(key);
+      const next = {
+        ...message,
+        sequence: message.sequence ?? existing?.sequence ?? nextMessageSequence(message.threadId),
+      };
+      messages.set(key, next);
+      return next;
+    },
+    upsertQuestion: async (question) => {
+      questions.set(`${question.threadId}:${question.id}`, question);
+      return question;
+    },
+    upsertThread: async (thread) => {
+      threads.set(thread.id, thread);
+      return thread;
+    },
+    upsertTurn: async (turn) => {
+      turns.set(`${turn.threadId}:${turn.id}`, turn);
+      return turn;
+    },
+  };
+};
+
+const connectChatSocket = async (baseUrl: string) => {
+  const socket = new WebSocket(`${baseUrl.replace(/^http/u, "ws")}/v1/chat/ws`);
+  const messages: ChatTestMessage[] = [];
+  const waiters: Array<{
+    readonly predicate: (message: ChatTestMessage) => boolean;
+    readonly reject: (error: Error) => void;
+    readonly resolve: (message: ChatTestMessage) => void;
+    readonly timer: ReturnType<typeof setTimeout>;
+  }> = [];
+  let commandSequence = 0;
+
+  const drainWaiters = (message: ChatTestMessage) => {
+    for (const waiter of [...waiters]) {
+      if (!waiter.predicate(message)) continue;
+      clearTimeout(waiter.timer);
+      waiters.splice(waiters.indexOf(waiter), 1);
+      waiter.resolve(message);
+    }
+  };
+
+  socket.addEventListener("message", (event) => {
+    const parsed = JSON.parse(String(event.data)) as unknown;
+    if (!isRecord(parsed)) return;
+    const message = parsed as ChatTestMessage;
+    messages.push(message);
+    drainWaiters(message);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    socket.addEventListener("open", () => resolve(), { once: true });
+    socket.addEventListener("error", () => reject(new Error("Chat WebSocket failed to open.")), {
+      once: true,
+    });
+  });
+
+  const waitFor = (
+    predicate: (message: ChatTestMessage) => boolean,
+    timeoutMs = 3000,
+  ): Promise<ChatTestMessage> => {
+    const existing = messages.find(predicate);
+    if (existing !== undefined) return Promise.resolve(existing);
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const index = waiters.findIndex((waiter) => waiter.timer === timer);
+        if (index >= 0) waiters.splice(index, 1);
+        reject(new Error("Timed out waiting for chat socket message."));
+      }, timeoutMs);
+      waiters.push({ predicate, reject, resolve, timer });
+    });
+  };
+
+  const send = (type: string, payload: Readonly<Record<string, unknown>> = {}) => {
+    const commandId = `cmd_${++commandSequence}`;
+    socket.send(
+      JSON.stringify({
+        commandId,
+        payload,
+        type,
+        version: 1,
+      }),
+    );
+    return commandId;
+  };
+
+  send("connection.authenticate", { token });
+  await waitFor((message) => message.type === "connection.ready");
+
+  return {
+    close: () => socket.close(),
+    send,
+    waitFor,
+  };
+};
+
+const commandPayloadResult = (message: ChatTestMessage): Readonly<Record<string, unknown>> => {
+  const payload = isRecord(message.payload) ? message.payload : {};
+  return isRecord(payload.result) ? payload.result : {};
+};
+
 describe("@cycle/api", () => {
+  it("cleans up completed active turns without aborting the provider signal", () => {
+    const directory = makeAgentActiveTurnDirectory();
+    const started = directory.begin({
+      provider: "codex",
+      sessionId: "session_completed",
+    });
+
+    assert.equal(started.active, true);
+    assert.equal(started.record.abortController.signal.aborted, false);
+    directory.finish("codex", "session_completed", "completed");
+
+    assert.equal(started.record.abortController.signal.aborted, false);
+    assert.equal(directory.get("codex", "session_completed"), undefined);
+  });
+
   it("serves health and generated OpenAPI from HttpApi", async () => {
     const { api } = makeTestApi();
 
@@ -151,7 +368,12 @@ describe("@cycle/api", () => {
       const body = (await spec.json()) as { openapi?: string; paths?: Record<string, unknown> };
       assert.equal(spec.status, 200);
       assert.equal(body.openapi, "3.1.0");
+      assert.ok(body.paths?.["/v1/autocomplete"]);
+      assert.ok(body.paths?.["/v1/agents/providers"]);
       assert.ok(body.paths?.["/v1/repositories/{repositoryId}/issues"]);
+      assert.equal(body.paths?.["/v1/chat/threads"], undefined);
+      assert.equal(body.paths?.["/v1/chat/turns"], undefined);
+      assert.equal(body.paths?.["/v1/chat/turns/stream"], undefined);
       assert.ok(body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/transitions"]);
       assert.ok(body.paths?.["/v1/repositories/{repositoryId}/drafts/{draftId}/commit"]);
       assert.ok(body.paths?.["/v1/repositories/{repositoryId}/labels/{labelId}"]);
@@ -179,6 +401,53 @@ describe("@cycle/api", () => {
       assert.equal(response.headers.get("x-request-id"), "req_auth");
       assert.equal(body.error?.code, "UNAUTHORIZED");
       assert.equal(body.error?.requestId, "req_auth");
+    } finally {
+      await api.dispose();
+    }
+  });
+
+  it("returns generic autocomplete results for repositories and tickets", async () => {
+    const { api, calls } = makeTestApi();
+
+    try {
+      await api.fetch(
+        new Request(`http://cycle.test/v1/repositories/${repository.id}/issues`, {
+          ...authed({
+            body: "Initial body",
+            title: "Build autocomplete",
+          }),
+          method: "POST",
+        }),
+      );
+
+      const response = await api.fetch(
+        new Request(
+          "http://cycle.test/v1/autocomplete?q=Build&types=repository,ticket&limit=8",
+          authed(),
+        ),
+      );
+      const body = (await response.json()) as {
+        data?: {
+          readonly results?: ReadonlyArray<{
+            readonly id?: string;
+            readonly name?: string;
+            readonly type?: string;
+            readonly uri?: string;
+          }>;
+        };
+      };
+      const results = body.data?.results ?? [];
+
+      assert.equal(response.status, 200);
+      assert.equal(
+        results.some((result) => result.type === "ticket"),
+        true,
+      );
+      assert.equal(
+        results.find((result) => result.type === "ticket")?.uri,
+        "cycle://repository/test-repository/tickets/ISSUE-1",
+      );
+      assert.deepEqual(calls, ["IssueCreate", "RepositoryList", "IssueSearch"]);
     } finally {
       await api.dispose();
     }
@@ -250,6 +519,240 @@ describe("@cycle/api", () => {
       assert.equal(tools.status, 200);
       assert.equal(toolsBody.result?.tools?.[0]?.name, "cycle_issue_get");
     } finally {
+      await handle.close();
+    }
+  });
+
+  it("returns agent provider runtime profiles", async () => {
+    const providerProfiles: readonly AgentProviderProfile[] = [
+      {
+        capabilities: defaultAgentCapabilities("codex"),
+        checkedAt: "2026-06-16T00:00:00.000Z",
+        configuration: {
+          execution: "local",
+        },
+        displayName: "Codex",
+        executableName: "codex",
+        executablePath: "/usr/local/bin/codex",
+        models: [],
+        provider: "codex",
+        status: "available",
+      },
+      {
+        capabilities: defaultAgentCapabilities("claude"),
+        checkedAt: "2026-06-16T00:00:00.000Z",
+        configuration: {
+          execution: "local",
+          unsupported: true,
+        },
+        displayName: "Claude Code",
+        executableName: "claude",
+        message: "Claude Code execution is not supported yet.",
+        models: [],
+        provider: "claude",
+        status: "unsupported",
+      },
+    ];
+    const { api } = makeTestApi({
+      agentProviderProfiles: async () => providerProfiles,
+    });
+
+    try {
+      const response = await api.fetch(
+        new Request("http://cycle.test/v1/agents/providers", authed()),
+      );
+      const body = (await response.json()) as {
+        data?: {
+          readonly providers?: ReadonlyArray<{
+            readonly provider?: string;
+            readonly status?: string;
+          }>;
+        };
+      };
+
+      assert.equal(response.status, 200);
+      assert.equal(body.data?.providers?.[0]?.provider, "codex");
+      assert.equal(body.data?.providers?.[0]?.status, "available");
+      assert.equal(body.data?.providers?.[1]?.provider, "claude");
+      assert.equal(body.data?.providers?.[1]?.status, "unsupported");
+    } finally {
+      await api.dispose();
+    }
+  });
+
+  it("streams chat turns over the WebSocket endpoint and persists resumable state", async () => {
+    let captured:
+      | {
+          readonly request: AgentTurnRequest;
+          readonly sessionId: string;
+        }
+      | undefined;
+    const timestamp = new Date("2026-06-16T00:00:01.000Z");
+    const agentChatStore = makeInMemoryAgentChatStore();
+    const fakeAgent: AgentService = {
+      abortTurn: async () => ({ accepted: false, reason: "not_supported" }),
+      capabilities: () => defaultAgentCapabilities("codex"),
+      close: async () => undefined,
+      createSession: async () => ({
+        createdAt: timestamp,
+        harnessId: "codex",
+        id: "session_ws_test",
+        provider: "codex",
+        updatedAt: timestamp,
+      }),
+      provider: "codex",
+      resumeSession: async (sessionId) => ({
+        createdAt: timestamp,
+        harnessId: "codex",
+        id: sessionId,
+        provider: "codex",
+        updatedAt: timestamp,
+      }),
+      run: async () => {
+        throw new Error("WebSocket chat test should not call run");
+      },
+      stream: async function* (sessionId, request) {
+        captured = { request, sessionId };
+        yield {
+          at: timestamp,
+          provider: "codex",
+          sessionId,
+          turnId: "turn_ws_provider",
+          type: "turn.started",
+        };
+        yield {
+          at: timestamp,
+          delta: "Streaming",
+          sessionId,
+          snapshot: "Streaming",
+          turnId: "turn_ws_provider",
+          type: "text.delta",
+        };
+        yield {
+          at: timestamp,
+          delta: " response",
+          sessionId,
+          snapshot: "Streaming response",
+          turnId: "turn_ws_provider",
+          type: "text.delta",
+        };
+        yield {
+          at: timestamp,
+          result: {
+            artifacts: [],
+            completedAt: timestamp,
+            createdAt: timestamp,
+            finishReason: "stop",
+            id: "turn_ws_provider",
+            provider: "codex",
+            sessionId,
+            status: "completed",
+            text: "Streaming response",
+          },
+          sessionId,
+          turnId: "turn_ws_provider",
+          type: "turn.completed",
+        };
+      },
+    };
+    const handle = await startCycleApiServer({
+      agentChatStore,
+      agentServices: {
+        serviceFor: () => Effect.succeed(fakeAgent),
+      },
+      mcp: {
+        enabled: true,
+        path: "/mcp",
+      },
+      runner: {
+        run: (useCase: CycleUseCase) =>
+          Effect.die(new Error(`Unexpected usecase: ${useCase.name}`)),
+      },
+      staticToken: token,
+    });
+    const client = await connectChatSocket(handle.baseUrl);
+
+    try {
+      const createCommandId = client.send("thread.create", {
+        providerId: "codex",
+        thinkingLevel: "high",
+      });
+      const createAck = await client.waitFor(
+        (message) => message.type === "command.ack" && message.commandId === createCommandId,
+      );
+      const createdThread = commandPayloadResult(createAck).thread;
+      assert.equal(isRecord(createdThread), true);
+      const threadId = isRecord(createdThread) ? String(createdThread.id) : "";
+      assert.match(threadId, /^thread_/u);
+
+      client.send("thread.subscribe", { threadId });
+      await client.waitFor(
+        (message) => message.type === "thread.snapshot" && message.threadId === threadId,
+      );
+
+      client.send("turn.send", {
+        message: "Stream a reply",
+        providerId: "codex",
+        thinkingLevel: "high",
+        threadId,
+      });
+
+      await client.waitFor(
+        (message) =>
+          message.type === "message.created" &&
+          message.threadId === threadId &&
+          isRecord(message.payload) &&
+          isRecord(message.payload.message) &&
+          message.payload.message.role === "user",
+      );
+      await client.waitFor(
+        (message) =>
+          message.type === "message.delta" &&
+          message.threadId === threadId &&
+          isRecord(message.payload) &&
+          message.payload.snapshot === "Streaming",
+      );
+      await client.waitFor(
+        (message) =>
+          message.type === "message.completed" &&
+          message.threadId === threadId &&
+          isRecord(message.payload) &&
+          isRecord(message.payload.message) &&
+          message.payload.message.text === "Streaming response",
+      );
+      await client.waitFor(
+        (message) => message.type === "turn.completed" && message.threadId === threadId,
+      );
+
+      const persistedMessages = await agentChatStore.listMessages(threadId);
+      const persistedEvents = (await agentChatStore.listEventsAfter?.(threadId, 0)) ?? [];
+
+      assert.equal(persistedMessages.length, 2);
+      assert.equal(persistedMessages[0]?.actor, "user");
+      assert.equal(persistedMessages[0]?.body, "Stream a reply");
+      assert.equal(persistedMessages[1]?.actor, "agent");
+      assert.equal(persistedMessages[1]?.body, "Streaming response");
+      assert.equal(persistedMessages[1]?.streaming, false);
+      assert.equal(persistedEvents[0]?.sequence, 1);
+      assert.equal(
+        persistedEvents.some((event) => event.type === "message.delta"),
+        true,
+      );
+      assert.equal(captured?.sessionId, threadId);
+      assert.match(String(captured?.request.input), /Current user message/u);
+      assert.match(captured?.request.instructions ?? "", /Cycle MCP: attached as agent tools/u);
+      assert.equal((captured?.request.instructions ?? "").includes(handle.baseUrl), false);
+      assert.equal(captured?.request.model, undefined);
+      assert.equal(captured?.request.metadata?.thinkingLevel, "high");
+      assert.equal(captured?.request.signal instanceof AbortSignal, true);
+      assert.equal(captured?.request.signal?.aborted, false);
+      assert.equal(captured?.request.mcp?.mode, "http");
+      if (captured?.request.mcp?.mode === "http") {
+        assert.equal(captured.request.mcp.url, `${handle.baseUrl}/mcp`);
+        assert.equal(captured.request.mcp.headers?.authorization, `Bearer ${token}`);
+      }
+    } finally {
+      client.close();
       await handle.close();
     }
   });

@@ -47,6 +47,8 @@ type ApiDiscovery = {
   readonly token?: string;
 };
 
+export type CycleApiConnection = ApiDiscovery;
+
 type ApiEnvelope<T> = {
   readonly data: T;
   readonly meta?: {
@@ -68,6 +70,18 @@ type ApiErrorEnvelope = {
 };
 
 type QueryInput = Readonly<Record<string, unknown>>;
+
+export type AutocompleteEntityType = "repository" | "tag" | "ticket" | "user" | (string & {});
+
+export type AutocompleteResult = {
+  readonly id: string;
+  readonly metadata?: Readonly<Record<string, unknown>>;
+  readonly name: string;
+  readonly repositoryId?: string;
+  readonly subtitle?: string;
+  readonly type: AutocompleteEntityType;
+  readonly uri: string;
+};
 
 const API_URL_STORAGE_KEY = "cycle.api.baseUrl";
 const API_TOKEN_STORAGE_KEY = "cycle.api.token";
@@ -165,12 +179,6 @@ const readEnvOverrides = (): Partial<ApiDiscovery> => {
 const discoverApi = async (): Promise<ApiDiscovery> => {
   const bridge = getDesktopBridge();
   if (bridge !== undefined) {
-    if (typeof window !== "undefined" && window.location.protocol.startsWith("http")) {
-      return {
-        baseUrl: DEV_PROXY_BASE_URL,
-      };
-    }
-
     try {
       const connection = await bridge.getApiConnection();
       return {
@@ -230,6 +238,25 @@ const requireDirectToken = (discovery: ApiDiscovery): void => {
       "Cycle API credentials are unavailable. Open through the desktop app, use the local /cycle-api dev proxy, or provide cycleApiUrl/cycleApiToken.",
     status: 0,
   });
+};
+
+export const discoverCycleApiConnection = async (): Promise<CycleApiConnection> => {
+  const discovery = await discoverApi();
+  requireDirectToken(discovery);
+  return discovery;
+};
+
+export const chatWebSocketUrlForConnection = (
+  discovery: CycleApiConnection,
+  path = "/v1/chat/ws",
+): string => {
+  const baseUrl = discovery.baseUrl.replace(/\/+$/u, "");
+  const httpUrl = isRelativeBaseUrl(baseUrl)
+    ? new URL(`${baseUrl}${path}`, window.location.origin)
+    : new URL(path, baseUrl);
+
+  httpUrl.protocol = httpUrl.protocol === "https:" ? "wss:" : "ws:";
+  return httpUrl.toString();
 };
 
 const readJsonResponse = async (response: Response): Promise<unknown> => {
@@ -626,6 +653,22 @@ const addIssueRecord = async (repositoryId: string, input: QueryInput): Promise<
 };
 
 export const cycleApiClient = {
+  autocomplete: async (input: {
+    readonly limit?: number;
+    readonly query?: string;
+    readonly types?: readonly AutocompleteEntityType[];
+  }): Promise<readonly AutocompleteResult[]> => {
+    const response = await resource<{ readonly results: readonly AutocompleteResult[] }>(
+      "GET",
+      withQuery("/v1/autocomplete", {
+        limit: input.limit,
+        q: input.query,
+        types: input.types,
+      }),
+    );
+    return response.results;
+  },
+
   call: async <Alias extends SupportedCycleApiAlias>(
     alias: Alias,
     payload: UseCasePayloadsByAlias[Alias],

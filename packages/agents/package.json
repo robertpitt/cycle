@@ -1,0 +1,28 @@
+{
+  "name": "@cycle/agents",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./codex": "./src/codex.ts",
+    "./detection": "./src/detection.ts",
+    "./providers": "./src/providers.ts",
+    "./providers/claude": "./src/providers/claude/index.ts",
+    "./providers/codex": "./src/providers/codex/index.ts",
+    "./providers/opencode": "./src/providers/opencode/index.ts",
+    "./service": "./src/service.ts",
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@openai/codex-sdk": "0.140.0",
+    "effect": "4.0.0-beta.78"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.8"
+  }
+}

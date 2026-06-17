@@ -1,6 +1,7 @@
 export * from "./domain/index.ts";
 export * from "./errors.ts";
 export * from "./paths.ts";
+export { agentChatSchemaSql, agentSessionBindingSchemaSql } from "./store/AgentChatSchema.ts";
 export {
   DatabaseIdGenerator,
   DatabaseIdGeneratorDeterministic,

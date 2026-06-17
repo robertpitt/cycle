@@ -1,14 +1,30 @@
+import { makeDefaultAgentServiceRegistry } from "@cycle/agents/service";
 import { makeCycleMcpHttpLayer, type CycleMcpHttpOptions } from "@cycle/mcp/server";
 import { NodeServices } from "@effect/platform-node";
 import { Layer } from "effect";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
+import {
+  makeAgentActiveTurnDirectory,
+  type AgentActiveTurnDirectoryShape,
+} from "./agents/services/AgentActiveTurnDirectory.ts";
+import { listLocalAgentProviderProfiles } from "./agents/services/AgentProviderProfiles.ts";
 import { CycleHttpApi, makeOpenApiDocument } from "./api.ts";
 import { CycleAuthorizationLive } from "./http/handlers/Authorization.ts";
 import { SystemApiHandlers } from "./http/handlers/System.ts";
 import { V1ApiHandlers } from "./http/handlers/V1.ts";
+import { makeChatWebSocketLayer } from "./http/handlers/v1/chat/ws.ts";
 import {
   CycleApiRuntime,
+  type AgentChatActivityRecord,
+  type AgentChatEventRecord,
+  type AgentChatMessageRecord,
+  type AgentChatQuestionItemRecord,
+  type AgentChatQuestionRecord,
+  type AgentChatStoreShape,
+  type AgentChatThreadRecord,
+  type AgentChatThreadWithMessages,
+  type AgentChatTurnRecord,
   type ApiConfig,
   type CycleApiMcpOptions,
   type ApiRequestContext,
@@ -22,6 +38,16 @@ import {
 
 export {
   CycleApiRuntime,
+  type AgentActiveTurnDirectoryShape,
+  type AgentChatActivityRecord,
+  type AgentChatEventRecord,
+  type AgentChatMessageRecord,
+  type AgentChatQuestionItemRecord,
+  type AgentChatQuestionRecord,
+  type AgentChatStoreShape,
+  type AgentChatThreadRecord,
+  type AgentChatThreadWithMessages,
+  type AgentChatTurnRecord,
   type ApiConfig,
   type ApiRequestContext,
   type CycleApi,
@@ -49,8 +75,20 @@ export const makeCycleApi = (options: CycleApiOptions): CycleApi => {
 };
 
 export const makeCycleApiLayer = (options: CycleApiOptions) => {
-  const runtime = Layer.succeed(CycleApiRuntime, {
+  const mcpPath = hostedMcpPath(options.mcp);
+  const activeAgentTurns = makeAgentActiveTurnDirectory();
+  const runtimeShape: CycleApiRuntimeShape = {
+    activeAgentTurns,
+    agentProviderProfiles: options.agentProviderProfiles ?? listLocalAgentProviderProfiles,
+    agentServices:
+      options.agentServices ??
+      makeDefaultAgentServiceRegistry({ sessionStore: options.agentSessionStore }),
+    ...(options.agentChatStore === undefined ? {} : { agentChatStore: options.agentChatStore }),
+    ...(options.agentSessionStore === undefined
+      ? {}
+      : { agentSessionStore: options.agentSessionStore }),
     apiVersion: options.apiVersion ?? "0.1.0",
+    ...(mcpPath === undefined ? {} : { mcpPath }),
     now: options.now ?? (() => new Date()),
     ...(options.repositoryOpenInput === undefined
       ? {}
@@ -58,7 +96,8 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
     runner: options.runner,
     startedAt: (options.startedAt ?? new Date()).toISOString(),
     staticToken: options.staticToken,
-  });
+  };
+  const runtime = Layer.succeed(CycleApiRuntime, runtimeShape);
   const handlers = Layer.mergeAll(SystemApiHandlers, V1ApiHandlers).pipe(
     Layer.provide(CycleAuthorizationLive),
     Layer.provide(runtime),
@@ -67,17 +106,25 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
     openapiPath: "/spec.json",
   }).pipe(Layer.provide(handlers)) as Layer.Layer<never, never, any>;
   const mcpLayer = makeHostedMcpLayer(options);
+  const chatWebSocketLayer = makeChatWebSocketLayer(runtimeShape);
   const corsLayer = HttpRouter.cors({
     allowedMethods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
-    exposedHeaders: ["x-request-id"],
+    exposedHeaders: ["x-cycle-stream-version", "x-request-id"],
     maxAge: 86_400,
   });
 
-  return Layer.mergeAll(apiDocsLayer, apiLayer, mcpLayer, corsLayer) as Layer.Layer<
-    never,
-    unknown,
-    any
-  >;
+  return Layer.mergeAll(
+    apiDocsLayer,
+    apiLayer,
+    mcpLayer,
+    chatWebSocketLayer,
+    corsLayer,
+  ) as Layer.Layer<never, unknown, any>;
+};
+
+const hostedMcpPath = (mcp: false | CycleApiMcpOptions | undefined): string | undefined => {
+  if (mcp === false || mcp === undefined || mcp.enabled === false) return undefined;
+  return mcp.path ?? "/mcp";
 };
 
 const apiDocsLayer = HttpRouter.add(
