@@ -1,10 +1,11 @@
-import { randomUUID } from "node:crypto";
 import { defaultAgentCapabilities } from "../providers.ts";
 import type {
   AbortTurnResult,
+  AgentApprovalDecision,
   AgentCapabilities,
   AgentError,
   AgentEvent,
+  AgentInteractionResponseResult,
   AgentProviderId,
   AgentService,
   AgentSession,
@@ -12,6 +13,7 @@ import type {
   AgentSessionStore,
   AgentTurnRequest,
   AgentTurnResult,
+  AgentUserInputAnswer,
   CreateAgentSessionInput,
 } from "../types.ts";
 
@@ -22,7 +24,7 @@ const unsupportedError = (provider: AgentProviderId): AgentError => ({
   retryable: false,
 });
 
-const newId = (prefix: string): string => `${prefix}_${randomUUID()}`;
+const newId = (prefix: string): string => `${prefix}_${crypto.randomUUID()}`;
 
 const bindingToSession = (binding: AgentSessionBinding): AgentSession => ({
   createdAt: new Date(binding.createdAt),
@@ -45,6 +47,9 @@ const sessionBinding = (input: {
   ...(input.input?.workspace?.cwd === undefined ? {} : { cwd: input.input.workspace.cwd }),
   ...(input.input?.metadata === undefined ? {} : { metadata: input.input.metadata }),
   ...(input.input?.model?.id === undefined ? {} : { model: input.input.model.id }),
+  ...(input.input?.runtimeMode === undefined
+    ? {}
+    : { runtime: { runtimeMode: input.input.runtimeMode } }),
   provider: input.provider,
   sessionId: input.id,
   status: "idle",
@@ -118,6 +123,24 @@ export const makeUnsupportedAgentService = (
       sessions.set(session.id, session);
       return session;
     },
+    respondToApproval: async (
+      sessionId: string,
+      requestId: string,
+      _decision: AgentApprovalDecision,
+    ): Promise<AgentInteractionResponseResult> => ({
+      requestId,
+      sessionId,
+      status: "not_found",
+    }),
+    respondToUserInput: async (
+      sessionId: string,
+      requestId: string,
+      _answers: readonly AgentUserInputAnswer[],
+    ): Promise<AgentInteractionResponseResult> => ({
+      requestId,
+      sessionId,
+      status: "not_found",
+    }),
     run: async <TStructured = unknown>(
       sessionId: string,
       request: AgentTurnRequest<TStructured>,

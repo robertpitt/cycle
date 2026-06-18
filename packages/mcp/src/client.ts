@@ -138,7 +138,16 @@ export const makeCycleMcpApiClientEffect = (
                     status: 0,
                   }),
           });
-        }),
+        }).pipe(
+          Effect.withSpan(apiRequestSpanName(request), {
+            attributes: {
+              "http.method": request.method.toUpperCase(),
+              "http.route": request.path.split("?")[0] ?? request.path,
+              "mcp.api.requestId": request.requestId ?? null,
+              service: "@cycle/mcp",
+            },
+          }),
+        ),
     };
   });
 
@@ -205,6 +214,9 @@ const retryableStatus = (status: number): boolean =>
   status === 502 ||
   status === 503 ||
   status === 504;
+
+const apiRequestSpanName = (request: { readonly method: string; readonly path: string }): string =>
+  `mcp.api.${request.method.toUpperCase()} ${request.path.split("?")[0] ?? request.path}`;
 
 const secretPattern =
   /api[-_]?key|authorization|bearer|credential|password|private[-_]?key|secret|token/iu;

@@ -10,10 +10,9 @@ import { GitRepository, type GitRepositoryMetadata } from "@cycle/git";
 import { GitDb, Store as GitDbStore } from "@cycle/git-db";
 import { logError } from "@cycle/logging";
 import { UseCaseRunner, type UseCaseRunnerShape } from "@cycle/usecases";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { Effect } from "effect";
+import { join } from "node:path";
+import { Effect, FileSystem, Path } from "effect";
 import { DesktopRuntime } from "../platform/DesktopRuntime.ts";
 import { AppConfig, appConfigError, type RepositoryRecord } from "../shared/AppConfig.ts";
 import { DesktopBootstrap, type DesktopBootstrapService } from "../shared/Bootstrap.ts";
@@ -21,8 +20,7 @@ import { LocalWorkspace } from "../shared/LocalWorkspace.ts";
 import { cycleCliConfigPathFromHome } from "./CycleDirectory.ts";
 import { makeDesktopAgentChatStore } from "./DesktopAgentChatStore.ts";
 import { makeDesktopAgentSessionStore } from "./DesktopAgentSessionStore.ts";
-
-const LOCAL_PROJECTION_POLL_INTERVAL_MS = 60_000;
+import { ElectronPreferences } from "./ElectronPreferences.ts";
 
 export const desktopApiRuntimeDiscoveryPath = (): string =>
   process.env.CYCLE_API_RUNTIME_FILE ??
@@ -59,39 +57,45 @@ const makeLocalStore = (
     ),
   );
 
-const writeCliConfigToken = (token: string): Effect.Effect<void, unknown> =>
-  Effect.tryPromise({
-    try: async () => {
-      const path = cliConfigPath();
-      let current: Record<string, unknown> = {};
+const writeCliConfigToken = (
+  token: string,
+): Effect.Effect<void, unknown, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const configPath = cliConfigPath();
+    const text = yield* fs
+      .readFileString(configPath, "utf8")
+      .pipe(Effect.catch(() => Effect.succeed(undefined)));
+    let current: Record<string, unknown> = {};
 
+    if (text !== undefined) {
       try {
-        current = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+        current = JSON.parse(text) as Record<string, unknown>;
       } catch {
         current = {};
       }
+    }
 
-      const api = typeof current.api === "object" && current.api !== null ? current.api : {};
-      await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-      await writeFile(
-        path,
-        `${JSON.stringify(
-          {
-            ...current,
-            api: {
-              ...api,
-              staticToken: token,
-            },
-          },
-          null,
-          2,
-        )}\n`,
+    const api = typeof current.api === "object" && current.api !== null ? current.api : {};
+    yield* fs.makeDirectory(path.dirname(configPath), { recursive: true, mode: 0o700 });
+    yield* fs.writeFileString(
+      configPath,
+      `${JSON.stringify(
         {
-          mode: 0o600,
+          ...current,
+          api: {
+            ...api,
+            staticToken: token,
+          },
         },
-      );
-    },
-    catch: (cause) => cause,
+        null,
+        2,
+      )}\n`,
+      {
+        mode: 0o600,
+      },
+    );
   });
 
 const repositoryById = (
@@ -131,6 +135,7 @@ const runnerWithBackgroundPublish = (
 export const startDesktopApi = Effect.fnUntraced(function* () {
   const appConfig = yield* AppConfig;
   const bootstrap = yield* DesktopBootstrap;
+  const preferences = yield* ElectronPreferences;
   const gitRepository = yield* GitRepository;
   const localWorkspace = yield* LocalWorkspace;
   const runner = yield* UseCaseRunner;
@@ -176,7 +181,7 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
           displayName: repository.displayName,
           gitDir: metadata.gitDir,
           metadata,
-          pollIntervalMs: LOCAL_PROJECTION_POLL_INTERVAL_MS,
+          pollIntervalMs: false,
           repositoryId: repository.id,
           store,
           syncOnOpen: request.syncOnOpen ?? false,
@@ -196,6 +201,39 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
             agentChatStore,
             agentSessionStore,
             host: config.api.host,
+            localSettings: {
+              completeOnboarding: (input) =>
+                runtime.runPromise(
+                  "api.localSettings.completeOnboarding",
+                  preferences.completeOnboarding({
+                    displayName: input.displayName,
+                    email: input.email,
+                    enabledAgentProviderIds: input.enabledAgentProviderIds as
+                      | readonly ("codex" | "claude" | "opencode")[]
+                      | undefined,
+                    themePreference: input.themePreference as "light" | "dark" | "system",
+                  }),
+                ),
+              read: () => runtime.runPromise("api.localSettings.read", preferences.read()),
+              setThemePreference: (preference) =>
+                runtime.runPromise(
+                  "api.localSettings.setThemePreference",
+                  preferences.setThemePreference(preference as "light" | "dark" | "system"),
+                ),
+              updateProfile: (input) =>
+                runtime.runPromise(
+                  "api.localSettings.updateProfile",
+                  preferences.updateProfile(input),
+                ),
+              updateRepositoryPreferences: (input) =>
+                runtime.runPromise(
+                  "api.localSettings.updateRepositoryPreferences",
+                  preferences.updateRepositoryPreferences({
+                    id: input.id,
+                    preferences: input.preferences,
+                  }),
+                ),
+            },
             logging: { console: false },
             mcp: {
               apiToken: config.api.staticToken,

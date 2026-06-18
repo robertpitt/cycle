@@ -43,6 +43,7 @@ export type CycleLogConfig = {
   readonly level: CycleLogLevel;
   readonly mode: CycleLogMode;
   readonly otlp: CycleOtlpConfig;
+  readonly packageName: string;
   readonly rotation: CycleLogRotationConfig;
 };
 
@@ -65,6 +66,8 @@ const DEFAULT_FILENAME = "cycle.jsonl";
 const DEFAULT_MAX_BYTES = 10 * 1024 * 1024;
 const DEFAULT_MAX_FILES = 5;
 const DEFAULT_BATCH_WINDOW_MS = 1000;
+const DEFAULT_PACKAGE_NAME = "app";
+const SERVICE_NAME_PREFIX = "@cycle/";
 const MAX_STRING_LENGTH = 2048;
 
 const SECRET_KEY = /(authorization|bearer|credential|password|secret|token|api[-_]?key)/iu;
@@ -90,6 +93,9 @@ export const resolveCycleLogConfig = (
   const filename = input.file?.filename ?? env.CYCLE_LOG_FILE ?? DEFAULT_FILENAME;
   const consoleValue = input.console ?? consoleFromEnv(env, mode);
   const otlpEndpoint = input.otlp?.endpoint ?? env.CYCLE_OTLP_ENDPOINT;
+  const packageName = normalizePackageName(
+    input.packageName ?? env.CYCLE_PACKAGE_NAME ?? DEFAULT_PACKAGE_NAME,
+  );
 
   return {
     batchWindowMs: positiveInt(
@@ -108,9 +114,15 @@ export const resolveCycleLogConfig = (
       enabled: input.otlp?.enabled ?? (otlpEndpoint !== undefined && otlpEndpoint.length > 0),
       endpoint: otlpEndpoint,
       headers: input.otlp?.headers ?? headersFromEnv(env.CYCLE_OTLP_HEADERS),
-      serviceName: input.otlp?.serviceName ?? "cycle",
+      serviceName: normalizeService(
+        input.otlp?.serviceName ??
+          env.CYCLE_OTLP_SERVICE_NAME ??
+          env.OTEL_SERVICE_NAME ??
+          packageName,
+      ),
       serviceVersion: input.otlp?.serviceVersion,
     },
+    packageName,
     rotation: {
       maxBytes: positiveInt(
         input.rotation?.maxBytes ?? numberFromEnv(env.CYCLE_LOG_MAX_BYTES),
@@ -333,20 +345,27 @@ const formatJsonLine = (entry: StructuredLog): string => {
 };
 
 export const normalizeService = (value: string): string => {
+  const normalized = normalizePackageName(value);
+  return `${SERVICE_NAME_PREFIX}${normalized}`;
+};
+
+export const normalizePackageName = (value: string): string => {
   const normalized = value
     .trim()
     .toLowerCase()
-    .replace(/^@cycle\//u, "")
+    .replace(new RegExp(`^${SERVICE_NAME_PREFIX}`, "u"), "")
     .replace(/^cycle[-_.]/u, "")
-    .replace(/[^a-z0-9]+/gu, "");
+    .replace(/[^a-z0-9-]+/gu, "-")
+    .replace(/-{2,}/gu, "-")
+    .replace(/^-|-$/gu, "");
 
   switch (normalized) {
     case "gitdb":
-      return "gitdb";
+      return "git-db";
     case "git-db":
-      return "gitdb";
+      return "git-db";
     case "":
-      return "app";
+      return DEFAULT_PACKAGE_NAME;
     default:
       return normalized;
   }

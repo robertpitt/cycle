@@ -1,7 +1,4 @@
-import {
-  agentChatSchemaSql,
-  ensureDatabaseParentDirectorySync,
-} from "@cycle/database";
+import { agentChatSchemaSql, ensureDatabaseParentDirectorySync } from "@cycle/database";
 import type {
   AgentChatActivityRecord,
   AgentChatEventRecord,
@@ -115,9 +112,7 @@ export const makeDesktopAgentChatStore = (path: string): AgentChatStoreShape => 
     return rows.map(messageFromRow);
   };
 
-  const listActivities = async (
-    threadId: string,
-  ): Promise<readonly AgentChatActivityRecord[]> => {
+  const listActivities = async (threadId: string): Promise<readonly AgentChatActivityRecord[]> => {
     const rows = db
       .prepare(
         `SELECT *
@@ -130,9 +125,7 @@ export const makeDesktopAgentChatStore = (path: string): AgentChatStoreShape => 
     return rows.map(activityFromRow);
   };
 
-  const listQuestions = async (
-    threadId: string,
-  ): Promise<readonly AgentChatQuestionRecord[]> => {
+  const listQuestions = async (threadId: string): Promise<readonly AgentChatQuestionRecord[]> => {
     const rows = db
       .prepare(
         `SELECT *
@@ -174,12 +167,10 @@ export const makeDesktopAgentChatStore = (path: string): AgentChatStoreShape => 
     return rows.map(eventFromRow);
   };
 
-  const getThread = async (
-    threadId: string,
-  ): Promise<AgentChatThreadWithMessages | undefined> => {
-    const row = db
-      .prepare("SELECT * FROM agent_chat_threads WHERE thread_id = ?")
-      .get(threadId) as ThreadRow | undefined;
+  const getThread = async (threadId: string): Promise<AgentChatThreadWithMessages | undefined> => {
+    const row = db.prepare("SELECT * FROM agent_chat_threads WHERE thread_id = ?").get(threadId) as
+      | ThreadRow
+      | undefined;
 
     if (row === undefined) return undefined;
 
@@ -245,6 +236,16 @@ export const makeDesktopAgentChatStore = (path: string): AgentChatStoreShape => 
     },
     close: () => {
       db.close();
+    },
+    deleteThread: async (threadId): Promise<boolean> => {
+      const existing = db
+        .prepare("SELECT 1 FROM agent_chat_threads WHERE thread_id = ?")
+        .get(threadId);
+
+      if (existing === undefined) return false;
+
+      db.prepare("DELETE FROM agent_chat_threads WHERE thread_id = ?").run(threadId);
+      return true;
     },
     getThread,
     listActivities,

@@ -50,6 +50,9 @@ export const bindingFromSession = (
     ...(session.native === undefined && base?.native === undefined
       ? {}
       : { native: serializableNative(session.native) ?? base?.native }),
+    ...(patch.runtime === undefined && base?.runtime === undefined
+      ? {}
+      : { runtime: patch.runtime ?? base?.runtime }),
     provider: codexProviderId,
     sessionId: session.id,
     status,

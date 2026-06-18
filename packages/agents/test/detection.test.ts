@@ -8,6 +8,7 @@ import {
   defaultAgentCapabilities,
   detectAgentProviders,
   makeUnsupportedAgentService,
+  resolveExecutable,
   supportedAgentProviders,
 } from "../src/index.ts";
 
@@ -36,7 +37,9 @@ describe("@cycle/agents provider detection", () => {
     await writeFile(codex, "#!/bin/sh\nexit 0\n", "utf8");
     await chmod(codex, 0o755);
 
-    const providers = await Effect.runPromise(detectAgentProviders({ PATH: bin }));
+    const providers = await Effect.runPromise(
+      detectAgentProviders({ PATH: bin }, { hydrate: false }),
+    );
     const detectedCodex = providers.find((provider) => provider.id === "codex");
 
     assert.equal(providers.length, supportedAgentProviders.length);
@@ -52,7 +55,20 @@ describe("@cycle/agents provider detection", () => {
     const codex = join(bin, "codex");
     const shell = join(userData, "shell");
     await writeFile(codex, "#!/bin/sh\nexit 0\n", "utf8");
-    await writeFile(shell, `#!/bin/sh\nPATH="${bin}:$PATH"\nexec /bin/sh "$@"\n`, "utf8");
+    await writeFile(
+      shell,
+      [
+        "#!/bin/sh",
+        `PATH="${bin}:/usr/bin:/bin:$PATH"`,
+        'if [ "$1" = "-ilc" ]; then',
+        "  shift",
+        '  exec /bin/sh -c "$1"',
+        "fi",
+        'exec /bin/sh "$@"',
+        "",
+      ].join("\n"),
+      "utf8",
+    );
     await chmod(codex, 0o755);
     await chmod(shell, 0o755);
 
@@ -61,6 +77,40 @@ describe("@cycle/agents provider detection", () => {
 
     assert.equal(detectedCodex?.status, "available");
     assert.equal(detectedCodex?.executablePath, codex);
+  });
+
+  it("resolves an explicit executable path without PATH lookup", async () => {
+    const userData = await makeTempDir();
+    const codex = join(userData, "codex");
+    await writeFile(codex, "#!/bin/sh\nexit 0\n", "utf8");
+    await chmod(codex, 0o755);
+
+    const resolved = await Effect.runPromise(resolveExecutable(codex, { env: { PATH: "" } }));
+
+    assert.equal(resolved.available, true);
+    assert.equal(resolved.executablePath, codex);
+  });
+
+  it("uses Windows PATHEXT candidates when resolving on Windows", async () => {
+    const userData = await makeTempDir();
+    const bin = join(userData, "bin");
+    await mkdir(bin);
+    const claude = join(bin, "claude.CMD");
+    await writeFile(claude, "@echo off\r\nexit /b 0\r\n", "utf8");
+
+    const resolved = await Effect.runPromise(
+      resolveExecutable("claude", {
+        env: {
+          PATH: bin,
+          PATHEXT: ".CMD;.EXE",
+        },
+        hydrate: false,
+        platform: "win32",
+      }),
+    );
+
+    assert.equal(resolved.available, true);
+    assert.equal(resolved.executablePath, claude);
   });
 });
 

@@ -10,12 +10,14 @@ The durable Cycle data model is event sourced:
 
 ```text
 collections/events/<aggregate-type>/<aggregate-id>/<event-id>.json
+collections/events/ticket/<ticket-shard>/<ticket-id>/<event-id>.json
 ```
 
-Event identity and aggregate targeting live in the path. Event file contents are canonical JSON
-payloads and intentionally omit generated timestamp, actor, aggregate ID, and event ID fields unless
-the domain payload needs them. This lets Git deduplicate common operations that have identical
-content.
+Ticket events are sharded by the ticket ID segment so the `ticket` aggregate tree does not grow into
+one directory with every ticket in the repository. Event identity and aggregate targeting live in the
+path. Event file contents are canonical JSON payloads and intentionally omit generated timestamp,
+actor, aggregate ID, and event ID fields unless the domain payload needs them. This lets Git
+deduplicate common operations that have identical content.
 
 The old collection/document convenience API has been removed. Callers should use:
 
@@ -83,6 +85,11 @@ await Effect.runPromise(
 - Event payload JSON is canonicalized with stable key ordering.
 - Event paths are explicit source truth; generated projections are not committed by GitDB.
 - Ordering is computed from Git history and lexical event paths, not a shared index file.
+
+## Scalability
+
+See [SCALABILITY_EXPERIMENT.md](./SCALABILITY_EXPERIMENT.md) for the current tree-width model,
+breakpoints, and benchmark matrix for millions of tickets.
 
 ## Scripts
 

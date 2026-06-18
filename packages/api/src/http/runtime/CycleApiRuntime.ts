@@ -16,6 +16,33 @@ export type ApiConfig = {
   readonly staticToken: string;
 };
 
+export type LocalSettingsProfileUpdateInput = {
+  readonly displayName?: string;
+  readonly email?: string;
+};
+
+export type LocalSettingsOnboardingInput = {
+  readonly displayName: string;
+  readonly email: string;
+  readonly enabledAgentProviderIds?: ReadonlyArray<string>;
+  readonly themePreference: string;
+};
+
+export type LocalSettingsRepositoryPreferencesInput = {
+  readonly id: string;
+  readonly preferences: Readonly<Record<string, unknown>>;
+};
+
+export type LocalSettingsProviderShape = {
+  readonly completeOnboarding?: (input: LocalSettingsOnboardingInput) => Promise<unknown>;
+  readonly read: () => Promise<unknown>;
+  readonly setThemePreference?: (preference: string) => Promise<unknown>;
+  readonly updateProfile?: (input: LocalSettingsProfileUpdateInput) => Promise<unknown>;
+  readonly updateRepositoryPreferences?: (
+    input: LocalSettingsRepositoryPreferencesInput,
+  ) => Promise<unknown>;
+};
+
 export type RuntimeDiscoveryFile = {
   readonly apiVersion: string;
   readonly baseUrl: string;
@@ -59,6 +86,7 @@ export type CycleApiOptions = {
   readonly agentSessionStore?: AgentSessionStore;
   readonly apiVersion?: string;
   readonly baseUrl?: string;
+  readonly localSettings?: LocalSettingsProviderShape;
   readonly mcp?: false | CycleApiMcpOptions;
   readonly now?: () => Date;
   readonly repositoryOpenInput?: RepositoryOpenInputResolver;
@@ -80,6 +108,7 @@ export type CycleApiRuntimeShape = {
   readonly agentSessionStore?: AgentSessionStore;
   readonly activeAgentTurns: AgentActiveTurnDirectoryShape;
   readonly apiVersion: string;
+  readonly localSettings?: LocalSettingsProviderShape;
   readonly mcpPath?: string;
   readonly now: () => Date;
   readonly repositoryOpenInput?: RepositoryOpenInputResolver;
@@ -137,13 +166,7 @@ export type AgentChatTurnRecord = {
   readonly metadata?: Readonly<Record<string, unknown>>;
   readonly model?: string | null;
   readonly providerId: string;
-  readonly status:
-    | "cancelled"
-    | "completed"
-    | "failed"
-    | "queued"
-    | "running"
-    | "waiting_for_user";
+  readonly status: "cancelled" | "completed" | "failed" | "queued" | "running" | "waiting_for_user";
   readonly thinkingLevel?: string | null;
   readonly threadId: string;
   readonly updatedAt: string;
@@ -198,8 +221,11 @@ export type AgentChatEventRecord = {
 };
 
 export type AgentChatStoreShape = {
-  readonly appendEvent?: (input: Omit<AgentChatEventRecord, "sequence">) => Promise<AgentChatEventRecord>;
+  readonly appendEvent?: (
+    input: Omit<AgentChatEventRecord, "sequence">,
+  ) => Promise<AgentChatEventRecord>;
   readonly close?: () => Promise<void> | void;
+  readonly deleteThread?: (threadId: string) => Promise<boolean>;
   readonly getThread?: (threadId: string) => Promise<AgentChatThreadWithMessages | undefined>;
   readonly listActivities?: (threadId: string) => Promise<readonly AgentChatActivityRecord[]>;
   readonly listEventsAfter?: (

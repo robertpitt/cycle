@@ -1,7 +1,5 @@
 import { GitRepository, type GitRepositoryServiceShape } from "@cycle/git";
-import { createHash } from "node:crypto";
-import { basename, resolve } from "node:path";
-import { Effect, Layer } from "effect";
+import { Crypto, Effect, Layer, Path } from "effect";
 import {
   AppConfig,
   appConfigError,
@@ -15,13 +13,10 @@ import {
   type UpsertRepositoryPathInput,
 } from "../shared/LocalWorkspace.ts";
 
-const repositoryId = (repositoryPath: string): string =>
-  `repo_${createHash("sha256").update(repositoryPath).digest("hex").slice(0, 16)}`;
+const bytesToHex = (bytes: Uint8Array): string =>
+  Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 
-const normalizeRepositoryPath = (repositoryPath: string): string => resolve(repositoryPath);
-
-const displayNameForPath = (repositoryPath: string): string =>
-  basename(repositoryPath) === "" ? repositoryPath : basename(repositoryPath);
+const textEncoder = new TextEncoder();
 
 const ensureGitRepository = (gitRepository: GitRepositoryServiceShape, repositoryPath: string) =>
   gitRepository
@@ -52,7 +47,25 @@ export const LocalWorkspaceLive = Layer.effect(
   LocalWorkspace,
   Effect.gen(function* () {
     const appConfig = yield* AppConfig;
+    const crypto = yield* Crypto.Crypto;
     const gitRepository = yield* GitRepository;
+    const path = yield* Path.Path;
+
+    const repositoryId = (repositoryPath: string) =>
+      crypto.digest("SHA-256", textEncoder.encode(repositoryPath)).pipe(
+        Effect.map((digest) => `repo_${bytesToHex(digest).slice(0, 16)}`),
+        Effect.mapError((cause) =>
+          appConfigError("LocalWorkspace.repositoryId", "Unable to derive repository id.", cause),
+        ),
+      );
+
+    const normalizeRepositoryPath = (repositoryPath: string): string =>
+      path.resolve(repositoryPath);
+
+    const displayNameForPath = (repositoryPath: string): string => {
+      const baseName = path.basename(repositoryPath);
+      return baseName === "" ? repositoryPath : baseName;
+    };
 
     const listRepositories = () =>
       appConfig.read().pipe(Effect.map((config) => config.localWorkspace.repositories));
@@ -61,7 +74,7 @@ export const LocalWorkspaceLive = Layer.effect(
       Effect.gen(function* () {
         const normalizedPath = normalizeRepositoryPath(input.path);
         yield* ensureGitRepository(gitRepository, normalizedPath);
-        const id = repositoryId(normalizedPath);
+        const id = yield* repositoryId(normalizedPath);
         const now = new Date().toISOString();
         const existing = (yield* listRepositories()).find(
           (repository) => repository.path === normalizedPath || repository.id === id,

@@ -1,27 +1,37 @@
 import type {
   AbortTurnResult,
+  AgentApprovalDecision,
   AgentCapabilities,
   AgentEvent,
+  AgentInteractionResponseResult,
   AgentService,
   AgentSession,
   AgentSessionBinding,
   AgentSessionBindingStatus,
   AgentTurnRequest,
   AgentTurnResult,
+  AgentUserInputAnswer,
   CreateAgentSessionInput,
 } from "../../types.ts";
+import {
+  interactionKey,
+  runCodexAppServerTurn,
+  streamCodexAppServerTurn,
+  type CodexTurnRuntimeWithInteractions,
+} from "./app-server/runtime.ts";
 import { codexAgentCapabilities } from "./capabilities.ts";
 import { codexProviderId, newCodexId, now } from "./constants.ts";
-import type { CodexTurnRuntime } from "./runtime.ts";
-import { runCodexTurn } from "./runTurn.ts";
 import { bindingFromSession, sessionFromBinding, withNativeThreadId } from "./session.ts";
-import { streamCodexTurn } from "./streamTurn.ts";
 import type { ActiveCodexTurn, CodexAgentServiceOptions, StoredCodexSession } from "./types.ts";
 
 export const makeCodexAgentService = (options: CodexAgentServiceOptions = {}): AgentService => {
   const capabilities: AgentCapabilities = codexAgentCapabilities;
   const sessions = new Map<string, StoredCodexSession>();
   const activeTurns = new Map<string, ActiveCodexTurn>();
+  const appServerRuntimes = new Map();
+  const pendingApprovals: CodexTurnRuntimeWithInteractions["pendingApprovals"] = new Map();
+  const pendingUserInputs: CodexTurnRuntimeWithInteractions["pendingUserInputs"] = new Map();
+  const resolvedInteractions = new Set<string>();
 
   const saveSession = async (
     session: StoredCodexSession,
@@ -55,6 +65,12 @@ export const makeCodexAgentService = (options: CodexAgentServiceOptions = {}): A
       harnessId: codexProviderId,
       id: newCodexId("session"),
       metadata: input?.metadata,
+      native:
+        input?.runtimeMode === undefined
+          ? undefined
+          : {
+              runtimeMode: input.runtimeMode,
+            },
       provider: codexProviderId,
       title: input?.title,
       updatedAt: timestamp,
@@ -64,6 +80,7 @@ export const makeCodexAgentService = (options: CodexAgentServiceOptions = {}): A
       ...(input?.workspace?.cwd === undefined ? {} : { cwd: input.workspace.cwd }),
       ...(input?.model?.id === undefined ? {} : { model: input.model.id }),
       ...(input?.metadata === undefined ? {} : { metadata: input.metadata }),
+      ...(input?.runtimeMode === undefined ? {} : { runtime: { runtimeMode: input.runtimeMode } }),
     });
   };
 
@@ -102,10 +119,14 @@ export const makeCodexAgentService = (options: CodexAgentServiceOptions = {}): A
       updatedAt: updatedAt.toISOString(),
     });
 
-  const turnRuntime: CodexTurnRuntime = {
+  const turnRuntime: CodexTurnRuntimeWithInteractions = {
     activeTurns,
+    appServerRuntimes,
     options,
+    pendingApprovals,
+    pendingUserInputs,
     resumeSession,
+    resolvedInteractions,
     saveSession,
     storeNativeThreadId,
   };
@@ -122,6 +143,7 @@ export const makeCodexAgentService = (options: CodexAgentServiceOptions = {}): A
       }
 
       activeTurn.controller.abort(new Error("Codex turn cancellation requested."));
+      await activeTurn.interrupt?.().catch(() => undefined);
       return { accepted: true, reason: "cancel_requested" };
     },
     capabilities: () => capabilities,
@@ -130,19 +152,72 @@ export const makeCodexAgentService = (options: CodexAgentServiceOptions = {}): A
         if (!activeTurn.controller.signal.aborted) {
           activeTurn.controller.abort(new Error("Codex service closed."));
         }
+        await activeTurn.interrupt?.().catch(() => undefined);
+      }
+      for (const pending of pendingApprovals.values()) pending.decision("cancel");
+      for (const pending of pendingUserInputs.values()) pending.answers([]);
+      for (const runtime of appServerRuntimes.values()) {
+        await runtime.client.close().catch(() => undefined);
       }
       activeTurns.clear();
+      appServerRuntimes.clear();
+      pendingApprovals.clear();
+      pendingUserInputs.clear();
     },
     createSession,
     provider: codexProviderId,
     resumeSession,
+    respondToApproval: async (
+      sessionId: string,
+      requestId: string,
+      decision: AgentApprovalDecision,
+    ): Promise<AgentInteractionResponseResult> => {
+      const key = interactionKey(sessionId, requestId);
+      const pending = pendingApprovals.get(key);
+      if (pending === undefined) {
+        return {
+          requestId,
+          sessionId,
+          status: resolvedInteractions.has(key) ? "already_resolved" : "not_found",
+        };
+      }
+      pending.decision(decision);
+      return {
+        requestId,
+        sessionId,
+        status: "accepted",
+      };
+    },
+    respondToUserInput: async (
+      sessionId: string,
+      requestId: string,
+      answers: readonly AgentUserInputAnswer[],
+    ): Promise<AgentInteractionResponseResult> => {
+      const key = interactionKey(sessionId, requestId);
+      const pending = pendingUserInputs.get(key);
+      if (pending === undefined) {
+        return {
+          requestId,
+          sessionId,
+          status: resolvedInteractions.has(key) ? "already_resolved" : "not_found",
+        };
+      }
+      pending.answers(answers);
+      return {
+        requestId,
+        sessionId,
+        status: "accepted",
+      };
+    },
     run: <TStructured = unknown>(
       sessionId: string,
       request: AgentTurnRequest<TStructured>,
-    ): Promise<AgentTurnResult<TStructured>> => runCodexTurn(turnRuntime, sessionId, request),
+    ): Promise<AgentTurnResult<TStructured>> =>
+      runCodexAppServerTurn(turnRuntime, sessionId, request),
     stream: <TStructured = unknown>(
       sessionId: string,
       request: AgentTurnRequest<TStructured>,
-    ): AsyncIterable<AgentEvent<TStructured>> => streamCodexTurn(turnRuntime, sessionId, request),
+    ): AsyncIterable<AgentEvent<TStructured>> =>
+      streamCodexAppServerTurn(turnRuntime, sessionId, request),
   };
 };

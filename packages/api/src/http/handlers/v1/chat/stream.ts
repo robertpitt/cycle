@@ -58,6 +58,99 @@ const envelopeForAgentEvent = (input: {
         },
       };
 
+    case "content.delta":
+      return {
+        ...base,
+        data: {
+          delta: input.event.delta,
+          ...(input.event.itemId === undefined ? {} : { itemId: input.event.itemId }),
+          ...(input.event.snapshot === undefined ? {} : { snapshot: input.event.snapshot }),
+          streamKind: input.event.streamKind,
+        },
+      };
+
+    case "turn.plan.updated":
+      return {
+        ...base,
+        data: {
+          ...(input.event.explanation === undefined
+            ? {}
+            : { explanation: input.event.explanation }),
+          plan: input.event.plan,
+        },
+      };
+
+    case "turn.diff.updated":
+      return {
+        ...base,
+        data: {
+          diff: input.event.diff,
+        },
+      };
+
+    case "item.started":
+    case "item.updated":
+    case "item.completed":
+      return {
+        ...base,
+        data: {
+          item: input.event.item,
+          itemId: input.event.itemId,
+          ...(input.event.itemType === undefined ? {} : { itemType: input.event.itemType }),
+        },
+      };
+
+    case "approval.requested":
+      return {
+        ...base,
+        data: {
+          request: input.event.request,
+        },
+      };
+
+    case "approval.resolved":
+      return {
+        ...base,
+        data: {
+          decision: input.event.decision,
+          requestId: input.event.requestId,
+        },
+      };
+
+    case "user-input.requested":
+      return {
+        ...base,
+        data: {
+          request: input.event.request,
+        },
+      };
+
+    case "user-input.resolved":
+      return {
+        ...base,
+        data: {
+          answers: input.event.answers,
+          requestId: input.event.requestId,
+        },
+      };
+
+    case "runtime.warning":
+      return {
+        ...base,
+        data: {
+          message: input.event.message,
+          ...(input.event.raw === undefined ? {} : { raw: input.event.raw }),
+        },
+      };
+
+    case "runtime.error":
+      return {
+        ...base,
+        data: {
+          error: publicAgentError(input.event.error),
+        },
+      };
+
     case "progress":
       return {
         ...base,

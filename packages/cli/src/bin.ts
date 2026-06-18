@@ -10,6 +10,6 @@ runCycleCliEffect().pipe(
       process.exitCode = exitCode;
     }),
   ),
-  Effect.provide(CycleLoggingLive()),
+  Effect.provide(CycleLoggingLive({ packageName: "cli" })),
   NodeRuntime.runMain,
 );

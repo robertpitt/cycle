@@ -13,7 +13,15 @@ import type {
   UseCasePayloadsByAlias,
   UseCaseSuccessesByAlias,
 } from "@cycle/contracts/contracts";
-import { DEFAULT_API_PORT } from "../../shared/AppConfig.ts";
+import {
+  DEFAULT_API_PORT,
+  type AppConfigState,
+  type ProfileConfig,
+  type RepositoryRecord as AppRepositoryRecord,
+  type ThemePreference,
+} from "../../shared/AppConfig.ts";
+import type { UpdateRepositoryPreferencesInput } from "../../shared/LocalWorkspace.ts";
+import type { CompleteOnboardingInput, ProfileUpdateInput } from "../../shared/Profile.ts";
 import { getDesktopBridge } from "./desktopBridge.ts";
 
 type SupportedCycleApiAlias = Extract<
@@ -668,6 +676,25 @@ export const cycleApiClient = {
     );
     return response.results;
   },
+
+  completeOnboarding: (input: CompleteOnboardingInput): Promise<AppConfigState> =>
+    resource<AppConfigState>("POST", "/v1/profile/onboarding", input),
+
+  getAppConfig: (): Promise<AppConfigState> =>
+    resource<AppConfigState>("GET", "/v1/app-config"),
+
+  setThemePreference: (preference: ThemePreference): Promise<AppConfigState> =>
+    resource<AppConfigState>("PATCH", "/v1/theme", { preference }),
+
+  updateProfile: (input: ProfileUpdateInput): Promise<ProfileConfig> =>
+    resource<ProfileConfig>("PATCH", "/v1/profile", input),
+
+  updateRepositoryPreferences: (
+    input: UpdateRepositoryPreferencesInput,
+  ): Promise<AppRepositoryRecord | null> =>
+    resource<AppRepositoryRecord | null>("PATCH", `${repositoryPath(input.id)}/preferences`, {
+      preferences: input.preferences,
+    }),
 
   call: async <Alias extends SupportedCycleApiAlias>(
     alias: Alias,

@@ -74,68 +74,95 @@ export const makeUseCaseRunner = (database: UseCasePersistenceGatewayShape): Use
     const contract = contractFor(useCase.name);
     const annotations = useCaseExecutionAnnotations(context, contract.sideEffect);
 
-    const program = validateUseCaseMetadata(context, contract).pipe(
+    const program = traceUseCaseStage(
+      context,
+      "metadata.validate",
+      annotations,
+      validateUseCaseMetadata(context, contract),
+    ).pipe(
       Effect.andThen(
-        Schema.decodeUnknownEffect(contract.inputSchema)(useCase.input).pipe(
-          Effect.mapError((error) =>
-            invalidInputFailure({
-              details: {
-                parseError: String(error),
-              },
-              message: `Invalid input for ${useCase.name}.`,
-              requestId: context.requestId,
-              useCase: useCase.name,
-            }),
+        traceUseCaseStage(
+          context,
+          "input.decode",
+          annotations,
+          Schema.decodeUnknownEffect(contract.inputSchema)(useCase.input).pipe(
+            Effect.mapError((error) =>
+              invalidInputFailure({
+                details: {
+                  parseError: String(error),
+                },
+                message: `Invalid input for ${useCase.name}.`,
+                requestId: context.requestId,
+                useCase: useCase.name,
+              }),
+            ),
           ),
         ),
       ),
       Effect.flatMap((decoded) =>
-        execute(database, {
-          ...context,
-          useCase: {
-            ...useCase,
-            input: decoded as UseCaseInput<Name>,
-          },
-        }),
+        traceUseCaseStage(
+          context,
+          "execute",
+          annotations,
+          execute(database, {
+            ...context,
+            useCase: {
+              ...useCase,
+              input: decoded as UseCaseInput<Name>,
+            },
+          }),
+        ),
       ),
       Effect.flatMap((value) =>
-        Schema.decodeUnknownEffect(contract.successSchema)(value).pipe(
-          Effect.mapError((error) =>
-            useCaseFailure({
-              code: "INVALID_USECASE_SUCCESS",
-              details: { parseError: String(error) },
-              message: `Usecase ${useCase.name} produced an invalid success value.`,
-              requestId: context.requestId,
-              tag: "UnexpectedDefectFailure",
-              useCase: useCase.name,
-            }),
+        traceUseCaseStage(
+          context,
+          "success.decode",
+          annotations,
+          Schema.decodeUnknownEffect(contract.successSchema)(value).pipe(
+            Effect.mapError((error) =>
+              useCaseFailure({
+                code: "INVALID_USECASE_SUCCESS",
+                details: { parseError: String(error) },
+                message: `Usecase ${useCase.name} produced an invalid success value.`,
+                requestId: context.requestId,
+                tag: "UnexpectedDefectFailure",
+                useCase: useCase.name,
+              }),
+            ),
           ),
         ),
       ),
       Effect.map((value) => value as UseCaseSuccess<Name>),
     ) as Effect.Effect<UseCaseSuccess<Name>, UseCaseFailure>;
 
+    const tracedProgram = applyDeadlineWithSpan(context, annotations, program);
+
     return Effect.logDebug("usecase execution started").pipe(
       Effect.annotateLogs(annotations),
       Effect.andThen(
-        applyDeadline(context, program).pipe(
+        tracedProgram.pipe(
           Effect.tapCause((cause) => logUnexpectedUseCaseCause(annotations, cause)),
           Effect.result,
           Effect.timed,
-          Effect.tap(([duration, result]) =>
-            Effect.logInfo("usecase execution completed").pipe(
-              Effect.annotateLogs({
-                ...annotations,
-                durationMs: Duration.toMillis(duration),
-                failureTag: Result.isFailure(result) ? result.failure._tag : null,
-                result: Result.isSuccess(result) ? "success" : "failure",
-              }),
-            ),
-          ),
+          Effect.tap(([duration, result]) => {
+            const completionAnnotations = useCaseCompletionAnnotations(duration, result);
+
+            return Effect.annotateCurrentSpan(completionAnnotations).pipe(
+              Effect.andThen(
+                Effect.logInfo("usecase execution completed").pipe(
+                  Effect.annotateLogs({
+                    ...annotations,
+                    ...completionAnnotations,
+                  }),
+                ),
+              ),
+            );
+          }),
           Effect.flatMap(([, result]) =>
             Result.isSuccess(result) ? Effect.succeed(result.success) : Effect.fail(result.failure),
           ),
-          Effect.withSpan("cycle.usecase", {
+          Effect.annotateSpans(annotations),
+          Effect.withSpan(useCaseSpanName(context), {
             attributes: annotations,
           }),
           Effect.annotateLogs(annotations),
@@ -146,6 +173,65 @@ export const makeUseCaseRunner = (database: UseCasePersistenceGatewayShape): Use
 
   return { run };
 };
+
+const useCaseCompletionAnnotations = (
+  duration: Duration.Duration,
+  result: Result.Result<unknown, UseCaseFailure>,
+): Record<string, unknown> => ({
+  durationMs: Duration.toMillis(duration),
+  failureTag: Result.isFailure(result) ? result.failure._tag : null,
+  result: Result.isSuccess(result) ? "success" : "failure",
+});
+
+const applyDeadlineWithSpan = <A, Name extends UseCaseName>(
+  context: RequestContext<Name>,
+  annotations: Readonly<Record<string, unknown>>,
+  effect: Effect.Effect<A, UseCaseFailure>,
+): Effect.Effect<A, UseCaseFailure> => {
+  const deadline = context.useCase.meta?.deadline;
+  const program = applyDeadline(context, effect);
+
+  if (deadline === undefined) return program;
+
+  return traceUseCaseStage(context, "deadline", annotations, program, {
+    deadline,
+    remainingMs: Math.max(0, deadline - Date.now()),
+  });
+};
+
+const traceUseCaseStage = <A, E, R, Name extends UseCaseName>(
+  context: RequestContext<Name>,
+  stage: string,
+  annotations: Readonly<Record<string, unknown>>,
+  effect: Effect.Effect<A, E, R>,
+  attributes: Readonly<Record<string, unknown>> = {},
+): Effect.Effect<A, E, R> =>
+  effect.pipe(
+    Effect.withSpan(useCaseStageSpanName(context, stage), {
+      attributes: {
+        ...annotations,
+        ...attributes,
+        stage,
+      },
+    }),
+  ) as Effect.Effect<A, E, R>;
+
+const traceUseCasePolicy = <A, Name extends UseCaseName>(
+  context: RequestContext<Name>,
+  policy: string,
+  effect: Effect.Effect<A, UseCaseFailure>,
+  attributes: Readonly<Record<string, unknown>> = {},
+): Effect.Effect<A, UseCaseFailure> =>
+  traceUseCaseStage(
+    context,
+    `policy.${policy}`,
+    useCaseExecutionAnnotations(context, contractFor(context.useCase.name).sideEffect),
+    effect,
+    {
+      ...attributes,
+      policy,
+    },
+  );
 
 const logUnexpectedUseCaseCause = (
   annotations: Readonly<Record<string, unknown>>,
@@ -483,11 +569,26 @@ const useCaseExecutionAnnotations = <Name extends UseCaseName>(
   hasTraceContext: context.useCase.meta?.traceContext !== undefined,
   requestId: context.requestId,
   repositoryId: repositoryIdFromInput(context.useCase.input) ?? null,
-  service: "usecases",
+  service: "@cycle/usecases",
   sideEffect,
   source: context.source,
   useCase: context.useCase.name,
 });
+
+const useCaseSpanName = <Name extends UseCaseName>(context: RequestContext<Name>): string =>
+  `${spanSegment(context.source)}.usecase.${context.useCase.name}`;
+
+const useCaseStageSpanName = <Name extends UseCaseName>(
+  context: RequestContext<Name>,
+  stage: string,
+): string => `${useCaseSpanName(context)}.${spanSegment(stage)}`;
+
+const spanSegment = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/gu, "-")
+    .replace(/^-|-$/gu, "") || "unknown";
 
 const validateUseCaseMetadata = <Name extends UseCaseName>(
   context: RequestContext<Name>,
@@ -618,23 +719,28 @@ const readRequiredTicket = <Name extends UseCaseName>(
   context: RequestContext<Name>,
   ticketId: string,
 ): Effect.Effect<TicketDocument, UseCaseFailure> =>
-  database.getTicket(repositoryIdFromInput(context.useCase.input) ?? "", ticketId).pipe(
-    Effect.mapError(mapFailure(context)),
-    Effect.flatMap((ticket) =>
-      ticket === null
-        ? Effect.fail(
-            useCaseFailure({
-              code: "TICKET_NOT_FOUND",
-              message: `Ticket not found: ${ticketId}`,
-              repositoryId: repositoryIdFromInput(context.useCase.input),
-              requestId: context.requestId,
-              tag: "NotFoundFailure",
-              ticketId,
-              useCase: context.useCase.name,
-            }),
-          )
-        : Effect.succeed(ticket),
+  traceUseCasePolicy(
+    context,
+    "ticket.read-required",
+    database.getTicket(repositoryIdFromInput(context.useCase.input) ?? "", ticketId).pipe(
+      Effect.mapError(mapFailure(context)),
+      Effect.flatMap((ticket) =>
+        ticket === null
+          ? Effect.fail(
+              useCaseFailure({
+                code: "TICKET_NOT_FOUND",
+                message: `Ticket not found: ${ticketId}`,
+                repositoryId: repositoryIdFromInput(context.useCase.input),
+                requestId: context.requestId,
+                tag: "NotFoundFailure",
+                ticketId,
+                useCase: context.useCase.name,
+              }),
+            )
+          : Effect.succeed(ticket),
+      ),
     ),
+    { ticketId },
   );
 
 const validateIssueUpdatePolicy = <Name extends UseCaseName>(
@@ -642,30 +748,39 @@ const validateIssueUpdatePolicy = <Name extends UseCaseName>(
   current: TicketDocument,
   patch: { readonly body?: string; readonly frontmatter?: Readonly<Record<string, unknown>> },
 ): Effect.Effect<void, UseCaseFailure> =>
-  Effect.gen(function* () {
-    if (current.status === "in-progress" && patch.body !== undefined) {
-      const changed = protectedSectionsChanged(current.body, patch.body);
+  traceUseCasePolicy(
+    context,
+    "issue.update",
+    Effect.gen(function* () {
+      if (current.status === "in-progress" && patch.body !== undefined) {
+        const changed = protectedSectionsChanged(current.body, patch.body);
 
-      if (changed.length > 0) {
-        return yield* Effect.fail(
-          policyViolationFailure({
-            code: "PROTECTED_SECTIONS_CHANGED",
-            details: { sections: changed },
-            message: `Protected sections changed: ${changed.join(", ")}`,
-            repositoryId: repositoryIdFromInput(context.useCase.input),
-            requestId: context.requestId,
-            ticketId: current.id,
-            useCase: context.useCase.name,
-          }),
-        );
+        if (changed.length > 0) {
+          return yield* Effect.fail(
+            policyViolationFailure({
+              code: "PROTECTED_SECTIONS_CHANGED",
+              details: { sections: changed },
+              message: `Protected sections changed: ${changed.join(", ")}`,
+              repositoryId: repositoryIdFromInput(context.useCase.input),
+              requestId: context.requestId,
+              ticketId: current.id,
+              useCase: context.useCase.name,
+            }),
+          );
+        }
       }
-    }
 
-    const nextStatus = patch.frontmatter?.["status"];
-    if (typeof nextStatus === "string" && nextStatus !== current.status) {
-      yield* validateTransitionPolicy(context, current, nextStatus);
-    }
-  });
+      const nextStatus = patch.frontmatter?.["status"];
+      if (typeof nextStatus === "string" && nextStatus !== current.status) {
+        yield* validateTransitionPolicy(context, current, nextStatus);
+      }
+    }),
+    {
+      hasBodyPatch: patch.body !== undefined,
+      hasStatusPatch: typeof patch.frontmatter?.["status"] === "string",
+      ticketId: current.id,
+    },
+  );
 
 const validateTransitionPolicy = <Name extends UseCaseName>(
   context: RequestContext<Name>,
@@ -677,64 +792,61 @@ const validateTransitionPolicy = <Name extends UseCaseName>(
   const actor = context.useCase.meta?.actor;
   const allowed = defaultTransitions[fromKey] ?? [];
 
-  if (toKey === "done" && actor !== undefined && actor.type !== "human") {
-    return Effect.fail(
-      policyViolationFailure({
-        code: "HUMAN_APPROVAL_REQUIRED",
-        message: `Only a human actor can mark ticket ${ticket.id} done.`,
-        repositoryId: repositoryIdFromInput(context.useCase.input),
-        requestId: context.requestId,
-        ticketId: ticket.id,
-        useCase: context.useCase.name,
-      }),
-    );
-  }
+  const program =
+    toKey === "done" && actor !== undefined && actor.type !== "human"
+      ? Effect.fail(
+          policyViolationFailure({
+            code: "HUMAN_APPROVAL_REQUIRED",
+            message: `Only a human actor can mark ticket ${ticket.id} done.`,
+            repositoryId: repositoryIdFromInput(context.useCase.input),
+            requestId: context.requestId,
+            ticketId: ticket.id,
+            useCase: context.useCase.name,
+          }),
+        )
+      : fromKey === "done" && actor !== undefined && actor.type !== "human"
+        ? Effect.fail(
+            policyViolationFailure({
+              code: "HUMAN_REOPEN_REQUIRED",
+              message: `Only a human actor can transition ticket ${ticket.id} away from done.`,
+              repositoryId: repositoryIdFromInput(context.useCase.input),
+              requestId: context.requestId,
+              ticketId: ticket.id,
+              useCase: context.useCase.name,
+            }),
+          )
+        : toKey === "ready" &&
+            !ticket.frontmatter.planningNotRequired &&
+            !ticket.frontmatter.planAcceptedAt
+          ? Effect.fail(
+              policyViolationFailure({
+                code: "PLAN_REQUIRED",
+                message: `Ticket ${ticket.id} requires accepted planning before ready.`,
+                repositoryId: repositoryIdFromInput(context.useCase.input),
+                requestId: context.requestId,
+                ticketId: ticket.id,
+                useCase: context.useCase.name,
+              }),
+            )
+          : !allowed.includes(toKey) && actor !== undefined && actor.type !== "human"
+            ? Effect.fail(
+                policyViolationFailure({
+                  code: "TRANSITION_NOT_ALLOWED",
+                  details: { from: fromKey, to: toKey },
+                  message: `Transition from ${fromKey} to ${toKey} is not allowed.`,
+                  repositoryId: repositoryIdFromInput(context.useCase.input),
+                  requestId: context.requestId,
+                  ticketId: ticket.id,
+                  useCase: context.useCase.name,
+                }),
+              )
+            : Effect.void;
 
-  if (fromKey === "done" && actor !== undefined && actor.type !== "human") {
-    return Effect.fail(
-      policyViolationFailure({
-        code: "HUMAN_REOPEN_REQUIRED",
-        message: `Only a human actor can transition ticket ${ticket.id} away from done.`,
-        repositoryId: repositoryIdFromInput(context.useCase.input),
-        requestId: context.requestId,
-        ticketId: ticket.id,
-        useCase: context.useCase.name,
-      }),
-    );
-  }
-
-  if (
-    toKey === "ready" &&
-    !ticket.frontmatter.planningNotRequired &&
-    !ticket.frontmatter.planAcceptedAt
-  ) {
-    return Effect.fail(
-      policyViolationFailure({
-        code: "PLAN_REQUIRED",
-        message: `Ticket ${ticket.id} requires accepted planning before ready.`,
-        repositoryId: repositoryIdFromInput(context.useCase.input),
-        requestId: context.requestId,
-        ticketId: ticket.id,
-        useCase: context.useCase.name,
-      }),
-    );
-  }
-
-  if (!allowed.includes(toKey) && actor !== undefined && actor.type !== "human") {
-    return Effect.fail(
-      policyViolationFailure({
-        code: "TRANSITION_NOT_ALLOWED",
-        details: { from: fromKey, to: toKey },
-        message: `Transition from ${fromKey} to ${toKey} is not allowed.`,
-        repositoryId: repositoryIdFromInput(context.useCase.input),
-        requestId: context.requestId,
-        ticketId: ticket.id,
-        useCase: context.useCase.name,
-      }),
-    );
-  }
-
-  return Effect.void;
+  return traceUseCasePolicy(context, "issue.transition", program, {
+    fromStatus: fromKey,
+    ticketId: ticket.id,
+    toStatus: toKey,
+  });
 };
 
 const validateRelationAddPolicy = <Name extends UseCaseName>(
@@ -742,37 +854,39 @@ const validateRelationAddPolicy = <Name extends UseCaseName>(
   ticket: TicketDocument,
   relation: IssueRelation,
 ): Effect.Effect<void, UseCaseFailure> => {
-  if (relation.issueId === ticket.id) {
-    return Effect.fail(
-      policyViolationFailure({
-        code: "SELF_RELATION",
-        message: "An issue cannot relate to itself.",
-        repositoryId: repositoryIdFromInput(context.useCase.input),
-        requestId: context.requestId,
-        ticketId: ticket.id,
-        useCase: context.useCase.name,
-      }),
-    );
-  }
-
   const duplicate = (ticket.frontmatter.relations ?? []).some(
     (current) => current.issueId === relation.issueId && current.type === relation.type,
   );
+  const program =
+    relation.issueId === ticket.id
+      ? Effect.fail(
+          policyViolationFailure({
+            code: "SELF_RELATION",
+            message: "An issue cannot relate to itself.",
+            repositoryId: repositoryIdFromInput(context.useCase.input),
+            requestId: context.requestId,
+            ticketId: ticket.id,
+            useCase: context.useCase.name,
+          }),
+        )
+      : duplicate
+        ? Effect.fail(
+            policyViolationFailure({
+              code: "DUPLICATE_RELATION",
+              message: "The issue relation already exists.",
+              repositoryId: repositoryIdFromInput(context.useCase.input),
+              requestId: context.requestId,
+              ticketId: ticket.id,
+              useCase: context.useCase.name,
+            }),
+          )
+        : Effect.void;
 
-  if (duplicate) {
-    return Effect.fail(
-      policyViolationFailure({
-        code: "DUPLICATE_RELATION",
-        message: "The issue relation already exists.",
-        repositoryId: repositoryIdFromInput(context.useCase.input),
-        requestId: context.requestId,
-        ticketId: ticket.id,
-        useCase: context.useCase.name,
-      }),
-    );
-  }
-
-  return Effect.void;
+  return traceUseCasePolicy(context, "issue.relation.add", program, {
+    relationIssueId: relation.issueId,
+    relationType: relation.type,
+    ticketId: ticket.id,
+  });
 };
 
 const evaluateRepository = <Name extends UseCaseName>(

@@ -1,11 +1,12 @@
 import type { TicketDocument, UserProfileDocument } from "@cycle/contracts";
 import type { MarkdownEditorTagSuggestion } from "@cycle/ui/molecules";
-import type { RepositoryRecord } from "../../shared/AppConfig.ts";
+import type { ProfileConfig, RepositoryRecord } from "../../shared/AppConfig.ts";
 import type { DetectedAgentProvider } from "../../shared/AgentProviders.ts";
 
 type CreateMarkdownTagSuggestionsInput = {
   readonly agentProviders?: readonly DetectedAgentProvider[];
   readonly issues?: readonly TicketDocument[];
+  readonly profile?: ProfileConfig;
   readonly repositories?: readonly RepositoryRecord[];
   readonly users?: readonly UserProfileDocument[];
 };
@@ -16,12 +17,38 @@ const issueDescription = (issue: TicketDocument): string =>
 const repositorySearchText = (repository: RepositoryRecord): string =>
   [repository.id, repository.displayName, repository.path].join(" ");
 
+const profileTagSuggestion = (
+  profile: ProfileConfig | undefined,
+  users: readonly UserProfileDocument[],
+): MarkdownEditorTagSuggestion[] => {
+  const displayName = profile?.displayName.trim() ?? "";
+  const email = profile?.email.trim() ?? "";
+  if (!profile || (displayName.length === 0 && email.length === 0)) return [];
+  if (email.length > 0 && users.some((user) => user.email === email)) return [];
+
+  const label = displayName || email;
+  const id = email || label;
+
+  return [
+    {
+      description: email,
+      id,
+      insertLabel: `@${label}`,
+      kind: "user",
+      label,
+      searchText: [displayName, email].join(" "),
+    },
+  ];
+};
+
 export const createMarkdownTagSuggestions = ({
   agentProviders = [],
   issues = [],
+  profile,
   repositories = [],
   users = [],
 }: CreateMarkdownTagSuggestionsInput): readonly MarkdownEditorTagSuggestion[] => [
+  ...profileTagSuggestion(profile, users),
   ...users.map((user) => ({
     description: user.email,
     id: user.id,

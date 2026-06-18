@@ -1,6 +1,4 @@
-import { Config, ConfigProvider, Effect, Layer, Option } from "effect";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { Config, ConfigProvider, Effect, Layer, Option, Path } from "effect";
 import { electronConfigurationError, type ElectronError } from "../platform/ElectronError.ts";
 import { DesktopConfig } from "./DesktopConfig.ts";
 
@@ -47,13 +45,14 @@ const readRendererUrl = (): Effect.Effect<string | undefined, ElectronError> =>
 export const DesktopConfigLive = Layer.effect(
   DesktopConfig,
   Effect.gen(function* () {
-    const mainDirectory = dirname(fileURLToPath(import.meta.url));
+    const path = yield* Path.Path;
+    const mainDirectory = path.dirname(yield* path.fromFileUrl(new URL(import.meta.url)));
     const rendererUrl = yield* readRendererUrl();
 
     return {
       mode: rendererUrl === undefined ? "production" : "development",
-      preloadScript: join(mainDirectory, "../preload/index.cjs"),
-      rendererIndexHtml: join(mainDirectory, "../renderer/index.html"),
+      preloadScript: path.join(mainDirectory, "../preload/index.cjs"),
+      rendererIndexHtml: path.join(mainDirectory, "../renderer/index.html"),
       rendererUrl,
     };
   }),

@@ -7,6 +7,7 @@ import {
   type ThemePreference,
 } from "../../shared/AppConfig.ts";
 import type { ProfileUpdateInput } from "../../shared/Profile.ts";
+import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 import { appConfigQueryKey } from "../queries/appConfig.ts";
 
@@ -20,13 +21,13 @@ export const useUpdateProfileMutation = ({ appConfig }: SettingsMutationOptions 
   return useMutation({
     mutationFn: async (input: ProfileUpdateInput): Promise<ProfileConfig> => {
       const bridge = getDesktopBridge();
-      if (bridge) return bridge.updateProfile(input);
 
-      const current = appConfig ?? defaultAppConfig();
-      return {
-        displayName: input.displayName?.trim() ?? current.profile.displayName,
-        email: input.email?.trim() ?? current.profile.email,
-      };
+      try {
+        return await cycleApiClient.updateProfile(input);
+      } catch (error) {
+        if (bridge) return bridge.updateProfile(input);
+        throw error;
+      }
     },
     onSuccess: (profile) => {
       queryClient.setQueryData<AppConfigState>(appConfigQueryKey, (current) => {
@@ -50,14 +51,13 @@ export const useSetThemePreferenceMutation = ({ appConfig }: SettingsMutationOpt
       }
 
       const bridge = getDesktopBridge();
-      if (bridge) return bridge.setThemePreference(preference);
 
-      return {
-        ...(appConfig ?? defaultAppConfig()),
-        theme: {
-          preference,
-        },
-      };
+      try {
+        return await cycleApiClient.setThemePreference(preference);
+      } catch (error) {
+        if (bridge) return bridge.setThemePreference(preference);
+        throw error;
+      }
     },
     onSuccess: (next) => {
       queryClient.setQueryData(appConfigQueryKey, next);

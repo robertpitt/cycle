@@ -259,12 +259,13 @@ const gitDbOperation = <A, E, R>(
   attributes: Readonly<Record<string, unknown>> = {},
 ): Effect.Effect<A, E, R> =>
   effect.pipe(
-    Effect.withSpan(`gitdb.${operation}`, {
+    Effect.withSpan(`git-db.${operation}`, {
       attributes: {
         "gitdb.database": config.database,
         "gitdb.gitDir": config.gitDir,
         "gitdb.namespace": config.namespace,
         "gitdb.operation": operation,
+        service: "@cycle/git-db",
         ...attributes,
       },
     }),
@@ -273,7 +274,7 @@ const gitDbOperation = <A, E, R>(
       gitDir: config.gitDir,
       namespace: config.namespace,
       operation,
-      service: "gitdb",
+      service: "@cycle/git-db",
       ...attributes,
     }),
   );

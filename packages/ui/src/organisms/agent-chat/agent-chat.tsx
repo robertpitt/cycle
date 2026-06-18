@@ -12,13 +12,17 @@ import { Badge } from "../../atoms/badge/index.ts";
 import { Button } from "../../atoms/button/index.ts";
 import { IconButton } from "../../atoms/icon-button/index.ts";
 import { Kbd } from "../../atoms/kbd/index.ts";
-import { Textarea } from "../../atoms/textarea/index.ts";
 import { Text } from "../../atoms/text/index.ts";
 import { cn } from "../../lib/cn.ts";
 import { PanelState } from "../../molecules/panel-state/index.ts";
+import {
+  MarkdownEditor,
+  type MarkdownEditorTagSuggestion,
+} from "../../molecules/markdown-editor/index.ts";
 import { WorkspaceSurface } from "../workspace-shell/index.ts";
 import {
   AgentChatActivityRow,
+  AgentChatActivityStrip,
   AgentChatConnectionStatusBanner,
   AgentChatMessageRow,
   AgentChatProviderModelPicker,
@@ -27,6 +31,7 @@ import {
   AgentChatThinkingSelector,
   AgentChatThreadListItem,
   AgentChatTurnStatusIndicator,
+  type AgentChatActivity,
   type AgentChatConnectionStatus,
   type AgentChatMessage,
   type AgentChatProviderProfile,
@@ -50,6 +55,7 @@ export type AgentChatThreadListProps = {
   readonly className?: string;
   readonly emptyMessage?: React.ReactNode;
   readonly onCreateThread?: () => void;
+  readonly onThreadDelete?: (threadId: string) => void;
   readonly onThreadSelect?: (threadId: string) => void;
   readonly relativeBase?: Date | string;
   readonly selectedThreadId?: string | null;
@@ -81,12 +87,15 @@ export type AgentChatComposerProps = {
   readonly onMessageSend?: (text: string, settings: AgentChatTurnSettings) => void;
   readonly onModelChange?: (model: string | null) => void;
   readonly onProviderChange?: (providerId: string | null) => void;
+  readonly onTagQueryChange?: (query: string) => void;
+  readonly onTagSelect?: (suggestion: MarkdownEditorTagSuggestion) => void;
   readonly onThinkingLevelChange?: (thinkingLevel: string | null) => void;
   readonly onValueChange?: (value: string) => void;
   readonly pendingQuestionCount?: number;
   readonly placeholder?: string;
   readonly providerId?: string | null;
   readonly providers: readonly AgentChatProviderProfile[];
+  readonly tagSuggestions?: readonly MarkdownEditorTagSuggestion[];
   readonly thinkingLevel?: string | null;
   readonly turnStatus?: AgentChatTurnStatus | null;
   readonly value?: string;
@@ -110,19 +119,27 @@ export type AgentChatConversationProps = {
     itemId: string,
     selectedOptionValues: readonly string[],
   ) => void;
+  readonly onTagQueryChange?: (query: string) => void;
+  readonly onTagSelect?: (suggestion: MarkdownEditorTagSuggestion) => void;
   readonly onThinkingLevelChange?: (thinkingLevel: string | null) => void;
   readonly providerId?: string | null;
   readonly providers: readonly AgentChatProviderProfile[];
   readonly questionDrafts?: AgentChatQuestionDraftState;
   readonly relativeBase?: Date | string;
   readonly selectedThread?: AgentChatThreadDetail | null;
+  readonly tagSuggestions?: readonly MarkdownEditorTagSuggestion[];
   readonly thinkingLevel?: string | null;
 };
 
 export type AgentChatShellProps = Omit<AgentChatConversationProps, "selectedThread"> &
   Pick<
     AgentChatThreadListProps,
-    "emptyMessage" | "onCreateThread" | "onThreadSelect" | "selectedThreadId" | "threads"
+    | "emptyMessage"
+    | "onCreateThread"
+    | "onThreadDelete"
+    | "onThreadSelect"
+    | "selectedThreadId"
+    | "threads"
   > & {
     readonly className?: string;
     readonly selectedThread?: AgentChatThreadDetail | null;
@@ -147,6 +164,65 @@ const entryCreatedAt = (entry: AgentChatTimelineEntry): string => {
   return entry.message.createdAt;
 };
 
+const hiddenDuplicateProviderItemTypes = new Set([
+  "agentMessage",
+  "agent_message",
+  "userMessage",
+  "user_message",
+]);
+
+const shouldRenderTimelineEntry = (entry: AgentChatTimelineEntry): boolean => {
+  if (entry.kind !== "activity") return true;
+  const itemType = entry.activity.payload?.itemType;
+  return typeof itemType === "string" ? !hiddenDuplicateProviderItemTypes.has(itemType) : true;
+};
+
+const isCompactActivityEntry = (
+  entry: AgentChatTimelineEntry,
+): entry is Extract<AgentChatTimelineEntry, { readonly kind: "activity" }> =>
+  entry.kind === "activity" &&
+  entry.activity.kind !== "error" &&
+  entry.activity.kind !== "question";
+
+type AgentChatTimelineRenderItem =
+  | AgentChatTimelineEntry
+  | {
+      readonly activities: readonly AgentChatActivity[];
+      readonly id: string;
+      readonly kind: "activity-strip";
+    };
+
+const groupTimelineActivities = (
+  entries: readonly AgentChatTimelineEntry[],
+): readonly AgentChatTimelineRenderItem[] => {
+  const items: AgentChatTimelineRenderItem[] = [];
+  let activityGroup: AgentChatActivity[] = [];
+
+  const flushActivityGroup = () => {
+    if (activityGroup.length === 0) return;
+
+    items.push({
+      activities: activityGroup,
+      id: `activity-strip_${activityGroup[0]?.id ?? items.length}`,
+      kind: "activity-strip",
+    });
+    activityGroup = [];
+  };
+
+  for (const entry of entries) {
+    if (isCompactActivityEntry(entry)) {
+      activityGroup.push(entry.activity);
+      continue;
+    }
+
+    flushActivityGroup();
+    items.push(entry);
+  }
+
+  flushActivityGroup();
+  return items;
+};
+
 const isTurnActive = (status?: AgentChatTurnStatus | null) =>
   status === "queued" || status === "running" || status === "waiting_for_user";
 
@@ -166,6 +242,7 @@ export const AgentChatThreadList = ({
   className,
   emptyMessage = "No chat threads yet",
   onCreateThread,
+  onThreadDelete,
   onThreadSelect,
   relativeBase,
   selectedThreadId,
@@ -216,6 +293,7 @@ export const AgentChatThreadList = ({
           threads.map((thread) => (
             <AgentChatThreadListItem
               key={thread.id}
+              onThreadDelete={onThreadDelete}
               onThreadSelect={onThreadSelect}
               relativeBase={relativeBase}
               selected={thread.id === selectedThreadId}
@@ -237,9 +315,12 @@ export const AgentChatTimeline = ({
   questionDrafts = {},
   relativeBase,
 }: AgentChatTimelineProps) => {
-  const orderedEntries = React.useMemo(() => sortTimelineEntries(entries), [entries]);
+  const renderItems = React.useMemo(
+    () => groupTimelineActivities(sortTimelineEntries(entries).filter(shouldRenderTimelineEntry)),
+    [entries],
+  );
 
-  if (orderedEntries.length === 0) {
+  if (renderItems.length === 0) {
     return (
       <PanelState
         className={cn("min-h-80", className)}
@@ -251,7 +332,11 @@ export const AgentChatTimeline = ({
 
   return (
     <div className={cn("mx-auto grid w-full max-w-4xl gap-4 p-4", className)}>
-      {orderedEntries.map((entry) => {
+      {renderItems.map((entry) => {
+        if (entry.kind === "activity-strip") {
+          return <AgentChatActivityStrip activities={entry.activities} key={entry.id} />;
+        }
+
         if (entry.kind === "message") {
           return (
             <AgentChatMessageRow
@@ -301,12 +386,15 @@ export const AgentChatComposer = ({
   onMessageSend,
   onModelChange,
   onProviderChange,
+  onTagQueryChange,
+  onTagSelect,
   onThinkingLevelChange,
   onValueChange,
   pendingQuestionCount = 0,
   placeholder = "Ask the agent to inspect code, explain behavior, or make a change...",
   providerId,
   providers,
+  tagSuggestions,
   thinkingLevel,
   turnStatus,
   value: controlledValue,
@@ -315,13 +403,13 @@ export const AgentChatComposer = ({
   const value = controlledValue ?? uncontrolledValue;
   const active = isTurnActive(turnStatus) && activeTurnId;
   const disconnected = connectionStatus !== "connected";
-  const sendDisabled =
+  const sendBlocked =
     disabled ||
     disconnected ||
     Boolean(active) ||
     pendingQuestionCount > 0 ||
-    value.trim().length === 0 ||
     !onMessageSend;
+  const sendDisabled = sendBlocked || value.trim().length === 0;
 
   const updateText = (nextText: string) => {
     if (controlledValue === undefined) {
@@ -330,9 +418,9 @@ export const AgentChatComposer = ({
     onValueChange?.(nextText);
   };
 
-  const send = () => {
-    const trimmed = value.trim();
-    if (sendDisabled || trimmed.length === 0) return;
+  const send = (nextValue = value) => {
+    const trimmed = nextValue.trim();
+    if (sendBlocked || trimmed.length === 0) return;
 
     onMessageSend?.(trimmed, {
       model,
@@ -357,18 +445,22 @@ export const AgentChatComposer = ({
           </Text>
         </div>
       ) : null}
-      <div className="overflow-hidden rounded-lg border border-input bg-popover shadow-sm focus-within:border-border focus-within:ring-1 focus-within:ring-ring">
-        <Textarea
-          className="max-h-48 min-h-28 resize-none border-transparent bg-transparent px-4 py-3 shadow-none hover:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+      <div className="rounded-lg border border-input bg-popover shadow-sm focus-within:border-border focus-within:ring-1 focus-within:ring-ring">
+        <MarkdownEditor
+          className="gap-0"
+          contentClassName="max-h-48 min-h-28 overflow-y-auto px-4 py-3"
           disabled={disabled || disconnected || Boolean(active) || pendingQuestionCount > 0}
-          onChange={(event) => updateText(event.target.value)}
-          onKeyDown={(event) => {
-            if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-              event.preventDefault();
-              send();
-            }
-          }}
+          editorClassName="rounded-none border-0 hover:bg-transparent focus-within:border-transparent focus-within:bg-transparent"
+          minHeightClassName="min-h-28"
+          mode="comment"
+          onSubmit={send}
+          onTagQueryChange={onTagQueryChange}
+          onTagSelect={onTagSelect}
+          onValueChange={updateText}
           placeholder={placeholder}
+          slashMenuOpen={false}
+          tagSuggestions={tagSuggestions}
+          toolbarOpen={false}
           value={value}
         />
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-t border-border/70 px-3 py-2">
@@ -424,7 +516,7 @@ export const AgentChatComposer = ({
             <Button
               disabled={sendDisabled}
               leftIcon={<SendHorizontal aria-hidden className="size-3.5" />}
-              onClick={send}
+              onClick={() => send()}
               size="sm"
             >
               Send
@@ -450,12 +542,15 @@ export const AgentChatConversation = ({
   onProviderChange,
   onQuestionAnswer,
   onQuestionDraftChange,
+  onTagQueryChange,
+  onTagSelect,
   onThinkingLevelChange,
   providerId,
   providers,
   questionDrafts,
   relativeBase,
   selectedThread,
+  tagSuggestions,
   thinkingLevel,
 }: AgentChatConversationProps) => {
   const selectedProviderId = resolveSelection({
@@ -499,7 +594,13 @@ export const AgentChatConversation = ({
               {selectedThread.title}
             </Text>
             {selectedThread.summary ? (
-              <Text as="p" className="mt-1 max-w-3xl" tone="muted" variant="bodyCompact" wrap="break">
+              <Text
+                as="p"
+                className="mt-1 max-w-3xl"
+                tone="muted"
+                variant="bodyCompact"
+                wrap="break"
+              >
                 {selectedThread.summary}
               </Text>
             ) : null}
@@ -538,11 +639,14 @@ export const AgentChatConversation = ({
         onMessageSend={onMessageSend}
         onModelChange={onModelChange}
         onProviderChange={onProviderChange}
+        onTagQueryChange={onTagQueryChange}
+        onTagSelect={onTagSelect}
         onValueChange={onComposerValueChange}
         onThinkingLevelChange={onThinkingLevelChange}
         pendingQuestionCount={questionsPending}
         providerId={selectedProviderId}
         providers={providers}
+        tagSuggestions={tagSuggestions}
         thinkingLevel={selectedThinkingLevel}
         turnStatus={selectedThread.turnStatus}
         value={composerValue}
@@ -567,7 +671,10 @@ export const AgentChatShell = ({
   onProviderChange,
   onQuestionAnswer,
   onQuestionDraftChange,
+  onTagQueryChange,
+  onTagSelect,
   onThinkingLevelChange,
+  onThreadDelete,
   onThreadSelect,
   providerId,
   providers,
@@ -575,6 +682,7 @@ export const AgentChatShell = ({
   relativeBase,
   selectedThread,
   selectedThreadId,
+  tagSuggestions,
   thinkingLevel,
   threads,
 }: AgentChatShellProps) => {
@@ -590,6 +698,7 @@ export const AgentChatShell = ({
       <AgentChatThreadList
         emptyMessage={emptyMessage}
         onCreateThread={onCreateThread}
+        onThreadDelete={onThreadDelete}
         onThreadSelect={onThreadSelect}
         relativeBase={relativeBase}
         selectedThreadId={resolvedSelectedThreadId}
@@ -608,12 +717,15 @@ export const AgentChatShell = ({
         onProviderChange={onProviderChange}
         onQuestionAnswer={onQuestionAnswer}
         onQuestionDraftChange={onQuestionDraftChange}
+        onTagQueryChange={onTagQueryChange}
+        onTagSelect={onTagSelect}
         onThinkingLevelChange={onThinkingLevelChange}
         providerId={providerId}
         providers={providers}
         questionDrafts={questionDrafts}
         relativeBase={relativeBase}
         selectedThread={selectedThread}
+        tagSuggestions={tagSuggestions}
         thinkingLevel={thinkingLevel}
       />
     </div>

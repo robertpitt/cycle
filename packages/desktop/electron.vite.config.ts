@@ -128,9 +128,12 @@ const handleCycleApiProxyRequest = async (
     }
 
     const reader = apiResponse.body.getReader();
-    request.on("close", () => {
-      void reader.cancel();
-    });
+    const cancelReader = (): void => {
+      void reader.cancel().catch(() => {
+        // The reader can already be released when Node emits request close.
+      });
+    };
+    request.on("close", cancelReader);
 
     try {
       while (true) {
@@ -139,6 +142,7 @@ const handleCycleApiProxyRequest = async (
         if (value !== undefined) await writeChunk(response, value);
       }
     } finally {
+      request.off("close", cancelReader);
       reader.releaseLock();
     }
 

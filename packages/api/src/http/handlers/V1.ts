@@ -10,6 +10,7 @@ import { withInitiativeHandlers } from "./v1/initiatives.ts";
 import { withIssueHandlers } from "./v1/issues.ts";
 import { withLabelHandlers } from "./v1/labels.ts";
 import { withRepositoryHandlers } from "./v1/repositories.ts";
+import { withSettingsHandlers } from "./v1/settings.ts";
 import { withTemplateHandlers } from "./v1/templates.ts";
 import { withUserHandlers } from "./v1/users.ts";
 import { withViewHandlers } from "./v1/views.ts";
@@ -25,7 +26,9 @@ export const V1ApiHandlers = HttpApiBuilder.group(CycleHttpApi, "v1", (handlers)
                 withLabelHandlers(
                   withDraftHandlers(
                     withCommentHandlers(
-                      withIssueHandlers(withInboxHandlers(withRepositoryHandlers(handlers))),
+                      withIssueHandlers(
+                        withInboxHandlers(withSettingsHandlers(withRepositoryHandlers(handlers))),
+                      ),
                     ),
                   ),
                 ),

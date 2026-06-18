@@ -209,7 +209,7 @@ export const parseEventPath = (
 };
 
 const aggregateShard = (aggregateId: string): string => {
-  // Ticket ids are PREFIX-HASH; shard by the hash segment so repository prefixes do not hot-spot.
+  // Ticket ids are PREFIX-SEED; shard by the generated segment so repository prefixes do not hot-spot.
   const shardSource = aggregateId.includes("-") ? aggregateId.split("-").at(-1)! : aggregateId;
 
   return shardSource.slice(0, 2);

@@ -1,6 +1,5 @@
 import type { AgentProviderId, AgentTurnRuntimeRecord } from "@cycle/agents/types";
 import { Context, Layer } from "effect";
-import { randomUUID } from "node:crypto";
 
 export type AgentActiveTurnBeginInput = {
   readonly provider: AgentProviderId;
@@ -58,7 +57,7 @@ export const makeAgentActiveTurnDirectory = (): AgentActiveTurnDirectoryShape =>
         startedAt: new Date().toISOString(),
         status: "starting" as const,
         ...(input.threadId === undefined ? {} : { threadId: input.threadId }),
-        turnId: `turn_${input.requestId ?? randomUUID()}`,
+        turnId: `turn_${input.requestId ?? crypto.randomUUID()}`,
       };
 
       records.set(key, record);

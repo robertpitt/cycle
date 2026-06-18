@@ -1,14 +1,17 @@
-import { DatabaseService, DatabaseTest } from "@cycle/database";
+import { DatabaseService, DatabaseTest, type DatabaseServiceShape } from "@cycle/database";
 import { GitDbInMemory, Store as GitDbStore } from "@cycle/git-db";
 import { Effect, Layer, Result } from "effect";
+import type { Span } from "effect/Tracer";
 import {
   AutomationEvaluateQuery,
   IssueCreate,
   IssueList,
   IssueRelationAdd,
+  RepositoryStatusGet,
   IssueTransition,
   UseCaseRunner,
   UseCaseRunnerLive,
+  makeUseCaseRunner,
   makeUseCase,
   useCaseNameForAlias,
 } from "../src/index.ts";
@@ -16,6 +19,15 @@ import { assert, describe, it } from "./effect-vitest.ts";
 
 const repository = { id: "usecase-repository" };
 const TestLayer = UseCaseRunnerLive.pipe(Layer.provideMerge(DatabaseTest()));
+
+const databaseStub = (overrides: Partial<DatabaseServiceShape>): DatabaseServiceShape =>
+  new Proxy(overrides, {
+    get: (target, property) => {
+      if (property in target) return target[property as keyof DatabaseServiceShape];
+
+      return () => Effect.die(new Error(`Unexpected database call: ${String(property)}`));
+    },
+  }) as DatabaseServiceShape;
 
 const withOpenRepository = <A>(
   effect: Effect.Effect<A, unknown, DatabaseService | UseCaseRunner>,
@@ -42,6 +54,54 @@ const withOpenRepository = <A>(
   }).pipe(Effect.provide(TestLayer));
 
 describe("@cycle/usecases", () => {
+  it.effect("creates trace spans around usecase execution", () =>
+    Effect.gen(function* () {
+      let observedSpan: Span | undefined;
+      const runner = makeUseCaseRunner(
+        databaseStub({
+          repositoryStatus: (repositoryId) =>
+            Effect.gen(function* () {
+              observedSpan = yield* Effect.currentSpan.pipe(Effect.orDie);
+
+              return {
+                activeGeneration: 0,
+                activeSnapshotId: null,
+                repositoryId,
+                status: "empty" as const,
+                warningCount: 0,
+              };
+            }),
+        }),
+      );
+
+      const status = yield* runner.run(
+        RepositoryStatusGet(
+          {
+            input: {},
+            repository,
+          },
+          {
+            requestId: "trace-usecase",
+            source: "test",
+          },
+        ),
+      );
+
+      assert.equal(status.repositoryId, repository.id);
+      assert.ok(observedSpan);
+      assert.equal(observedSpan.name, "test.usecase.RepositoryStatusGet.execute");
+      assert.equal(observedSpan.attributes.get("requestId"), "trace-usecase");
+      assert.equal(observedSpan.attributes.get("stage"), "execute");
+
+      const parent = observedSpan.parent._tag === "Some" ? observedSpan.parent.value : undefined;
+      assert.equal(parent?._tag, "Span");
+      if (parent?._tag === "Span") {
+        assert.equal(parent.name, "test.usecase.RepositoryStatusGet");
+        assert.equal(parent.attributes.get("useCase"), "RepositoryStatusGet");
+      }
+    }),
+  );
+
   it.effect("creates and lists issues through the runner", () =>
     Effect.gen(function* () {
       const runner = yield* UseCaseRunner;

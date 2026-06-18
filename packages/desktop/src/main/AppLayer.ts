@@ -1,6 +1,8 @@
 import { UseCaseRunnerLive } from "@cycle/usecases";
+import { ExecutableResolverLive } from "@cycle/agents/executables";
 import { GitRepository } from "@cycle/git";
 import { defaultLayer as CycleLoggingLive } from "@cycle/logging";
+import { NodeServices } from "@effect/platform-node";
 import { Layer } from "effect";
 import { BrowserWindowsLive } from "../platform/BrowserWindowsLive.ts";
 import { DesktopRuntimeLive } from "../platform/DesktopRuntimeLive.ts";
@@ -90,10 +92,13 @@ const DesktopServicesLive = Layer.mergeAll(
   GitRepositoryServiceLive,
   LocalWorkspaceServiceLive,
   UseCaseRunnerServiceLive,
+  ExecutableResolverLive,
   AgentProviderDetectorLive,
   DatabaseConsumersLive,
 );
 
 export const DesktopLive = DesktopServicesLive.pipe(
-  Layer.provide(CycleLoggingLive({ console: false })),
+  Layer.provide(NodeServices.layer),
+  Layer.provideMerge(NodeServices.layer),
+  Layer.provide(CycleLoggingLive({ console: false, packageName: "desktop" })),
 );

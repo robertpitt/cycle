@@ -1,10 +1,12 @@
 import { HttpApi, OpenApi } from "effect/unstable/httpapi";
 import { SystemApiGroup } from "./endpoints/system.ts";
 import { V1ApiGroup } from "./endpoints/v1.ts";
+import { CycleApiTracing } from "./tracing.ts";
 
 export class CycleHttpApi extends HttpApi.make("cycle-api")
   .add(SystemApiGroup)
   .add(V1ApiGroup)
+  .middleware(CycleApiTracing)
   .annotateMerge(
     OpenApi.annotations({
       title: "Cycle Local API",

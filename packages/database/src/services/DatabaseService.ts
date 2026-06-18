@@ -1,5 +1,4 @@
 import { Event as GitDbEvent, type Store as GitDbStore, type SyncResult } from "@cycle/git-db";
-import { performance } from "node:perf_hooks";
 import { Cause, Context, Effect, Fiber, Layer, Queue } from "effect";
 import {
   CURRENT_SCHEMA_VERSION,

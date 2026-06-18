@@ -3,7 +3,12 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
-import { defaultLayer } from "../src/index.ts";
+import {
+  defaultLayer,
+  normalizePackageName,
+  normalizeService,
+  resolveCycleLogConfig,
+} from "../src/index.ts";
 
 const makeLayer = (directory: string, maxBytes = 10 * 1024 * 1024) =>
   defaultLayer({
@@ -48,7 +53,7 @@ describe("@cycle/logging", () => {
     const text = await readFile(join(directory, "cycle.jsonl"), "utf8");
     const entry = JSON.parse(text.trim()) as Record<string, unknown>;
 
-    expect(entry.service).toBe("api");
+    expect(entry.service).toBe("@cycle/api");
     expect(entry).not.toHaveProperty("package");
     expect(JSON.stringify(entry)).not.toContain("Bearer abc");
     expect(JSON.stringify(entry)).not.toContain("user:pass");
@@ -65,5 +70,34 @@ describe("@cycle/logging", () => {
 
     expect(active).toContain("second");
     expect(rotated).toContain("x".repeat(160));
+  });
+
+  it("normalizes package service names for OTLP resources", () => {
+    expect(normalizePackageName("@cycle/git-db")).toBe("git-db");
+    expect(normalizePackageName("cycle.git_db")).toBe("git-db");
+    expect(normalizeService("api")).toBe("@cycle/api");
+    expect(normalizeService("@cycle/usecases")).toBe("@cycle/usecases");
+
+    const config = resolveCycleLogConfig(
+      {
+        packageName: "api",
+      },
+      {},
+    );
+
+    expect(config.packageName).toBe("api");
+    expect(config.otlp.serviceName).toBe("@cycle/api");
+  });
+
+  it("normalizes explicit OTLP service overrides", () => {
+    const config = resolveCycleLogConfig(
+      {},
+      {
+        CYCLE_OTLP_SERVICE_NAME: "desktop",
+        OTEL_SERVICE_NAME: "ignored",
+      },
+    );
+
+    expect(config.otlp.serviceName).toBe("@cycle/desktop");
   });
 });

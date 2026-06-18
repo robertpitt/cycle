@@ -1,6 +1,5 @@
 import { dialog, ipcMain, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron";
-import { Effect } from "effect";
-import { readFile } from "node:fs/promises";
+import { Effect, FileSystem } from "effect";
 import {
   completeOnboardingChannel,
   clearCacheChannel,
@@ -229,18 +228,20 @@ const decodeEmptyRequest = (value: unknown): Effect.Effect<void, ElectronError> 
 const apiBaseUrlFromConfig = (config: ApiConfig): string =>
   `http://${config.host}:${config.port === "auto" ? DEFAULT_API_PORT : config.port}`;
 
-const readDesktopApiRuntimeBaseUrl = (): Effect.Effect<string | undefined> =>
-  Effect.tryPromise({
-    try: async () => {
-      const parsed = JSON.parse(
-        await readFile(desktopApiRuntimeDiscoveryPath(), "utf8"),
-      ) as DesktopApiRuntimeFile;
+const readDesktopApiRuntimeBaseUrl = (): Effect.Effect<
+  string | undefined,
+  never,
+  FileSystem.FileSystem
+> =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const parsed = JSON.parse(
+      yield* fs.readFileString(desktopApiRuntimeDiscoveryPath(), "utf8"),
+    ) as DesktopApiRuntimeFile;
 
-      return typeof parsed.baseUrl === "string" && parsed.baseUrl.length > 0
-        ? parsed.baseUrl.replace(/\/+$/u, "")
-        : undefined;
-    },
-    catch: (cause) => cause,
+    return typeof parsed.baseUrl === "string" && parsed.baseUrl.length > 0
+      ? parsed.baseUrl.replace(/\/+$/u, "")
+      : undefined;
   }).pipe(Effect.catch(() => Effect.succeed(undefined)));
 
 const selectRepositoryFolder = (
@@ -337,6 +338,7 @@ export const startDesktopThemeLifecycle = Effect.fnUntraced(function* () {
 });
 
 export const registerDesktopIpc = Effect.fnUntraced(function* () {
+  const fs = yield* FileSystem.FileSystem;
   const runtime = yield* DesktopRuntime;
   const shell = yield* ElectronShell;
   const preferences = yield* ElectronPreferences;
@@ -354,7 +356,9 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
   yield* registerIpcHandler(runtime, getApiConnectionChannel, decodeEmptyRequest, () =>
     Effect.gen(function* () {
       const config = yield* preferences.read();
-      const runtimeBaseUrl = yield* readDesktopApiRuntimeBaseUrl();
+      const runtimeBaseUrl = yield* readDesktopApiRuntimeBaseUrl().pipe(
+        Effect.provideService(FileSystem.FileSystem, fs),
+      );
 
       if (!config.api.enabled) {
         return yield* Effect.fail(

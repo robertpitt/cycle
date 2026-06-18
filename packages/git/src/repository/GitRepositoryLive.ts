@@ -34,13 +34,6 @@ export const layer = Layer.effect(
         ),
       );
 
-    const optionalGitOutput = (cwd: string, args: ReadonlyArray<string>) =>
-      gitOutput(cwd, args, { quietAllowedFailure: true }).pipe(
-        Effect.map((result) =>
-          result.status === 0 ? bytesToString(result.stdout).trim() || undefined : undefined,
-        ),
-      );
-
     const remoteList = (cwd: string) =>
       gitOutput(cwd, ["config", "--get-regexp", "^remote\\..*\\.url$"], {
         quietAllowedFailure: true,
@@ -131,22 +124,12 @@ export const layer = Layer.effect(
           const cwd = normalize(repositoryPath);
           const gitDir = yield* resolveGitDir(cwd);
           const remotes = yield* remoteList(cwd);
-          const currentBranch = yield* optionalGitOutput(cwd, ["branch", "--show-current"]);
-          let branchRemote: string | undefined;
-          if (currentBranch !== undefined) {
-            branchRemote = yield* optionalGitOutput(cwd, [
-              "config",
-              "--get",
-              `branch.${currentBranch}.remote`,
-            ]);
-          }
-          const defaultRemote =
-            branchRemote ??
-            (remotes.some((remote) => remote.name === "origin") ? "origin" : remotes[0]?.name);
+          const defaultRemote = remotes.some((remote) => remote.name === "origin")
+            ? "origin"
+            : remotes[0]?.name;
           const defaultRemoteUrl = remotes.find((remote) => remote.name === defaultRemote)?.url;
 
           return {
-            ...(currentBranch === undefined ? {} : { currentBranch }),
             ...(defaultRemote === undefined ? {} : { defaultRemote }),
             ...(defaultRemoteUrl === undefined ? {} : { defaultRemoteUrl }),
             gitDir,

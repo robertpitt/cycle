@@ -55,6 +55,32 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
     }),
   )
   .add(
+    HttpApiEndpoint.get("getAppConfig", "/v1/app-config", {
+      success: ResourceEnvelope,
+    }),
+    HttpApiEndpoint.patch("updateProfile", "/v1/profile", {
+      payload: AnyPayload,
+      success: ResourceEnvelope,
+    }),
+    HttpApiEndpoint.post("completeOnboarding", "/v1/profile/onboarding", {
+      payload: AnyPayload,
+      success: ResourceEnvelope,
+    }),
+    HttpApiEndpoint.patch("setThemePreference", "/v1/theme", {
+      payload: AnyPayload,
+      success: ResourceEnvelope,
+    }),
+    HttpApiEndpoint.patch(
+      "updateRepositoryPreferences",
+      "/v1/repositories/:repositoryId/preferences",
+      {
+        params: RepositoryParams,
+        payload: AnyPayload,
+        success: ResourceEnvelope,
+      },
+    ),
+  )
+  .add(
     HttpApiEndpoint.get("listInbox", "/v1/inbox", {
       success: ResourceEnvelope,
     }),

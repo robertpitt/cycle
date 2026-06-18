@@ -35,6 +35,8 @@ export type CycleMcpHttpServerHandle = {
   readonly server: HttpServer.HttpServer["Service"];
 };
 
+const mcpLogging = { packageName: "mcp" } as const;
+
 export const makeCycleMcpStdioLayer = (options: CycleMcpOptions): Layer.Layer<never, unknown> =>
   CycleMcpToolsLive.pipe(
     Layer.provide(CycleMcpApiClientLive(withUserAgent(options))),
@@ -51,7 +53,7 @@ export const runCycleMcpStdio = (options: CycleMcpOptions): Effect.Effect<never,
   Layer.launch(makeCycleMcpStdioLayer(options));
 
 export const runCycleMcpStdioMain = (options: CycleMcpOptions): void => {
-  runCycleMcpStdio(options).pipe(Effect.provide(CycleLoggingLive()), NodeRuntime.runMain);
+  runCycleMcpStdio(options).pipe(Effect.provide(CycleLoggingLive(mcpLogging)), NodeRuntime.runMain);
 };
 
 export const makeCycleMcpHttpLayer = (
@@ -80,7 +82,7 @@ export const startCycleMcpHttpServer = (
 ): Promise<CycleMcpHttpServerHandle> =>
   Effect.runPromise(
     startCycleMcpHttpServerEffect(options).pipe(
-      Effect.provide([NodeServices.layer, CycleLoggingLive()]),
+      Effect.provide([NodeServices.layer, CycleLoggingLive(mcpLogging)]),
     ),
   );
 
@@ -93,14 +95,16 @@ export const startCycleMcpHttpServerEffect = (
 
     const scope = yield* Scope.make("sequential");
     const { createServer } = yield* Effect.promise(() => import("node:http"));
-    const routes = Layer.mergeAll(
-      makeCycleMcpHttpLayer(options),
-      HttpRouter.cors({
-        allowedMethods: ["POST", "OPTIONS"],
-        exposedHeaders: ["x-request-id"],
-        maxAge: 86_400,
-      }),
-    ) as Layer.Layer<never, unknown, any>;
+    const routes = (
+      Layer.mergeAll(
+        makeCycleMcpHttpLayer(options),
+        HttpRouter.cors({
+          allowedMethods: ["POST", "OPTIONS"],
+          exposedHeaders: ["x-request-id"],
+          maxAge: 86_400,
+        }),
+      ) as Layer.Layer<never, unknown, any>
+    ).pipe(Layer.provide(CycleLoggingLive(mcpLogging)));
     const serverLayer = HttpRouter.serve(routes, {
       disableListenLog: true,
       disableLogger: true,
@@ -134,7 +138,7 @@ export const startCycleMcpHttpServerEffect = (
         Effect.runPromise(
           Scope.close(scope, Exit.void).pipe(
             Effect.andThen(logInfo("mcp", "mcp http server stopped", { baseUrl, path })),
-            Effect.provide(CycleLoggingLive()),
+            Effect.provide(CycleLoggingLive(mcpLogging)),
           ),
         ),
       path,

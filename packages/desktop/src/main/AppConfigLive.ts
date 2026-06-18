@@ -1,7 +1,4 @@
-import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { Config, ConfigProvider, Effect, Layer, Schema } from "effect";
+import { Config, ConfigProvider, Crypto, Effect, FileSystem, Layer, Path, Schema } from "effect";
 import {
   ApiConfig,
   AppConfig,
@@ -33,44 +30,85 @@ import { cycleAppConfigFileName, cycleAppConfigPath } from "./CycleDirectory.ts"
 const isNodeError = (cause: unknown): cause is NodeJS.ErrnoException =>
   cause instanceof Error && "code" in cause;
 
-const isMissingFileError = (cause: unknown): boolean =>
-  isNodeError(cause) && cause.code === "ENOENT";
-
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const generateStaticToken = (): string => randomBytes(32).toString("base64url");
+const isMissingFileError = (cause: unknown): boolean =>
+  (isNodeError(cause) && cause.code === "ENOENT") ||
+  (isRecord(cause) &&
+    cause._tag === "PlatformError" &&
+    isRecord(cause.reason) &&
+    cause.reason._tag === "NotFound");
+
+const base64UrlAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+const bytesToBase64Url = (bytes: Uint8Array): string => {
+  let encoded = "";
+
+  for (let index = 0; index < bytes.length; index += 3) {
+    const first = bytes[index] ?? 0;
+    const second = bytes[index + 1];
+    const third = bytes[index + 2];
+    const chunk = (first << 16) | ((second ?? 0) << 8) | (third ?? 0);
+
+    encoded += base64UrlAlphabet[(chunk >> 18) & 0x3f];
+    encoded += base64UrlAlphabet[(chunk >> 12) & 0x3f];
+    if (second !== undefined) encoded += base64UrlAlphabet[(chunk >> 6) & 0x3f];
+    if (third !== undefined) encoded += base64UrlAlphabet[chunk & 0x3f];
+  }
+
+  return encoded;
+};
+
+const generateStaticToken = (): Effect.Effect<string, AppConfigError, Crypto.Crypto> =>
+  Effect.gen(function* () {
+    const crypto = yield* Crypto.Crypto;
+    const bytes = yield* crypto
+      .randomBytes(32)
+      .pipe(
+        Effect.mapError((cause) =>
+          appConfigError("AppConfig.generateToken", "Unable to generate API token.", cause),
+        ),
+      );
+    return bytesToBase64Url(bytes);
+  });
 
 const ensureApiDefaults = (
   config: AppConfigState,
-): { readonly shouldWrite: boolean; readonly value: AppConfigState } => {
-  let shouldWrite = false;
-  let value = config;
+): Effect.Effect<
+  { readonly shouldWrite: boolean; readonly value: AppConfigState },
+  AppConfigError,
+  Crypto.Crypto
+> =>
+  Effect.gen(function* () {
+    let shouldWrite = false;
+    let value = config;
 
-  if (value.api.staticToken.trim().length === 0) {
-    shouldWrite = true;
-    value = {
-      ...value,
-      api: {
-        ...value.api,
-        staticToken: generateStaticToken(),
-      },
-    };
-  }
+    if (value.api.staticToken.trim().length === 0) {
+      shouldWrite = true;
+      const staticToken = yield* generateStaticToken();
+      value = {
+        ...value,
+        api: {
+          ...value.api,
+          staticToken,
+        },
+      };
+    }
 
-  if (value.api.port === "auto") {
-    shouldWrite = true;
-    value = {
-      ...value,
-      api: {
-        ...value.api,
-        port: DEFAULT_API_PORT,
-      },
-    };
-  }
+    if (value.api.port === "auto") {
+      shouldWrite = true;
+      value = {
+        ...value,
+        api: {
+          ...value.api,
+          port: DEFAULT_API_PORT,
+        },
+      };
+    }
 
-  return { shouldWrite, value };
-};
+    return { shouldWrite, value };
+  });
 
 const backupName = (kind: "invalid" | "unsupported"): string => {
   const stamp = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
@@ -89,10 +127,12 @@ const parseSection = <A>(
       ),
     );
 
-const readConfigText = (configPath: string): Effect.Effect<string | undefined, AppConfigError> =>
-  Effect.tryPromise({
-    try: () => readFile(configPath, "utf8"),
-    catch: (cause) => cause,
+const readConfigText = (
+  configPath: string,
+): Effect.Effect<string | undefined, AppConfigError, FileSystem.FileSystem> =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    return yield* fs.readFileString(configPath, "utf8");
   }).pipe(
     Effect.catch((cause) =>
       isMissingFileError(cause)
@@ -104,22 +144,30 @@ const readConfigText = (configPath: string): Effect.Effect<string | undefined, A
 const backupConfigFile = (
   configPath: string,
   kind: "invalid" | "unsupported",
-): Effect.Effect<void, AppConfigError> =>
-  Effect.tryPromise({
-    try: async () => {
-      await rename(configPath, join(dirname(configPath), backupName(kind)));
-    },
-    catch: (cause) => appConfigError("AppConfig.backup", "Unable to back up app config.", cause),
+): Effect.Effect<void, AppConfigError, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+
+    yield* fs
+      .rename(configPath, path.join(path.dirname(configPath), backupName(kind)))
+      .pipe(
+        Effect.mapError((cause) =>
+          appConfigError("AppConfig.backup", "Unable to back up app config.", cause),
+        ),
+      );
   });
 
 const writeValidatedConfig = (
   configPath: string,
   next: AppConfigState,
-): Effect.Effect<AppConfigState, AppConfigError> =>
+): Effect.Effect<AppConfigState, AppConfigError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
     const validated = yield* parseAppConfig(next);
-    const directory = dirname(configPath);
-    const temporaryPath = join(
+    const directory = path.dirname(configPath);
+    const temporaryPath = path.join(
       directory,
       `${cycleAppConfigFileName}.${process.pid}.${Date.now()}.${Math.random()
         .toString(16)
@@ -127,14 +175,13 @@ const writeValidatedConfig = (
     );
     const serialized = `${JSON.stringify(validated, null, 2)}\n`;
 
-    yield* Effect.tryPromise({
-      try: async () => {
-        await mkdir(directory, { recursive: true });
-        await writeFile(temporaryPath, serialized, "utf8");
-        await rename(temporaryPath, configPath);
-      },
-      catch: (cause) => appConfigError("AppConfig.writeFile", "Unable to write app config.", cause),
-    });
+    yield* fs.makeDirectory(directory, { recursive: true }).pipe(
+      Effect.andThen(fs.writeFileString(temporaryPath, serialized)),
+      Effect.andThen(fs.rename(temporaryPath, configPath)),
+      Effect.mapError((cause) =>
+        appConfigError("AppConfig.writeFile", "Unable to write app config.", cause),
+      ),
+    );
 
     return validated;
   });
@@ -253,20 +300,27 @@ const readJsonConfig = (text: string): Effect.Effect<unknown, AppConfigError> =>
     catch: (cause) => appConfigError("AppConfig.parseJson", "App config is not valid JSON.", cause),
   });
 
-const readOrRecoverConfig = (configPath: string): Effect.Effect<AppConfigState, AppConfigError> =>
+const readOrRecoverConfig = (
+  configPath: string,
+): Effect.Effect<
+  AppConfigState,
+  AppConfigError,
+  Crypto.Crypto | FileSystem.FileSystem | Path.Path
+> =>
   Effect.gen(function* () {
     const text = yield* readConfigText(configPath);
     if (text === undefined) {
-      return yield* writeValidatedConfig(configPath, ensureApiDefaults(defaultAppConfig()).value);
+      const defaults = yield* ensureApiDefaults(defaultAppConfig());
+      return yield* writeValidatedConfig(configPath, defaults.value);
     }
 
     const raw = yield* readJsonConfig(text).pipe(
       Effect.catch(() =>
-        backupConfigFile(configPath, "invalid").pipe(
-          Effect.andThen(
-            writeValidatedConfig(configPath, ensureApiDefaults(defaultAppConfig()).value),
-          ),
-        ),
+        Effect.gen(function* () {
+          yield* backupConfigFile(configPath, "invalid");
+          const defaults = yield* ensureApiDefaults(defaultAppConfig());
+          return yield* writeValidatedConfig(configPath, defaults.value);
+        }),
       ),
     );
 
@@ -275,11 +329,9 @@ const readOrRecoverConfig = (configPath: string): Effect.Effect<AppConfigState, 
       typeof raw.schemaVersion === "number" &&
       raw.schemaVersion > CURRENT_APP_CONFIG_SCHEMA_VERSION
     ) {
-      return yield* backupConfigFile(configPath, "unsupported").pipe(
-        Effect.andThen(
-          writeValidatedConfig(configPath, ensureApiDefaults(defaultAppConfig()).value),
-        ),
-      );
+      yield* backupConfigFile(configPath, "unsupported");
+      const defaults = yield* ensureApiDefaults(defaultAppConfig());
+      return yield* writeValidatedConfig(configPath, defaults.value);
     }
 
     const migrated = withVersion(raw);
@@ -291,7 +343,7 @@ const readOrRecoverConfig = (configPath: string): Effect.Effect<AppConfigState, 
       ),
     );
 
-    const withApiDefaults = ensureApiDefaults(parsed);
+    const withApiDefaults = yield* ensureApiDefaults(parsed);
     if (migrated.shouldWrite || withApiDefaults.shouldWrite) {
       return yield* writeValidatedConfig(configPath, withApiDefaults.value);
     }
@@ -301,13 +353,24 @@ const readOrRecoverConfig = (configPath: string): Effect.Effect<AppConfigState, 
 export const AppConfigLive = Layer.effect(
   AppConfig,
   Effect.gen(function* () {
+    const crypto = yield* Crypto.Crypto;
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
     const resolvedConfigPath = yield* cycleAppConfigPath;
+    const providePlatform = <A, E>(
+      effect: Effect.Effect<A, E, Crypto.Crypto | FileSystem.FileSystem | Path.Path>,
+    ): Effect.Effect<A, E> =>
+      effect.pipe(
+        Effect.provideService(Crypto.Crypto, crypto),
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provideService(Path.Path, path),
+      );
 
     const read = (): Effect.Effect<AppConfigState, AppConfigError> =>
-      readOrRecoverConfig(resolvedConfigPath);
+      providePlatform(readOrRecoverConfig(resolvedConfigPath));
 
     const replace = (next: AppConfigState): Effect.Effect<AppConfigState, AppConfigError> =>
-      writeValidatedConfig(resolvedConfigPath, next);
+      providePlatform(writeValidatedConfig(resolvedConfigPath, next));
 
     const update = (
       mutator: (current: AppConfigState) => AppConfigState,

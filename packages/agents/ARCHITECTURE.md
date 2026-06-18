@@ -80,15 +80,16 @@ Codex is the only provider marked executable by the default service registry. Cl
 
 ### 3. Detection Layer
 
-`src/detection.ts` detects local provider CLIs and exposes the same behavior both as a standalone Effect-returning function and as an Effect service.
+`src/executables.ts` owns local executable resolution and exposes it both as standalone Effect-returning functions and as the `ExecutableResolver` service. `src/detection.ts` maps the static provider catalog onto that resolver.
 
 Detection checks:
 
-- Direct executable lookup across `PATH`.
-- Common local binary directories such as user package-manager bins and Homebrew locations.
-- NVM Node version bins on non-Windows platforms.
-- Shell lookup through login/interactive shell command resolution, which catches tools made available by shell startup files when `PATH` is sparse.
+- Login-shell `PATH` hydration on macOS/Linux before scanning for binaries.
+- macOS `launchctl getenv PATH` fallback when shell capture does not produce a path.
+- Windows PowerShell environment capture, common user CLI install directories, and optional profile loading for Node manager setups.
+- Direct executable lookup across the hydrated `PATH`.
 - Windows executable extensions from `PATHEXT`.
+- Explicit executable paths without `PATH` lookup.
 
 The primary function is:
 
@@ -98,7 +99,7 @@ detectAgentProviders(env?: AgentProviderDetectionEnvironment)
 
 It returns one `DetectedAgentProvider` per `supportedAgentProviders` entry, with status `available` or `missing`, optional `executablePath`, timestamp, executable name, display name, and capability metadata.
 
-`AgentProviderDetectorLive` wraps detection in an Effect `Layer` for desktop/API integration.
+`ExecutableResolverLive` is the reusable Effect `Layer` for binary presence checks. `AgentProviderDetectorLive` wraps it for desktop/API provider-profile integration.
 
 ### 4. Service Registry Layer
 
@@ -153,14 +154,17 @@ Main files:
 
 ## Services
 
-### AgentProviderDetector
+### ExecutableResolver and AgentProviderDetector
 
-Effect service for local provider discovery.
+Effect services for local binary resolution and provider discovery.
 
 ```text
+ExecutableResolverLive
+  -> hydrateExecutableEnvironment(process.env)
+  -> resolveExecutable / resolveExecutables
+
 AgentProviderDetectorLive
-  -> detectAgentProviders(process.env)
-  -> supportedAgentProviders
+  -> ExecutableResolver.resolveMany(supportedAgentProviders.executables)
   -> DetectedAgentProvider[]
 ```
 
@@ -195,10 +199,9 @@ The Codex adapter stores native Codex thread IDs in `binding.native.threadId` so
 ```mermaid
 flowchart TD
   A["Consumer requests provider profiles"] --> B["detectAgentProviders(env)"]
-  B --> C["Build candidate executable directories"]
-  B --> D["Run shell command lookups"]
-  C --> E["Check each provider executable"]
-  D --> E
+  B --> C["Hydrate executable environment"]
+  C --> D["Scan hydrated PATH with platform rules"]
+  D --> E["Check each provider executable"]
   E --> F["DetectedAgentProvider[]"]
   F --> G["agentProviderProfileFromDetection"]
   G --> H["AgentProviderProfile[]"]

@@ -30,12 +30,17 @@ export type CycleApiServerHandle = {
   readonly server: HttpServer.HttpServer["Service"];
 };
 
+const apiLogging = (logging: CycleLogConfigInput | undefined): CycleLogConfigInput => ({
+  ...logging,
+  packageName: logging?.packageName ?? "api",
+});
+
 export const startCycleApiServer = (
   options: CycleApiServerOptions,
 ): Promise<CycleApiServerHandle> =>
   Effect.runPromise(
     startCycleApiServerEffect(options).pipe(
-      Effect.provide([NodeServices.layer, CycleLoggingLive(options.logging)]),
+      Effect.provide([NodeServices.layer, CycleLoggingLive(apiLogging(options.logging))]),
     ),
   );
 
@@ -44,6 +49,7 @@ export const startCycleApiServerEffect = (
 ): Effect.Effect<CycleApiServerHandle, unknown, NodeServices.NodeServices> =>
   Effect.gen(function* () {
     const host = options.host ?? "127.0.0.1";
+    const logging = apiLogging(options.logging);
     assertLoopback(host);
     const serverOptions = withServerMcpDefaults(options);
 
@@ -53,7 +59,9 @@ export const startCycleApiServerEffect = (
       baseUrl: `http://${host}:${options.port ?? 0}`,
     });
     const { createServer } = yield* Effect.promise(() => import("node:http"));
-    const routes = makeCycleApiLayer(serverOptions) as Layer.Layer<never, unknown, any>;
+    const routes = (
+      makeCycleApiLayer(serverOptions) as Layer.Layer<never, unknown, any>
+    ).pipe(Layer.provide(CycleLoggingLive(logging)));
     const serverLayer = HttpRouter.serve(routes, {
       disableListenLog: true,
       disableLogger: true,
@@ -112,7 +120,9 @@ export const startCycleApiServerEffect = (
               yield* fs.remove(options.runtimeFile, { force: true });
             }
             yield* logInfo("api", "api server stopped", { baseUrl });
-          }).pipe(Effect.provide([NodeServices.layer, CycleLoggingLive(options.logging)])),
+          }).pipe(
+            Effect.provide([NodeServices.layer, CycleLoggingLive(logging)]),
+          ),
         ),
       port: server.address.port,
       server,

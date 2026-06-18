@@ -16,6 +16,7 @@ import {
   RefreshCw,
   Sparkles,
   Terminal,
+  Trash2,
   UserRound,
   Wrench,
   XCircle,
@@ -116,12 +117,7 @@ export type AgentChatActivityKind =
   | "tool"
   | "usage";
 
-export type AgentChatActivityStatus =
-  | "cancelled"
-  | "completed"
-  | "failed"
-  | "pending"
-  | "running";
+export type AgentChatActivityStatus = "cancelled" | "completed" | "failed" | "pending" | "running";
 
 export type AgentChatActivityPayload = Record<string, unknown>;
 
@@ -319,6 +315,70 @@ const formatPayloadValue = (value: unknown): string | undefined => {
   return undefined;
 };
 
+const hiddenActivityPayloadKeys = new Set(["delta", "item", "itemId", "itemType", "streamKind"]);
+
+const compactActivityGenericTitles = new Set(["MCP tool", "Provider activity", "Tool call"]);
+
+const payloadString = (
+  payload: AgentChatActivityPayload | null | undefined,
+  key: string,
+): string | undefined => {
+  const value = payload?.[key];
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+};
+
+const activityNotificationLabel = (activity: AgentChatActivity): string => {
+  const payloadName = payloadString(activity.payload, "name");
+  if (payloadName) return payloadName;
+
+  const payloadCommand = payloadString(activity.payload, "command");
+  if (payloadCommand) return payloadCommand;
+
+  const payloadTool = payloadString(activity.payload, "tool");
+  if (payloadTool) {
+    const payloadNamespace = payloadString(activity.payload, "namespace");
+    return [payloadNamespace, payloadTool].filter(Boolean).join(".");
+  }
+
+  if (activity.kind === "tool" && activity.detail && activity.detail.trim().length > 0) {
+    return activity.detail;
+  }
+
+  if (
+    compactActivityGenericTitles.has(activity.title) &&
+    activity.detail &&
+    activity.detail.trim().length > 0
+  ) {
+    return activity.detail;
+  }
+
+  return activity.title;
+};
+
+const activityNotificationTone = (activity: AgentChatActivity): string => {
+  if (activity.status === "failed") {
+    return "border-destructive/30 bg-destructive/10 text-destructive";
+  }
+
+  if (activity.status === "running" || activity.status === "pending") {
+    return "border-primary/30 bg-primary/10 text-primary";
+  }
+
+  switch (activity.kind) {
+    case "thinking":
+      return "border-primary/25 bg-primary/8 text-primary";
+    case "tool":
+      return "border-accent/35 bg-accent/12 text-accent";
+    case "usage":
+      return "border-success/25 bg-success/8 text-success";
+    case "progress":
+      return "border-primary/20 bg-primary/8 text-primary";
+    case "system":
+    default:
+      return "border-border bg-subtle text-muted-foreground";
+  }
+};
+
 const providerItems = (
   providers: readonly AgentChatProviderProfile[],
   providerId?: string | null,
@@ -502,6 +562,7 @@ export const AgentChatConnectionStatusBanner = ({
 
 export type AgentChatThreadListItemProps = {
   readonly className?: string;
+  readonly onThreadDelete?: (threadId: string) => void;
   readonly onThreadSelect?: (threadId: string) => void;
   readonly relativeBase?: Date | string;
   readonly selected?: boolean;
@@ -510,75 +571,99 @@ export type AgentChatThreadListItemProps = {
 
 export const AgentChatThreadListItem = ({
   className,
+  onThreadDelete,
   onThreadSelect,
   relativeBase,
   selected = false,
   thread,
 }: AgentChatThreadListItemProps) => (
-  <button
-    aria-current={selected ? "page" : undefined}
+  <div
     className={cn(
-      "group grid w-full grid-cols-[32px_minmax(0,1fr)] gap-3 border-b border-border px-4 py-3 text-left transition-colors last:border-b-0",
-      "hover:bg-subtle/70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+      "group grid w-full grid-cols-[minmax(0,1fr)_auto] border-b border-border transition-colors last:border-b-0",
+      "hover:bg-subtle/70 focus-within:bg-subtle/70",
       selected && "bg-primary/6",
       thread.status === "archived" && "text-muted-foreground",
       className,
     )}
     data-state={selected ? "selected" : "idle"}
-    onClick={() => onThreadSelect?.(thread.id)}
-    type="button"
   >
-    <span
+    <button
+      aria-current={selected ? "page" : undefined}
       className={cn(
-        "mt-0.5 grid size-8 place-items-center rounded-md border border-border bg-subtle text-muted-foreground",
-        selected && "border-primary/35 bg-primary/12 text-primary",
-        thread.status === "error" && "border-destructive/30 bg-destructive/10 text-destructive",
-        thread.status === "waiting" && "border-warning/30 bg-warning/12 text-warning",
+        "grid min-w-0 grid-cols-[32px_minmax(0,1fr)] gap-3 px-4 py-3 text-left",
+        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
       )}
+      onClick={() => onThreadSelect?.(thread.id)}
+      type="button"
     >
-      {thread.activeTurnId ? icon(LoaderCircle, "size-4 animate-spin") : icon(MessageSquare)}
-    </span>
-    <span className="min-w-0">
-      <span className="flex min-w-0 items-center gap-2">
-        <Text as="span" className="min-w-0 flex-1" truncate variant="panelTitle">
-          {thread.title}
-        </Text>
-        {thread.unreadCount ? (
-          <span className="grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
-            {thread.unreadCount}
-          </span>
-        ) : null}
+      <span
+        className={cn(
+          "mt-0.5 grid size-8 place-items-center rounded-md border border-border bg-subtle text-muted-foreground",
+          selected && "border-primary/35 bg-primary/12 text-primary",
+          thread.status === "error" && "border-destructive/30 bg-destructive/10 text-destructive",
+          thread.status === "waiting" && "border-warning/30 bg-warning/12 text-warning",
+        )}
+      >
+        {thread.activeTurnId ? icon(LoaderCircle, "size-4 animate-spin") : icon(MessageSquare)}
       </span>
-      {thread.summary ? (
-        <Text as="span" className="mt-1 block" tone="muted" truncate variant="meta">
-          {thread.summary}
-        </Text>
-      ) : null}
-      <span className="mt-2 flex min-w-0 items-center gap-2">
-        <Badge appearance="outline" tone={statusTone[thread.status]}>
-          {thread.status}
-        </Badge>
-        {thread.providerId ? (
-          <Text as="span" className="min-w-0" tone="muted" truncate variant="meta">
-            {thread.providerId}
-            {thread.model ? ` / ${thread.model}` : ""}
+      <span className="min-w-0">
+        <span className="flex min-w-0 items-center gap-2">
+          <Text as="span" className="min-w-0 flex-1" truncate variant="panelTitle">
+            {thread.title}
+          </Text>
+          {thread.unreadCount ? (
+            <span className="grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
+              {thread.unreadCount}
+            </span>
+          ) : null}
+        </span>
+        {thread.summary ? (
+          <Text as="span" className="mt-1 block" tone="muted" truncate variant="meta">
+            {thread.summary}
           </Text>
         ) : null}
-        <DateTime
-          className="ml-auto shrink-0 text-xs text-muted-foreground"
-          fallback=""
-          format="relative"
-          relativeBase={relativeBase}
-          value={thread.updatedAt}
-        />
+        <span className="mt-2 flex min-w-0 items-center gap-2">
+          <Badge appearance="outline" tone={statusTone[thread.status]}>
+            {thread.status}
+          </Badge>
+          {thread.providerId ? (
+            <Text as="span" className="min-w-0" tone="muted" truncate variant="meta">
+              {thread.providerId}
+              {thread.model ? ` / ${thread.model}` : ""}
+            </Text>
+          ) : null}
+          <DateTime
+            className="ml-auto shrink-0 text-xs text-muted-foreground"
+            fallback=""
+            format="relative"
+            relativeBase={relativeBase}
+            value={thread.updatedAt}
+          />
+        </span>
+        {thread.lastError ? (
+          <Text as="span" className="mt-2 block" tone="danger" truncate variant="meta">
+            {thread.lastError}
+          </Text>
+        ) : null}
       </span>
-      {thread.lastError ? (
-        <Text as="span" className="mt-2 block" tone="danger" truncate variant="meta">
-          {thread.lastError}
-        </Text>
-      ) : null}
-    </span>
-  </button>
+    </button>
+    {onThreadDelete ? (
+      <IconButton
+        className={cn(
+          "mr-3 mt-3 size-7 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
+          thread.activeTurnId && "opacity-45 group-hover:opacity-45 group-focus-within:opacity-45",
+        )}
+        disabled={Boolean(thread.activeTurnId)}
+        icon={<Trash2 aria-hidden className="size-3.5" />}
+        label={`Delete ${thread.title}`}
+        onClick={() => onThreadDelete(thread.id)}
+        size="sm"
+        title={thread.activeTurnId ? "Cannot delete while a turn is active" : "Delete chat"}
+        tone="danger"
+        variant="ghost"
+      />
+    ) : null}
+  </div>
 );
 
 export type AgentChatStreamingTextProps = {
@@ -672,6 +757,167 @@ export const AgentChatMessageRow = ({
   );
 };
 
+export type AgentChatActivityStripProps = {
+  readonly activities: readonly AgentChatActivity[];
+  readonly className?: string;
+  readonly maxVisible?: number;
+};
+
+const AgentChatActivityTooltip = ({ children }: { readonly children: React.ReactNode }) => (
+  <span
+    className={cn(
+      "pointer-events-none invisible absolute bottom-full left-1/2 z-20 mb-2 max-w-80 -translate-x-1/2 truncate whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs font-medium text-popover-foreground opacity-0 shadow-elevated transition",
+      "group-hover/activity-icon:visible group-hover/activity-icon:opacity-100",
+    )}
+  >
+    {children}
+  </span>
+);
+
+const AgentChatActivityStripIcon = ({ activity }: { readonly activity: AgentChatActivity }) => {
+  const Icon = activityKindIcon[activity.kind];
+  const label = activityNotificationLabel(activity);
+  const running = activity.status === "running" || activity.status === "pending";
+
+  return (
+    <span className="group/activity-icon relative inline-grid" role="listitem" title={label}>
+      <span
+        aria-label={label}
+        className={cn(
+          "grid size-6 place-items-center rounded-full border shadow-sm",
+          activityNotificationTone(activity),
+          running && "animate-pulse",
+        )}
+        role="img"
+      >
+        <Icon aria-hidden className="size-3.5" strokeWidth={2} />
+      </span>
+      <AgentChatActivityTooltip>{label}</AgentChatActivityTooltip>
+    </span>
+  );
+};
+
+const AgentChatActivityStripOverflow = ({
+  count,
+  labels,
+}: {
+  readonly count: number;
+  readonly labels: readonly string[];
+}) => {
+  const label =
+    labels.length > 0
+      ? `${count} more notification${count === 1 ? "" : "s"}: ${labels.join(", ")}`
+      : `${count} more notification${count === 1 ? "" : "s"}`;
+
+  return (
+    <span className="group/activity-icon relative inline-grid" role="listitem" title={label}>
+      <span
+        aria-label={label}
+        className="grid h-6 min-w-6 place-items-center rounded-full border border-border bg-subtle px-1.5 text-[10px] font-semibold leading-none text-muted-foreground shadow-sm"
+        role="img"
+      >
+        +{count}
+      </span>
+      <AgentChatActivityTooltip>{label}</AgentChatActivityTooltip>
+    </span>
+  );
+};
+
+export const AgentChatActivityStrip = ({
+  activities,
+  className,
+  maxVisible = 5,
+}: AgentChatActivityStripProps) => {
+  if (activities.length === 0) return null;
+
+  const visibleActivities = activities.slice(0, maxVisible);
+  const hiddenActivities = activities.slice(maxVisible);
+  const hiddenLabels = hiddenActivities.map(activityNotificationLabel).slice(0, 4);
+
+  return (
+    <div className={cn("grid grid-cols-[32px_minmax(0,1fr)] gap-3 py-0.5", className)}>
+      <span aria-hidden className="flex h-7 items-center justify-center">
+        <span className="h-px w-4 rounded-full bg-border" />
+      </span>
+      <div
+        aria-label={`${activities.length} activity notification${
+          activities.length === 1 ? "" : "s"
+        }`}
+        className="flex min-w-0 items-center gap-1.5"
+        role="list"
+      >
+        {visibleActivities.map((activity) => (
+          <AgentChatActivityStripIcon activity={activity} key={activity.id} />
+        ))}
+        {hiddenActivities.length > 0 ? (
+          <AgentChatActivityStripOverflow count={hiddenActivities.length} labels={hiddenLabels} />
+        ) : null}
+      </div>
+    </div>
+  );
+};
+
+const AgentChatThinkingActivityRow = ({
+  activity,
+  className,
+  relativeBase,
+}: AgentChatActivityRowProps) => {
+  const running = activity.status === "running" || activity.status === "pending";
+  const failed = activity.status === "failed";
+  const cancelled = activity.status === "cancelled";
+
+  return (
+    <div className={cn("grid grid-cols-[32px_minmax(0,1fr)] gap-3", className)}>
+      <span
+        className={cn(
+          "grid size-8 place-items-center rounded-md border bg-subtle",
+          running && "border-primary/25 bg-primary/8 text-primary",
+          !running && !failed && !cancelled && "border-border text-muted-foreground",
+          failed && "border-destructive/25 bg-destructive/8 text-destructive",
+          cancelled && "border-border text-muted-foreground",
+        )}
+      >
+        {running ? (
+          <LoaderCircle aria-hidden className="size-4 animate-spin" strokeWidth={1.8} />
+        ) : (
+          <Brain aria-hidden className="size-4" strokeWidth={1.8} />
+        )}
+      </span>
+      <div
+        className={cn(
+          "flex min-h-9 min-w-0 items-center gap-2 rounded-md border px-3 py-2",
+          running && "border-primary/15 bg-primary/5",
+          !running && "border-border bg-subtle/45",
+          failed && "border-destructive/20 bg-destructive/8",
+        )}
+        role={running ? "status" : undefined}
+      >
+        <Text as="span" className="min-w-0" truncate variant="control">
+          {activity.title}
+        </Text>
+        {running ? (
+          <span aria-hidden className="inline-flex shrink-0 items-center gap-0.5 text-primary">
+            <span className="size-1 rounded-full bg-current animate-pulse" />
+            <span className="size-1 rounded-full bg-current animate-pulse [animation-delay:120ms]" />
+            <span className="size-1 rounded-full bg-current animate-pulse [animation-delay:240ms]" />
+          </span>
+        ) : null}
+        {activity.status ? (
+          <Badge appearance="outline" tone={activityStatusTone[activity.status]}>
+            {activityStatusLabel[activity.status]}
+          </Badge>
+        ) : null}
+        <DateTime
+          className="ml-auto shrink-0 text-xs text-muted-foreground"
+          format="time"
+          relativeBase={relativeBase}
+          value={activity.createdAt}
+        />
+      </div>
+    </div>
+  );
+};
+
 export type AgentChatActivityRowProps = {
   readonly activity: AgentChatActivity;
   readonly className?: string;
@@ -683,9 +929,20 @@ export const AgentChatActivityRow = ({
   className,
   relativeBase,
 }: AgentChatActivityRowProps) => {
+  if (activity.kind === "thinking") {
+    return (
+      <AgentChatThinkingActivityRow
+        activity={activity}
+        className={className}
+        relativeBase={relativeBase}
+      />
+    );
+  }
+
   const Icon = activityKindIcon[activity.kind];
   const tone = activity.status ? activityStatusTone[activity.status] : "neutral";
   const payloadEntries = Object.entries(activity.payload ?? {})
+    .filter(([key]) => !hiddenActivityPayloadKeys.has(key))
     .map(([key, value]) => [key, formatPayloadValue(value)] as const)
     .filter(([, value]) => value !== undefined)
     .slice(0, 4);
@@ -695,7 +952,6 @@ export const AgentChatActivityRow = ({
       <span
         className={cn(
           "grid size-8 place-items-center rounded-md border border-border bg-subtle text-muted-foreground",
-          activity.kind === "thinking" && "text-primary",
           activity.kind === "tool" && "text-accent",
           activity.kind === "error" && "text-destructive",
           activity.status === "running" && "animate-pulse",

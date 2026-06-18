@@ -1,8 +1,10 @@
 import type { AgentSession, AgentSessionBinding, AgentSessionBindingStatus } from "../../types.ts";
 import type { ActiveCodexTurn, CodexAgentServiceOptions, StoredCodexSession } from "./types.ts";
+import type { CodexAppServerSessionRuntime } from "./app-server/runtime.ts";
 
 export type CodexTurnRuntime = {
   readonly activeTurns: Map<string, ActiveCodexTurn>;
+  readonly appServerRuntimes: Map<string, CodexAppServerSessionRuntime>;
   readonly options: CodexAgentServiceOptions;
   readonly resumeSession: (sessionId: string) => Promise<AgentSession>;
   readonly saveSession: (

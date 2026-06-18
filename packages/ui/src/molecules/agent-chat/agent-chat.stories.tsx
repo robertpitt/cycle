@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import * as React from "react";
 import {
   AgentChatActivityRow,
+  AgentChatActivityStrip,
   AgentChatConnectionStatusBanner,
   AgentChatMessageRow,
   AgentChatProviderModelPicker,
@@ -9,6 +10,7 @@ import {
   AgentChatThinkingSelector,
   AgentChatThreadListItem,
   AgentChatTurnStatusIndicator,
+  type AgentChatActivity,
   type AgentChatProviderProfile,
   type AgentChatQuestionDraft,
 } from "./index.ts";
@@ -52,6 +54,73 @@ const providers: readonly AgentChatProviderProfile[] = [
   },
 ];
 
+const activityStripItems: readonly AgentChatActivity[] = [
+  {
+    createdAt: "2026-06-16T09:42:00.000Z",
+    detail: "list_mcp_resources",
+    id: "strip-mcp-1",
+    kind: "tool",
+    payload: {
+      itemType: "mcpToolCall",
+    },
+    status: "completed",
+    title: "MCP tool",
+  },
+  {
+    createdAt: "2026-06-16T09:42:05.000Z",
+    detail: "list_mcp_resource_templates",
+    id: "strip-mcp-2",
+    kind: "tool",
+    payload: {
+      itemType: "mcpToolCall",
+    },
+    status: "completed",
+    title: "MCP tool",
+  },
+  {
+    createdAt: "2026-06-16T09:42:12.000Z",
+    id: "strip-command-1",
+    kind: "tool",
+    payload: {
+      command: "pnpm test order_injection_concurrency",
+      itemType: "commandExecution",
+    },
+    status: "completed",
+    title: "Command",
+  },
+  {
+    createdAt: "2026-06-16T09:42:22.000Z",
+    id: "strip-reasoning-1",
+    kind: "thinking",
+    status: "completed",
+    title: "Reasoning",
+  },
+  {
+    createdAt: "2026-06-16T09:42:30.000Z",
+    id: "strip-file-1",
+    kind: "tool",
+    payload: {
+      itemType: "fileChange",
+    },
+    status: "completed",
+    title: "File changes",
+  },
+  {
+    createdAt: "2026-06-16T09:42:38.000Z",
+    id: "strip-usage-1",
+    kind: "usage",
+    status: "completed",
+    title: "Usage summary",
+  },
+  {
+    createdAt: "2026-06-16T09:42:42.000Z",
+    id: "strip-progress-1",
+    kind: "progress",
+    status: "running",
+    title: "Tracing write path",
+  },
+];
+
 const meta = {
   parameters: {
     layout: "padded",
@@ -73,6 +142,7 @@ export const RowsAndControls: Story = {
       <div className="grid max-w-3xl gap-4">
         <AgentChatConnectionStatusBanner status="reconnecting" />
         <AgentChatThreadListItem
+          onThreadDelete={() => undefined}
           selected
           thread={{
             activeTurnId: "turn-1",
@@ -122,9 +192,12 @@ export const RowsAndControls: Story = {
             title: "Ran regression test",
           }}
         />
+        <AgentChatActivityStrip activities={activityStripItems} />
         <AgentChatQuestionCard
           draft={draft}
-          onDraftChange={(itemId, values) => setDraft((current) => ({ ...current, [itemId]: values }))}
+          onDraftChange={(itemId, values) =>
+            setDraft((current) => ({ ...current, [itemId]: values }))
+          }
           question={{
             createdAt: "2026-06-16T09:43:00.000Z",
             id: "question-1",

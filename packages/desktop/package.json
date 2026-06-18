@@ -34,6 +34,7 @@
     "@cycle/logging": "workspace:*",
     "@cycle/ui": "workspace:*",
     "@cycle/usecases": "workspace:*",
+    "@effect/platform-node": "beta",
     "@tanstack/react-query": "^5.101.0",
     "effect": "beta",
     "lucide-react": "^1.17.0",

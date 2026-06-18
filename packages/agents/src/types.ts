@@ -7,6 +7,8 @@ export type JsonValue = JsonPrimitive | JsonValue[] | { readonly [key: string]: 
 export type JsonObject = { readonly [key: string]: JsonValue };
 export type JsonSchema = Record<string, unknown>;
 
+export type AgentRuntimeMode = "read-only" | "workspace-write" | "full-access";
+
 export type AgentModelRef = {
   readonly provider?: string;
   readonly id: string;
@@ -95,6 +97,7 @@ export type CreateAgentSessionInput = {
   };
   readonly instructions?: string;
   readonly model?: AgentModelRef;
+  readonly runtimeMode?: AgentRuntimeMode;
   readonly metadata?: JsonObject;
 };
 
@@ -135,6 +138,7 @@ export type AgentSessionBinding = {
   readonly model?: string;
   readonly activeTurnId?: string;
   readonly native?: Readonly<Record<string, unknown>>;
+  readonly runtime?: Readonly<Record<string, unknown>>;
   readonly lastError?: string;
   readonly metadata?: JsonObject;
 };
@@ -204,6 +208,7 @@ export type AgentTurnRequest<TStructured = unknown> = {
   readonly input: AgentInput;
   readonly model?: AgentModelRef;
   readonly instructions?: string;
+  readonly runtimeMode?: AgentRuntimeMode;
   readonly responseFormat?: AgentResponseFormat<TStructured>;
   readonly mcp?: AgentMcpAttachment;
   readonly context?: JsonObject;
@@ -251,6 +256,71 @@ export type AgentUsage = {
     readonly currency?: string;
   };
   readonly raw?: unknown;
+};
+
+export type AgentContentStreamKind =
+  | "assistant_text"
+  | "reasoning_text"
+  | "reasoning_summary"
+  | "plan"
+  | "command_output"
+  | "file_change_output"
+  | "tool_output"
+  | "unknown";
+
+export type AgentPlanStep = {
+  readonly status: "pending" | "inProgress" | "completed" | string;
+  readonly step: string;
+};
+
+export type AgentApprovalKind = "command" | "file-change" | "permissions" | "unknown";
+
+export type AgentApprovalDecision = "accept" | "acceptForSession" | "decline" | "cancel";
+
+export type AgentApprovalRequest = {
+  readonly createdAt: string;
+  readonly defaultDecision?: AgentApprovalDecision;
+  readonly details?: JsonObject;
+  readonly itemId?: string;
+  readonly kind: AgentApprovalKind;
+  readonly requestId: string;
+  readonly sessionId: string;
+  readonly turnId?: string;
+};
+
+export type AgentUserInputQuestion = {
+  readonly header: string;
+  readonly id: string;
+  readonly multiSelect: boolean;
+  readonly options: readonly {
+    readonly description?: string | null;
+    readonly disabled?: boolean;
+    readonly label: string;
+    readonly value?: string;
+  }[];
+  readonly question: string;
+  readonly type: "text" | "single_select" | "multi_select" | "boolean" | "unknown";
+};
+
+export type AgentUserInputRequest = {
+  readonly createdAt: string;
+  readonly itemId?: string;
+  readonly prompt: string;
+  readonly questions: readonly AgentUserInputQuestion[];
+  readonly requestId: string;
+  readonly sessionId: string;
+  readonly turnId?: string;
+};
+
+export type AgentUserInputAnswer = {
+  readonly questionId: string;
+  readonly value: string | boolean | readonly string[];
+};
+
+export type AgentInteractionResponseResult = {
+  readonly status: "accepted" | "rejected" | "already_resolved" | "not_found";
+  readonly requestId: string;
+  readonly sessionId: string;
 };
 
 export type AgentArtifact =
@@ -315,6 +385,85 @@ export type AgentEvent<TStructured = unknown> =
       readonly turnId: string;
       readonly delta: string;
       readonly snapshot?: string;
+      readonly at: Date;
+    }
+  | {
+      readonly type: "content.delta";
+      readonly sessionId: string;
+      readonly turnId: string;
+      readonly delta: string;
+      readonly streamKind: AgentContentStreamKind;
+      readonly itemId?: string;
+      readonly snapshot?: string;
+      readonly at: Date;
+    }
+  | {
+      readonly type: "turn.plan.updated";
+      readonly sessionId: string;
+      readonly turnId: string;
+      readonly explanation?: string;
+      readonly plan: readonly AgentPlanStep[];
+      readonly at: Date;
+    }
+  | {
+      readonly type: "turn.diff.updated";
+      readonly sessionId: string;
+      readonly turnId: string;
+      readonly diff: string;
+      readonly at: Date;
+    }
+  | {
+      readonly type: "item.started" | "item.updated" | "item.completed";
+      readonly sessionId: string;
+      readonly turnId: string;
+      readonly itemId: string;
+      readonly itemType?: string;
+      readonly item?: unknown;
+      readonly at: Date;
+    }
+  | {
+      readonly type: "approval.requested";
+      readonly sessionId: string;
+      readonly turnId: string;
+      readonly request: AgentApprovalRequest;
+      readonly at: Date;
+    }
+  | {
+      readonly type: "approval.resolved";
+      readonly sessionId: string;
+      readonly turnId?: string;
+      readonly requestId: string;
+      readonly decision: AgentApprovalDecision;
+      readonly at: Date;
+    }
+  | {
+      readonly type: "user-input.requested";
+      readonly sessionId: string;
+      readonly turnId: string;
+      readonly request: AgentUserInputRequest;
+      readonly at: Date;
+    }
+  | {
+      readonly type: "user-input.resolved";
+      readonly sessionId: string;
+      readonly turnId?: string;
+      readonly requestId: string;
+      readonly answers: readonly AgentUserInputAnswer[];
+      readonly at: Date;
+    }
+  | {
+      readonly type: "runtime.warning";
+      readonly sessionId: string;
+      readonly turnId?: string;
+      readonly message: string;
+      readonly at: Date;
+      readonly raw?: unknown;
+    }
+  | {
+      readonly type: "runtime.error";
+      readonly sessionId: string;
+      readonly turnId?: string;
+      readonly error: AgentError;
       readonly at: Date;
     }
   | {
@@ -399,6 +548,16 @@ export type AgentService = {
     sessionId: string,
     request: AgentTurnRequest<TStructured>,
   ): AsyncIterable<AgentEvent<TStructured>>;
+  respondToApproval(
+    sessionId: string,
+    requestId: string,
+    decision: AgentApprovalDecision,
+  ): Promise<AgentInteractionResponseResult>;
+  respondToUserInput(
+    sessionId: string,
+    requestId: string,
+    answers: readonly AgentUserInputAnswer[],
+  ): Promise<AgentInteractionResponseResult>;
   abortTurn(sessionId: string, turnId?: string): Promise<AbortTurnResult>;
   close(): Promise<void>;
 };

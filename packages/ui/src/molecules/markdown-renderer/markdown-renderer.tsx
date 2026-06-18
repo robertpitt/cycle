@@ -41,13 +41,10 @@ const normalizeMarkdown = (markdown: string): string => linkCycleReferenceShorth
 
 const isSafeUrl = (href: string): boolean => {
   if (href.trim().length === 0) return false;
+  if (!URL.canParse(href, "https://cycle.local")) return false;
 
-  try {
-    const url = new URL(href, "https://cycle.local");
-    return safeProtocols.has(url.protocol) || href.startsWith("#") || href.startsWith("/");
-  } catch {
-    return false;
-  }
+  const url = new URL(href, "https://cycle.local");
+  return safeProtocols.has(url.protocol) || href.startsWith("#") || href.startsWith("/");
 };
 
 const markdownUrlTransform: UrlTransform = (url, key) =>

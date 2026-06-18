@@ -298,6 +298,217 @@ const useLatest = <TValue,>(value: TValue) => {
   return ref;
 };
 
+const useIsomorphicLayoutEffect =
+  typeof window === "undefined" ? React.useEffect : React.useLayoutEffect;
+
+type FloatingMenuSide = "bottom" | "top";
+
+type FloatingMenuRect = {
+  readonly bottom: number;
+  readonly height: number;
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
+  readonly width: number;
+};
+
+type FloatingMenuViewportRect = {
+  readonly height: number;
+  readonly left?: number;
+  readonly top?: number;
+  readonly width: number;
+};
+
+export type FloatingMenuPlacement = {
+  readonly side: FloatingMenuSide;
+  readonly style: React.CSSProperties;
+};
+
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(Math.max(value, min), max);
+
+export const getViewportFloatingMenuPlacement = ({
+  align = "start",
+  anchorRect,
+  floatingRect,
+  gap = 8,
+  padding = 8,
+  viewportRect,
+}: {
+  readonly align?: "end" | "start";
+  readonly anchorRect: Pick<FloatingMenuRect, "bottom" | "left" | "right" | "top">;
+  readonly floatingRect: Pick<FloatingMenuRect, "height" | "width">;
+  readonly gap?: number;
+  readonly padding?: number;
+  readonly viewportRect: FloatingMenuViewportRect;
+}): FloatingMenuPlacement => {
+  const viewportLeft = viewportRect.left ?? 0;
+  const viewportTop = viewportRect.top ?? 0;
+  const viewportRight = viewportLeft + viewportRect.width;
+  const viewportBottom = viewportTop + viewportRect.height;
+  const usableHeight = Math.max(0, viewportRect.height - padding * 2);
+  const usableWidth = Math.max(0, viewportRect.width - padding * 2);
+  const belowSpace = viewportBottom - anchorRect.bottom - padding - gap;
+  const aboveSpace = anchorRect.top - viewportTop - padding - gap;
+  const fitsBelow = belowSpace >= floatingRect.height;
+  const fitsAbove = aboveSpace >= floatingRect.height;
+  const side: FloatingMenuSide =
+    fitsBelow || (!fitsAbove && belowSpace >= aboveSpace) ? "bottom" : "top";
+  const sideSpace = side === "bottom" ? belowSpace : aboveSpace;
+  const maxHeight = Math.max(0, Math.min(floatingRect.height, sideSpace, usableHeight));
+  const visibleHeight = Math.min(floatingRect.height, maxHeight);
+  const floatingWidth = Math.min(floatingRect.width, usableWidth);
+  const unclampedTop =
+    side === "bottom" ? anchorRect.bottom + gap : anchorRect.top - gap - visibleHeight;
+  const unclampedLeft = align === "end" ? anchorRect.right - floatingWidth : anchorRect.left;
+
+  return {
+    side,
+    style: {
+      left: Math.round(
+        clamp(unclampedLeft, viewportLeft + padding, viewportRight - padding - floatingWidth),
+      ),
+      maxHeight: Math.floor(maxHeight),
+      maxWidth: Math.floor(usableWidth),
+      overflowY: floatingRect.height > maxHeight ? "auto" : undefined,
+      position: "fixed",
+      top: Math.round(
+        clamp(unclampedTop, viewportTop + padding, viewportBottom - padding - visibleHeight),
+      ),
+    },
+  };
+};
+
+const hasUsableRect = (rect: Pick<FloatingMenuRect, "height" | "width">): boolean =>
+  rect.height > 0 || rect.width > 0;
+
+const getRangeAnchorRect = (range: Range): DOMRect | undefined => {
+  const rect = Array.from(range.getClientRects()).find(hasUsableRect);
+  if (rect) return rect;
+
+  const boundingRect = range.getBoundingClientRect();
+  return hasUsableRect(boundingRect) ? boundingRect : undefined;
+};
+
+const getEditorSelectionAnchorRect = (editor: LexicalEditor | null): DOMRect | undefined => {
+  if (typeof window === "undefined") return undefined;
+
+  const rootElement = editor?.getRootElement();
+  if (!rootElement) return undefined;
+
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return rootElement.getBoundingClientRect();
+
+  const range = selection.getRangeAt(0);
+  if (!rootElement.contains(range.startContainer)) return rootElement.getBoundingClientRect();
+
+  return getRangeAnchorRect(range) ?? rootElement.getBoundingClientRect();
+};
+
+const hiddenFloatingMenuStyle: React.CSSProperties = {
+  left: 0,
+  maxWidth: "calc(100vw - 1rem)",
+  position: "fixed",
+  top: 0,
+  visibility: "hidden",
+};
+
+const isSameFloatingMenuPlacement = (
+  current: FloatingMenuPlacement | undefined,
+  next: FloatingMenuPlacement,
+): boolean =>
+  current?.side === next.side &&
+  current.style.left === next.style.left &&
+  current.style.maxHeight === next.style.maxHeight &&
+  current.style.maxWidth === next.style.maxWidth &&
+  current.style.overflowY === next.style.overflowY &&
+  current.style.top === next.style.top;
+
+const useViewportFloatingMenu = ({
+  align = "start",
+  getAnchorRect,
+  open,
+  updateKey,
+}: {
+  readonly align?: "end" | "start";
+  readonly getAnchorRect: () => DOMRect | undefined;
+  readonly open: boolean;
+  readonly updateKey?: React.DependencyList[number];
+}) => {
+  const floatingRef = React.useRef<HTMLDivElement>(null);
+  const [placement, setPlacement] = React.useState<FloatingMenuPlacement | undefined>();
+
+  const updatePlacement = React.useCallback(() => {
+    if (!open || typeof window === "undefined") return;
+
+    const floatingElement = floatingRef.current;
+    const anchorRect = getAnchorRect();
+    if (!floatingElement || !anchorRect) return;
+
+    const floatingElementRect = floatingElement.getBoundingClientRect();
+    const visualViewport = window.visualViewport;
+    const nextPlacement = getViewportFloatingMenuPlacement({
+      align,
+      anchorRect,
+      floatingRect: {
+        height: floatingElement.scrollHeight || floatingElementRect.height,
+        width: floatingElementRect.width,
+      },
+      viewportRect: {
+        height: visualViewport?.height ?? window.innerHeight,
+        left: visualViewport?.offsetLeft ?? 0,
+        top: visualViewport?.offsetTop ?? 0,
+        width: visualViewport?.width ?? window.innerWidth,
+      },
+    });
+
+    setPlacement((current) =>
+      isSameFloatingMenuPlacement(current, nextPlacement) ? current : nextPlacement,
+    );
+  }, [align, getAnchorRect, open]);
+
+  useIsomorphicLayoutEffect(() => {
+    if (!open) {
+      setPlacement(undefined);
+      return;
+    }
+
+    updatePlacement();
+  }, [open, updatePlacement, updateKey]);
+
+  React.useEffect(() => {
+    if (!open || typeof window === "undefined") return;
+
+    let frame: number | undefined;
+    const scheduleUpdate = () => {
+      if (frame !== undefined) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        frame = undefined;
+        updatePlacement();
+      });
+    };
+    const visualViewport = window.visualViewport;
+
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("scroll", scheduleUpdate, true);
+    visualViewport?.addEventListener("resize", scheduleUpdate);
+    visualViewport?.addEventListener("scroll", scheduleUpdate);
+
+    return () => {
+      if (frame !== undefined) window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate, true);
+      visualViewport?.removeEventListener("resize", scheduleUpdate);
+      visualViewport?.removeEventListener("scroll", scheduleUpdate);
+    };
+  }, [open, updatePlacement]);
+
+  return {
+    floatingRef,
+    floatingStyle: placement?.style ?? hiddenFloatingMenuStyle,
+  } as const;
+};
+
 export const MarkdownEditorToolbar = ({
   className,
   onFormatSelect,
@@ -332,71 +543,78 @@ export const MarkdownEditorToolbar = ({
   </div>
 );
 
-export const MarkdownEditorSlashMenu = ({
-  className,
-  onCommandSelect,
-  sections = defaultCommandSections,
-}: {
-  readonly className?: string;
-  readonly onCommandSelect?: (command: MarkdownEditorCommand) => void;
-  readonly sections?: readonly MarkdownEditorCommandSection[];
-}) => (
-  <div
-    className={cn(
-      "w-[320px] overflow-hidden rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-elevated",
-      className,
-    )}
-    role="menu"
-  >
-    <div className="flex items-center gap-2 border-b border-border px-2 pb-2">
-      <Pilcrow aria-hidden className="size-4 text-muted-foreground" />
-      <span className={cn(typography.control, "text-muted-foreground")}>Insert block</span>
-    </div>
-    <div className="grid gap-2 pt-2">
-      {sections.map((section) => (
-        <div className="grid gap-1" key={section.id}>
-          {section.label ? (
-            <p className={cn("px-2 py-1 uppercase text-muted-foreground", typography.meta)}>
-              {section.label}
-            </p>
-          ) : null}
-          {section.commands.map((command) => (
-            <button
-              className={cn(
-                "grid min-h-12 grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 text-left transition hover:bg-subtle",
-                focusRing,
-              )}
-              key={command.id}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => onCommandSelect?.(command)}
-              role="menuitem"
-              type="button"
-            >
-              <span className="grid size-7 place-items-center rounded-md bg-subtle text-muted-foreground">
-                {command.icon}
-              </span>
-              <span className="min-w-0">
-                <span className={cn("block truncate text-foreground", typography.control)}>
-                  {command.label}
+export const MarkdownEditorSlashMenu = React.forwardRef<
+  HTMLDivElement,
+  {
+    readonly className?: string;
+    readonly onCommandSelect?: (command: MarkdownEditorCommand) => void;
+    readonly sections?: readonly MarkdownEditorCommandSection[];
+    readonly style?: React.CSSProperties;
+  }
+>(function MarkdownEditorSlashMenu(
+  { className, onCommandSelect, sections = defaultCommandSections, style },
+  ref,
+) {
+  return (
+    <div
+      className={cn(
+        "w-[320px] overflow-hidden rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-elevated",
+        className,
+      )}
+      ref={ref}
+      role="menu"
+      style={style}
+    >
+      <div className="flex items-center gap-2 border-b border-border px-2 pb-2">
+        <Pilcrow aria-hidden className="size-4 text-muted-foreground" />
+        <span className={cn(typography.control, "text-muted-foreground")}>Insert block</span>
+      </div>
+      <div className="grid gap-2 pt-2">
+        {sections.map((section) => (
+          <div className="grid gap-1" key={section.id}>
+            {section.label ? (
+              <p className={cn("px-2 py-1 uppercase text-muted-foreground", typography.meta)}>
+                {section.label}
+              </p>
+            ) : null}
+            {section.commands.map((command) => (
+              <button
+                className={cn(
+                  "grid min-h-12 grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 text-left transition hover:bg-subtle",
+                  focusRing,
+                )}
+                key={command.id}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => onCommandSelect?.(command)}
+                role="menuitem"
+                type="button"
+              >
+                <span className="grid size-7 place-items-center rounded-md bg-subtle text-muted-foreground">
+                  {command.icon}
                 </span>
-                {command.description ? (
-                  <span className={cn("block truncate text-muted-foreground", typography.meta)}>
-                    {command.description}
+                <span className="min-w-0">
+                  <span className={cn("block truncate text-foreground", typography.control)}>
+                    {command.label}
+                  </span>
+                  {command.description ? (
+                    <span className={cn("block truncate text-muted-foreground", typography.meta)}>
+                      {command.description}
+                    </span>
+                  ) : null}
+                </span>
+                {command.shortcut ? (
+                  <span className={cn("text-muted-foreground", typography.meta)}>
+                    {command.shortcut}
                   </span>
                 ) : null}
-              </span>
-              {command.shortcut ? (
-                <span className={cn("text-muted-foreground", typography.meta)}>
-                  {command.shortcut}
-                </span>
-              ) : null}
-            </button>
-          ))}
-        </div>
-      ))}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
-  </div>
-);
+  );
+});
 
 const tagKindLabels = {
   agent: "Agent",
@@ -461,81 +679,85 @@ export const filterMarkdownEditorTagSuggestions = (
   return filtered.slice(0, 8);
 };
 
-export const MarkdownEditorTagMenu = ({
-  className,
-  highlightedIndex,
-  onHighlight,
-  onSuggestionSelect,
-  query,
-  suggestions,
-}: {
-  readonly className?: string;
-  readonly highlightedIndex: number;
-  readonly onHighlight: (index: number) => void;
-  readonly onSuggestionSelect: (suggestion: MarkdownEditorTagSuggestion) => void;
-  readonly query: string;
-  readonly suggestions: readonly MarkdownEditorTagSuggestion[];
-}) => (
-  <div
-    className={cn(
-      "w-[360px] overflow-hidden rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-elevated",
-      className,
-    )}
-    role="listbox"
-  >
-    <div className="flex items-center gap-2 border-b border-border px-2 pb-2">
-      <AtSign aria-hidden className="size-4 text-muted-foreground" />
-      <span className={cn(typography.control, "text-muted-foreground")}>
-        {query ? `Tag "${query}"` : "Tag reference"}
-      </span>
-    </div>
-    <div className="grid gap-1 pt-2">
-      {suggestions.length === 0 ? (
-        <div className={cn("px-2 py-3 text-muted-foreground", typography.bodyCompact)}>
-          No matches
-        </div>
-      ) : (
-        suggestions.map((suggestion, index) => {
-          const selected = index === highlightedIndex;
-
-          return (
-            <button
-              aria-selected={selected}
-              className={cn(
-                "grid min-h-12 grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 text-left transition",
-                selected ? "bg-subtle text-foreground" : "hover:bg-subtle/75",
-                focusRing,
-              )}
-              key={`${suggestion.kind}:${suggestion.id}`}
-              onClick={() => onSuggestionSelect(suggestion)}
-              onMouseDown={(event) => event.preventDefault()}
-              onMouseEnter={() => onHighlight(index)}
-              role="option"
-              type="button"
-            >
-              <span className="grid size-7 place-items-center rounded-md bg-subtle text-muted-foreground">
-                {tagKindIcons[suggestion.kind]}
-              </span>
-              <span className="min-w-0">
-                <span className={cn("block truncate text-foreground", typography.control)}>
-                  {suggestion.label}
-                </span>
-                {suggestion.description ? (
-                  <span className={cn("block truncate text-muted-foreground", typography.meta)}>
-                    {suggestion.description}
-                  </span>
-                ) : null}
-              </span>
-              <span className={cn("text-muted-foreground", typography.meta)}>
-                {tagKindLabels[suggestion.kind]}
-              </span>
-            </button>
-          );
-        })
+export const MarkdownEditorTagMenu = React.forwardRef<
+  HTMLDivElement,
+  {
+    readonly className?: string;
+    readonly highlightedIndex: number;
+    readonly onHighlight: (index: number) => void;
+    readonly onSuggestionSelect: (suggestion: MarkdownEditorTagSuggestion) => void;
+    readonly query: string;
+    readonly suggestions: readonly MarkdownEditorTagSuggestion[];
+    readonly style?: React.CSSProperties;
+  }
+>(function MarkdownEditorTagMenu(
+  { className, highlightedIndex, onHighlight, onSuggestionSelect, query, suggestions, style },
+  ref,
+) {
+  return (
+    <div
+      className={cn(
+        "w-[360px] overflow-hidden rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-elevated",
+        className,
       )}
+      ref={ref}
+      role="listbox"
+      style={style}
+    >
+      <div className="flex items-center gap-2 border-b border-border px-2 pb-2">
+        <AtSign aria-hidden className="size-4 text-muted-foreground" />
+        <span className={cn(typography.control, "text-muted-foreground")}>
+          {query ? `Tag "${query}"` : "Tag reference"}
+        </span>
+      </div>
+      <div className="grid gap-1 pt-2">
+        {suggestions.length === 0 ? (
+          <div className={cn("px-2 py-3 text-muted-foreground", typography.bodyCompact)}>
+            No matches
+          </div>
+        ) : (
+          suggestions.map((suggestion, index) => {
+            const selected = index === highlightedIndex;
+
+            return (
+              <button
+                aria-selected={selected}
+                className={cn(
+                  "grid min-h-12 grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 text-left transition",
+                  selected ? "bg-subtle text-foreground" : "hover:bg-subtle/75",
+                  focusRing,
+                )}
+                key={`${suggestion.kind}:${suggestion.id}`}
+                onClick={() => onSuggestionSelect(suggestion)}
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => onHighlight(index)}
+                role="option"
+                type="button"
+              >
+                <span className="grid size-7 place-items-center rounded-md bg-subtle text-muted-foreground">
+                  {tagKindIcons[suggestion.kind]}
+                </span>
+                <span className="min-w-0">
+                  <span className={cn("block truncate text-foreground", typography.control)}>
+                    {suggestion.label}
+                  </span>
+                  {suggestion.description ? (
+                    <span className={cn("block truncate text-muted-foreground", typography.meta)}>
+                      {suggestion.description}
+                    </span>
+                  ) : null}
+                </span>
+                <span className={cn("text-muted-foreground", typography.meta)}>
+                  {tagKindLabels[suggestion.kind]}
+                </span>
+              </button>
+            );
+          })
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
+});
 
 const removeTrailingSlash = (): void => {
   const selection = $getSelection();
@@ -829,6 +1051,18 @@ const MarkdownEditorTagAutocompletePlugin = ({
   const suggestionsRef = useLatest(suggestions);
   const highlightedIndexRef = useLatest(highlightedIndex);
   const onTagSelectRef = useLatest(onTagSelect);
+  const getTagMenuAnchorRect = React.useCallback(
+    () => getEditorSelectionAnchorRect(editor),
+    [editor],
+  );
+  const {
+    floatingRef: tagMenuRef,
+    floatingStyle: tagMenuStyle,
+  } = useViewportFloatingMenu({
+    getAnchorRect: getTagMenuAnchorRect,
+    open,
+    updateKey: suggestions,
+  });
 
   React.useEffect(() => {
     if (activeQuery !== undefined) {
@@ -925,11 +1159,13 @@ const MarkdownEditorTagAutocompletePlugin = ({
 
   return (
     <MarkdownEditorTagMenu
-      className="absolute left-2 top-[calc(100%-0.25rem)] z-50"
+      className="z-50 max-w-[calc(100vw-1rem)]"
       highlightedIndex={highlightedIndex}
       onHighlight={setHighlightedIndex}
       onSuggestionSelect={selectSuggestion}
       query={activeQuery}
+      ref={tagMenuRef}
+      style={tagMenuStyle}
       suggestions={suggestions}
     />
   );
@@ -980,6 +1216,7 @@ export const MarkdownEditor = React.forwardRef<HTMLDivElement, MarkdownEditorPro
     const [currentMarkdown, setCurrentMarkdown] = React.useState(initialMarkdownRef.current);
     const currentMarkdownRef = React.useRef(currentMarkdown);
     const editorRef = React.useRef<LexicalEditor | null>(null);
+    const editorShellRef = React.useRef<HTMLDivElement | null>(null);
     const [focused, setFocused] = React.useState(false);
     const [selectionToolbarOpen, setSelectionToolbarOpen] = useControllableOpen({
       defaultOpen: defaultToolbarOpen,
@@ -1073,7 +1310,22 @@ export const MarkdownEditor = React.forwardRef<HTMLDivElement, MarkdownEditorPro
     const showToolbar =
       isEditable &&
       !currentPreviewOpen &&
-      (focused || selectionToolbarOpen || toolbarOpen === true);
+      (toolbarOpen === undefined ? focused || selectionToolbarOpen : toolbarOpen);
+    const isCommandMenuVisible = isEditable && !currentPreviewOpen && commandMenuOpen;
+    const getCommandMenuAnchorRect = React.useCallback(
+      () =>
+        getEditorSelectionAnchorRect(editorRef.current) ??
+        editorShellRef.current?.getBoundingClientRect(),
+      [],
+    );
+    const {
+      floatingRef: commandMenuRef,
+      floatingStyle: commandMenuStyle,
+    } = useViewportFloatingMenu({
+      getAnchorRect: getCommandMenuAnchorRect,
+      open: isCommandMenuVisible,
+      updateKey: `${currentMarkdown.length}:${String(commandMenuOpen)}`,
+    });
 
     return (
       <div
@@ -1120,6 +1372,7 @@ export const MarkdownEditor = React.forwardRef<HTMLDivElement, MarkdownEditorPro
               disabled && "cursor-not-allowed opacity-60 hover:bg-transparent",
               editorClassName,
             )}
+            ref={editorShellRef}
           >
             <LexicalComposer initialConfig={initialConfig}>
               <RichTextPlugin
@@ -1127,7 +1380,7 @@ export const MarkdownEditor = React.forwardRef<HTMLDivElement, MarkdownEditorPro
                   <ContentEditable
                     aria-label={ariaLabel ?? placeholder}
                     className={cn(
-                      "resize-none px-1 py-2 text-foreground outline-none placeholder:text-muted-foreground/70",
+                      "resize-none px-1 py-2 text-foreground caret-foreground outline-none selection:bg-primary/25 selection:text-foreground",
                       "[&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:text-muted-foreground",
                       "[&_code]:rounded [&_code]:bg-subtle [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.92em]",
                       "[&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:leading-8",
@@ -1137,7 +1390,6 @@ export const MarkdownEditor = React.forwardRef<HTMLDivElement, MarkdownEditorPro
                       "[&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border [&_pre]:bg-subtle [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-sm [&_pre]:leading-6",
                       "[&_ul]:grid [&_ul]:list-disc [&_ul]:gap-1 [&_ul]:pl-5",
                       "[&_a]:font-medium [&_a]:text-primary [&_a]:underline-offset-4 hover:[&_a]:underline",
-                      focusRing,
                       mode === "comment" ? typography.bodyCompact : typography.body,
                       resolvedMinHeight,
                       contentClassName,
@@ -1167,8 +1419,11 @@ export const MarkdownEditor = React.forwardRef<HTMLDivElement, MarkdownEditorPro
                 placeholder={
                   <div
                     className={cn(
-                      "pointer-events-none absolute left-1 top-2 text-muted-foreground/70",
+                      "px-1 py-2",
                       mode === "comment" ? typography.bodyCompact : typography.body,
+                      resolvedMinHeight,
+                      contentClassName,
+                      "pointer-events-none absolute inset-0 overflow-hidden text-muted-foreground/70",
                     )}
                   >
                     {placeholder}
@@ -1198,11 +1453,13 @@ export const MarkdownEditor = React.forwardRef<HTMLDivElement, MarkdownEditorPro
           </div>
         )}
 
-        {isEditable && !currentPreviewOpen && commandMenuOpen ? (
+        {isCommandMenuVisible ? (
           <MarkdownEditorSlashMenu
-            className="absolute left-2 top-[calc(100%-2.5rem)] z-20"
+            className="z-20 max-w-[calc(100vw-1rem)]"
+            ref={commandMenuRef}
             onCommandSelect={handleCommandSelect}
             sections={commandSections}
+            style={commandMenuStyle}
           />
         ) : null}
       </div>

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitRepository } from "@cycle/git";
 import { UseCaseRunner } from "@cycle/usecases";
+import { NodeServices } from "@effect/platform-node";
 import { Effect, Layer } from "effect";
 import { afterEach, describe, it } from "vitest";
 import { DesktopRuntime } from "../src/platform/DesktopRuntime.ts";
@@ -12,6 +13,7 @@ import { DesktopBootstrap } from "../src/shared/Bootstrap.ts";
 import { LocalWorkspace } from "../src/shared/LocalWorkspace.ts";
 import { startDesktopApi } from "../src/main/DesktopApi.ts";
 import { DesktopLogger } from "../src/main/DesktopLoggerLive.ts";
+import { ElectronPreferences } from "../src/main/ElectronPreferences.ts";
 
 const temporaryDirectories: Array<string> = [];
 
@@ -64,6 +66,7 @@ const makeConfig = (): AppConfigState => ({
 
 const makeLayer = (config: AppConfigState) =>
   Layer.mergeAll(
+    NodeServices.layer,
     Layer.succeed(
       AppConfig,
       AppConfig.of({
@@ -109,6 +112,40 @@ const makeLayer = (config: AppConfigState) =>
         removeRepository: () => Effect.succeed([]),
         updateRepositoryPreferences: () => Effect.succeed(null),
         upsertRepositoryPath: () => Effect.die("not implemented"),
+      }),
+    ),
+    Layer.succeed(
+      ElectronPreferences,
+      ElectronPreferences.of({
+        clearCache: () => Effect.void,
+        completeOnboarding: () => Effect.succeed(config),
+        read: () => Effect.succeed(config),
+        setThemePreference: (preference) =>
+          Effect.succeed({
+            ...config,
+            theme: {
+              preference,
+            },
+          }),
+        shouldAutoSyncRepository: () => Effect.succeed(false),
+        startThemeLifecycleSupervision: () => Effect.void,
+        syncThemePreference: () =>
+          Effect.succeed({
+            resolvedMode: "light",
+            shouldUseDarkColors: false,
+            source: config.theme.preference,
+          }),
+        themeState: Effect.succeed({
+          resolvedMode: "light",
+          shouldUseDarkColors: false,
+          source: config.theme.preference,
+        }),
+        updateProfile: (input) =>
+          Effect.succeed({
+            displayName: input.displayName ?? config.profile.displayName,
+            email: input.email ?? config.profile.email,
+          }),
+        updateRepositoryPreferences: () => Effect.succeed(null),
       }),
     ),
     Layer.succeed(

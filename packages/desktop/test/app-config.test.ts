@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { Effect, Layer } from "effect";
 import { GitRepository } from "@cycle/git";
+import { NodeServices } from "@effect/platform-node";
 import { afterEach, describe, it } from "vitest";
 import { ElectronApp } from "../src/platform/ElectronApp.ts";
 import {
@@ -52,7 +53,10 @@ const makeElectronAppTest = (userData: string) =>
   });
 
 const makeConfigLayer = (userData: string) =>
-  AppConfigLive.pipe(Layer.provide(makeElectronAppTest(userData)));
+  AppConfigLive.pipe(
+    Layer.provide(makeElectronAppTest(userData)),
+    Layer.provide(NodeServices.layer),
+  );
 
 const makeServicesLayer = (userData: string) => {
   const appConfig = makeConfigLayer(userData);
@@ -62,7 +66,7 @@ const makeServicesLayer = (userData: string) => {
     ProfileLive.pipe(Layer.provide(appConfig)),
     gitRepository,
     LocalWorkspaceLive.pipe(Layer.provide(Layer.mergeAll(appConfig, gitRepository))),
-  );
+  ).pipe(Layer.provide(NodeServices.layer));
 };
 
 const runConfig = <A>(userData: string, effect: Effect.Effect<A, unknown, AppConfig>) =>
@@ -432,7 +436,9 @@ describe("desktop app config", () => {
       }),
     );
 
-    const providers = await Effect.runPromise(detectAgentProviders({ PATH: bin }));
+    const providers = await Effect.runPromise(
+      detectAgentProviders({ PATH: bin }, { hydrate: false }),
+    );
     const persisted = await readPersistedConfig(userData);
 
     assert.equal(providers.find((provider) => provider.id === "codex")?.status, "available");
@@ -446,7 +452,20 @@ describe("desktop app config", () => {
     const codex = join(bin, "codex");
     const shell = join(userData, "shell");
     await writeFile(codex, "#!/bin/sh\nexit 0\n", "utf8");
-    await writeFile(shell, `#!/bin/sh\nPATH="${bin}:$PATH"\nexec /bin/sh "$@"\n`, "utf8");
+    await writeFile(
+      shell,
+      [
+        "#!/bin/sh",
+        `PATH="${bin}:/usr/bin:/bin:$PATH"`,
+        'if [ "$1" = "-ilc" ]; then',
+        "  shift",
+        '  exec /bin/sh -c "$1"',
+        "fi",
+        'exec /bin/sh "$@"',
+        "",
+      ].join("\n"),
+      "utf8",
+    );
     await chmod(codex, 0o755);
     await chmod(shell, 0o755);
 

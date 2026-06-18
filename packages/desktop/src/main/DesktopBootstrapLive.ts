@@ -1,7 +1,7 @@
 import { DatabaseService, type RepositoryMetadata, type RepositoryStatus } from "@cycle/database";
 import { GitRepository, type GitRepositoryMetadata } from "@cycle/git";
 import { GitDb, Store as GitDbStore, type SyncResult } from "@cycle/git-db";
-import { Cause, Deferred, Effect, Layer, Queue } from "effect";
+import { Cause, Deferred, Effect, Layer, Option, Queue } from "effect";
 import { DesktopRuntime } from "../platform/DesktopRuntime.ts";
 import type { RepositoryRecord } from "../shared/AppConfig.ts";
 import {
@@ -13,11 +13,10 @@ import { DesktopLogger } from "./DesktopLoggerLive.ts";
 import { ElectronPreferences } from "./ElectronPreferences.ts";
 
 const DEFAULT_POINTER = "main";
-const BACKGROUND_REMOTE_SYNC_CONCURRENCY = 4;
+const REPOSITORY_BACKGROUND_OPERATION_CONCURRENCY = 10;
 const BACKGROUND_REMOTE_SYNC_POLL_INTERVAL_MS = 15_000;
 const BACKGROUND_REMOTE_SYNC_RETRY_BASE_MS = 5_000;
 const BACKGROUND_REMOTE_SYNC_RETRY_MAX_MS = 5 * 60_000;
-const LOCAL_PROJECTION_POLL_INTERVAL_MS = 60_000;
 
 type RuntimeRepository = {
   readonly metadata: RepositoryMetadata;
@@ -358,22 +357,26 @@ export const DesktopBootstrapLive = Layer.effect(
       Effect.gen(function* () {
         const queue = yield* repositoryQueue(repositoryId);
         const result = yield* Deferred.make<unknown, unknown>();
+        const parentSpan = yield* Effect.currentSpan.pipe(Effect.option);
 
         yield* Queue.offer(queue, {
-          effect: effect.pipe(
-            Effect.withSpan(`desktop.bootstrap.${label}`, {
-              attributes: {
-                "desktop.repositoryId": repositoryId,
-                "desktop.repositoryOperation": label,
-              },
-            }),
-          ),
+          effect: Option.isSome(parentSpan)
+            ? effect.pipe(Effect.withParentSpan(parentSpan.value))
+            : effect,
           label,
           result,
         });
 
         return (yield* Deferred.await(result)) as A;
-      });
+      }).pipe(
+        Effect.withSpan(`desktop.bootstrap.${label}`, {
+          attributes: {
+            "desktop.repositoryId": repositoryId,
+            "desktop.repositoryOperation": label,
+            service: "@cycle/desktop",
+          },
+        }),
+      );
 
     const openRepositoryUnsafe = (repository: RepositoryRecord): Effect.Effect<void, unknown> =>
       Effect.gen(function* () {
@@ -407,7 +410,7 @@ export const DesktopBootstrapLive = Layer.effect(
           displayName: repository.displayName,
           gitDir: metadata.gitDir,
           metadata,
-          pollIntervalMs: LOCAL_PROJECTION_POLL_INTERVAL_MS,
+          pollIntervalMs: false,
           repositoryId: repository.id,
           store,
           syncOnOpen: false,
@@ -475,6 +478,26 @@ export const DesktopBootstrapLive = Layer.effect(
       ).pipe(Effect.asVoid);
     };
 
+    const openConfiguredRepositories = (
+      repositories: ReadonlyArray<RepositoryRecord>,
+    ): Effect.Effect<void> =>
+      Effect.forEach(
+        repositories,
+        (repository) => openRepository(repository).pipe(Effect.catch(() => Effect.void)),
+        {
+          concurrency: REPOSITORY_BACKGROUND_OPERATION_CONCURRENCY,
+        },
+      ).pipe(
+        Effect.asVoid,
+        Effect.withSpan("desktop.bootstrap.openConfiguredRepositories", {
+          attributes: {
+            "desktop.bootstrap.concurrency": REPOSITORY_BACKGROUND_OPERATION_CONCURRENCY,
+            "desktop.bootstrap.repositories": repositories.length,
+            service: "@cycle/desktop",
+          },
+        }),
+      );
+
     const repositoryById = (repositoryId: string): Effect.Effect<RepositoryRecord, unknown> =>
       preferences.read().pipe(
         Effect.flatMap((config) => {
@@ -490,9 +513,9 @@ export const DesktopBootstrapLive = Layer.effect(
 
     const runRemoteOperation = <A>(
       repositoryId: string,
+      label: string,
       operation: () => Effect.Effect<A, unknown>,
-    ): Effect.Effect<A, unknown> =>
-      runRepositoryOperation(repositoryId, "remoteOperation", operation());
+    ): Effect.Effect<A, unknown> => runRepositoryOperation(repositoryId, label, operation());
 
     const syncRepositoryFromRemoteUnsafe = (
       repositoryId: string,
@@ -605,7 +628,7 @@ export const DesktopBootstrapLive = Layer.effect(
     const syncRepositoryFromRemoteOutcome = (
       repositoryId: string,
     ): Effect.Effect<RemoteSyncOutcome, unknown> =>
-      runRemoteOperation(repositoryId, () =>
+      runRemoteOperation(repositoryId, "syncRepositoryFromRemote", () =>
         syncRepositoryFromRemoteUnsafe(repositoryId).pipe(
           Effect.catch((error) =>
             logger
@@ -703,7 +726,7 @@ export const DesktopBootstrapLive = Layer.effect(
       });
 
     const pushRepositoryToRemote = (repositoryId: string): Effect.Effect<SyncResult, unknown> =>
-      runRemoteOperation(repositoryId, () =>
+      runRemoteOperation(repositoryId, "pushRepositoryToRemote", () =>
         pushRepositoryToRemoteUnsafe(repositoryId).pipe(
           Effect.catch((error) =>
             logger
@@ -826,7 +849,9 @@ export const DesktopBootstrapLive = Layer.effect(
     const syncRepositoryInBackground = (
       repositoryId: string,
     ): Effect.Effect<RemoteSyncOutcome, never> =>
-      runRemoteOperation(repositoryId, () => syncRepositoryInBackgroundUnsafe(repositoryId)).pipe(
+      runRemoteOperation(repositoryId, "syncRepositoryInBackground", () =>
+        syncRepositoryInBackgroundUnsafe(repositoryId),
+      ).pipe(
         Effect.catch((error) =>
           Effect.sync(() => {
             const runtime = opened.get(repositoryId);
@@ -852,36 +877,56 @@ export const DesktopBootstrapLive = Layer.effect(
       Effect.gen(function* () {
         remoteSyncCycle += 1;
         const cycle = remoteSyncCycle;
-        const repositories = yield* preferences.read().pipe(
-          Effect.map((config) => config.localWorkspace.repositories),
-          Effect.catch((error) =>
-            logger
-              .error("bootstrap background sync skipped: unable to read app config", {
-                error: errorMessage(error),
-              })
-              .pipe(Effect.as([] as ReadonlyArray<RepositoryRecord>)),
-          ),
+
+        yield* Effect.gen(function* () {
+          const repositories = yield* preferences.read().pipe(
+            Effect.map((config) => config.localWorkspace.repositories),
+            Effect.catch((error) =>
+              logger
+                .error("bootstrap background sync skipped: unable to read app config", {
+                  error: errorMessage(error),
+                })
+                .pipe(Effect.as([] as ReadonlyArray<RepositoryRecord>)),
+            ),
+          );
+          yield* Effect.annotateCurrentSpan({
+            "desktop.bootstrap.repositories": repositories.length,
+          });
+
+          const outcomes = yield* Effect.forEach(
+            repositories,
+            (repository) => syncRepositoryInBackground(repository.id),
+            {
+              concurrency: REPOSITORY_BACKGROUND_OPERATION_CONCURRENCY,
+            },
+          );
+
+          const message = "bootstrap remote sync phase completed";
+          const summary = remoteSyncSummary(outcomes);
+          const fields = {
+            ...summary,
+            cycle,
+          };
+          yield* Effect.annotateCurrentSpan({
+            "desktop.bootstrap.remoteDeferred": summary["remoteDeferred"],
+            "desktop.bootstrap.remoteFailed": summary["remoteFailed"],
+            "desktop.bootstrap.remoteSynced": summary["remoteSynced"],
+          });
+
+          if (cycle === 1) {
+            yield* logger.info(message, fields);
+          } else {
+            yield* logger.debug(message, fields);
+          }
+        }).pipe(
+          Effect.withSpan("desktop.bootstrap.backgroundSyncCycle", {
+            attributes: {
+              "desktop.bootstrap.concurrency": REPOSITORY_BACKGROUND_OPERATION_CONCURRENCY,
+              "desktop.bootstrap.cycle": cycle,
+              service: "@cycle/desktop",
+            },
+          }),
         );
-
-        const outcomes = yield* Effect.forEach(
-          repositories,
-          (repository) => syncRepositoryInBackground(repository.id),
-          {
-            concurrency: BACKGROUND_REMOTE_SYNC_CONCURRENCY,
-          },
-        );
-
-        const message = "bootstrap remote sync phase completed";
-        const fields = {
-          ...remoteSyncSummary(outcomes),
-          cycle,
-        };
-
-        if (cycle === 1) {
-          yield* logger.info(message, fields);
-        } else {
-          yield* logger.debug(message, fields);
-        }
       });
 
     const waitForBackgroundSyncSignal = Effect.race(
@@ -940,9 +985,7 @@ export const DesktopBootstrapLive = Layer.effect(
         });
       }
 
-      for (const repository of config.localWorkspace.repositories) {
-        yield* openRepository(repository).pipe(Effect.catch(() => Effect.void));
-      }
+      yield* openConfiguredRepositories(config.localWorkspace.repositories);
 
       setStatus({
         blocking: false,

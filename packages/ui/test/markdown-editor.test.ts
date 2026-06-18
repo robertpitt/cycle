@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   filterMarkdownEditorTagSuggestions,
   getMarkdownEditorTagSuggestionInsertLabel,
+  getViewportFloatingMenuPlacement,
   type MarkdownEditorTagSuggestion,
 } from "../src/molecules/markdown-editor/markdown-editor.tsx";
-import { roundTripMarkdown } from "../src/molecules/markdown-editor/markdown-editor-utils.ts";
+import {
+  isSafeMarkdownUrl,
+  roundTripMarkdown,
+} from "../src/molecules/markdown-editor/markdown-editor-utils.ts";
 
 describe("Markdown editor utilities", () => {
   it("round-trips the core Cycle Markdown subset", () => {
@@ -69,6 +73,15 @@ describe("Markdown editor utilities", () => {
     expect(roundTripMarkdown("Line one\r\n\r\nLine two")).toBe("Line one\n\nLine two");
   });
 
+  it("allows only safe Markdown editor links", () => {
+    expect(isSafeMarkdownUrl("https://example.com/docs")).toBe(true);
+    expect(isSafeMarkdownUrl("/repositories/cycle")).toBe(true);
+    expect(isSafeMarkdownUrl("#comment-1")).toBe(true);
+    expect(isSafeMarkdownUrl("cycle-issue:ROB-10001")).toBe(true);
+    expect(isSafeMarkdownUrl("javascript:alert(1)")).toBe(false);
+    expect(isSafeMarkdownUrl("")).toBe(false);
+  });
+
   it("filters unified tag suggestions by id, label, kind, and search text", () => {
     const suggestions: readonly MarkdownEditorTagSuggestion[] = [
       {
@@ -117,5 +130,31 @@ describe("Markdown editor utilities", () => {
         label: "cycle",
       }),
     ).toBe("Cycle workspace");
+  });
+
+  it("places floating menus above the anchor when the bottom viewport edge would hide them", () => {
+    const placement = getViewportFloatingMenuPlacement({
+      anchorRect: { bottom: 740, left: 40, right: 60, top: 720 },
+      floatingRect: { height: 240, width: 360 },
+      viewportRect: { height: 760, width: 800 },
+    });
+
+    expect(placement.side).toBe("top");
+    expect(placement.style.position).toBe("fixed");
+    expect(placement.style.top).toBe(472);
+    expect(placement.style.left).toBe(40);
+  });
+
+  it("constrains floating menus to the larger side when neither side fully fits", () => {
+    const placement = getViewportFloatingMenuPlacement({
+      anchorRect: { bottom: 370, left: 40, right: 60, top: 350 },
+      floatingRect: { height: 500, width: 360 },
+      viewportRect: { height: 600, width: 800 },
+    });
+
+    expect(placement.side).toBe("top");
+    expect(placement.style.top).toBe(8);
+    expect(placement.style.maxHeight).toBe(334);
+    expect(placement.style.overflowY).toBe("auto");
   });
 });

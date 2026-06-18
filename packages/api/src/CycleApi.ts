@@ -1,3 +1,4 @@
+import { mcpBearerTokenEnvVar } from "@cycle/agents";
 import { makeDefaultAgentServiceRegistry } from "@cycle/agents/service";
 import { makeCycleMcpHttpLayer, type CycleMcpHttpOptions } from "@cycle/mcp/server";
 import { NodeServices } from "@effect/platform-node";
@@ -14,6 +15,7 @@ import { CycleAuthorizationLive } from "./http/handlers/Authorization.ts";
 import { SystemApiHandlers } from "./http/handlers/System.ts";
 import { V1ApiHandlers } from "./http/handlers/V1.ts";
 import { makeChatWebSocketLayer } from "./http/handlers/v1/chat/ws.ts";
+import { CycleApiTracingLive } from "./http/tracing.ts";
 import {
   CycleApiRuntime,
   type AgentChatActivityRecord,
@@ -76,18 +78,23 @@ export const makeCycleApi = (options: CycleApiOptions): CycleApi => {
 
 export const makeCycleApiLayer = (options: CycleApiOptions) => {
   const mcpPath = hostedMcpPath(options.mcp);
+  const agentServiceEnv = agentServiceEnvFromMcp(options.mcp, options.staticToken);
   const activeAgentTurns = makeAgentActiveTurnDirectory();
   const runtimeShape: CycleApiRuntimeShape = {
     activeAgentTurns,
     agentProviderProfiles: options.agentProviderProfiles ?? listLocalAgentProviderProfiles,
     agentServices:
       options.agentServices ??
-      makeDefaultAgentServiceRegistry({ sessionStore: options.agentSessionStore }),
+      makeDefaultAgentServiceRegistry({
+        ...(agentServiceEnv === undefined ? {} : { env: agentServiceEnv }),
+        sessionStore: options.agentSessionStore,
+      }),
     ...(options.agentChatStore === undefined ? {} : { agentChatStore: options.agentChatStore }),
     ...(options.agentSessionStore === undefined
       ? {}
       : { agentSessionStore: options.agentSessionStore }),
     apiVersion: options.apiVersion ?? "0.1.0",
+    ...(options.localSettings === undefined ? {} : { localSettings: options.localSettings }),
     ...(mcpPath === undefined ? {} : { mcpPath }),
     now: options.now ?? (() => new Date()),
     ...(options.repositoryOpenInput === undefined
@@ -100,6 +107,7 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
   const runtime = Layer.succeed(CycleApiRuntime, runtimeShape);
   const handlers = Layer.mergeAll(SystemApiHandlers, V1ApiHandlers).pipe(
     Layer.provide(CycleAuthorizationLive),
+    Layer.provide(CycleApiTracingLive),
     Layer.provide(runtime),
   );
   const apiLayer = HttpApiBuilder.layer(CycleHttpApi, {
@@ -126,6 +134,22 @@ const hostedMcpPath = (mcp: false | CycleApiMcpOptions | undefined): string | un
   if (mcp === false || mcp === undefined || mcp.enabled === false) return undefined;
   return mcp.path ?? "/mcp";
 };
+
+const agentServiceEnvFromMcp = (
+  mcp: false | CycleApiMcpOptions | undefined,
+  staticToken: string,
+): NodeJS.ProcessEnv | undefined => {
+  if (mcp === false || mcp === undefined || mcp.enabled === false) return undefined;
+  return {
+    [mcpBearerTokenEnvVar]:
+      mcp.auth === false ? (mcp.apiToken ?? staticToken) : normalizeMcpToken(mcp, staticToken),
+  };
+};
+
+const normalizeMcpToken = (mcp: CycleApiMcpOptions, staticToken: string): string =>
+  mcp.auth !== false && mcp.auth?.token !== undefined
+    ? mcp.auth.token
+    : (mcp.apiToken ?? staticToken);
 
 const apiDocsLayer = HttpRouter.add(
   "GET",
@@ -171,6 +195,6 @@ const normalizeMcpAuth = (
 ): CycleMcpHttpOptions["auth"] => {
   if (mcp.auth === false) return false;
   return {
-    token: mcp.auth?.token ?? mcp.apiToken ?? staticToken,
+    token: normalizeMcpToken(mcp, staticToken),
   };
 };

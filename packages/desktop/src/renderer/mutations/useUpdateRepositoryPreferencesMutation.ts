@@ -5,6 +5,7 @@ import {
   type RepositoryRecord,
 } from "../../shared/AppConfig.ts";
 import type { UpdateRepositoryPreferencesInput } from "../../shared/LocalWorkspace.ts";
+import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 import { appConfigQueryKey } from "../queries/appConfig.ts";
 
@@ -20,19 +21,13 @@ export const useUpdateRepositoryPreferencesMutation = ({
   return useMutation({
     mutationFn: async (input: UpdateRepositoryPreferencesInput) => {
       const bridge = getDesktopBridge();
-      if (bridge) return bridge.updateRepositoryPreferences(input);
 
-      const current = appConfig ?? defaultAppConfig();
-      const repository = current.localWorkspace.repositories.find(({ id }) => id === input.id);
-      if (!repository) return null;
-
-      return {
-        ...repository,
-        preferences: {
-          ...repository.preferences,
-          ...input.preferences,
-        },
-      } satisfies RepositoryRecord;
+      try {
+        return await cycleApiClient.updateRepositoryPreferences(input);
+      } catch (error) {
+        if (bridge) return bridge.updateRepositoryPreferences(input);
+        throw error;
+      }
     },
     onSuccess: async (repository, input) => {
       const bridge = getDesktopBridge();

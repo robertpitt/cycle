@@ -1,15 +1,19 @@
 import {
   isAgentProviderId,
+  type AgentApprovalDecision,
+  type AgentApprovalKind,
+  type AgentApprovalRequest,
   type AgentArtifact,
+  type AgentContentStreamKind,
   type AgentError,
   type AgentEvent,
   type AgentProviderId,
   type AgentProviderProfile,
   type AgentTurnRequest,
+  type AgentUserInputAnswer,
 } from "@cycle/agents";
 import { Effect, Layer } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http";
-import { randomUUID } from "node:crypto";
 import type {
   AgentChatActivityRecord,
   AgentChatEventRecord,
@@ -151,6 +155,25 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
     return event;
   };
 
+  const broadcastThreadDeleted = async (threadId: string, deletedAt: string): Promise<void> => {
+    await Promise.all(
+      [...connections.values()]
+        .filter((connection) => connection.authenticated)
+        .map((connection) =>
+          safeSend(connection, {
+            createdAt: deletedAt,
+            payload: {
+              deletedAt,
+              threadId,
+            },
+            threadId,
+            type: "thread.deleted",
+            version: 1,
+          }),
+        ),
+    );
+  };
+
   const sendCommandError = (
     connection: ChatConnection,
     command: ClientMessage,
@@ -239,6 +262,16 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
     connection.subscribedThreadIds.clear();
   };
 
+  const clearThreadSubscriptions = (threadId: string) => {
+    const subscribers = subscribersByThreadId.get(threadId);
+    if (subscribers === undefined) return;
+
+    for (const subscriber of subscribers) {
+      subscriber.subscribedThreadIds.delete(threadId);
+    }
+    subscribersByThreadId.delete(threadId);
+  };
+
   const handleCommand = async (
     connection: ChatConnection,
     command: ClientMessage,
@@ -248,7 +281,10 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
       case "connection.authenticate": {
         const payload = objectPayload(command);
         const token = typeof payload.token === "string" ? payload.token : undefined;
-        if (token !== runtime.staticToken && connection.authorizationToken !== runtime.staticToken) {
+        if (
+          token !== runtime.staticToken &&
+          connection.authorizationToken !== runtime.staticToken
+        ) {
           await safeSend(connection, {
             commandId: command.commandId,
             payload: {
@@ -406,6 +442,69 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
         return;
       }
 
+      case "thread.delete": {
+        if (!(await requireAuthenticated(connection, command))) return;
+        const chatStore = await requireStore(connection, command);
+        if (chatStore === undefined) return;
+        if (chatStore.deleteThread === undefined) {
+          await sendCommandError(
+            connection,
+            command,
+            "CHAT_DELETE_UNAVAILABLE",
+            "The local chat store cannot delete threads.",
+          );
+          return;
+        }
+
+        const payload = objectPayload(command);
+        const threadId = stringValue(payload.threadId);
+        if (threadId === undefined) {
+          await sendCommandError(connection, command, "INVALID_PAYLOAD", "threadId is required.");
+          return;
+        }
+
+        const thread = await getThread(chatStore, threadId);
+        if (thread === undefined) {
+          await sendCommandError(connection, command, "THREAD_NOT_FOUND", "Thread not found.");
+          return;
+        }
+
+        if (thread.activeTurnId !== undefined && thread.activeTurnId !== null) {
+          await sendCommandError(
+            connection,
+            command,
+            "THREAD_TURN_ACTIVE",
+            "Cannot delete a chat thread while a turn is active.",
+          );
+          return;
+        }
+
+        if (activeTurnsByThreadId.has(threadId)) {
+          await sendCommandError(
+            connection,
+            command,
+            "THREAD_TURN_ACTIVE",
+            "Cannot delete a chat thread while a turn is active.",
+          );
+          return;
+        }
+
+        const deletedAt = runtime.now().toISOString();
+        const deleted = await chatStore.deleteThread(threadId);
+        if (!deleted) {
+          await sendCommandError(connection, command, "THREAD_NOT_FOUND", "Thread not found.");
+          return;
+        }
+
+        await acknowledge(connection, command, {
+          deleted: true,
+          threadId,
+        });
+        await broadcastThreadDeleted(threadId, deletedAt);
+        clearThreadSubscriptions(threadId);
+        return;
+      }
+
       case "turn.send": {
         if (!(await requireAuthenticated(connection, command))) return;
         const chatStore = await requireStore(connection, command);
@@ -441,6 +540,14 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
         const chatStore = await requireStore(connection, command);
         if (chatStore === undefined) return;
         await respondToQuestion(chatStore, runtime, command, connection, publish);
+        return;
+      }
+
+      case "approval.respond": {
+        if (!(await requireAuthenticated(connection, command))) return;
+        const chatStore = await requireStore(connection, command);
+        if (chatStore === undefined) return;
+        await respondToApproval(chatStore, runtime, command, connection, publish);
         return;
       }
 
@@ -603,7 +710,12 @@ const sendTurn = async (input: {
   await input.chatStore.upsertMessage(userMessage);
   await input.chatStore.upsertTurn?.(turn);
   await input.chatStore.upsertThread(nextThread);
-  await input.publish(threadId, "message.created", { message: messageForProtocol(userMessage) }, now);
+  await input.publish(
+    threadId,
+    "message.created",
+    { message: messageForProtocol(userMessage) },
+    now,
+  );
   await input.publish(threadId, "turn.started", { turn: turnForProtocol(turn) }, now);
   await input.publish(threadId, "thread.updated", { thread: threadForProtocol(nextThread) }, now);
   await safeSend(input.connection, {
@@ -646,7 +758,9 @@ const runProviderTurn = async (input: {
   readonly turn: AgentChatTurnRecord;
   readonly userMessage: AgentChatMessageRecord;
 }): Promise<void> => {
-  const service = await Effect.runPromise(input.runtime.agentServices.serviceFor(input.turn.providerId as AgentProviderId));
+  const service = await Effect.runPromise(
+    input.runtime.agentServices.serviceFor(input.turn.providerId as AgentProviderId),
+  );
   const activeTurn = input.runtime.activeAgentTurns.begin({
     provider: input.turn.providerId as AgentProviderId,
     requestId: input.turn.id,
@@ -662,6 +776,7 @@ const runProviderTurn = async (input: {
 
   let assistantMessage: AgentChatMessageRecord | undefined;
   let latestAssistantText = "";
+  let sawThinkingActivity = false;
   const messages = await input.chatStore.listMessages(input.thread.id);
   const prepared = prepareChatTurn({
     origin: input.origin,
@@ -714,9 +829,14 @@ const runProviderTurn = async (input: {
               updatedAt: createdAt,
             };
             await input.chatStore.upsertMessage(assistantMessage);
-            await input.publish(input.thread.id, "message.created", {
-              message: messageForProtocol(assistantMessage),
-            }, createdAt);
+            await input.publish(
+              input.thread.id,
+              "message.created",
+              {
+                message: messageForProtocol(assistantMessage),
+              },
+              createdAt,
+            );
           } else {
             assistantMessage = {
               ...assistantMessage,
@@ -726,14 +846,212 @@ const runProviderTurn = async (input: {
             };
             await input.chatStore.upsertMessage(assistantMessage);
           }
-          await input.publish(input.thread.id, "message.delta", {
-            delta,
-            messageId: assistantMessage.id,
-            snapshot: event.snapshot,
-            turnId: input.turn.id,
-          }, event.at.toISOString());
+          await input.publish(
+            input.thread.id,
+            "message.delta",
+            {
+              delta,
+              messageId: assistantMessage.id,
+              snapshot: event.snapshot,
+              turnId: input.turn.id,
+            },
+            event.at.toISOString(),
+          );
           break;
         }
+
+        case "content.delta": {
+          if (event.streamKind === "assistant_text") break;
+          if (event.streamKind === "reasoning_text" || event.streamKind === "reasoning_summary") {
+            sawThinkingActivity = true;
+            await upsertThinkingActivity(input, event.at.toISOString(), "running");
+            break;
+          }
+
+          await upsertActivity(input, {
+            createdAt: event.at.toISOString(),
+            detail: event.delta.slice(0, 1000),
+            id:
+              event.itemId === undefined
+                ? chatId("activity-stream")
+                : `activity-stream_${event.streamKind}_${event.itemId}`,
+            kind: event.streamKind === "plan" ? "progress" : "tool",
+            payload: {
+              delta: event.delta,
+              itemId: event.itemId,
+              streamKind: event.streamKind,
+            },
+            status: "running",
+            threadId: input.thread.id,
+            title: streamKindTitle(event.streamKind),
+            turnId: input.turn.id,
+            updatedAt: event.at.toISOString(),
+          });
+          break;
+        }
+
+        case "turn.plan.updated":
+          await upsertActivity(input, {
+            createdAt: event.at.toISOString(),
+            detail: event.explanation ?? event.plan.map((step) => step.step).join("\n"),
+            id: "activity-plan",
+            kind: "progress",
+            payload: {
+              explanation: event.explanation,
+              plan: event.plan,
+            },
+            status: "running",
+            threadId: input.thread.id,
+            title: "Plan updated",
+            turnId: input.turn.id,
+            updatedAt: event.at.toISOString(),
+          });
+          break;
+
+        case "turn.diff.updated":
+          await upsertActivity(input, {
+            createdAt: event.at.toISOString(),
+            detail: "Diff updated",
+            id: "activity-diff",
+            kind: "tool",
+            payload: {
+              diff: event.diff,
+            },
+            status: "running",
+            threadId: input.thread.id,
+            title: "Diff updated",
+            turnId: input.turn.id,
+            updatedAt: event.at.toISOString(),
+          });
+          break;
+
+        case "item.started":
+        case "item.updated":
+        case "item.completed": {
+          const activity = activityFromItemLifecycle(input, event);
+          if (activity !== undefined) await upsertActivity(input, activity);
+          break;
+        }
+
+        case "approval.requested":
+          await updateTurn(input, { status: "waiting_for_user" });
+          await upsertActivity(input, {
+            createdAt: event.at.toISOString(),
+            detail: approvalDetail(event.request),
+            id: `activity-approval_${event.request.requestId}`,
+            kind: "question",
+            payload: event.request as unknown as Readonly<Record<string, unknown>>,
+            status: "pending",
+            threadId: input.thread.id,
+            title: approvalTitle(event.request.kind),
+            turnId: input.turn.id,
+            updatedAt: event.at.toISOString(),
+          });
+          await input.publish(
+            input.thread.id,
+            "approval.requested",
+            {
+              request: event.request as unknown as Readonly<Record<string, unknown>>,
+            },
+            event.at.toISOString(),
+          );
+          break;
+
+        case "approval.resolved":
+          await upsertActivity(input, {
+            createdAt: event.at.toISOString(),
+            detail: event.decision,
+            id: `activity-approval_${event.requestId}`,
+            kind: "question",
+            payload: {
+              decision: event.decision,
+              requestId: event.requestId,
+            },
+            status: "completed",
+            threadId: input.thread.id,
+            title: "Approval resolved",
+            turnId: input.turn.id,
+            updatedAt: event.at.toISOString(),
+          });
+          await updateTurn(input, { status: "running" });
+          await input.publish(
+            input.thread.id,
+            "approval.resolved",
+            {
+              decision: event.decision,
+              requestId: event.requestId,
+            },
+            event.at.toISOString(),
+          );
+          break;
+
+        case "user-input.requested": {
+          await updateTurn(input, { status: "waiting_for_user" });
+          const question: AgentChatQuestionRecord = {
+            createdAt: event.at.toISOString(),
+            id: event.request.requestId,
+            prompt: event.request.prompt,
+            questions: event.request.questions,
+            status: "open",
+            threadId: input.thread.id,
+            turnId: input.turn.id,
+            updatedAt: event.at.toISOString(),
+          };
+          await input.chatStore.upsertQuestion?.(question);
+          await input.publish(
+            input.thread.id,
+            "question.created",
+            {
+              question: questionForProtocol(question),
+            },
+            event.at.toISOString(),
+          );
+          break;
+        }
+
+        case "user-input.resolved":
+          await updateTurn(input, { status: "running" });
+          await input.publish(
+            input.thread.id,
+            "question.resolved",
+            {
+              answers: event.answers,
+              questionId: event.requestId,
+              status: "answered",
+            },
+            event.at.toISOString(),
+          );
+          break;
+
+        case "runtime.warning":
+          await upsertActivity(input, {
+            createdAt: event.at.toISOString(),
+            detail: event.message,
+            id: chatId("activity-warning"),
+            kind: "system",
+            payload: isRecord(event.raw) ? event.raw : undefined,
+            status: "completed",
+            threadId: input.thread.id,
+            title: "Runtime warning",
+            turnId: input.turn.id,
+            updatedAt: event.at.toISOString(),
+          });
+          break;
+
+        case "runtime.error":
+          await upsertActivity(input, {
+            createdAt: event.at.toISOString(),
+            detail: event.error.message,
+            id: chatId("activity-runtime-error"),
+            kind: "error",
+            payload: publicAgentError(event.error) as Record<string, unknown>,
+            status: "failed",
+            threadId: input.thread.id,
+            title: "Runtime error",
+            turnId: input.turn.id,
+            updatedAt: event.at.toISOString(),
+          });
+          break;
 
         case "progress":
           await upsertActivity(input, {
@@ -771,6 +1089,9 @@ const runProviderTurn = async (input: {
 
         case "turn.completed": {
           const completedAt = event.at.toISOString();
+          if (sawThinkingActivity) {
+            await upsertThinkingActivity(input, completedAt, "completed");
+          }
           const finalText = event.result.text || latestAssistantText;
           assistantMessage = {
             actor: "agent",
@@ -783,18 +1104,29 @@ const runProviderTurn = async (input: {
             updatedAt: completedAt,
           };
           await input.chatStore.upsertMessage(assistantMessage);
-          await input.publish(input.thread.id, "message.completed", {
-            message: messageForProtocol(assistantMessage),
-          }, completedAt);
+          await input.publish(
+            input.thread.id,
+            "message.completed",
+            {
+              message: messageForProtocol(assistantMessage),
+            },
+            completedAt,
+          );
           await completeTurn(input, "completed", completedAt, undefined, assistantMessage.id);
           return;
         }
 
         case "turn.failed":
+          if (sawThinkingActivity) {
+            await upsertThinkingActivity(input, event.at.toISOString(), "failed");
+          }
           await failTurn(input, event.error.message, event.at.toISOString(), event.error);
           return;
 
         case "turn.cancelled":
+          if (sawThinkingActivity) {
+            await upsertThinkingActivity(input, event.at.toISOString(), "cancelled");
+          }
           await cancelTurn(input, event.error.message, event.at.toISOString(), event.error);
           return;
       }
@@ -810,14 +1142,21 @@ const runProviderTurn = async (input: {
   } catch (error) {
     const aborted = activeTurn.record.abortController.signal.aborted;
     const message = error instanceof Error ? error.message : String(error);
+    const completedAt = input.runtime.now().toISOString();
+    if (sawThinkingActivity) {
+      await upsertThinkingActivity(input, completedAt, aborted ? "cancelled" : "failed");
+    }
     if (aborted) {
-      await cancelTurn(input, message, input.runtime.now().toISOString());
+      await cancelTurn(input, message, completedAt);
     } else {
-      await failTurn(input, message, input.runtime.now().toISOString());
+      await failTurn(input, message, completedAt);
     }
   } finally {
     input.activeTurnsByThreadId.delete(input.thread.id);
-    input.runtime.activeAgentTurns.finish(input.turn.providerId as AgentProviderId, input.thread.sessionId ?? input.thread.id);
+    input.runtime.activeAgentTurns.finish(
+      input.turn.providerId as AgentProviderId,
+      input.thread.sessionId ?? input.thread.id,
+    );
   }
 };
 
@@ -834,6 +1173,109 @@ const updateTurn = async (
   await input.chatStore.upsertTurn?.(updated);
   await input.publish(input.thread.id, "turn.started", { turn: turnForProtocol(updated) });
 };
+
+const hiddenProviderItemTypes = new Set([
+  "agentMessage",
+  "agent_message",
+  "commandExecution",
+  "command_execution",
+  "contextCompaction",
+  "context_compaction",
+  "fileChange",
+  "file_change",
+  "hookPrompt",
+  "hook_prompt",
+  "plan",
+  "reasoning",
+  "userMessage",
+  "user_message",
+]);
+
+const providerItemTitle = (itemType: string | undefined): string => {
+  switch (itemType) {
+    case "collabAgentToolCall":
+    case "collab_agent_tool_call":
+      return "Sub-agent";
+    case "dynamicToolCall":
+    case "dynamic_tool_call":
+      return "Tool call";
+    case "imageGeneration":
+    case "image_generation":
+      return "Image generation";
+    case "imageView":
+    case "image_view":
+      return "Viewed image";
+    case "mcpToolCall":
+    case "mcp_tool_call":
+      return "MCP tool";
+    case "webSearch":
+    case "web_search":
+      return "Web search";
+    default:
+      return "Provider activity";
+  }
+};
+
+const providerItemDetail = (item: unknown, itemType: string | undefined): string | undefined => {
+  if (!isRecord(item)) return undefined;
+  switch (itemType) {
+    case "dynamicToolCall":
+    case "dynamic_tool_call":
+    case "mcpToolCall":
+    case "mcp_tool_call": {
+      const namespace = stringValue(item.namespace);
+      const tool = stringValue(item.tool);
+      return [namespace, tool].filter((value) => value !== undefined).join(".");
+    }
+    case "webSearch":
+    case "web_search":
+      return stringValue(item.query);
+    default:
+      return stringValue(item.status);
+  }
+};
+
+const activityFromItemLifecycle = (
+  input: Parameters<typeof runProviderTurn>[0],
+  event: Extract<AgentEvent, { readonly type: "item.started" | "item.updated" | "item.completed" }>,
+): AgentChatActivityRecord | undefined => {
+  if (event.itemType === undefined || hiddenProviderItemTypes.has(event.itemType)) {
+    return undefined;
+  }
+
+  const timestamp = event.at.toISOString();
+  return {
+    createdAt: timestamp,
+    detail: providerItemDetail(event.item, event.itemType),
+    id: `activity-provider-item_${event.itemId}`,
+    kind: "tool",
+    payload: {
+      itemId: event.itemId,
+      itemType: event.itemType,
+    },
+    status: event.type === "item.completed" ? "completed" : "running",
+    threadId: input.thread.id,
+    title: providerItemTitle(event.itemType),
+    turnId: input.turn.id,
+    updatedAt: timestamp,
+  };
+};
+
+const upsertThinkingActivity = (
+  input: Parameters<typeof runProviderTurn>[0],
+  timestamp: string,
+  status: NonNullable<AgentChatActivityRecord["status"]>,
+) =>
+  upsertActivity(input, {
+    createdAt: timestamp,
+    id: "activity-thinking",
+    kind: "thinking",
+    status,
+    threadId: input.thread.id,
+    title: "Thinking",
+    turnId: input.turn.id,
+    updatedAt: timestamp,
+  });
 
 const completeTurn = async (
   input: Parameters<typeof runProviderTurn>[0],
@@ -855,13 +1297,23 @@ const completeTurn = async (
     activeTurnId: null,
     lastError: error ?? null,
     status: status === "failed" ? "error" : "active",
-    summary: status === "completed" ? input.thread.summary : error ?? input.thread.summary,
+    summary: status === "completed" ? input.thread.summary : (error ?? input.thread.summary),
     updatedAt: completedAt,
   };
   await input.chatStore.upsertTurn?.(turn);
   await input.chatStore.upsertThread(thread);
-  await input.publish(input.thread.id, `turn.${status}`, { turn: turnForProtocol(turn) }, completedAt);
-  await input.publish(input.thread.id, "thread.updated", { thread: threadForProtocol(thread) }, completedAt);
+  await input.publish(
+    input.thread.id,
+    `turn.${status}`,
+    { turn: turnForProtocol(turn) },
+    completedAt,
+  );
+  await input.publish(
+    input.thread.id,
+    "thread.updated",
+    { thread: threadForProtocol(thread) },
+    completedAt,
+  );
 };
 
 const failTurn = (
@@ -876,7 +1328,8 @@ const failTurn = (
       detail: message,
       id: chatId("activity-error"),
       kind: "error",
-      payload: error === undefined ? undefined : (publicAgentError(error) as Record<string, unknown>),
+      payload:
+        error === undefined ? undefined : (publicAgentError(error) as Record<string, unknown>),
       status: "failed",
       threadId: input.thread.id,
       title: "Agent turn failed",
@@ -898,7 +1351,8 @@ const cancelTurn = (
       detail: message,
       id: chatId("activity-cancelled"),
       kind: "system",
-      payload: error === undefined ? undefined : (publicAgentError(error) as Record<string, unknown>),
+      payload:
+        error === undefined ? undefined : (publicAgentError(error) as Record<string, unknown>),
       status: "cancelled",
       threadId: input.thread.id,
       title: "Agent turn cancelled",
@@ -913,9 +1367,14 @@ const upsertActivity = async (
   activity: AgentChatActivityRecord,
 ) => {
   await input.chatStore.upsertActivity?.(activity);
-  await input.publish(activity.threadId, "activity.upserted", {
-    activity: activityForProtocol(activity),
-  }, activity.updatedAt ?? activity.createdAt);
+  await input.publish(
+    activity.threadId,
+    "activity.upserted",
+    {
+      activity: activityForProtocol(activity),
+    },
+    activity.updatedAt ?? activity.createdAt,
+  );
 };
 
 const respondToQuestion = async (
@@ -933,12 +1392,28 @@ const respondToQuestion = async (
   const payload = objectPayload(command);
   const threadId = stringValue(payload.threadId);
   const questionId = stringValue(payload.questionId);
-  if (threadId === undefined || questionId === undefined || !isRecord(payload.answers)) {
+  const answersPayload = isRecord(payload.answers) ? payload.answers : undefined;
+  if (threadId === undefined || questionId === undefined || answersPayload === undefined) {
     await safeSend(connection, {
       commandId: command.commandId,
       payload: {
         code: "INVALID_PAYLOAD",
         message: "threadId, questionId, and answers are required.",
+        retryable: false,
+        type: command.type,
+      },
+      type: "command.error",
+      version: 1,
+    });
+    return;
+  }
+  const thread = await getThread(chatStore, threadId);
+  if (thread === undefined) {
+    await safeSend(connection, {
+      commandId: command.commandId,
+      payload: {
+        code: "THREAD_NOT_FOUND",
+        message: "Thread not found.",
         retryable: false,
         type: command.type,
       },
@@ -963,22 +1438,158 @@ const respondToQuestion = async (
     });
     return;
   }
+  const providerId = providerFromUnknown(thread.agentId) ?? "codex";
+  const service = await Effect.runPromise(runtime.agentServices.serviceFor(providerId));
+  const response = await service.respondToUserInput(
+    thread.sessionId ?? thread.id,
+    questionId,
+    userInputAnswersFromRecord(answersPayload),
+  );
+  if (response.status === "not_found") {
+    await safeSend(connection, {
+      commandId: command.commandId,
+      payload: {
+        code: "QUESTION_NOT_FOUND",
+        message: "Provider question is no longer pending.",
+        retryable: false,
+        type: command.type,
+      },
+      type: "command.error",
+      version: 1,
+    });
+    return;
+  }
   const answeredAt = runtime.now().toISOString();
   const updated: AgentChatQuestionRecord = {
     ...question,
-    answer: payload.answers,
+    answer: answersPayload,
     answeredAt,
     status: "answered",
     updatedAt: answeredAt,
   };
   await chatStore.upsertQuestion?.(updated);
   await acknowledgeQuestion(connection, command, updated);
-  await publish(threadId, "question.resolved", {
-    answer: updated.answer ?? {},
+  await publish(
+    threadId,
+    "question.resolved",
+    {
+      answer: updated.answer ?? {},
+      answeredAt,
+      questionId,
+      response,
+      status: "answered",
+    },
     answeredAt,
-    questionId,
-    status: "answered",
-  }, answeredAt);
+  );
+};
+
+const respondToApproval = async (
+  chatStore: AgentChatStoreShape,
+  runtime: CycleApiRuntimeShape,
+  command: ClientMessage,
+  connection: ChatConnection,
+  publish: (
+    threadId: string,
+    type: string,
+    payload: Readonly<Record<string, unknown>>,
+    createdAt?: string,
+  ) => Promise<AgentChatEventRecord | undefined>,
+): Promise<void> => {
+  const payload = objectPayload(command);
+  const threadId = stringValue(payload.threadId);
+  const requestId = stringValue(payload.requestId);
+  const decision = approvalDecisionFromUnknown(payload.decision);
+  if (threadId === undefined || requestId === undefined || decision === undefined) {
+    await safeSend(connection, {
+      commandId: command.commandId,
+      payload: {
+        code: "INVALID_PAYLOAD",
+        message: "threadId, requestId, and decision are required.",
+        retryable: false,
+        type: command.type,
+      },
+      type: "command.error",
+      version: 1,
+    });
+    return;
+  }
+
+  const thread = await getThread(chatStore, threadId);
+  if (thread === undefined) {
+    await safeSend(connection, {
+      commandId: command.commandId,
+      payload: {
+        code: "THREAD_NOT_FOUND",
+        message: "Thread not found.",
+        retryable: false,
+        type: command.type,
+      },
+      type: "command.error",
+      version: 1,
+    });
+    return;
+  }
+
+  const providerId = providerFromUnknown(thread.agentId) ?? "codex";
+  const service = await Effect.runPromise(runtime.agentServices.serviceFor(providerId));
+  const response = await service.respondToApproval(
+    thread.sessionId ?? thread.id,
+    requestId,
+    decision,
+  );
+  if (response.status === "not_found") {
+    await safeSend(connection, {
+      commandId: command.commandId,
+      payload: {
+        code: "APPROVAL_NOT_FOUND",
+        message: "Provider approval is no longer pending.",
+        retryable: false,
+        type: command.type,
+      },
+      type: "command.error",
+      version: 1,
+    });
+    return;
+  }
+
+  const resolvedAt = runtime.now().toISOString();
+  await chatStore.upsertActivity?.({
+    createdAt: resolvedAt,
+    detail: decision,
+    id: `activity-approval_${requestId}`,
+    kind: "question",
+    payload: {
+      decision,
+      requestId,
+      response,
+    },
+    status: "completed",
+    threadId,
+    title: "Approval resolved",
+    updatedAt: resolvedAt,
+  });
+  await safeSend(connection, {
+    commandId: command.commandId,
+    payload: {
+      result: {
+        requestId,
+        response,
+      },
+      type: command.type,
+    },
+    type: "command.ack",
+    version: 1,
+  });
+  await publish(
+    threadId,
+    "approval.resolved",
+    {
+      decision,
+      requestId,
+      response,
+    },
+    resolvedAt,
+  );
 };
 
 const acknowledgeQuestion = (
@@ -1069,7 +1680,75 @@ const stringValue = (value: unknown): string | undefined =>
 const stringOrNull = (value: unknown): string | null =>
   typeof value === "string" && value.trim().length > 0 ? value : null;
 
-const chatId = (prefix: string): string => `${prefix}_${randomUUID()}`;
+const approvalDecisionFromUnknown = (value: unknown): AgentApprovalDecision | undefined =>
+  value === "accept" || value === "acceptForSession" || value === "decline" || value === "cancel"
+    ? value
+    : undefined;
+
+const answerValueFromUnknown = (value: unknown): AgentUserInputAnswer["value"] => {
+  if (typeof value === "boolean" || typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value.filter((entry): entry is string => typeof entry === "string");
+  }
+  if (isRecord(value) && Array.isArray(value.answers)) {
+    return value.answers.filter((entry): entry is string => typeof entry === "string");
+  }
+  return String(value);
+};
+
+const userInputAnswersFromRecord = (
+  answers: Readonly<Record<string, unknown>>,
+): readonly AgentUserInputAnswer[] =>
+  Object.entries(answers).map(([questionId, value]) => ({
+    questionId,
+    value: answerValueFromUnknown(value),
+  }));
+
+const streamKindTitle = (streamKind: AgentContentStreamKind): string => {
+  switch (streamKind) {
+    case "reasoning_text":
+    case "reasoning_summary":
+      return "Reasoning";
+    case "plan":
+      return "Plan";
+    case "command_output":
+      return "Command output";
+    case "file_change_output":
+      return "File changes";
+    case "tool_output":
+      return "Tool output";
+    case "assistant_text":
+      return "Assistant text";
+    case "unknown":
+    default:
+      return "Provider output";
+  }
+};
+
+const approvalTitle = (kind: AgentApprovalKind): string => {
+  switch (kind) {
+    case "command":
+      return "Command approval requested";
+    case "file-change":
+      return "File change approval requested";
+    case "permissions":
+      return "Permission approval requested";
+    case "unknown":
+    default:
+      return "Approval requested";
+  }
+};
+
+const approvalDetail = (request: AgentApprovalRequest): string | undefined => {
+  const command = request.details?.command;
+  if (typeof command === "string" && command.length > 0) return command;
+  const changes = request.details?.changes;
+  if (Array.isArray(changes))
+    return `${changes.length} file change${changes.length === 1 ? "" : "s"}`;
+  return undefined;
+};
+
+const chatId = (prefix: string): string => `${prefix}_${crypto.randomUUID()}`;
 
 const threadForProtocol = (thread: AgentChatThreadRecord): Readonly<Record<string, unknown>> => ({
   activeTurnId: thread.activeTurnId ?? null,
@@ -1087,7 +1766,9 @@ const threadForProtocol = (thread: AgentChatThreadRecord): Readonly<Record<strin
   updatedAt: thread.updatedAt,
 });
 
-const messageForProtocol = (message: AgentChatMessageRecord): Readonly<Record<string, unknown>> => ({
+const messageForProtocol = (
+  message: AgentChatMessageRecord,
+): Readonly<Record<string, unknown>> => ({
   createdAt: message.createdAt,
   id: message.id,
   role: message.actor === "agent" ? "assistant" : "user",
@@ -1147,7 +1828,9 @@ const messagePayloadFromRecord = (message: AgentChatMessageRecord): ChatMessageP
   role: message.actor === "agent" ? "assistant" : "user",
 });
 
-const providerProfileForChat = (profile: AgentProviderProfile): Readonly<Record<string, unknown>> => {
+const providerProfileForChat = (
+  profile: AgentProviderProfile,
+): Readonly<Record<string, unknown>> => {
   const availability =
     profile.status === "available"
       ? "available"
@@ -1190,9 +1873,7 @@ const activityFromArtifact = (
       createdAt: event.at.toISOString(),
       detail: formatToolDetail(artifact.output),
       id:
-        artifactItemId === undefined
-          ? chatId("activity-tool")
-          : `activity-tool_${artifactItemId}`,
+        artifactItemId === undefined ? chatId("activity-tool") : `activity-tool_${artifactItemId}`,
       kind: "tool",
       payload: {
         error: artifact.error,
@@ -1220,9 +1901,7 @@ const activityFromArtifact = (
       createdAt: event.at.toISOString(),
       detail: artifact.summary,
       id:
-        artifactItemId === undefined
-          ? chatId("activity-tool")
-          : `activity-tool_${artifactItemId}`,
+        artifactItemId === undefined ? chatId("activity-tool") : `activity-tool_${artifactItemId}`,
       kind: "tool",
       payload: {
         files: artifact.files,
@@ -1249,7 +1928,7 @@ const activityFromArtifact = (
     payload: artifact as unknown as Readonly<Record<string, unknown>>,
     status: "completed",
     threadId: input.thread.id,
-    title: artifact.type === "raw" ? artifact.name ?? "Provider event" : artifact.type,
+    title: artifact.type === "raw" ? (artifact.name ?? "Provider event") : artifact.type,
     turnId: input.turn.id,
     updatedAt: event.at.toISOString(),
   };

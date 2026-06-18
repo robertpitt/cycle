@@ -92,10 +92,11 @@ const runGit = <E extends GitRunError>(
   options: GitRunOptions,
   makeError: (args: ReadonlyArray<string>, result: GitRunResult | undefined, cause: unknown) => E,
   context: GitCommandContext = {},
-): Effect.Effect<GitRunResult, E> =>
-  Effect.scoped(
+): Effect.Effect<GitRunResult, E> => {
+  const operationArgs = context.operationArgs ?? args;
+
+  return Effect.scoped(
     Effect.gen(function* () {
-      const operationArgs = context.operationArgs ?? args;
       const baseAnnotations = gitLogAnnotations(cwd, context.gitDir, operationArgs);
 
       yield* Effect.logDebug("git command starting").pipe(Effect.annotateLogs(baseAnnotations));
@@ -141,7 +142,12 @@ const runGit = <E extends GitRunError>(
 
       return result;
     }),
+  ).pipe(
+    Effect.withSpan(gitSpanName(operationArgs), {
+      attributes: gitSpanAttributes(cwd, context.gitDir, operationArgs),
+    }),
   );
+};
 
 export const sanitizeStderr = (stderr: string, maxLength = 2_048): string => {
   const normalized = stderr
@@ -164,11 +170,33 @@ const gitLogAnnotations = (
   operation: formatOperation(args),
   ref: refFromArgs(args),
   remote: remoteFromArgs(args),
-  service: "git",
+  service: "@cycle/git",
   status: result?.status ?? null,
   stderr: result === undefined ? null : sanitizeStderr(bytesToString(result.stderr)),
   stderrBytes: result?.stderr.byteLength ?? 0,
 });
+
+const gitSpanName = (args: ReadonlyArray<string>): string => `git.${spanSegment(args[0] ?? "run")}`;
+
+const gitSpanAttributes = (
+  cwd: string,
+  gitDir: string | undefined,
+  args: ReadonlyArray<string>,
+): Record<string, unknown> => ({
+  cwd,
+  gitDir: gitDir ?? null,
+  operation: formatOperation(args),
+  ref: refFromArgs(args),
+  remote: remoteFromArgs(args),
+  service: "@cycle/git",
+});
+
+const spanSegment = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/gu, "-")
+    .replace(/^-|-$/gu, "") || "run";
 
 const refFromArgs = (args: ReadonlyArray<string>): string | null => {
   const [command, ...rest] = args;

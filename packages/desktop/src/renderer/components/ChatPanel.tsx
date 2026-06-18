@@ -25,6 +25,8 @@ import {
   discoverCycleApiConnection,
   type CycleApiConnection,
 } from "../lib/cycleApiClient.ts";
+import { createMarkdownTagSuggestions } from "../lib/markdownTagSuggestions.ts";
+import { useIssueListQuery, useUserListQuery } from "../queries/index.ts";
 
 type ChatPanelProps = {
   readonly agentProviders: readonly DetectedAgentProvider[];
@@ -72,8 +74,7 @@ const numberValue = (value: unknown): number | undefined =>
 const booleanValue = (value: unknown): boolean | undefined =>
   typeof value === "boolean" ? value : undefined;
 
-const arrayValue = (value: unknown): readonly unknown[] =>
-  Array.isArray(value) ? value : [];
+const arrayValue = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : []);
 
 const threadStatus = (value: unknown): AgentChatThreadStatus => {
   if (
@@ -129,6 +130,23 @@ const activityStatus = (value: unknown): AgentChatActivityStatus | null => {
   }
   return null;
 };
+
+const hiddenProviderItemTypes = new Set([
+  "agentMessage",
+  "agent_message",
+  "commandExecution",
+  "command_execution",
+  "contextCompaction",
+  "context_compaction",
+  "fileChange",
+  "file_change",
+  "hookPrompt",
+  "hook_prompt",
+  "plan",
+  "reasoning",
+  "userMessage",
+  "user_message",
+]);
 
 const questionStatus = (value: unknown): AgentChatQuestionStatus => {
   if (value === "answered" || value === "cancelled" || value === "expired" || value === "open") {
@@ -194,13 +212,16 @@ const protocolActivity = (value: unknown): AgentChatActivity | undefined => {
   const createdAt = stringValue(value.createdAt);
   const title = stringValue(value.title);
   if (id === undefined || createdAt === undefined || title === undefined) return undefined;
+  const payload = isRecord(value.payload) ? { ...value.payload } : null;
+  const itemType = isRecord(payload) ? stringValue(payload.itemType) : undefined;
+  if (itemType !== undefined && hiddenProviderItemTypes.has(itemType)) return undefined;
 
   return {
     createdAt,
     detail: stringOrNull(value.detail),
     id,
     kind: activityKind(value.kind),
-    payload: isRecord(value.payload) ? { ...value.payload } : null,
+    payload,
     status: activityStatus(value.status),
     title,
     turnId: stringOrNull(value.turnId),
@@ -338,9 +359,7 @@ const supportedModelForProvider = (
     : null;
 };
 
-const firstAvailableProviderId = (
-  providers: readonly AgentChatProviderProfile[],
-): string | null =>
+const firstAvailableProviderId = (providers: readonly AgentChatProviderProfile[]): string | null =>
   providers.find((provider) => provider.availability === "available")?.id ??
   providers[0]?.id ??
   null;
@@ -436,19 +455,54 @@ const questionAnswersForProtocol = (
     ]),
   );
 
-export const ChatPanel = ({ agentProviders }: ChatPanelProps) => {
+export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelProps) => {
+  const repositoryIds = React.useMemo(
+    () => repositories.map((repository) => repository.id),
+    [repositories],
+  );
+  const primaryRepositoryId = repositoryIds[0];
+  const issueSuggestionsQuery = useIssueListQuery(
+    primaryRepositoryId,
+    {
+      limit: 25,
+      orderBy: "updatedAt",
+      orderDirection: "desc",
+      status: "all",
+    },
+    repositoryIds,
+  );
+  const userSuggestionsQuery = useUserListQuery(primaryRepositoryId, {
+    disabled: false,
+    limit: 25,
+  });
   const fallbackProviders = React.useMemo(
     () => agentProviders.map(detectedProviderProfile),
     [agentProviders],
+  );
+  const tagSuggestions = React.useMemo(
+    () =>
+      createMarkdownTagSuggestions({
+        agentProviders,
+        issues: issueSuggestionsQuery.data?.entries,
+        profile,
+        repositories,
+        users: userSuggestionsQuery.data?.entries,
+      }),
+    [
+      agentProviders,
+      issueSuggestionsQuery.data?.entries,
+      profile,
+      repositories,
+      userSuggestionsQuery.data?.entries,
+    ],
   );
   const [runtimeProviders, setRuntimeProviders] = React.useState<
     readonly AgentChatProviderProfile[]
   >([]);
   const providers = runtimeProviders.length > 0 ? runtimeProviders : fallbackProviders;
-  const [connectionStatus, setConnectionStatus] =
-    React.useState<"connected" | "connecting" | "disconnected" | "failed" | "reconnecting">(
-      "connecting",
-    );
+  const [connectionStatus, setConnectionStatus] = React.useState<
+    "connected" | "connecting" | "disconnected" | "failed" | "reconnecting"
+  >("connecting");
   const [threads, setThreads] = React.useState<readonly AgentChatThreadListEntry[]>([]);
   const [detailsById, setDetailsById] = React.useState<
     Readonly<Record<string, AgentChatThreadDetail>>
@@ -505,6 +559,26 @@ export const ChatPanel = ({ agentProviders }: ChatPanelProps) => {
       sendCommand("thread.subscribe", { threadId });
     },
     [sendCommand],
+  );
+
+  const removeThread = React.useCallback(
+    (threadId: string) => {
+      setThreads((current) => {
+        const nextThreads = current.filter((thread) => thread.id !== threadId);
+        if (selectedThreadIdRef.current === threadId) {
+          const nextSelectedThreadId = nextThreads[0]?.id ?? null;
+          selectedThreadIdRef.current = nextSelectedThreadId;
+          setSelectedThreadId(nextSelectedThreadId);
+          if (nextSelectedThreadId !== null) subscribeThread(nextSelectedThreadId);
+        }
+        return nextThreads;
+      });
+      setDetailsById((current) => {
+        const { [threadId]: _deletedThread, ...remaining } = current;
+        return remaining;
+      });
+    },
+    [subscribeThread],
   );
 
   const handleThreadListSnapshot = React.useCallback(
@@ -580,6 +654,13 @@ export const ChatPanel = ({ agentProviders }: ChatPanelProps) => {
         case "thread.updated": {
           const thread = isRecord(payload) ? protocolThread(payload.thread) : undefined;
           if (thread !== undefined) upsertThread(thread);
+          break;
+        }
+
+        case "thread.deleted": {
+          const threadId =
+            message.threadId ?? (isRecord(payload) ? stringValue(payload.threadId) : undefined);
+          if (threadId !== undefined) removeThread(threadId);
           break;
         }
 
@@ -738,7 +819,7 @@ export const ChatPanel = ({ agentProviders }: ChatPanelProps) => {
           break;
       }
     },
-    [handleThreadListSnapshot, sendCommand, subscribeThread, upsertThread],
+    [handleThreadListSnapshot, removeThread, sendCommand, subscribeThread, upsertThread],
   );
 
   React.useEffect(() => {
@@ -818,7 +899,9 @@ export const ChatPanel = ({ agentProviders }: ChatPanelProps) => {
     const detail = detailsById[selectedThreadId];
     if (detail !== undefined) return detail;
     const thread = threads.find((candidate) => candidate.id === selectedThreadId);
-    return thread === undefined ? null : { ...thread, timeline: [], turnStatus: threadTurnStatus(thread) };
+    return thread === undefined
+      ? null
+      : { ...thread, timeline: [], turnStatus: threadTurnStatus(thread) };
   }, [detailsById, selectedThreadId, threads]);
 
   const defaultProviderId = React.useMemo(() => firstAvailableProviderId(providers), [providers]);
@@ -897,6 +980,25 @@ export const ChatPanel = ({ agentProviders }: ChatPanelProps) => {
     [subscribeThread],
   );
 
+  const deleteThread = React.useCallback(
+    (threadId: string) => {
+      const thread = threads.find((candidate) => candidate.id === threadId);
+      if (thread?.activeTurnId) return;
+
+      const confirmed = window.confirm(
+        `Delete "${thread?.title ?? "this chat"}"? This cannot be undone.`,
+      );
+      if (!confirmed) return;
+
+      sendCommand("thread.delete", { threadId }, (ack) => {
+        if (ack.type !== "command.ack") return;
+        const result = commandResult(ack);
+        removeThread(stringValue(result.threadId) ?? threadId);
+      });
+    },
+    [removeThread, sendCommand, threads],
+  );
+
   const sendMessage = React.useCallback(
     (text: string, settings: AgentChatTurnSettings) => {
       const threadId = selectedThreadIdRef.current;
@@ -912,7 +1014,7 @@ export const ChatPanel = ({ agentProviders }: ChatPanelProps) => {
         message: text,
         ...(model === null ? {} : { model }),
         providerId,
-        ...(settings.thinkingLevel ?? selectedThinkingLevel
+        ...((settings.thinkingLevel ?? selectedThinkingLevel)
           ? { thinkingLevel: settings.thinkingLevel ?? selectedThinkingLevel }
           : {}),
         threadId,
@@ -985,7 +1087,7 @@ export const ChatPanel = ({ agentProviders }: ChatPanelProps) => {
       setQuestionDrafts((current) => ({
         ...current,
         [questionId]: {
-          ...(current[questionId] ?? {}),
+          ...current[questionId],
           [itemId]: selectedOptionValues,
         },
       }));
@@ -1012,12 +1114,14 @@ export const ChatPanel = ({ agentProviders }: ChatPanelProps) => {
       onQuestionAnswer={answerQuestion}
       onQuestionDraftChange={updateQuestionDraft}
       onThinkingLevelChange={updateThinkingLevel}
+      onThreadDelete={connectionStatus === "connected" ? deleteThread : undefined}
       onThreadSelect={selectThread}
       providerId={selectedProviderId}
       providers={providers}
       questionDrafts={questionDrafts}
       selectedThread={selectedThread}
       selectedThreadId={selectedThreadId}
+      tagSuggestions={tagSuggestions}
       thinkingLevel={selectedThinkingLevel}
       threads={threads}
     />

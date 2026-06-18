@@ -2,7 +2,7 @@
 
 Status: Draft implementation specification
 
-Version: 0.1.0
+Version: 0.2.0
 
 Package: `@cycle/mcp`
 
@@ -10,9 +10,10 @@ Primary implementation reference: `vendor/effect-v4/packages/effect/src/unstable
 
 ## 1. Purpose
 
-`@cycle/mcp` provides a Model Context Protocol server for agents working on Cycle issues. It exposes
-a curated set of issue-management tools so an agent can inspect, update, transition, comment on, and
-relate Cycle issues while it is implementing or reviewing work for an explicitly identified issue.
+`@cycle/mcp` provides a Model Context Protocol server for agents working inside Cycle. It exposes
+a curated set of workspace, inbox, issue-management, planning, and project-setup tools so an agent
+can discover repository context, inspect existing work, reply to mentions, create planned tickets,
+connect tickets with relations, and update Cycle state while it is planning or implementing work.
 
 The package is an adapter. It MUST communicate with the already-running local Cycle REST API in the
 same operational style as `@cycle/cli`. It MUST NOT mount GitDB, open repositories, run usecases
@@ -48,8 +49,10 @@ and provide tool schemas and annotations that are precise enough for agent clien
 3. Use Effect v4 MCP primitives from `effect/unstable/ai/McpServer`.
 4. Talk to the local Cycle REST API as its backend, using the same discovery and authentication
    model as `@cycle/cli`.
-5. Expose only the v0.1 curated agent-facing issue tool subset.
-6. Require explicit `repositoryId` and active `issueId` context on every tool call.
+5. Expose the v0.2 curated agent-facing workspace and planning tool subset.
+6. Require explicit repository and issue identifiers for operations that mutate or read a specific
+   repository or issue, while allowing workspace discovery and inbox tools to operate without an
+   active issue context.
 7. Allow write tools to execute immediately once called by the MCP client.
 8. Mark MCP tools with accurate read-only, destructive, idempotent, and open-world annotations.
 9. Return successful tool results as MCP `structuredContent` and JSON text content.
@@ -62,7 +65,7 @@ true`, not as protocol-level failures.
 
 ## 5. Non-Goals
 
-`@cycle/mcp` v0.1 MUST NOT:
+`@cycle/mcp` v0.2 MUST NOT:
 
 1. Open or register repositories.
 2. Synchronize or push repositories.
@@ -70,10 +73,10 @@ true`, not as protocol-level failures.
 4. Import desktop renderer code or depend on Electron APIs.
 5. Reimplement usecase validation, workflow policy, ticket mutation rules, or repository materialization.
 6. Expose every REST operation.
-7. Expose issue create, archive, restore, delete, draft, label, user, template, view, initiative,
-   automation, repository status, repository sync, or repository push tools.
-8. Infer repository or issue context from the current working directory, branch name, prompt text, or
-   environment when a tool is called.
+7. Expose repository open, repository sync, repository push, issue archive, issue restore, issue
+   delete, label mutation, user mutation, template mutation, or destructive view/archive tools.
+8. Infer repository or issue context for writes from the current working directory, branch name,
+   prompt text, or environment when a tool is called.
 9. Require a human approval round trip inside the MCP server before executing write tools.
 10. Treat the MCP HTTP transport as a public network service.
 
@@ -152,7 +155,7 @@ The relevant Effect MCP APIs are:
 - `McpServer.layerStdio` for stdio transport.
 - `McpServer.layerHttp` for HTTP transport.
 - `McpServer.registerToolkit` or `McpServer.toolkit` for registering Effect AI toolkits.
-- `McpServer.registerResource` or `McpServer.resource` only if v0.1 adds optional context resources.
+- `McpServer.registerResource` or `McpServer.resource` only if v0.2 adds optional context resources.
 - `Tool.make`, `Toolkit.make`, and tool annotations from `effect/unstable/ai/Tool`.
 
 ### 7.2 Server Identity
@@ -242,7 +245,7 @@ non-2xx responses as tool-level failures.
 ### 8.4 Source Metadata
 
 The MCP package SHOULD identify itself to the API through headers where supported. If the current
-REST API only records source as `api`, this is acceptable for v0.1. A future REST API extension MAY
+REST API only records source as `api`, this is acceptable for v0.2. A future REST API extension MAY
 map an `X-Cycle-Source: mcp` header into usecase metadata.
 
 ## 9. Security and Transport Safety
@@ -294,17 +297,19 @@ credential, api key, or private key patterns.
 
 ### 10.1 Required Context
 
-Every tool input MUST include:
+Tool inputs MUST require the minimum explicit context needed for the operation:
 
-- `repositoryId`: the Cycle repository identifier to operate against.
-- `issueId`: the active Cycle issue identifier the agent is currently working on.
+- workspace discovery tools MAY omit both `repositoryId` and `issueId`;
+- repository-scoped tools MUST include `repositoryId`;
+- issue-specific tools MUST include `repositoryId` and `issueId`;
+- list and search tools MAY include `issueId` as audit context but MUST NOT require it;
+- inbox tools MUST include the user identifier required by the REST inbox API;
+- batch planning tools MUST include `repositoryId` and caller-stable client IDs for newly created
+  planned issues.
 
-`issueId` is both:
-
-- the default target issue for issue-specific tools; and
-- the audit/context issue for broader tools such as list and search.
-
-Tools MUST NOT infer `repositoryId` or `issueId` from process state.
+Tools MUST NOT infer write targets from process state. A tool MAY use explicit selected repository
+or `cycle://` references passed in the tool input, but it MUST NOT derive mutation targets from the
+current working directory, branch name, prompt text, or environment variables.
 
 ### 10.2 Optional Request Metadata
 
@@ -328,21 +333,38 @@ When `targetIssueId` is omitted, issue-specific tools MUST target `issueId`.
 
 ### 11.1 Tool Naming
 
-Tool names MUST be stable, snake*case, and prefixed with `cycle*`. The v0.1 tool set is:
+Tool names MUST be stable, snake*case, and prefixed with `cycle*`. The v0.2 tool set is:
 
+- `cycle_repository_list`
+- `cycle_repository_get`
+- `cycle_autocomplete`
+- `cycle_inbox_list`
+- `cycle_inbox_mark_read`
+- `cycle_inbox_mark_unread`
+- `cycle_inbox_archive`
 - `cycle_issue_get`
 - `cycle_issue_list`
 - `cycle_issue_search`
+- `cycle_issue_create`
 - `cycle_issue_update`
 - `cycle_issue_transition`
 - `cycle_issue_comments_list`
 - `cycle_issue_comment_add`
+- `cycle_issue_records_list`
+- `cycle_issue_record_add`
 - `cycle_issue_history`
 - `cycle_issue_relation_add`
 - `cycle_issue_relation_remove`
+- `cycle_label_list`
+- `cycle_user_list`
+- `cycle_template_list`
+- `cycle_view_list`
+- `cycle_view_create`
+- `cycle_automation_evaluate`
+- `cycle_plan_apply`
 
 The package MAY expose internal mappings to REST endpoints or legacy usecase aliases, but MCP
-clients MUST see the tool names above.
+clients MUST see the tool names above. Removing or renaming any v0.2 tool is a breaking change.
 
 ### 11.2 Common Result Envelope
 
@@ -353,8 +375,8 @@ type CycleMcpToolSuccess<T> = {
   readonly data: T;
   readonly meta: {
     readonly requestId: string;
-    readonly repositoryId: string;
-    readonly issueId: string;
+    readonly repositoryId?: string;
+    readonly issueId?: string;
   };
 };
 ```
@@ -367,8 +389,8 @@ type CycleMcpPagedToolSuccess<T> = {
   readonly links?: unknown;
   readonly meta: {
     readonly requestId: string;
-    readonly repositoryId: string;
-    readonly issueId: string;
+    readonly repositoryId?: string;
+    readonly issueId?: string;
     readonly totalCount?: number | null;
   };
   readonly page?: unknown;
@@ -430,7 +452,7 @@ Purpose: list issues in the repository using supported API filters.
 Input fields:
 
 - `repositoryId`: string, required.
-- `issueId`: string, required.
+- `issueId`: string, optional audit context.
 - `query`: issue list query object, optional.
 - `requestId`: string, optional.
 
@@ -455,8 +477,10 @@ Purpose: search issue titles, bodies, and comments.
 Input fields:
 
 - `repositoryId`: string, required.
-- `issueId`: string, required.
+- `issueId`: string, optional audit context.
 - `text`: string, required.
+- `repositoryIds`: string array, optional. When supplied, the search MAY span the selected
+  repositories supported by the REST API.
 - `limit`: number, optional.
 - `cursor`: string, optional.
 - `requestId`: string, optional.
@@ -658,6 +682,118 @@ Annotations:
 - idempotent: `false`
 - open-world: `false`
 
+### 11.14 v0.2 Workspace, Inbox, Metadata, and Planning Tools
+
+The v0.2 tools below extend the original issue-focused surface so agents can start from global
+chat, inbox mentions, selected repository context, or a planning prompt without requiring a pre-
+existing active issue.
+
+All tools in this section MUST use the same REST API client, request ID generation, structured
+result envelope, error mapping, and secret redaction rules as the issue tools above.
+
+#### Repository and Reference Discovery
+
+- `cycle_repository_list`
+  - Purpose: list repositories currently available to the local Cycle API.
+  - Input: optional `repositoryId`, optional `path`, optional `requestId`.
+  - REST mapping: `GET /v1/repositories` with `filter[id]` and `filter[path]` when supplied.
+  - Annotation: read-only, idempotent.
+- `cycle_repository_get`
+  - Purpose: read repository status and metadata.
+  - Input: `repositoryId`, optional `requestId`.
+  - REST mapping: `GET /v1/repositories/:repositoryId`.
+  - Annotation: read-only, idempotent.
+- `cycle_autocomplete`
+  - Purpose: resolve user-facing references for repositories and tickets, including `cycle://`
+    references used by Cycle chat and markdown.
+  - Input: optional `query`, optional `types` containing `repository` and/or `ticket`, optional
+    `limit`, optional `requestId`.
+  - REST mapping: `GET /v1/autocomplete`.
+  - Annotation: read-only, idempotent.
+
+#### Inbox and Mention Handling
+
+- `cycle_inbox_list`
+  - Purpose: list inbox items for an explicit user, including mentions, assignments, and comment
+    notifications.
+  - Input: `userId`, optional `status`, `reason`, `repositoryIds`, `ticketId`, `createdAfter`,
+    `createdBefore`, `includeSourceInactive`, `cursor`, `limit`, and `requestId`.
+  - REST mapping: `GET /v1/inbox`.
+  - Annotation: read-only, idempotent.
+- `cycle_inbox_mark_read`, `cycle_inbox_mark_unread`, and `cycle_inbox_archive`
+  - Purpose: update inbox item state after an agent has handled or deferred a notification.
+  - Input: `userId`, `itemIds`, optional `allowMissing`, optional `requestId`.
+  - REST mappings: `POST /v1/inbox/read`, `POST /v1/inbox/unread`, and
+    `POST /v1/inbox/archive`.
+  - Annotation: write, non-destructive, non-idempotent unless the REST API treats duplicate state
+    transitions as idempotent.
+
+#### Issue Creation and Records
+
+- `cycle_issue_create`
+  - Purpose: create a committed issue in a repository.
+  - Input: `repositoryId`, `title`, optional markdown `body`, `type`, `status`, `priority`,
+    `labels`, `assignee`, `parent`, `dueDate`, `estimate`, `externalLinks`,
+    `planningNotRequired`, optional `requestId`.
+  - REST mapping: `POST /v1/repositories/:repositoryId/issues`.
+  - Annotation: write, non-destructive, non-idempotent.
+- `cycle_issue_records_list`
+  - Purpose: list linked records for an issue, including non-comment user-visible records.
+  - Input: `repositoryId`, `issueId`, optional `targetIssueId`, optional `recordType`, `cursor`,
+    `limit`, `requestId`.
+  - REST mapping: `GET /v1/repositories/:repositoryId/issues/:targetIssueId/records`.
+  - Annotation: read-only, idempotent.
+- `cycle_issue_record_add`
+  - Purpose: add a linked record to an issue.
+  - Input: `repositoryId`, `issueId`, optional `targetIssueId`, `recordType`, `payload`, optional
+    `userVisible`, optional `requestId`.
+  - REST mapping: `POST /v1/repositories/:repositoryId/issues/:targetIssueId/records`.
+  - Annotation: write, non-destructive, non-idempotent.
+
+#### Planning Metadata and Project Setup
+
+- `cycle_label_list`, `cycle_user_list`, `cycle_template_list`, and `cycle_view_list`
+  - Purpose: let agents inspect the repository vocabulary, assignees, templates, and saved views
+    before creating or updating planned work.
+  - Input: `repositoryId`, optional text/filter fields supported by the corresponding REST list
+    endpoint, optional `cursor`, `limit`, `requestId`.
+  - REST mappings: `GET /v1/repositories/:repositoryId/labels`,
+    `GET /v1/repositories/:repositoryId/users`,
+    `GET /v1/repositories/:repositoryId/templates`, and
+    `GET /v1/repositories/:repositoryId/views`.
+  - Annotation: read-only, idempotent.
+- `cycle_view_create`
+  - Purpose: create a saved view for a planned set of work, such as a feature board or focused list.
+  - Input: `repositoryId`, `name`, optional `description`, `kind`, `groupBy`, `display`, `query`,
+    `sort`, `pinned`, optional `requestId`.
+  - REST mapping: `POST /v1/repositories/:repositoryId/views`.
+  - Annotation: write, non-destructive, non-idempotent.
+- `cycle_automation_evaluate`
+  - Purpose: evaluate repository, query, or explicit issue automation checks before or after an
+    agent mutates Cycle state.
+  - Input: `repositoryId`, optional `issueIds`, optional `query`, optional `failOnWarnings`,
+    optional `requireFresh`, optional `severityThreshold`, optional `requestId`.
+  - REST mapping: `POST /v1/repositories/:repositoryId/automation/evaluations`.
+  - Annotation: read-only, idempotent from the agent perspective.
+
+#### Batch Planning
+
+- `cycle_plan_apply`
+  - Purpose: create multiple planned issues and then apply relations between them in one agent tool
+    call.
+  - Input: `repositoryId`, `issues`, optional `relations`, optional `requestId`.
+  - Each issue MUST include a caller-stable `clientId` and `title`. Issue fields otherwise follow
+    `cycle_issue_create`.
+  - Each relation MUST include `type`, plus either `fromIssueId` or `fromClientId`, and either
+    `relatedIssueId` or `relatedClientId`.
+  - REST mapping: one `POST /v1/repositories/:repositoryId/issues` request per issue, followed by
+    one `POST /v1/repositories/:repositoryId/issues/:issueId/relations` request per relation.
+  - The tool MUST preserve creation order.
+  - The tool MUST reject duplicate issue `clientId` values before creating the duplicate issue.
+  - If a later create or relation call fails after earlier issues were created, the tool MUST return
+    `isError: true` and include the already-created issues and applied relations in error details.
+  - Annotation: write, non-destructive, non-idempotent.
+
 ## 12. Schema Source and Validation
 
 The implementation MUST define input and output schemas with Effect `Schema`.
@@ -677,7 +813,7 @@ API success payloads MUST return a tool-level error with code `INVALID_API_RESPO
 ## 13. Write Behavior
 
 Write tools are allowed to execute immediately after an MCP client calls them. The MCP server MUST
-NOT perform an additional approval prompt, elicitation request, or confirmation step in v0.1.
+NOT perform an additional approval prompt, elicitation request, or confirmation step in v0.2.
 
 The package MUST still annotate write tools accurately so MCP clients that provide their own
 approval UX can make informed decisions.
@@ -687,16 +823,17 @@ MUST be returned as tool-level errors.
 
 ## 14. Resources and Prompts
 
-MCP resources and prompts are optional in v0.1.
+MCP resources and prompts are optional in v0.2.
 
 If implemented, resources MUST be read-only and MUST NOT be required for tool correctness. A client
-that only supports tools MUST be able to use the full v0.1 MCP surface.
+that only supports tools MUST be able to use the full v0.2 MCP surface.
 
 Recommended optional resources:
 
 - `cycle://issue/{repositoryId}/{issueId}`: current issue document.
 - `cycle://issue/{repositoryId}/{issueId}/comments`: current issue comments.
 - `cycle://issue/{repositoryId}/{issueId}/history`: current issue history.
+- `cycle://repository/{repositoryId}`: current repository status and metadata.
 
 Recommended optional prompt:
 
@@ -897,7 +1034,7 @@ MCP HTTP runtime discovery is separate from Cycle REST API discovery.
 
 ## 21. Compatibility and Versioning
 
-Tool names and input field names are public API. Removing or renaming a v0.1 tool MUST be treated as
+Tool names and input field names are public API. Removing or renaming a v0.2 tool MUST be treated as
 a breaking change.
 
 The implementation MAY add optional input fields to existing tools in minor versions if:
@@ -970,12 +1107,18 @@ discoverApi(options, env):
 
 The package MUST test:
 
-- all v0.1 tool names are registered;
+- all v0.2 tool names are registered;
 - each tool exposes the expected MCP annotations;
-- every tool schema rejects missing `repositoryId`;
-- every tool schema rejects missing `issueId`;
+- repository-scoped write tools reject missing `repositoryId`;
+- issue-specific tools reject missing `issueId`;
+- workspace discovery tools accept inputs without an active issue context;
 - `targetIssueId` defaults to `issueId` where supported;
 - REST path/query/body mapping for every tool;
+- `cycle_issue_create` sends the expected create payload;
+- `cycle_inbox_list` maps mention and status filters to the REST query format;
+- `cycle_plan_apply` creates issues in order, maps client IDs to created issue IDs, and applies
+  relations after issue creation;
+- `cycle_plan_apply` reports already-created issues when a later REST call fails;
 - REST success envelope decoding;
 - REST error envelope mapping to `isError: true`;
 - API token redaction in failures and logs;
@@ -989,6 +1132,8 @@ The package MUST test against a local in-process API fixture or fetch mock:
 - initialize stdio MCP server, list tools, and call `cycle_issue_get`;
 - initialize HTTP MCP server, preserve MCP session headers, list tools, and call a read tool;
 - HTTP MCP rejects unauthenticated requests when auth is enabled;
+- `cycle_repository_list`, `cycle_autocomplete`, and `cycle_issue_search` can be called without an
+  active issue context;
 - `cycle_issue_update` sends the expected PATCH request and returns a structured issue document;
 - `cycle_issue_comment_add` sends the expected POST request and returns a linked record;
 - API 404 for an issue becomes a tool-level error, not an MCP protocol error;
@@ -1001,6 +1146,9 @@ When the desktop local API is available, smoke tests SHOULD verify:
 - `cycle-mcp --transport stdio` can be initialized by an MCP client fixture;
 - `cycle-mcp --transport http` serves `/mcp` on loopback;
 - tools can read an existing issue from an opened repository;
+- tools can create planned issues from global chat when an explicit repository is provided;
+- inbox mention workflows can list the mention, read the target issue, add a reply, and mark the
+  inbox item read or archived;
 - write tools modify only the repository and issue requested by explicit tool input;
 - no repository open, sync, or push operation is available from the MCP tool list.
 
@@ -1012,8 +1160,8 @@ An implementation is complete when:
 2. Package exports include stdio and HTTP server construction.
 3. The package uses `effect/unstable/ai/McpServer` for protocol handling.
 4. The package uses local REST API discovery and bearer authentication.
-5. The curated v0.1 tool set is implemented and no non-goal tools are listed.
-6. Every tool requires `repositoryId` and `issueId`.
+5. The curated v0.2 tool set is implemented and no non-goal tools are listed.
+6. Repository and issue context requirements match section 10.
 7. Every tool has Effect schemas and MCP annotations.
 8. Write tools execute immediately when called.
 9. Tool-level failures use `isError: true`.
@@ -1026,7 +1174,7 @@ An implementation is complete when:
 
 ## 25. Open Questions
 
-No critical open questions remain for v0.1.
+No critical open questions remain for v0.2.
 
 Future implementation discussions may decide:
 

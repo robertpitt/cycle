@@ -30,16 +30,21 @@ The event helper writes canonical JSON files at:
 
 ```text
 collections/events/<aggregate-type>/<aggregate-id>/<event-id>.json
+collections/events/ticket/<ticket-shard>/<ticket-id>/<event-id>.json
 ```
 
-`Event.append` validates the path, checks that the event path does not already exist in the
-transaction base, canonicalizes the payload, and stages a raw `put`.
+Ticket events use a shard level under `collections/events/ticket` to avoid one very wide tree of
+ticket IDs. `Event.append` validates the path, checks that the event path does not already exist in
+the transaction base, canonicalizes the payload, and stages a raw `put`.
 
 `Event.list` walks the event root, reads matching blobs, parses the aggregate metadata from paths,
 and returns events sorted by lexical path.
 
 `Event.introduced` uses snapshot diff data to identify event paths added, modified, or deleted by a
 snapshot. Higher layers use this to project new events and detect append-only violations.
+
+See [SCALABILITY_EXPERIMENT.md](./SCALABILITY_EXPERIMENT.md) for the tree-width cost model and
+benchmark scenarios for high-volume ticket stores.
 
 ## Raw Store
 

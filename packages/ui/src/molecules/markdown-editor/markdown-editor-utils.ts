@@ -140,13 +140,10 @@ export const safeMarkdownProtocols = new Set([
 
 export const isSafeMarkdownUrl = (href: string): boolean => {
   if (href.trim().length === 0) return false;
+  if (!URL.canParse(href, "https://cycle.local")) return false;
 
-  try {
-    const url = new URL(href, "https://cycle.local");
-    return safeMarkdownProtocols.has(url.protocol) || href.startsWith("#") || href.startsWith("/");
-  } catch {
-    return false;
-  }
+  const url = new URL(href, "https://cycle.local");
+  return safeMarkdownProtocols.has(url.protocol) || href.startsWith("#") || href.startsWith("/");
 };
 
 export const normalizeMarkdownEditorValue = (markdown: string): string =>

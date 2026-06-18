@@ -35,19 +35,63 @@ const context = (requests: Array<unknown>, response: unknown = { data: null, met
   makeRequestId: () => "req-test",
 });
 
+const ticket = (id: string, title = `Ticket ${id}`) => ({
+  body: `Body for ${id}`,
+  bodyFormat: "markdown",
+  createdBy: "agent",
+  frontmatter: {
+    createdAt: "2026-01-01T00:00:00.000Z",
+    createdBy: {
+      name: "Agent",
+      type: "agent",
+    },
+    id,
+    priority: "medium",
+    status: "todo",
+    title,
+    type: "feature",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  id,
+  parent: "",
+  priority: "medium",
+  schemaVersion: 1,
+  status: "todo",
+  title,
+  type: "feature",
+  updatedDate: "2026-01-01T00:00:00.000Z",
+});
+
 describe("@cycle/mcp", () => {
-  it("registers only the curated v0.1 tool names", () => {
+  it("registers only the curated v0.2 tool names", () => {
     assert.deepEqual(cycleMcpToolNames, [
+      "cycle_repository_list",
+      "cycle_repository_get",
+      "cycle_autocomplete",
+      "cycle_inbox_list",
+      "cycle_inbox_mark_read",
+      "cycle_inbox_mark_unread",
+      "cycle_inbox_archive",
       "cycle_issue_get",
       "cycle_issue_list",
       "cycle_issue_search",
+      "cycle_issue_create",
       "cycle_issue_update",
       "cycle_issue_transition",
       "cycle_issue_comments_list",
       "cycle_issue_comment_add",
+      "cycle_issue_records_list",
+      "cycle_issue_record_add",
       "cycle_issue_history",
       "cycle_issue_relation_add",
       "cycle_issue_relation_remove",
+      "cycle_label_list",
+      "cycle_user_list",
+      "cycle_template_list",
+      "cycle_view_list",
+      "cycle_view_create",
+      "cycle_automation_evaluate",
+      "cycle_plan_apply",
     ]);
   });
 
@@ -71,10 +115,17 @@ describe("@cycle/mcp", () => {
 
   it("emits MCP paging limits as plain positive integers", () => {
     const toolNames = [
+      "cycle_autocomplete",
+      "cycle_inbox_list",
       "cycle_issue_list",
       "cycle_issue_search",
       "cycle_issue_comments_list",
+      "cycle_issue_records_list",
       "cycle_issue_history",
+      "cycle_label_list",
+      "cycle_user_list",
+      "cycle_template_list",
+      "cycle_view_list",
     ] as const;
 
     for (const toolName of toolNames) {
@@ -101,13 +152,18 @@ describe("@cycle/mcp", () => {
       callCycleMcpTool(
         "cycle_issue_search",
         {
-          issueId: "CYC-1",
           limit: 10,
           repositoryId: "repo",
+          repositoryIds: ["repo", "other"],
           text: "material",
         },
         toolContext,
       ),
+    );
+
+    assert.equal(
+      requests[0].path,
+      "/v1/repositories/repo/issues?page%5Blimit%5D=10&filter%5Brepository%5D%5Bin%5D=repo%2Cother&q=material",
     );
 
     requests.length = 0;
@@ -138,6 +194,7 @@ describe("@cycle/mcp", () => {
       labelIn: ["bug", "backend"],
       limit: 25,
       priority: "high",
+      repositoryIds: ["repo-a", "repo-b"],
       statusIn: ["ready", "in-progress"],
       text: "auth",
       type: "feature",
@@ -147,9 +204,201 @@ describe("@cycle/mcp", () => {
     assert.equal(params.get("page[limit]"), "25");
     assert.equal(params.get("filter[label][in]"), "bug,backend");
     assert.equal(params.get("filter[priority]"), "high");
+    assert.equal(params.get("filter[repository][in]"), "repo-a,repo-b");
     assert.equal(params.get("filter[status][in]"), "ready,in-progress");
     assert.equal(params.get("filter[type]"), "feature");
     assert.equal(params.get("q"), "auth");
+  });
+
+  it("maps repository discovery, autocomplete, and inbox tools without issue context", async () => {
+    const repositoryRequests: Array<any> = [];
+    await Effect.runPromise(
+      callCycleMcpTool(
+        "cycle_repository_list",
+        {
+          path: "/workspace/repo",
+        },
+        context(repositoryRequests, {
+          data: [
+            {
+              activeGeneration: 1,
+              activeSnapshotId: null,
+              repositoryId: "repo",
+              status: "ready",
+              warningCount: 0,
+            },
+          ],
+          links: {},
+          meta: { requestId: "req-repos", totalCount: null },
+          page: { hasMore: false, limit: 50, nextCursor: null },
+        }),
+      ),
+    );
+    assert.equal(
+      repositoryRequests[0].path,
+      "/v1/repositories?filter%5Bpath%5D=%2Fworkspace%2Frepo",
+    );
+
+    const autocompleteRequests: Array<any> = [];
+    await Effect.runPromise(
+      callCycleMcpTool(
+        "cycle_autocomplete",
+        {
+          limit: 5,
+          query: "auth",
+          types: ["repository", "ticket"],
+        },
+        context(autocompleteRequests, {
+          data: {
+            results: [
+              {
+                id: "CYC-1",
+                name: "Auth flow",
+                repositoryId: "repo",
+                type: "ticket",
+                uri: "cycle://repository/repo/tickets/CYC-1",
+              },
+            ],
+          },
+          meta: { requestId: "req-autocomplete" },
+        }),
+      ),
+    );
+    assert.equal(
+      autocompleteRequests[0].path,
+      "/v1/autocomplete?q=auth&types=repository%2Cticket&limit=5",
+    );
+
+    const inboxRequests: Array<any> = [];
+    await Effect.runPromise(
+      callCycleMcpTool(
+        "cycle_inbox_list",
+        {
+          reason: "mention",
+          repositoryIds: ["repo"],
+          status: "unread",
+          userId: "agent@example.com",
+        },
+        context(inboxRequests, {
+          data: {
+            activeSnapshotIds: { repo: "snap-1" },
+            entries: [],
+          },
+          meta: { requestId: "req-inbox" },
+        }),
+      ),
+    );
+    assert.equal(
+      inboxRequests[0].path,
+      "/v1/inbox?userId=agent%40example.com&filter%5Breason%5D=mention&filter%5Brepository%5D%5Bin%5D=repo&filter%5Bstatus%5D=unread",
+    );
+  });
+
+  it("maps issue creation to the REST create route", async () => {
+    const requests: Array<any> = [];
+    const result = await Effect.runPromise(
+      callCycleMcpTool(
+        "cycle_issue_create",
+        {
+          body: "Implement the OAuth callback.",
+          labels: ["feature"],
+          priority: "high",
+          repositoryId: "repo",
+          title: "Build OAuth callback",
+          type: "feature",
+        },
+        context(requests, {
+          data: ticket("CYC-1", "Build OAuth callback"),
+          meta: { requestId: "req-create" },
+        }),
+      ),
+    );
+
+    assert.equal(result.isError, false);
+    assert.equal(requests[0].method, "POST");
+    assert.equal(requests[0].path, "/v1/repositories/repo/issues");
+    assert.deepEqual(requests[0].body, {
+      body: "Implement the OAuth callback.",
+      labels: ["feature"],
+      priority: "high",
+      title: "Build OAuth callback",
+      type: "feature",
+    });
+  });
+
+  it("applies a plan by creating issues in order and relating created tickets", async () => {
+    const requests: Array<any> = [];
+    const responses = [
+      { data: ticket("CYC-1", "Parent feature"), meta: { requestId: "req-plan" } },
+      { data: ticket("CYC-2", "Implementation task"), meta: { requestId: "req-plan" } },
+      { data: ticket("CYC-1", "Parent feature"), meta: { requestId: "req-plan" } },
+    ];
+    const toolContext = {
+      api: {
+        discover: () =>
+          Effect.succeed({
+            baseUrl: "http://127.0.0.1:4738",
+            token: "secret",
+          }),
+        request: <T = unknown>(request: {
+          readonly body?: unknown;
+          readonly method: string;
+          readonly path: string;
+          readonly requestId?: string;
+        }) => {
+          requests.push(request);
+          return Effect.succeed(responses.shift() as CycleApiEnvelope<T>);
+        },
+      } satisfies CycleMcpApiClientShape,
+      makeRequestId: () => "req-plan",
+    };
+
+    const result = await Effect.runPromise(
+      callCycleMcpTool(
+        "cycle_plan_apply",
+        {
+          issues: [
+            { clientId: "parent", title: "Parent feature", type: "feature" },
+            { body: "Ship the implementation", clientId: "task", title: "Implementation task" },
+          ],
+          relations: [
+            {
+              fromClientId: "parent",
+              relatedClientId: "task",
+              type: "blocking",
+            },
+          ],
+          repositoryId: "repo",
+        },
+        toolContext,
+      ),
+    );
+
+    assert.equal(result.isError, false);
+    assert.equal(requests.length, 3);
+    assert.equal(requests[0].path, "/v1/repositories/repo/issues");
+    assert.deepEqual(requests[0].body, {
+      title: "Parent feature",
+      type: "feature",
+    });
+    assert.equal(requests[1].path, "/v1/repositories/repo/issues");
+    assert.deepEqual(requests[1].body, {
+      body: "Ship the implementation",
+      title: "Implementation task",
+    });
+    assert.equal(requests[2].path, "/v1/repositories/repo/issues/CYC-1/relations");
+    assert.deepEqual(requests[2].body, {
+      issueId: "CYC-2",
+      type: "blocking",
+    });
+    assert.equal((result.value as any).data.issues[0].clientId, "parent");
+    assert.deepEqual((result.value as any).data.relations, [
+      {
+        fromIssueId: "CYC-1",
+        relatedIssueId: "CYC-2",
+        type: "blocking",
+      },
+    ]);
   });
 
   it("uses an explicit API token with the default API URL when no config token exists", async () => {
@@ -345,7 +594,7 @@ describe("@cycle/mcp", () => {
 
       assert.equal(response.status, 200);
       assert.equal(body.result?.tools?.length, cycleMcpToolNames.length);
-      assert.equal(body.result?.tools?.[0]?.name, "cycle_issue_get");
+      assert.equal(body.result?.tools?.[0]?.name, cycleMcpToolNames[0]);
     } finally {
       await server.close();
     }

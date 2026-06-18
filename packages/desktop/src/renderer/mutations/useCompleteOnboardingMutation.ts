@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { defaultAppConfig, type AppConfigState } from "../../shared/AppConfig.ts";
-import { supportedAgentProviders, type AgentProviderId } from "../../shared/AgentProviders.ts";
+import type { AgentProviderId } from "../../shared/AgentProviders.ts";
+import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 import { appConfigQueryKey } from "../queries/appConfig.ts";
 
@@ -32,25 +33,12 @@ export const useCompleteOnboardingMutation = ({
       } as const;
 
       const bridge = getDesktopBridge();
-      if (bridge) return bridge.completeOnboarding(input);
-
-      return {
-        ...current,
-        onboarding: {
-          completed: true,
-          completedAt: new Date().toISOString(),
-        },
-        agentProviders: {
-          preferences: supportedAgentProviders.map((provider) => ({
-            enabled: enabledHarnessIds.has(provider.id),
-            id: provider.id,
-          })),
-        },
-        profile: {
-          displayName: fullName.trim(),
-          email: email.trim(),
-        },
-      } satisfies AppConfigState;
+      try {
+        return await cycleApiClient.completeOnboarding(input);
+      } catch (error) {
+        if (bridge) return bridge.completeOnboarding(input);
+        throw error;
+      }
     },
     onSuccess: (next) => {
       queryClient.setQueryData(appConfigQueryKey, next);

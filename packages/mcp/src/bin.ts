@@ -9,6 +9,7 @@ import {
   type CycleMcpOptions,
 } from "./server/index.ts";
 
+const logging = { packageName: "mcp" } as const;
 const flags = parseFlags(process.argv.slice(2));
 const env = process.env;
 const common: CycleMcpOptions = {
@@ -42,12 +43,12 @@ if ((flags.transport ?? env.CYCLE_MCP_TRANSPORT) === "http") {
   ).pipe(
     Effect.flatMap(() => Effect.never),
     Effect.scoped,
-    Effect.provide([NodeServices.layer, CycleLoggingLive()]),
+    Effect.provide([NodeServices.layer, CycleLoggingLive(logging)]),
     NodeRuntime.runMain,
   );
 } else {
   runCycleMcpStdio(common).pipe(
-    Effect.provide([NodeServices.layer, CycleLoggingLive()]),
+    Effect.provide([NodeServices.layer, CycleLoggingLive(logging)]),
     NodeRuntime.runMain,
   );
 }

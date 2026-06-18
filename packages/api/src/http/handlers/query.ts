@@ -51,6 +51,7 @@ export const issueQueryFrom = (params: URLSearchParams): Record<string, unknown>
   };
   const assigneeIn = params.get("filter[assignee][in]") ?? params.get("assigneeIn");
   const labelIn = params.get("filter[label][in]") ?? params.get("labelIn");
+  const repositoryIds = params.get("filter[repository][in]") ?? params.get("repositoryIds");
   const statusIn = params.get("filter[status][in]") ?? params.get("statusIn");
   const priorityIn = params.get("filter[priority][in]") ?? params.get("priorityIn");
 
@@ -59,6 +60,7 @@ export const issueQueryFrom = (params: URLSearchParams): Record<string, unknown>
     assigneeIn: assigneeIn === null ? undefined : commaList(assigneeIn),
     labelIn: labelIn === null ? undefined : commaList(labelIn),
     priorityIn: priorityIn === null ? undefined : commaList(priorityIn),
+    repositoryIds: repositoryIds === null ? undefined : commaList(repositoryIds),
     statusIn: statusIn === null ? undefined : commaList(statusIn),
   });
 };
