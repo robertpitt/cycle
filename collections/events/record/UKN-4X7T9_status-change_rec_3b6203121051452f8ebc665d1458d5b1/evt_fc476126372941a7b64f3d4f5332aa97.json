@@ -1,0 +1,1 @@
+{"op":"record.add","value":{"createdAt":"2026-06-18T21:46:38.413Z","createdBy":{"email":"robertpitt1988@gmail.com","name":"Robert PItt 2","type":"human"},"createdDate":"2026-06-18","id":"UKN-4X7T9_status-change_rec_3b6203121051452f8ebc665d1458d5b1","issueId":"UKN-4X7T9","payload":{"from":"todo","to":"backlog"},"recordType":"status-change","schemaVersion":1}}
