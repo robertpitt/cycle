@@ -1,0 +1,1 @@
+{"op":"record.add","value":{"createdAt":"2026-06-19T00:14:14.063Z","createdBy":{"email":"robertpitt1988@gmail.com","name":"Robert PItt 2","type":"human"},"createdDate":"2026-06-19","id":"UKN-7HSGB_status-change_rec_704dfcaf3410498bba00e25495ebcb79","issueId":"UKN-7HSGB","payload":{"from":"todo","to":"canceled"},"recordType":"status-change","schemaVersion":1}}
