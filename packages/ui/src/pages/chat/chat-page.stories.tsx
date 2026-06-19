@@ -40,6 +40,10 @@ export const PendingMultiChoiceQuestion: Story = {
   args: withQuestionDraft(createAgentChatFixture("multi-question")),
 };
 
+export const PendingCommandApproval: Story = {
+  args: createAgentChatFixture("approval"),
+};
+
 export const FailedTurn: Story = {
   args: createAgentChatFixture("failed"),
 };

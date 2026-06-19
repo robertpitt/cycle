@@ -9,6 +9,7 @@ import type {
 
 export type AgentChatFixtureVariant =
   | "activity"
+  | "approval"
   | "cancelled"
   | "disconnected"
   | "empty"
@@ -351,6 +352,56 @@ const multiQuestionTimeline: readonly AgentChatTimelineEntry[] = [
   },
 ];
 
+const commandApprovalTimeline: readonly AgentChatTimelineEntry[] = [
+  ...activityTimeline.slice(0, 4),
+  {
+    activity: {
+      createdAt: "2026-06-16T10:09:30.000Z",
+      detail: "acceptForSession",
+      id: "activity-approval-resolved",
+      kind: "question",
+      payload: {
+        createdAt: "2026-06-16T10:09:00.000Z",
+        decision: "acceptForSession",
+        details: {
+          command: "pnpm --filter @cycle/ui lint",
+          cwd: "/Users/robertpitt/Projects/cycle",
+        },
+        kind: "command",
+        requestId: "approval_2a8ea80f-98b8-4529-8806-2beb01581cf2",
+      },
+      status: "completed",
+      title: "Approval resolved",
+    },
+    id: "activity-approval-resolved",
+    kind: "activity",
+    sequence: 5,
+  },
+  {
+    activity: {
+      createdAt: "2026-06-16T10:10:00.000Z",
+      detail: "pnpm --filter @cycle/ui typecheck",
+      id: "activity-approval-command",
+      kind: "question",
+      payload: {
+        createdAt: "2026-06-16T10:10:00.000Z",
+        defaultDecision: "decline",
+        details: {
+          command: "pnpm --filter @cycle/ui typecheck",
+          cwd: "/Users/robertpitt/Projects/cycle",
+        },
+        kind: "command",
+        requestId: "approval_58ab7e2c-250b-42bb-ab33-e52a27a3e7cc",
+      },
+      status: "pending",
+      title: "Command approval requested",
+    },
+    id: "activity-approval-command",
+    kind: "activity",
+    sequence: 6,
+  },
+];
+
 const failedTimeline: readonly AgentChatTimelineEntry[] = [
   ...activityTimeline.slice(0, 3),
   {
@@ -417,47 +468,53 @@ export const createAgentChatFixture = (
   const selectedThread =
     variant === "streaming" || variant === "multiple-active"
       ? baseDetail(streamingTimeline)
-      : variant === "single-question"
+      : variant === "approval"
         ? {
-            ...baseDetail(singleQuestionTimeline),
+            ...baseDetail(commandApprovalTimeline),
             status: "waiting" as const,
             turnStatus: "waiting_for_user" as const,
           }
-        : variant === "multi-question"
+        : variant === "single-question"
           ? {
-              ...baseDetail(multiQuestionTimeline),
+              ...baseDetail(singleQuestionTimeline),
               status: "waiting" as const,
               turnStatus: "waiting_for_user" as const,
             }
-          : variant === "failed"
+          : variant === "multi-question"
             ? {
-                ...baseDetail(failedTimeline),
-                activeTurnId: null,
-                lastError: "Provider process exited while reading the repository diff.",
-                status: "error" as const,
-                turnStatus: "failed" as const,
+                ...baseDetail(multiQuestionTimeline),
+                status: "waiting" as const,
+                turnStatus: "waiting_for_user" as const,
               }
-            : variant === "cancelled"
+            : variant === "failed"
               ? {
-                  ...baseDetail(cancelledTimeline),
+                  ...baseDetail(failedTimeline),
                   activeTurnId: null,
-                  status: "active" as const,
-                  turnStatus: "cancelled" as const,
+                  lastError: "Provider process exited while reading the repository diff.",
+                  status: "error" as const,
+                  turnStatus: "failed" as const,
                 }
-              : variant === "provider-controls"
+              : variant === "cancelled"
                 ? {
-                    ...baseDetail(activityTimeline),
+                    ...baseDetail(cancelledTimeline),
                     activeTurnId: null,
-                    model: "opus",
-                    providerId: "claude",
-                    thinkingLevel: "high",
-                    turnStatus: "completed" as const,
+                    status: "active" as const,
+                    turnStatus: "cancelled" as const,
                   }
-                : {
-                    ...baseDetail(activityTimeline),
-                    activeTurnId: null,
-                    turnStatus: "completed" as const,
-                  };
+                : variant === "provider-controls"
+                  ? {
+                      ...baseDetail(activityTimeline),
+                      activeTurnId: null,
+                      model: "opus",
+                      providerId: "claude",
+                      thinkingLevel: "high",
+                      turnStatus: "completed" as const,
+                    }
+                  : {
+                      ...baseDetail(activityTimeline),
+                      activeTurnId: null,
+                      turnStatus: "completed" as const,
+                    };
 
   const threads =
     variant === "multiple-active"
@@ -488,6 +545,7 @@ export const createAgentChatFixture = (
     connectionStatus: variant === "disconnected" ? "reconnecting" : "connected",
     model: selectedThread.model,
     onCancelTurn: noop,
+    onApprovalDecision: noop,
     onComposerValueChange: noop,
     onCopyMessage: noop,
     onCreateThread: noop,

@@ -3,6 +3,7 @@ import * as React from "react";
 import {
   AgentChatActivityRow,
   AgentChatActivityStrip,
+  AgentChatApprovalCard,
   AgentChatConnectionStatusBanner,
   AgentChatMessageRow,
   AgentChatProviderModelPicker,
@@ -193,6 +194,27 @@ export const RowsAndControls: Story = {
           }}
         />
         <AgentChatActivityStrip activities={activityStripItems} />
+        <AgentChatApprovalCard
+          activity={{
+            createdAt: "2026-06-16T09:42:30.000Z",
+            detail: "pnpm --filter @cycle/ui typecheck",
+            id: "activity-approval-1",
+            kind: "question",
+            payload: {
+              createdAt: "2026-06-16T09:42:30.000Z",
+              defaultDecision: "decline",
+              details: {
+                command: "pnpm --filter @cycle/ui typecheck",
+                cwd: "/Users/robertpitt/Projects/cycle",
+              },
+              kind: "command",
+              requestId: "approval_123",
+            },
+            status: "pending",
+            title: "Command approval requested",
+          }}
+          onDecision={() => undefined}
+        />
         <AgentChatQuestionCard
           draft={draft}
           onDraftChange={(itemId, values) =>

@@ -31,7 +31,9 @@ import {
   AgentChatThinkingSelector,
   AgentChatThreadListItem,
   AgentChatTurnStatusIndicator,
+  isAgentChatApprovalActivity,
   type AgentChatActivity,
+  type AgentChatApprovalDecisionInput,
   type AgentChatConnectionStatus,
   type AgentChatMessage,
   type AgentChatProviderProfile,
@@ -65,6 +67,7 @@ export type AgentChatThreadListProps = {
 export type AgentChatTimelineProps = {
   readonly className?: string;
   readonly entries: readonly AgentChatTimelineEntry[];
+  readonly onApprovalDecision?: (input: AgentChatApprovalDecisionInput) => void;
   readonly onCopyMessage?: (message: AgentChatMessage) => void;
   readonly onQuestionAnswer?: (answer: AgentChatQuestionAnswer) => void;
   readonly onQuestionDraftChange?: (
@@ -92,6 +95,7 @@ export type AgentChatComposerProps = {
   readonly onThinkingLevelChange?: (thinkingLevel: string | null) => void;
   readonly onValueChange?: (value: string) => void;
   readonly pendingQuestionCount?: number;
+  readonly pendingApprovalCount?: number;
   readonly placeholder?: string;
   readonly providerId?: string | null;
   readonly providers: readonly AgentChatProviderProfile[];
@@ -108,6 +112,7 @@ export type AgentChatConversationProps = {
   readonly defaultComposerValue?: string;
   readonly model?: string | null;
   readonly onCancelTurn?: (turnId: string) => void;
+  readonly onApprovalDecision?: (input: AgentChatApprovalDecisionInput) => void;
   readonly onComposerValueChange?: (value: string) => void;
   readonly onCopyMessage?: (message: AgentChatMessage) => void;
   readonly onMessageSend?: (text: string, settings: AgentChatTurnSettings) => void;
@@ -182,7 +187,7 @@ const isCompactActivityEntry = (
 ): entry is Extract<AgentChatTimelineEntry, { readonly kind: "activity" }> =>
   entry.kind === "activity" &&
   entry.activity.kind !== "error" &&
-  entry.activity.kind !== "question";
+  !(isAgentChatApprovalActivity(entry.activity) && entry.activity.status === "pending");
 
 type AgentChatTimelineRenderItem =
   | AgentChatTimelineEntry
@@ -229,6 +234,14 @@ const isTurnActive = (status?: AgentChatTurnStatus | null) =>
 const pendingQuestionCount = (thread?: AgentChatThreadDetail | null): number =>
   thread?.timeline.filter((entry) => entry.kind === "question" && entry.question.status === "open")
     .length ?? 0;
+
+const pendingApprovalCount = (thread?: AgentChatThreadDetail | null): number =>
+  thread?.timeline.filter(
+    (entry) =>
+      entry.kind === "activity" &&
+      entry.activity.status === "pending" &&
+      isAgentChatApprovalActivity(entry.activity),
+  ).length ?? 0;
 
 const resolveSelection = ({
   explicit,
@@ -309,6 +322,7 @@ export const AgentChatThreadList = ({
 export const AgentChatTimeline = ({
   className,
   entries,
+  onApprovalDecision,
   onCopyMessage,
   onQuestionAnswer,
   onQuestionDraftChange,
@@ -331,7 +345,7 @@ export const AgentChatTimeline = ({
   }
 
   return (
-    <div className={cn("mx-auto grid w-full max-w-4xl gap-4 p-4", className)}>
+    <div className={cn("mx-auto grid w-full max-w-5xl gap-0 p-3", className)}>
       {renderItems.map((entry) => {
         if (entry.kind === "activity-strip") {
           return <AgentChatActivityStrip activities={entry.activities} key={entry.id} />;
@@ -367,6 +381,7 @@ export const AgentChatTimeline = ({
           <AgentChatActivityRow
             activity={entry.activity}
             key={entry.id}
+            onApprovalDecision={onApprovalDecision}
             relativeBase={relativeBase}
           />
         );
@@ -390,6 +405,7 @@ export const AgentChatComposer = ({
   onTagSelect,
   onThinkingLevelChange,
   onValueChange,
+  pendingApprovalCount = 0,
   pendingQuestionCount = 0,
   placeholder = "Ask the agent to inspect code, explain behavior, or make a change...",
   providerId,
@@ -407,6 +423,7 @@ export const AgentChatComposer = ({
     disabled ||
     disconnected ||
     Boolean(active) ||
+    pendingApprovalCount > 0 ||
     pendingQuestionCount > 0 ||
     !onMessageSend;
   const sendDisabled = sendBlocked || value.trim().length === 0;
@@ -435,6 +452,16 @@ export const AgentChatComposer = ({
 
   return (
     <div className={cn("border-t border-border bg-elevated p-4", className)}>
+      {pendingApprovalCount > 0 ? (
+        <div className="mb-3 flex min-w-0 items-center gap-2 rounded-lg border border-warning/25 bg-warning/8 px-3 py-2">
+          <span className="grid size-5 shrink-0 place-items-center rounded-full bg-warning/16 text-warning">
+            <HelpCircle aria-hidden className="size-3.5" strokeWidth={1.8} />
+          </span>
+          <Text className="min-w-0" tone="muted" variant="meta" wrap="break">
+            Respond to the pending approval before sending a new message.
+          </Text>
+        </div>
+      ) : null}
       {pendingQuestionCount > 0 ? (
         <div className="mb-3 flex min-w-0 items-center gap-2 rounded-lg border border-warning/25 bg-warning/8 px-3 py-2">
           <span className="grid size-5 shrink-0 place-items-center rounded-full bg-warning/16 text-warning">
@@ -449,7 +476,13 @@ export const AgentChatComposer = ({
         <MarkdownEditor
           className="gap-0"
           contentClassName="max-h-48 min-h-28 overflow-y-auto px-4 py-3"
-          disabled={disabled || disconnected || Boolean(active) || pendingQuestionCount > 0}
+          disabled={
+            disabled ||
+            disconnected ||
+            Boolean(active) ||
+            pendingApprovalCount > 0 ||
+            pendingQuestionCount > 0
+          }
           editorClassName="rounded-none border-0 hover:bg-transparent focus-within:border-transparent focus-within:bg-transparent"
           minHeightClassName="min-h-28"
           mode="comment"
@@ -534,6 +567,7 @@ export const AgentChatConversation = ({
   connectionStatus,
   defaultComposerValue,
   model,
+  onApprovalDecision,
   onCancelTurn,
   onComposerValueChange,
   onCopyMessage,
@@ -566,6 +600,7 @@ export const AgentChatConversation = ({
     threadValue: selectedThread?.thinkingLevel,
   });
   const questionsPending = pendingQuestionCount(selectedThread);
+  const approvalsPending = pendingApprovalCount(selectedThread);
 
   if (!selectedThread) {
     return (
@@ -623,6 +658,7 @@ export const AgentChatConversation = ({
       <div className="min-h-0 flex-1 overflow-auto">
         <AgentChatTimeline
           entries={selectedThread.timeline}
+          onApprovalDecision={connectionStatus === "connected" ? onApprovalDecision : undefined}
           onCopyMessage={onCopyMessage}
           onQuestionAnswer={onQuestionAnswer}
           onQuestionDraftChange={onQuestionDraftChange}
@@ -643,6 +679,7 @@ export const AgentChatConversation = ({
         onTagSelect={onTagSelect}
         onValueChange={onComposerValueChange}
         onThinkingLevelChange={onThinkingLevelChange}
+        pendingApprovalCount={approvalsPending}
         pendingQuestionCount={questionsPending}
         providerId={selectedProviderId}
         providers={providers}
@@ -662,6 +699,7 @@ export const AgentChatShell = ({
   defaultComposerValue,
   emptyMessage,
   model,
+  onApprovalDecision,
   onCancelTurn,
   onComposerValueChange,
   onCopyMessage,
@@ -709,6 +747,7 @@ export const AgentChatShell = ({
         connectionStatus={connectionStatus}
         defaultComposerValue={defaultComposerValue}
         model={model}
+        onApprovalDecision={onApprovalDecision}
         onCancelTurn={onCancelTurn}
         onComposerValueChange={onComposerValueChange}
         onCopyMessage={onCopyMessage}

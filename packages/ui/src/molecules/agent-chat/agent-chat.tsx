@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Bot,
   Brain,
+  ChevronDown,
   Check,
   CheckCircle2,
   Circle,
@@ -23,7 +24,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import * as React from "react";
-import { Avatar, AvatarFallback } from "../../atoms/avatar/index.ts";
 import { Badge } from "../../atoms/badge/index.ts";
 import { Button } from "../../atoms/button/index.ts";
 import { DateTime } from "../../atoms/date-time/index.ts";
@@ -131,6 +131,26 @@ export type AgentChatActivity = {
   readonly title: string;
   readonly turnId?: string | null;
   readonly updatedAt?: string | null;
+};
+
+export type AgentChatApprovalKind = "command" | "file-change" | "permissions" | "unknown";
+
+export type AgentChatApprovalDecision = "accept" | "acceptForSession" | "decline" | "cancel";
+
+export type AgentChatApprovalRequest = {
+  readonly activity: AgentChatActivity;
+  readonly createdAt: string;
+  readonly defaultDecision?: AgentChatApprovalDecision | null;
+  readonly details?: AgentChatActivityPayload | null;
+  readonly kind: AgentChatApprovalKind;
+  readonly requestId: string;
+};
+
+export type AgentChatApprovalDecisionInput = {
+  readonly activity: AgentChatActivity;
+  readonly decision: AgentChatApprovalDecision;
+  readonly kind: AgentChatApprovalKind;
+  readonly requestId: string;
 };
 
 export type AgentChatQuestionStatus = "answered" | "cancelled" | "expired" | "open";
@@ -290,12 +310,6 @@ const connectionStatusCopy = {
   }
 >;
 
-const initialsForRole = (role: AgentChatMessageRole) => {
-  if (role === "assistant") return "AI";
-  if (role === "system") return "SY";
-  return "ME";
-};
-
 const labelForRole = (role: AgentChatMessageRole) => {
   if (role === "assistant") return "Cycle Agent";
   if (role === "system") return "System";
@@ -314,6 +328,73 @@ const formatPayloadValue = (value: unknown): string | undefined => {
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return undefined;
 };
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const stringPayloadValue = (value: unknown): string | undefined =>
+  typeof value === "string" && value.trim().length > 0 ? value : undefined;
+
+const approvalKindFromUnknown = (value: unknown): AgentChatApprovalKind =>
+  value === "command" || value === "file-change" || value === "permissions" || value === "unknown"
+    ? value
+    : "unknown";
+
+const approvalDecisionFromUnknown = (value: unknown): AgentChatApprovalDecision | undefined =>
+  value === "accept" || value === "acceptForSession" || value === "decline" || value === "cancel"
+    ? value
+    : undefined;
+
+const approvalDecisionLabel = (decision: AgentChatApprovalDecision): string => {
+  switch (decision) {
+    case "accept":
+      return "Approve once";
+    case "acceptForSession":
+      return "Approve session";
+    case "decline":
+      return "Decline";
+    case "cancel":
+      return "Cancel";
+  }
+};
+
+const approvalKindLabel = (kind: AgentChatApprovalKind): string => {
+  switch (kind) {
+    case "command":
+      return "Command";
+    case "file-change":
+      return "File change";
+    case "permissions":
+      return "Permission";
+    case "unknown":
+      return "Approval";
+  }
+};
+
+const activityLooksLikeApproval = (activity: AgentChatActivity): boolean =>
+  activity.kind === "question" && /approval/iu.test(activity.title);
+
+export const agentChatApprovalRequestFromActivity = (
+  activity: AgentChatActivity,
+): AgentChatApprovalRequest | undefined => {
+  if (!activityLooksLikeApproval(activity)) return undefined;
+
+  const payload = activity.payload;
+  const requestId = stringPayloadValue(payload?.requestId);
+  if (requestId === undefined) return undefined;
+
+  return {
+    activity,
+    createdAt: stringPayloadValue(payload?.createdAt) ?? activity.createdAt,
+    defaultDecision: approvalDecisionFromUnknown(payload?.defaultDecision) ?? null,
+    details: isRecord(payload?.details) ? payload.details : null,
+    kind: approvalKindFromUnknown(payload?.kind),
+    requestId,
+  };
+};
+
+export const isAgentChatApprovalActivity = (activity: AgentChatActivity): boolean =>
+  agentChatApprovalRequestFromActivity(activity) !== undefined;
 
 const hiddenActivityPayloadKeys = new Set(["delta", "item", "itemId", "itemType", "streamKind"]);
 
@@ -353,30 +434,6 @@ const activityNotificationLabel = (activity: AgentChatActivity): string => {
   }
 
   return activity.title;
-};
-
-const activityNotificationTone = (activity: AgentChatActivity): string => {
-  if (activity.status === "failed") {
-    return "border-destructive/30 bg-destructive/10 text-destructive";
-  }
-
-  if (activity.status === "running" || activity.status === "pending") {
-    return "border-primary/30 bg-primary/10 text-primary";
-  }
-
-  switch (activity.kind) {
-    case "thinking":
-      return "border-primary/25 bg-primary/8 text-primary";
-    case "tool":
-      return "border-accent/35 bg-accent/12 text-accent";
-    case "usage":
-      return "border-success/25 bg-success/8 text-success";
-    case "progress":
-      return "border-primary/20 bg-primary/8 text-primary";
-    case "system":
-    default:
-      return "border-border bg-subtle text-muted-foreground";
-  }
 };
 
 const providerItems = (
@@ -678,7 +735,7 @@ export const AgentChatStreamingText = ({
   text,
 }: AgentChatStreamingTextProps) => (
   <div className={cn("relative min-w-0", className)}>
-    <MarkdownRenderer markdown={text || (streaming ? " " : "")} />
+    <MarkdownRenderer className="gap-2" markdown={text || (streaming ? " " : "")} />
     {streaming ? (
       <span
         aria-hidden
@@ -706,43 +763,38 @@ export const AgentChatMessageRow = ({
   const Icon = assistant ? Bot : system ? Terminal : UserRound;
 
   return (
-    <div className={cn("grid grid-cols-[32px_minmax(0,1fr)] gap-3", className)}>
-      <Avatar className={cn("size-8", assistant && "ring-1 ring-primary/25")}>
-        <AvatarFallback
+    <article
+      className={cn(
+        "group grid min-w-0 grid-cols-[82px_minmax(0,1fr)] gap-3 border-b border-border/70 px-1 py-2.5 last:border-b-0",
+        message.streaming && "bg-primary/5",
+        className,
+      )}
+    >
+      <div className="min-w-0 pt-0.5">
+        <div
           className={cn(
-            "text-[10px]",
-            assistant && "bg-primary/10 text-primary",
-            system && "bg-subtle text-muted-foreground",
+            "flex min-w-0 items-center gap-1.5 text-xs font-medium",
+            assistant && "text-primary",
+            system && "text-muted-foreground",
+            message.role === "user" && "text-foreground",
           )}
         >
-          {initialsForRole(message.role)}
-        </AvatarFallback>
-      </Avatar>
-      <article
-        className={cn(
-          "min-w-0 rounded-lg border px-4 py-3",
-          assistant && "border-primary/15 bg-elevated text-elevated-foreground",
-          message.role === "user" && "border-border bg-surface text-foreground",
-          system && "border-border bg-subtle/65 text-foreground",
-        )}
-      >
-        <div className={cn("mb-2 flex min-w-0 items-center gap-2", typography.control)}>
-          <span className="grid size-4 shrink-0 place-items-center text-muted-foreground">
-            <Icon aria-hidden className="size-4" strokeWidth={1.8} />
-          </span>
-          <Text as="span" className="min-w-0 flex-1" truncate variant="control">
-            {labelForRole(message.role)}
-          </Text>
+          <Icon aria-hidden className="size-3.5 shrink-0" strokeWidth={1.8} />
+          <span className="min-w-0 truncate">{labelForRole(message.role)}</span>
+        </div>
+        <DateTime
+          className="mt-1 block text-[11px] text-muted-foreground"
+          format="time"
+          relativeBase={relativeBase}
+          value={message.createdAt}
+        />
+      </div>
+      <div className="min-w-0">
+        <div className="mb-1 flex min-h-6 min-w-0 items-center gap-2">
           {message.streaming ? <Badge tone="info">Streaming</Badge> : null}
-          <DateTime
-            className="shrink-0 text-xs font-normal text-muted-foreground"
-            format="time"
-            relativeBase={relativeBase}
-            value={message.createdAt}
-          />
           {onCopyMessage ? (
             <IconButton
-              className="size-7"
+              className="ml-auto size-6 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
               icon={icon(Copy, "size-3.5")}
               label="Copy message"
               onClick={() => onCopyMessage(message)}
@@ -752,8 +804,8 @@ export const AgentChatMessageRow = ({
           ) : null}
         </div>
         <AgentChatStreamingText streaming={message.streaming} text={message.text} />
-      </article>
-    </div>
+      </div>
+    </article>
   );
 };
 
@@ -763,97 +815,154 @@ export type AgentChatActivityStripProps = {
   readonly maxVisible?: number;
 };
 
-const AgentChatActivityTooltip = ({ children }: { readonly children: React.ReactNode }) => (
-  <span
-    className={cn(
-      "pointer-events-none invisible absolute bottom-full left-1/2 z-20 mb-2 max-w-80 -translate-x-1/2 truncate whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs font-medium text-popover-foreground opacity-0 shadow-elevated transition",
-      "group-hover/activity-icon:visible group-hover/activity-icon:opacity-100",
-    )}
-  >
-    {children}
-  </span>
-);
-
-const AgentChatActivityStripIcon = ({ activity }: { readonly activity: AgentChatActivity }) => {
-  const Icon = activityKindIcon[activity.kind];
-  const label = activityNotificationLabel(activity);
-  const running = activity.status === "running" || activity.status === "pending";
-
-  return (
-    <span className="group/activity-icon relative inline-grid" role="listitem" title={label}>
-      <span
-        aria-label={label}
-        className={cn(
-          "grid size-6 place-items-center rounded-full border shadow-sm",
-          activityNotificationTone(activity),
-          running && "animate-pulse",
-        )}
-        role="img"
-      >
-        <Icon aria-hidden className="size-3.5" strokeWidth={2} />
-      </span>
-      <AgentChatActivityTooltip>{label}</AgentChatActivityTooltip>
-    </span>
-  );
+const compactPayloadValue = (value: unknown): string | undefined => {
+  const formatted = formatPayloadValue(value);
+  if (formatted !== undefined) return formatted;
+  if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? "" : "s"}`;
+  if (isRecord(value)) {
+    const serialized = JSON.stringify(value);
+    return serialized.length > 120 ? `${serialized.slice(0, 117)}...` : serialized;
+  }
+  return undefined;
 };
 
-const AgentChatActivityStripOverflow = ({
-  count,
-  labels,
-}: {
-  readonly count: number;
-  readonly labels: readonly string[];
-}) => {
-  const label =
-    labels.length > 0
-      ? `${count} more notification${count === 1 ? "" : "s"}: ${labels.join(", ")}`
-      : `${count} more notification${count === 1 ? "" : "s"}`;
+const activityPayloadEntries = (
+  activity: AgentChatActivity,
+): readonly (readonly [string, string])[] =>
+  Object.entries(activity.payload ?? {})
+    .filter(([key]) => !hiddenActivityPayloadKeys.has(key))
+    .map(([key, value]) => [key, compactPayloadValue(value)] as const)
+    .filter((entry): entry is readonly [string, string] => entry[1] !== undefined)
+    .slice(0, 6);
 
-  return (
-    <span className="group/activity-icon relative inline-grid" role="listitem" title={label}>
-      <span
-        aria-label={label}
-        className="grid h-6 min-w-6 place-items-center rounded-full border border-border bg-subtle px-1.5 text-[10px] font-semibold leading-none text-muted-foreground shadow-sm"
-        role="img"
-      >
-        +{count}
-      </span>
-      <AgentChatActivityTooltip>{label}</AgentChatActivityTooltip>
-    </span>
-  );
+const activityLogSummary = (activities: readonly AgentChatActivity[]): string => {
+  const failed = activities.filter((activity) => activity.status === "failed").length;
+  const running = activities.filter(
+    (activity) => activity.status === "running" || activity.status === "pending",
+  ).length;
+  if (failed > 0) return `${activities.length} events, ${failed} failed`;
+  if (running > 0) return `${activities.length} events, ${running} active`;
+  return `${activities.length} event${activities.length === 1 ? "" : "s"}`;
+};
+
+const activityLogDetail = (activity: AgentChatActivity): string | undefined => {
+  if (activity.detail && activity.detail.trim().length > 0) return activity.detail;
+  const command = payloadString(activity.payload, "command");
+  if (command) return command;
+  const tool = payloadString(activity.payload, "tool");
+  if (tool) return tool;
+  return undefined;
 };
 
 export const AgentChatActivityStrip = ({
   activities,
   className,
-  maxVisible = 5,
+  maxVisible = 6,
 }: AgentChatActivityStripProps) => {
   if (activities.length === 0) return null;
 
-  const visibleActivities = activities.slice(0, maxVisible);
-  const hiddenActivities = activities.slice(maxVisible);
-  const hiddenLabels = hiddenActivities.map(activityNotificationLabel).slice(0, 4);
+  const latestActivity = activities.at(-1);
+  const visibleActivities = activities.slice(-maxVisible);
+  const hiddenCount = Math.max(activities.length - visibleActivities.length, 0);
 
   return (
-    <div className={cn("grid grid-cols-[32px_minmax(0,1fr)] gap-3 py-0.5", className)}>
-      <span aria-hidden className="flex h-7 items-center justify-center">
-        <span className="h-px w-4 rounded-full bg-border" />
-      </span>
-      <div
-        aria-label={`${activities.length} activity notification${
-          activities.length === 1 ? "" : "s"
-        }`}
-        className="flex min-w-0 items-center gap-1.5"
-        role="list"
-      >
-        {visibleActivities.map((activity) => (
-          <AgentChatActivityStripIcon activity={activity} key={activity.id} />
-        ))}
-        {hiddenActivities.length > 0 ? (
-          <AgentChatActivityStripOverflow count={hiddenActivities.length} labels={hiddenLabels} />
+    <details
+      className={cn(
+        "group/log border-b border-border/60 py-1.5 text-sm text-muted-foreground",
+        className,
+      )}
+    >
+      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md px-1.5 py-1 outline-none hover:bg-subtle focus-visible:ring-1 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+        <span className="grid size-5 shrink-0 place-items-center text-accent">
+          <Wrench aria-hidden className="size-3.5" strokeWidth={1.8} />
+        </span>
+        <Text as="span" className="shrink-0" variant="control">
+          Activity log
+        </Text>
+        <Badge appearance="outline">{activityLogSummary(activities)}</Badge>
+        {latestActivity ? (
+          <Text as="span" className="min-w-0 flex-1" tone="muted" truncate variant="meta">
+            {activityNotificationLabel(latestActivity)}
+          </Text>
         ) : null}
+        <span className="ml-auto grid size-5 shrink-0 place-items-center text-muted-foreground">
+          <ChevronDown
+            aria-hidden
+            className="size-3.5 transition-transform group-open/log:rotate-180"
+            strokeWidth={1.8}
+          />
+        </span>
+      </summary>
+      <div className="mt-1 border-l border-border/70 pl-4">
+        {hiddenCount > 0 ? (
+          <Text as="div" className="py-1 text-xs" tone="muted">
+            {hiddenCount} older event{hiddenCount === 1 ? "" : "s"} hidden in this preview.
+          </Text>
+        ) : null}
+        <div className="divide-y divide-border/60">
+          {visibleActivities.map((activity) => {
+            const Icon = activityKindIcon[activity.kind];
+            const detail = activityLogDetail(activity);
+            const entries = activityPayloadEntries(activity);
+
+            return (
+              <div
+                className="grid min-w-0 grid-cols-[78px_minmax(0,1fr)] gap-3 py-2"
+                key={activity.id}
+              >
+                <div className="min-w-0">
+                  <DateTime
+                    className="block text-[11px] text-muted-foreground"
+                    format="time"
+                    value={activity.createdAt}
+                  />
+                  {activity.status ? (
+                    <Badge
+                      appearance="outline"
+                      className="mt-1 max-w-full"
+                      tone={activityStatusTone[activity.status]}
+                    >
+                      {activityStatusLabel[activity.status]}
+                    </Badge>
+                  ) : null}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                    <Text as="span" className="min-w-0" truncate variant="control">
+                      {activity.title}
+                    </Text>
+                  </div>
+                  {detail ? (
+                    <Text
+                      as="p"
+                      className="mt-1 font-mono text-[12px] leading-5"
+                      tone="muted"
+                      wrap="break"
+                    >
+                      {detail}
+                    </Text>
+                  ) : null}
+                  {entries.length > 0 ? (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {entries.map(([key, value]) => (
+                        <span
+                          className="inline-flex min-w-0 max-w-full items-center gap-1 rounded border border-border bg-subtle px-1.5 py-0.5 text-[11px]"
+                          key={key}
+                        >
+                          <span className="font-medium text-foreground">{key}</span>
+                          <span className="min-w-0 truncate">{value}</span>
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
-    </div>
+    </details>
   );
 };
 
@@ -918,15 +1027,240 @@ const AgentChatThinkingActivityRow = ({
   );
 };
 
+const approvalCommandFromDetails = (
+  details: AgentChatActivityPayload | null | undefined,
+): string | undefined => stringPayloadValue(details?.command);
+
+const approvalCwdFromDetails = (
+  details: AgentChatActivityPayload | null | undefined,
+): string | undefined => stringPayloadValue(details?.cwd);
+
+const approvalChangesFromDetails = (
+  details: AgentChatActivityPayload | null | undefined,
+): readonly unknown[] => (Array.isArray(details?.changes) ? details.changes : []);
+
+const approvalChangeLabel = (change: unknown, index: number): string => {
+  if (typeof change === "string" && change.trim().length > 0) return change;
+  if (isRecord(change)) {
+    return (
+      stringPayloadValue(change.path) ??
+      stringPayloadValue(change.file) ??
+      stringPayloadValue(change.title) ??
+      `Change ${index + 1}`
+    );
+  }
+  return `Change ${index + 1}`;
+};
+
+const resolvedApprovalDecision = (
+  activity: AgentChatActivity,
+): AgentChatApprovalDecision | undefined =>
+  approvalDecisionFromUnknown(activity.payload?.decision) ??
+  approvalDecisionFromUnknown(activity.detail);
+
+export type AgentChatApprovalCardProps = {
+  readonly activity: AgentChatActivity;
+  readonly className?: string;
+  readonly onDecision?: (input: AgentChatApprovalDecisionInput) => void;
+  readonly relativeBase?: Date | string;
+};
+
+export const AgentChatApprovalCard = ({
+  activity,
+  className,
+  onDecision,
+  relativeBase,
+}: AgentChatApprovalCardProps) => {
+  const request = agentChatApprovalRequestFromActivity(activity);
+  if (request === undefined) return null;
+
+  const status = activity.status ?? "pending";
+  const pending = status === "pending";
+  const command = approvalCommandFromDetails(request.details);
+  const cwd = approvalCwdFromDetails(request.details);
+  const changes = approvalChangesFromDetails(request.details);
+  const decision = resolvedApprovalDecision(activity);
+  const tone = pending ? "warning" : status === "failed" ? "danger" : "neutral";
+  const actionDisabled = !pending || onDecision === undefined;
+
+  const decide = (nextDecision: AgentChatApprovalDecision) => {
+    onDecision?.({
+      activity,
+      decision: nextDecision,
+      kind: request.kind,
+      requestId: request.requestId,
+    });
+  };
+
+  return (
+    <div className={cn("grid grid-cols-[32px_minmax(0,1fr)] gap-3", className)}>
+      <span
+        className={cn(
+          "grid size-8 place-items-center rounded-md border",
+          pending && "border-warning/30 bg-warning/12 text-warning",
+          status === "completed" && "border-success/25 bg-success/8 text-success",
+          status === "failed" && "border-destructive/25 bg-destructive/8 text-destructive",
+          status === "cancelled" && "border-border bg-subtle text-muted-foreground",
+        )}
+      >
+        <HelpCircle aria-hidden className="size-4" strokeWidth={1.8} />
+      </span>
+      <section
+        className={cn(
+          "min-w-0 rounded-lg border bg-surface px-4 py-4",
+          pending && "border-warning/30 bg-warning/5",
+          status === "completed" && "border-success/20 bg-success/5",
+          status === "failed" && "border-destructive/25 bg-destructive/8",
+          status === "cancelled" && "border-border bg-subtle/45",
+        )}
+      >
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <Text as="h3" variant="sectionTitle" wrap="break">
+                {activity.title}
+              </Text>
+              <Badge appearance="outline" tone={tone}>
+                {activity.status ? activityStatusLabel[activity.status] : "Pending"}
+              </Badge>
+              <Badge appearance="outline">{approvalKindLabel(request.kind)}</Badge>
+              {decision ? (
+                <Badge
+                  appearance="outline"
+                  tone={
+                    decision === "accept" || decision === "acceptForSession" ? "success" : "neutral"
+                  }
+                >
+                  {approvalDecisionLabel(decision)}
+                </Badge>
+              ) : null}
+            </div>
+            <DateTime
+              className="mt-1 block text-xs text-muted-foreground"
+              format="time"
+              relativeBase={relativeBase}
+              value={activity.createdAt}
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3">
+          {command ? (
+            <div className="grid gap-2">
+              <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                <Terminal aria-hidden className="size-3.5 shrink-0" strokeWidth={1.8} />
+                <Text as="span" variant="meta">
+                  Command
+                </Text>
+              </div>
+              <pre className="max-h-48 min-w-0 overflow-auto rounded-md border border-border bg-popover px-3 py-2 text-xs leading-5 text-popover-foreground">
+                <code className="whitespace-pre-wrap break-words">{command}</code>
+              </pre>
+            </div>
+          ) : activity.detail ? (
+            <Text as="p" tone="muted" variant="bodyCompact" wrap="break">
+              {activity.detail}
+            </Text>
+          ) : null}
+
+          {changes.length > 0 ? (
+            <div className="rounded-md border border-border bg-popover px-3 py-2">
+              <Text as="div" tone="muted" variant="meta">
+                {changes.length} file change{changes.length === 1 ? "" : "s"}
+              </Text>
+              <ul className="mt-2 grid gap-1 text-xs text-popover-foreground">
+                {changes.slice(0, 5).map((change, index) => (
+                  <li className="min-w-0 truncate" key={index}>
+                    {approvalChangeLabel(change, index)}
+                  </li>
+                ))}
+              </ul>
+              {changes.length > 5 ? (
+                <Text as="div" className="mt-1" tone="muted" variant="meta">
+                  +{changes.length - 5} more
+                </Text>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap gap-2">
+            {cwd ? (
+              <span className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md border border-border bg-subtle px-2 py-1 text-xs text-muted-foreground">
+                <span className="shrink-0 font-medium text-foreground">cwd</span>
+                <span className="min-w-0 truncate">{cwd}</span>
+              </span>
+            ) : null}
+            {request.defaultDecision ? (
+              <span className="inline-flex items-center gap-1 rounded-md border border-border bg-subtle px-2 py-1 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">default</span>
+                {request.defaultDecision}
+              </span>
+            ) : null}
+            <span className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md border border-border bg-subtle px-2 py-1 text-xs text-muted-foreground">
+              <span className="shrink-0 font-medium text-foreground">requestId</span>
+              <span className="min-w-0 truncate">{request.requestId}</span>
+            </span>
+          </div>
+        </div>
+
+        {pending ? (
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
+            <Button
+              disabled={actionDisabled}
+              leftIcon={<Check aria-hidden className="size-3.5" />}
+              onClick={() => decide("accept")}
+              size="sm"
+              tone="success"
+            >
+              Approve once
+            </Button>
+            <Button
+              disabled={actionDisabled}
+              leftIcon={<CheckCircle2 aria-hidden className="size-3.5" />}
+              onClick={() => decide("acceptForSession")}
+              size="sm"
+              tone="success"
+              variant="outline"
+            >
+              Approve session
+            </Button>
+            <Button
+              disabled={actionDisabled}
+              leftIcon={<XCircle aria-hidden className="size-3.5" />}
+              onClick={() => decide("decline")}
+              size="sm"
+              tone="danger"
+              variant="outline"
+            >
+              Decline
+            </Button>
+            <Button
+              disabled={actionDisabled}
+              onClick={() => decide("cancel")}
+              size="sm"
+              tone="neutral"
+              variant="ghost"
+            >
+              Cancel
+            </Button>
+          </div>
+        ) : null}
+      </section>
+    </div>
+  );
+};
+
 export type AgentChatActivityRowProps = {
   readonly activity: AgentChatActivity;
   readonly className?: string;
+  readonly onApprovalDecision?: (input: AgentChatApprovalDecisionInput) => void;
   readonly relativeBase?: Date | string;
 };
 
 export const AgentChatActivityRow = ({
   activity,
   className,
+  onApprovalDecision,
   relativeBase,
 }: AgentChatActivityRowProps) => {
   if (activity.kind === "thinking") {
@@ -934,6 +1268,17 @@ export const AgentChatActivityRow = ({
       <AgentChatThinkingActivityRow
         activity={activity}
         className={className}
+        relativeBase={relativeBase}
+      />
+    );
+  }
+
+  if (isAgentChatApprovalActivity(activity)) {
+    return (
+      <AgentChatApprovalCard
+        activity={activity}
+        className={className}
+        onDecision={onApprovalDecision}
         relativeBase={relativeBase}
       />
     );

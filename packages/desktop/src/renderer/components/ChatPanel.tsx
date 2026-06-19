@@ -2,6 +2,7 @@ import type {
   AgentChatActivity,
   AgentChatActivityKind,
   AgentChatActivityStatus,
+  AgentChatApprovalDecisionInput,
   AgentChatMessage,
   AgentChatProviderAvailability,
   AgentChatProviderProfile,
@@ -767,6 +768,56 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
           break;
         }
 
+        case "approval.resolved": {
+          const threadId = message.threadId;
+          if (threadId === undefined || !isRecord(payload)) break;
+          const requestId = stringValue(payload.requestId);
+          const decision = stringValue(payload.decision);
+          if (requestId === undefined) break;
+          const activityId = `activity-approval_${requestId}`;
+
+          setDetailsById((current) => {
+            const detail = current[threadId];
+            if (detail === undefined) return current;
+            return {
+              ...current,
+              [threadId]: {
+                ...detail,
+                turnStatus: "running",
+                timeline: detail.timeline.map((entry) => {
+                  if (entry.kind !== "activity" || entry.activity.id !== activityId) return entry;
+                  return {
+                    ...entry,
+                    activity: {
+                      ...entry.activity,
+                      detail: decision ?? entry.activity.detail,
+                      payload: {
+                        ...(entry.activity.payload ?? {}),
+                        decision,
+                        requestId,
+                      },
+                      status: "completed",
+                      title: "Approval resolved",
+                      updatedAt: message.createdAt ?? entry.activity.updatedAt,
+                    },
+                  };
+                }),
+              },
+            };
+          });
+          setThreads((current) =>
+            current.map((thread) =>
+              thread.id === threadId
+                ? {
+                    ...thread,
+                    status: thread.activeTurnId ? "active" : thread.status,
+                  }
+                : thread,
+            ),
+          );
+          break;
+        }
+
         case "turn.started":
         case "turn.completed":
         case "turn.failed":
@@ -941,6 +992,46 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
     [],
   );
 
+  const patchThreadActivity = React.useCallback(
+    (
+      threadId: string,
+      activityId: string,
+      patch: Partial<AgentChatActivity>,
+      payloadPatch?: Readonly<Record<string, unknown>>,
+    ) => {
+      setDetailsById((current) => {
+        const detail = current[threadId];
+        if (detail === undefined) return current;
+
+        return {
+          ...current,
+          [threadId]: {
+            ...detail,
+            timeline: detail.timeline.map((entry) => {
+              if (entry.kind !== "activity" || entry.activity.id !== activityId) return entry;
+
+              return {
+                ...entry,
+                activity: {
+                  ...entry.activity,
+                  ...patch,
+                  payload:
+                    payloadPatch === undefined
+                      ? entry.activity.payload
+                      : {
+                          ...(entry.activity.payload ?? {}),
+                          ...payloadPatch,
+                        },
+                },
+              };
+            }),
+          },
+        };
+      });
+    },
+    [],
+  );
+
   const createThread = React.useCallback(() => {
     const providerId = selectedProviderId ?? defaultProviderId;
     const model = selectedModel ?? providerDefaultModel(providers, providerId);
@@ -1033,6 +1124,69 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
     [sendCommand],
   );
 
+  const respondToApproval = React.useCallback(
+    (input: AgentChatApprovalDecisionInput) => {
+      const threadId = selectedThreadIdRef.current;
+      if (threadId === null) return;
+
+      patchThreadActivity(
+        threadId,
+        input.activity.id,
+        {
+          detail: input.decision,
+          status: "running",
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          decision: input.decision,
+        },
+      );
+
+      sendCommand(
+        "approval.respond",
+        {
+          decision: input.decision,
+          requestId: input.requestId,
+          threadId,
+        },
+        (ack) => {
+          if (ack.type === "command.ack") {
+            patchThreadActivity(
+              threadId,
+              input.activity.id,
+              {
+                detail: input.decision,
+                status: "completed",
+                title: "Approval resolved",
+                updatedAt: ack.createdAt ?? new Date().toISOString(),
+              },
+              {
+                decision: input.decision,
+              },
+            );
+            return;
+          }
+
+          if (ack.type !== "command.error") return;
+          const payload = isRecord(ack.payload) ? ack.payload : {};
+          patchThreadActivity(
+            threadId,
+            input.activity.id,
+            {
+              detail: stringValue(payload.message) ?? "Approval response failed.",
+              status: "failed",
+              updatedAt: ack.createdAt ?? new Date().toISOString(),
+            },
+            {
+              errorCode: stringValue(payload.code),
+            },
+          );
+        },
+      );
+    },
+    [patchThreadActivity, sendCommand],
+  );
+
   const updateProvider = React.useCallback(
     (providerId: string | null) => {
       const model = providerDefaultModel(providers, providerId);
@@ -1104,6 +1258,7 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
       composerValue={composerValue}
       connectionStatus={connectionStatus}
       model={selectedModel}
+      onApprovalDecision={respondToApproval}
       onCancelTurn={cancelTurn}
       onComposerValueChange={setComposerValue}
       onCopyMessage={copyMessage}

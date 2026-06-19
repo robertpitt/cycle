@@ -599,4 +599,34 @@ describe("@cycle/mcp", () => {
       await server.close();
     }
   });
+
+  it("acknowledges HTTP MCP notifications with 202 empty responses", async () => {
+    const server = await Effect.runPromise(
+      startCycleMcpHttpServerEffect({
+        apiToken: "api-token",
+        auth: { token: "mcp-token" },
+        env: {},
+      }).pipe(Effect.provide(NodeServices.layer)),
+    );
+
+    try {
+      const response = await fetch(`${server.baseUrl}${server.path}`, {
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "notifications/initialized",
+        }),
+        headers: {
+          authorization: "Bearer mcp-token",
+          "content-type": "application/json",
+          "mcp-session-id": "test-session",
+        },
+        method: "POST",
+      });
+
+      assert.equal(response.status, 202);
+      assert.equal(await response.text(), "");
+    } finally {
+      await server.close();
+    }
+  });
 });

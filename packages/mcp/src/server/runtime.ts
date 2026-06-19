@@ -196,7 +196,7 @@ const httpCompatibilityLayer = (
           );
         }
 
-        const response = yield* mcpStatelessCompatibilityResponse(request, options.path ?? "/mcp");
+        const response = yield* mcpHttpCompatibilityResponse(request, options.path ?? "/mcp");
         if (response !== undefined) return response;
 
         return yield* httpEffect;
@@ -206,17 +206,25 @@ const httpCompatibilityLayer = (
   );
 };
 
-const mcpStatelessCompatibilityResponse = (
+const mcpHttpCompatibilityResponse = (
   request: HttpServerRequest.HttpServerRequest,
   path: string,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse | undefined> =>
   Effect.gen(function* () {
     if (request.method !== "POST") return undefined;
     if (requestPathname(request) !== path) return undefined;
-    if (request.headers["mcp-session-id"] !== undefined) return undefined;
 
     const payload = yield* readCachedJson(request);
     if (!isJsonRpcObject(payload)) return undefined;
+
+    if (payload.id === undefined) {
+      return HttpServerResponse.empty({
+        headers: mcpCorsHeaders,
+        status: 202,
+      });
+    }
+
+    if (request.headers["mcp-session-id"] !== undefined) return undefined;
 
     switch (payload.method) {
       case "ping":
