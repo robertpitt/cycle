@@ -2,10 +2,7 @@ import { ArrowUp, Paperclip } from "lucide-react";
 import * as React from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "../../atoms/avatar/index.ts";
 import { IconButton } from "../../atoms/icon-button/index.ts";
-import {
-  MarkdownRenderer,
-  type MarkdownReferenceHandlers,
-} from "../markdown-renderer/index.ts";
+import { MarkdownRenderer, type MarkdownReferenceHandlers } from "../markdown-renderer/index.ts";
 import { cn } from "../../lib/cn.ts";
 import { typography } from "../../lib/styles.ts";
 import { MarkdownEditor } from "../markdown-editor/index.ts";

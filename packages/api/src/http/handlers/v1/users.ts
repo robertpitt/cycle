@@ -1,9 +1,11 @@
-import { UserGet, UserList, UserUpsert } from "@cycle/contracts";
+import { ContractSchemas, UserGet, UserList, UserUpsert } from "@cycle/contracts";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {
+  decodeHttpValue,
   errorResponse,
   meta,
+  objectPayload,
   pagedUseCaseResponse,
   requestIdFromHeaders,
   resourceResponse,
@@ -40,14 +42,22 @@ export const withUserHandlers = (handlers: any) =>
     .handle("upsertUser", ({ params, payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
+        const body = objectPayload(payload);
+        const input = yield* decodeHttpValue(
+          ContractSchemas.UpsertUserInput,
+          {
+            ...body,
+            email: stringField(body, "email", params.userId),
+          },
+          requestId,
+          {
+            code: "INVALID_USER_PAYLOAD",
+            message: "Invalid user payload.",
+          },
+        );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          UserUpsert(
-            scoped(params.repositoryId, {
-              ...payload,
-              email: stringField(payload, "email", params.userId),
-            } as any),
-            meta(requestId),
-          ),
+          UserUpsert(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 

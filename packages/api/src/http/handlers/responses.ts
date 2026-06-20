@@ -1,4 +1,8 @@
+import { Schema } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
+import { ApiErrorEnvelope } from "../schemas.ts";
+
+const StrictEncodeOptions = { onExcessProperty: "error" } as const;
 
 export const resourceResponse = (
   requestId: string,
@@ -81,7 +85,10 @@ export const errorResponse = (
   details: Readonly<Record<string, unknown>> = {},
 ): HttpServerResponse.HttpServerResponse =>
   HttpServerResponse.jsonUnsafe(
-    {
+    Schema.encodeUnknownSync(
+      ApiErrorEnvelope,
+      StrictEncodeOptions,
+    )({
       error: {
         code,
         details,
@@ -89,7 +96,7 @@ export const errorResponse = (
         requestId,
         retryable,
       },
-    },
+    }),
     {
       headers: {
         "x-request-id": requestId,

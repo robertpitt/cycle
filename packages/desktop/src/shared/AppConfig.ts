@@ -1,7 +1,12 @@
+import { AgentProviderId } from "@cycle/contracts/schemas";
 import { Config, ConfigProvider, Context, Data, Effect, Schema } from "effect";
 
 export const CURRENT_APP_CONFIG_SCHEMA_VERSION = 3;
 export const DEFAULT_API_PORT = 4738;
+const ApiPort = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(1),
+  Schema.isLessThanOrEqualTo(65535),
+);
 
 export const ThemePreference = Schema.Literals(["light", "dark", "system"]);
 export type ThemePreference = typeof ThemePreference.Type;
@@ -23,7 +28,7 @@ export type ProfileConfig = typeof ProfileConfig.Type;
 
 export const AgentProviderPreference = Schema.Struct({
   enabled: Schema.Boolean,
-  id: Schema.Literals(["codex", "claude", "opencode"]),
+  id: AgentProviderId,
 });
 export type AgentProviderPreference = typeof AgentProviderPreference.Type;
 
@@ -40,7 +45,7 @@ export type ThemeConfig = typeof ThemeConfig.Type;
 export const ApiConfig = Schema.Struct({
   enabled: Schema.Boolean,
   host: Schema.Literals(["127.0.0.1", "localhost"]),
-  port: Schema.Union([Schema.Number, Schema.Literal("auto")]),
+  port: Schema.Union([ApiPort, Schema.Literal("auto")]),
   staticToken: Schema.String,
 });
 export type ApiConfig = typeof ApiConfig.Type;

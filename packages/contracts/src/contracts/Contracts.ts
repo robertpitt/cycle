@@ -66,11 +66,34 @@ import {
   UserProfileDocumentOutput,
   UserProfilePageOutput,
 } from "../schemas/index.ts";
-import type { UseCaseContract, UseCaseInput, UseCaseName, UseCaseSuccess } from "./Types.ts";
+import type { UseCaseContract, UseCaseMeta } from "./Types.ts";
 
-const FailureSchema = Schema.Struct({
-  _tag: Schema.String,
+export const UseCaseFailureTag = Schema.Literals([
+  "AutomationEvaluationFailure",
+  "AuthorizationFailure",
+  "ConflictFailure",
+  "ConsistencyFailure",
+  "InterruptionFailure",
+  "InvalidInputFailure",
+  "NotFoundFailure",
+  "PolicyViolationFailure",
+  "PushFailure",
+  "RepositoryNotOpenFailure",
+  "RepositoryUnavailableFailure",
+  "StaleCursorFailure",
+  "StorageFailure",
+  "SyncFailure",
+  "TimeoutFailure",
+  "UnexpectedDefectFailure",
+  "UnknownUseCaseFailure",
+  "UnsupportedAliasFailure",
+]);
+export type UseCaseFailureTag = typeof UseCaseFailureTag.Type;
+
+export const UseCaseFailure = Schema.Struct({
+  _tag: UseCaseFailureTag,
   code: Schema.optional(Schema.String),
+  // Failure details are an explicit extension field for boundary diagnostics.
   details: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   field: Schema.optional(Schema.String),
   message: Schema.String,
@@ -80,6 +103,7 @@ const FailureSchema = Schema.Struct({
   ticketId: Schema.optional(Schema.String),
   useCase: Schema.String,
 });
+export type UseCaseFailure = typeof UseCaseFailure.Type;
 
 const RepositoryScopedEmpty = RepositoryScoped(EmptyInput);
 const RepositoryScopedString = RepositoryScoped(Schema.String);
@@ -89,13 +113,23 @@ const RepositoryScopedIssueId = RepositoryScoped(
   }),
 );
 
-const contract = <const Name extends UseCaseName, const Aliases extends ReadonlyArray<string>>(
-  input: Omit<UseCaseContract<Name>, "aliases" | "failureSchema" | "version"> & {
+const contract = <
+  const Name extends string,
+  InputSchema extends Schema.Top,
+  SuccessSchema extends Schema.Top,
+  const Aliases extends ReadonlyArray<string>,
+>(
+  input: Omit<
+    UseCaseContract<Name, InputSchema, SuccessSchema, typeof UseCaseFailure>,
+    "aliases" | "failureSchema" | "version"
+  > & {
     readonly aliases: Aliases;
   },
-): UseCaseContract<Name> & { readonly aliases: Aliases } => ({
+): UseCaseContract<Name, InputSchema, SuccessSchema, typeof UseCaseFailure> & {
+  readonly aliases: Aliases;
+} => ({
   ...input,
-  failureSchema: FailureSchema,
+  failureSchema: UseCaseFailure,
   version: "0.1.0",
 });
 
@@ -710,7 +744,19 @@ export const UseCaseContracts = {
     sideEffect: "evaluate",
     successSchema: AutomationEvaluationOutput,
   }),
-} as const satisfies Record<UseCaseName, UseCaseContract>;
+} as const satisfies Record<string, UseCaseContract>;
+
+export type UseCaseName = keyof typeof UseCaseContracts;
+export type UseCaseInput<Name extends UseCaseName> =
+  (typeof UseCaseContracts)[Name]["inputSchema"]["Type"];
+export type UseCaseSuccess<Name extends UseCaseName> =
+  (typeof UseCaseContracts)[Name]["successSchema"]["Type"];
+
+export type CycleUseCase<Name extends UseCaseName = UseCaseName> = {
+  readonly input: UseCaseInput<Name>;
+  readonly meta?: UseCaseMeta;
+  readonly name: Name;
+};
 
 const AliasEntries = Object.values(UseCaseContracts).flatMap((contract) =>
   contract.aliases.map((alias) => [alias, contract.name] as const),
@@ -734,27 +780,37 @@ export type UseCasePayloadsByAlias = {
 export type UseCaseSuccessesByAlias = {
   readonly [Alias in UseCaseAlias]: UseCaseSuccessForAlias<Alias>;
 };
+type UseCasePayloadSchemasByAlias = {
+  readonly [Alias in UseCaseAlias]: (typeof UseCaseContracts)[UseCaseNameForAlias<Alias>]["inputSchema"];
+};
+type UseCaseSuccessSchemasByAlias = {
+  readonly [Alias in UseCaseAlias]: (typeof UseCaseContracts)[UseCaseNameForAlias<Alias>]["successSchema"];
+};
 
 export const UseCaseAliases = new Map<string, UseCaseName>(AliasEntries);
 export const UseCaseAliasList = AliasEntries.map(([alias]) => alias) as ReadonlyArray<UseCaseAlias>;
 export const UseCasePayloadSchemasByAlias = Object.fromEntries(
   AliasEntries.map(([alias, name]) => [alias, UseCaseContracts[name].inputSchema]),
-) as Record<UseCaseAlias, Schema.Top>;
+) as UseCasePayloadSchemasByAlias;
 export const UseCaseSuccessSchemasByAlias = Object.fromEntries(
   AliasEntries.map(([alias, name]) => [alias, UseCaseContracts[name].successSchema]),
-) as Record<UseCaseAlias, Schema.Top>;
+) as UseCaseSuccessSchemasByAlias;
 
-export const contractFor = (name: UseCaseName): UseCaseContract => UseCaseContracts[name];
+export const contractFor = <Name extends UseCaseName>(
+  name: Name,
+): (typeof UseCaseContracts)[Name] => UseCaseContracts[name];
 
 export const useCaseNameForAlias = (alias: string): UseCaseName | null =>
   UseCaseAliases.get(alias) ?? null;
 
-export const contractForAlias = (alias: UseCaseAlias): UseCaseContract => {
+export const contractForAlias = <Alias extends UseCaseAlias>(
+  alias: Alias,
+): (typeof UseCaseContracts)[UseCaseNameForAlias<Alias>] => {
   const name = useCaseNameForAlias(alias);
 
   if (name === null) {
     throw new Error(`Unsupported usecase alias: ${alias}`);
   }
 
-  return contractFor(name);
+  return contractFor(name as UseCaseNameForAlias<Alias>);
 };

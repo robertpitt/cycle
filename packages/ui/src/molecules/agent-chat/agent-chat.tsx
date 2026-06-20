@@ -32,7 +32,6 @@ import { Select, type SelectItem } from "../../atoms/select/index.ts";
 import { Text } from "../../atoms/text/index.ts";
 import { cn } from "../../lib/cn.ts";
 import type { ComponentTone } from "../../lib/contracts.ts";
-import { typography } from "../../lib/styles.ts";
 import { MarkdownRenderer } from "../markdown-renderer/index.ts";
 
 export type AgentChatConnectionStatus =

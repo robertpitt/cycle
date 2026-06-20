@@ -7,28 +7,20 @@ import {
   type UseCaseMeta,
 } from "@cycle/contracts";
 import { logInfo, logWarning } from "@cycle/logging";
-import { type UseCaseFailure } from "@cycle/usecases";
-import { Crypto, Effect, Result } from "effect";
+import { Crypto, Effect, Result, Schema } from "effect";
 import { Headers, HttpServerResponse } from "effect/unstable/http";
 import { CycleApiRuntime, type CycleApiRuntimeShape } from "../runtime/CycleApiRuntime.ts";
+import type { AutomationEvaluatePayload } from "../schemas.ts";
 import { requestIdFromHeaders } from "./crypto.ts";
-import {
-  asPage,
-  optionalString,
-  pageLimitFrom,
-  severityThreshold,
-  urlFromRequest,
-} from "./query.ts";
+import { asPage, optionalString, pageLimitFrom, urlFromRequest } from "./query.ts";
 import { collectionResponse, errorResponse, errorResponseFromUseCaseFailure } from "./responses.ts";
+
+const StrictDecodeOptions = { onExcessProperty: "error" } as const;
 
 export const runUseCase = (useCase: CycleUseCase): Effect.Effect<unknown, never, CycleApiRuntime> =>
   Effect.gen(function* () {
     const runtime = yield* CycleApiRuntime;
-    const effect = runtime.runner.run(useCase as any) as unknown as Effect.Effect<
-      unknown,
-      UseCaseFailure
-    >;
-    const result = yield* Effect.result(effect);
+    const result = yield* Effect.result(runtime.runner.run(useCase));
     const fields = {
       requestId: useCase.meta?.requestId ?? null,
       useCase: useCase.name,
@@ -68,33 +60,61 @@ export const pagedUseCaseResponse = (
     );
   });
 
+export const decodeHttpValue = <S extends Schema.Top>(
+  schema: S,
+  value: unknown,
+  requestId: string,
+  options: {
+    readonly code: string;
+    readonly message: string;
+    readonly status?: number;
+  },
+): Effect.Effect<S["Type"] | HttpServerResponse.HttpServerResponse> =>
+  Schema.decodeUnknownEffect(
+    schema,
+    StrictDecodeOptions,
+  )(value).pipe(
+    Effect.catch((error) =>
+      Effect.succeed(
+        errorResponse(requestId, options.status ?? 400, options.code, options.message, false, {
+          parseError: String(error),
+        }),
+      ),
+    ),
+  ) as Effect.Effect<S["Type"] | HttpServerResponse.HttpServerResponse>;
+
+export const objectPayload = (value: unknown): Readonly<Record<string, unknown>> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Readonly<Record<string, unknown>>)
+    : {};
+
 export const runAutomationUseCase = (
   repositoryId: string,
-  payload: Readonly<Record<string, unknown>>,
+  payload: AutomationEvaluatePayload,
   requestId: string,
 ): Effect.Effect<unknown, never, CycleApiRuntime> => {
   const repository = { id: repositoryId };
 
-  if (Array.isArray(payload.issueIds)) {
+  if (payload.issueIds !== undefined) {
     return runUseCase(
       AutomationEvaluateIssues(
         {
-          issueIds: payload.issueIds.filter((value): value is string => typeof value === "string"),
+          issueIds: payload.issueIds,
           repository,
-          severityThreshold: severityThreshold(payload.severityThreshold),
+          severityThreshold: payload.severityThreshold,
         },
         meta(requestId),
       ),
     );
   }
 
-  if (isRecord(payload.query)) {
+  if (payload.query !== undefined) {
     return runUseCase(
       AutomationEvaluateQuery(
         {
           query: payload.query,
           repository,
-          severityThreshold: severityThreshold(payload.severityThreshold),
+          severityThreshold: payload.severityThreshold,
         },
         meta(requestId),
       ),
@@ -104,10 +124,9 @@ export const runAutomationUseCase = (
   return runUseCase(
     AutomationEvaluateRepository(
       {
-        failOnWarnings:
-          typeof payload.failOnWarnings === "boolean" ? payload.failOnWarnings : undefined,
+        failOnWarnings: payload.failOnWarnings,
         repository,
-        requireFresh: typeof payload.requireFresh === "boolean" ? payload.requireFresh : undefined,
+        requireFresh: payload.requireFresh,
       },
       meta(requestId),
     ),
@@ -119,44 +138,47 @@ export const repositoryOpenInputFrom = (
   payload: Readonly<Record<string, unknown>>,
   requestId: string,
 ): Effect.Effect<RepositoryInput | HttpServerResponse.HttpServerResponse> =>
-  Effect.promise(async () => {
-    try {
-      if (runtime.repositoryOpenInput !== undefined) {
-        return runtime.repositoryOpenInput(
-          {
-            displayName: optionalString(payload.displayName),
-            path: optionalString(payload.path),
-            repositoryId: optionalString(payload.repositoryId),
-            syncOnOpen: typeof payload.syncOnOpen === "boolean" ? payload.syncOnOpen : undefined,
-          },
-          { requestId },
-        );
-      }
+  Effect.gen(function* () {
+    const resolver = runtime.repositoryOpenInput;
 
-      if (typeof payload.repositoryId === "string" && payload.store !== undefined) {
-        return {
-          displayName: optionalString(payload.displayName),
-          repositoryId: payload.repositoryId,
-          store: payload.store as RepositoryInput["store"],
-          syncOnOpen: typeof payload.syncOnOpen === "boolean" ? payload.syncOnOpen : undefined,
-          worktreePath: optionalString(payload.worktreePath ?? payload.path),
-        };
-      }
-
-      return errorResponse(
-        requestId,
-        501,
-        "REPOSITORY_OPEN_UNAVAILABLE",
-        "Opening repositories requires a host-provided repositoryOpenInput resolver.",
-      );
-    } catch {
-      return errorResponse(
-        requestId,
-        500,
-        "REPOSITORY_OPEN_FAILED",
-        "Repository open input resolution failed.",
-      );
+    if (resolver !== undefined) {
+      return yield* Effect.tryPromise({
+        try: () =>
+          resolver(
+            {
+              displayName: optionalString(payload.displayName),
+              path: optionalString(payload.path),
+              repositoryId: optionalString(payload.repositoryId),
+              syncOnOpen: typeof payload.syncOnOpen === "boolean" ? payload.syncOnOpen : undefined,
+            },
+            { requestId },
+          ),
+        catch: () =>
+          errorResponse(
+            requestId,
+            500,
+            "REPOSITORY_OPEN_FAILED",
+            "Repository open input resolution failed.",
+          ),
+      }).pipe(Effect.catch((response) => Effect.succeed(response)));
     }
+
+    if (typeof payload.repositoryId === "string" && payload.store !== undefined) {
+      return {
+        displayName: optionalString(payload.displayName),
+        repositoryId: payload.repositoryId,
+        store: payload.store as RepositoryInput["store"],
+        syncOnOpen: typeof payload.syncOnOpen === "boolean" ? payload.syncOnOpen : undefined,
+        worktreePath: optionalString(payload.worktreePath ?? payload.path),
+      };
+    }
+
+    return errorResponse(
+      requestId,
+      501,
+      "REPOSITORY_OPEN_UNAVAILABLE",
+      "Opening repositories requires a host-provided repositoryOpenInput resolver.",
+    );
   });
 
 export const meta = (requestId: string): UseCaseMeta => ({
@@ -171,6 +193,3 @@ export const scoped = <T>(
   input,
   repository: { id: repositoryId },
 });
-
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);

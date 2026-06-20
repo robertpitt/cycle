@@ -316,16 +316,16 @@ flowchart TD
 
 Cycle request field mapping:
 
-| Cycle field | Codex mapping |
-| --- | --- |
-| `input` | Text prompt input. Structured part input currently joins text parts with blank lines. |
-| `instructions` | Prepended to input in `buildPrompt`. |
-| `context.cwd` | Preferred working directory for the Codex thread. Falls back to service option `cwd`. |
-| `model.id` | `ThreadOptions.model`. |
-| `responseFormat.type = "json_schema"` | `TurnOptions.outputSchema`; result text is parsed with `format.parse` or `JSON.parse`. |
-| `mcp.mode = "http"` | Adds a `cycle` MCP server to Codex config. Bearer token is extracted into `CYCLE_AGENT_MCP_TOKEN`. |
-| `signal` | Bridged into the per-turn controller. |
-| `metadata` | Copied to `AgentTurnResult.metadata`. |
+| Cycle field                           | Codex mapping                                                                                      |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `input`                               | Text prompt input. Structured part input currently joins text parts with blank lines.              |
+| `instructions`                        | Prepended to input in `buildPrompt`.                                                               |
+| `context.cwd`                         | Preferred working directory for the Codex thread. Falls back to service option `cwd`.              |
+| `model.id`                            | `ThreadOptions.model`.                                                                             |
+| `responseFormat.type = "json_schema"` | `TurnOptions.outputSchema`; result text is parsed with `format.parse` or `JSON.parse`.             |
+| `mcp.mode = "http"`                   | Adds a `cycle` MCP server to Codex config. Bearer token is extracted into `CYCLE_AGENT_MCP_TOKEN`. |
+| `signal`                              | Bridged into the per-turn controller.                                                              |
+| `metadata`                            | Copied to `AgentTurnResult.metadata`.                                                              |
 
 `AgentMcpAttachment` also defines `stdio` attachments at the normalized contract layer, but the current Codex client mapping only configures HTTP MCP servers.
 
@@ -343,16 +343,16 @@ Default timeout is `120_000` milliseconds.
 
 Codex `ThreadItem` values are converted into Cycle artifacts:
 
-| Codex item type | Cycle output |
-| --- | --- |
-| `agent_message` | `text.delta` events; no artifact. |
-| `command_execution` | `AgentToolArtifact` named `command_execution` plus progress text. |
-| `file_change` | `AgentPatchArtifact` with changed file paths and raw change metadata. |
-| `mcp_tool_call` | `AgentToolArtifact` named `<server>.<tool>` plus progress text. |
-| `reasoning` | Raw artifact and `Reasoning.` progress. |
-| `todo_list` | Raw artifact and `Updated plan.` progress. |
-| `web_search` | Raw artifact and search progress. |
-| `error` | Raw artifact and error message progress. |
+| Codex item type     | Cycle output                                                          |
+| ------------------- | --------------------------------------------------------------------- |
+| `agent_message`     | `text.delta` events; no artifact.                                     |
+| `command_execution` | `AgentToolArtifact` named `command_execution` plus progress text.     |
+| `file_change`       | `AgentPatchArtifact` with changed file paths and raw change metadata. |
+| `mcp_tool_call`     | `AgentToolArtifact` named `<server>.<tool>` plus progress text.       |
+| `reasoning`         | Raw artifact and `Reasoning.` progress.                               |
+| `todo_list`         | Raw artifact and `Updated plan.` progress.                            |
+| `web_search`        | Raw artifact and search progress.                                     |
+| `error`             | Raw artifact and error message progress.                              |
 
 Codex usage is normalized into:
 

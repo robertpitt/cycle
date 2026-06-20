@@ -1,6 +1,13 @@
 import { Effect, Result } from "effect";
+import { HttpServerResponse } from "effect/unstable/http";
 import { CycleApiRuntime } from "../../runtime/CycleApiRuntime.ts";
-import { errorResponse, requestIdFromHeaders, resourceResponse } from "../shared.ts";
+import { AgentProvidersOutput } from "../../schemas.ts";
+import {
+  decodeHttpValue,
+  errorResponse,
+  requestIdFromHeaders,
+  resourceResponse,
+} from "../shared.ts";
 
 export const withAgentHandlers = (handlers: any) =>
   handlers.handle("listAgentProviders", ({ request }: any) =>
@@ -28,8 +35,20 @@ export const withAgentHandlers = (handlers: any) =>
         );
       }
 
-      return resourceResponse(requestId, 200, {
-        providers: result.success,
-      });
+      const output = yield* decodeHttpValue(
+        AgentProvidersOutput,
+        {
+          providers: result.success,
+        },
+        requestId,
+        {
+          code: "INVALID_AGENT_PROVIDER_OUTPUT",
+          message: "Agent provider status did not match the API contract.",
+          status: 500,
+        },
+      );
+      if (HttpServerResponse.isHttpServerResponse(output)) return output;
+
+      return resourceResponse(requestId, 200, output);
     }),
   );

@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@cycle/codex-app-server": "workspace:*",
+    "@cycle/contracts": "workspace:*",
     "@effect/platform-node": "4.0.0-beta.78",
     "@openai/codex-sdk": "0.140.0",
     "effect": "4.0.0-beta.78"

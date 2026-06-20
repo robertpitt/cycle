@@ -1,9 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  defaultAppConfig,
-  type AppConfigState,
-  type RepositoryRecord,
-} from "../../shared/AppConfig.ts";
+import { defaultAppConfig, type AppConfigState } from "../../shared/AppConfig.ts";
 import type { UpdateRepositoryPreferencesInput } from "../../shared/LocalWorkspace.ts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";

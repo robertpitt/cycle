@@ -352,12 +352,17 @@ const connectChatSocket = async (baseUrl: string) => {
     return commandId;
   };
 
+  const sendRaw = (message: unknown) => {
+    socket.send(JSON.stringify(message));
+  };
+
   send("connection.authenticate", { token });
   await waitFor((message) => message.type === "connection.ready");
 
   return {
     close: () => socket.close(),
     send,
+    sendRaw,
     waitFor,
   };
 };
@@ -409,8 +414,11 @@ describe("@cycle/api", () => {
 
       const spec = await api.fetch(new Request("http://cycle.test/spec.json"));
       const body = (await spec.json()) as { openapi?: string; paths?: Record<string, unknown> };
+      const serializedSpec = JSON.stringify(body);
       assert.equal(spec.status, 200);
       assert.equal(body.openapi, "3.1.0");
+      assert.doesNotMatch(serializedSpec, /\b(?:Infinity|NaN)\b/);
+      assert.doesNotMatch(serializedSpec, /AnyPayload|Schema\.Unknown/);
       assert.ok(body.paths?.["/v1/autocomplete"]);
       assert.ok(body.paths?.["/v1/agents/providers"]);
       assert.ok(body.paths?.["/v1/app-config"]);
@@ -422,8 +430,262 @@ describe("@cycle/api", () => {
       assert.ok(body.paths?.["/v1/repositories/{repositoryId}/drafts/{draftId}/commit"]);
       assert.ok(body.paths?.["/v1/repositories/{repositoryId}/labels/{labelId}"]);
       assert.ok(body.paths?.["/v1/repositories/{repositoryId}/templates/{templateId}/archive"]);
+
+      const autocompletePath = body.paths?.["/v1/autocomplete"];
+      assert.equal(isRecord(autocompletePath), true);
+      const autocompleteSpec = JSON.stringify(
+        (autocompletePath as Readonly<Record<string, unknown>>).get,
+      );
+      assert.match(autocompleteSpec, /"limit"/);
+      assert.match(autocompleteSpec, /"results"/);
+      assert.match(autocompleteSpec, /"repositoryId"/);
+
+      const providersPath = body.paths?.["/v1/agents/providers"];
+      assert.equal(isRecord(providersPath), true);
+      const providersSpec = JSON.stringify(
+        (providersPath as Readonly<Record<string, unknown>>).get,
+      );
+      assert.match(providersSpec, /"providers"/);
+      assert.match(providersSpec, /"supportedJobTypes"/);
+      assert.match(providersSpec, /"capabilities"/);
+
+      assert.match(JSON.stringify(body.paths?.["/v1/app-config"]), /"schemaVersion"/);
+      assert.match(JSON.stringify(body.paths?.["/v1/app-config"]), /"localWorkspace"/);
+      assert.match(JSON.stringify(body.paths?.["/v1/profile"]), /"displayName"/);
+      assert.match(JSON.stringify(body.paths?.["/v1/profile/onboarding"]), /"themePreference"/);
+      assert.match(
+        JSON.stringify(body.paths?.["/v1/profile/onboarding"]),
+        /"enabledAgentProviderIds"/,
+      );
+      assert.match(JSON.stringify(body.paths?.["/v1/theme"]), /"preference"/);
+      assert.match(
+        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/preferences"]),
+        /"commitStyle"/,
+      );
+
+      const repositoriesPath = body.paths?.["/v1/repositories"];
+      assert.equal(isRecord(repositoriesPath), true);
+      const repositoriesSpec = repositoriesPath as Readonly<Record<string, unknown>>;
+      const listRepositoriesSpec = JSON.stringify(repositoriesSpec.get);
+      assert.match(listRepositoriesSpec, /"operationId":"listRepositories"/);
+      assert.match(listRepositoriesSpec, /"activeGeneration"/);
+      assert.match(listRepositoriesSpec, /"repositoryId"/);
+      assert.match(listRepositoriesSpec, /"additionalProperties":false/);
+
+      const openRepositorySpec = JSON.stringify(repositoriesSpec.post);
+      assert.match(openRepositorySpec, /"operationId":"openRepository"/);
+      assert.match(openRepositorySpec, /"displayName"/);
+      assert.match(openRepositorySpec, /"syncOnOpen"/);
+      assert.match(openRepositorySpec, /"activeGeneration"/);
+
+      const pushRepositoryPath = body.paths?.["/v1/repositories/{repositoryId}/push"];
+      assert.equal(isRecord(pushRepositoryPath), true);
+      assert.match(JSON.stringify(pushRepositoryPath), /"pointers"/);
+
+      const inboxPath = body.paths?.["/v1/inbox"];
+      assert.equal(isRecord(inboxPath), true);
+      const inboxListSpec = JSON.stringify((inboxPath as Readonly<Record<string, unknown>>).get);
+      assert.match(inboxListSpec, /"operationId":"listInbox"/);
+      assert.match(inboxListSpec, /"activeSnapshotIds"/);
+      assert.match(inboxListSpec, /"itemId"/);
+      assert.match(inboxListSpec, /"filter\[status\]"/);
+
+      const inboxReadPath = body.paths?.["/v1/inbox/read"];
+      assert.equal(isRecord(inboxReadPath), true);
+      const inboxReadSpec = JSON.stringify(
+        (inboxReadPath as Readonly<Record<string, unknown>>).post,
+      );
+      assert.match(inboxReadSpec, /"itemIds"/);
+      assert.match(inboxReadSpec, /"updatedCount"/);
+
+      assert.match(
+        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/drafts"]),
+        /"title"/,
+      );
+      assert.match(
+        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/drafts/{draftId}"]),
+        /"frontmatter"/,
+      );
+      assert.match(
+        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/labels/{labelId}"]),
+        /"color"/,
+      );
+      assert.match(
+        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/users/{userId}"]),
+        /"displayName"/,
+      );
+      assert.match(
+        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/views"]),
+        /"groupBy"/,
+      );
+      assert.match(
+        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/templates"]),
+        /"bodyTemplate"/,
+      );
+
+      const issuesPath = body.paths?.["/v1/repositories/{repositoryId}/issues"];
+      assert.equal(isRecord(issuesPath), true);
+      const listIssuesSpec = JSON.stringify((issuesPath as Readonly<Record<string, unknown>>).get);
+      assert.match(listIssuesSpec, /"operationId":"listIssues"/);
+      assert.match(listIssuesSpec, /"filter\[status\]\[in\]"/);
+      assert.match(listIssuesSpec, /"matchedFields"/);
+      assert.match(listIssuesSpec, /"ticket"/);
+      const createIssueSpec = JSON.stringify(
+        (issuesPath as Readonly<Record<string, unknown>>).post,
+      );
+      assert.match(createIssueSpec, /"title"/);
+      assert.match(createIssueSpec, /"externalLinks"/);
+      assert.match(createIssueSpec, /"additionalProperties":false/);
+      const createIssueOperation = (issuesPath as Readonly<Record<string, unknown>>).post;
+      assert.equal(isRecord(createIssueOperation), true);
+      const createIssueResponses = (
+        createIssueOperation as Readonly<Record<string, unknown>>
+      ).responses;
+      assert.equal(isRecord(createIssueResponses), true);
+      for (const status of ["400", "401", "403", "404", "409", "422", "500", "503", "504"]) {
+        assert.ok((createIssueResponses as Readonly<Record<string, unknown>>)[status]);
+      }
+      const badRequestSpec = JSON.stringify(
+        (createIssueResponses as Readonly<Record<string, unknown>>)["400"],
+      );
+      assert.match(badRequestSpec, /"error"/);
+      assert.match(badRequestSpec, /"requestId"/);
+      assert.match(badRequestSpec, /"retryable"/);
+
+      const issuePath = body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}"];
+      assert.equal(isRecord(issuePath), true);
+      assert.match(
+        JSON.stringify((issuePath as Readonly<Record<string, unknown>>).patch),
+        /"frontmatter"/,
+      );
+      assert.match(
+        JSON.stringify(
+          body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/transitions"],
+        ),
+        /"status"/,
+      );
+      assert.match(
+        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/diffs"]),
+        /"metadataChanges"/,
+      );
+      assert.match(
+        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/history"]),
+        /"snapshotId"/,
+      );
+      assert.match(
+        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/relations"]),
+        /"issueId"/,
+      );
+      assert.match(
+        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/records"]),
+        /"recordType"/,
+      );
+      assert.match(
+        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/comments"]),
+        /"body"/,
+      );
+
+      const initiativesPath = body.paths?.["/v1/repositories/{repositoryId}/initiatives"];
+      assert.equal(isRecord(initiativesPath), true);
+      assert.match(
+        JSON.stringify((initiativesPath as Readonly<Record<string, unknown>>).post),
+        /"externalLinks"/,
+      );
+      assert.match(
+        JSON.stringify(
+          body.paths?.["/v1/repositories/{repositoryId}/initiatives/{initiativeId}/progress"],
+        ),
+        /"statusCounts"/,
+      );
+      assert.match(
+        JSON.stringify(
+          body.paths?.["/v1/repositories/{repositoryId}/initiatives/{initiativeId}/updates"],
+        ),
+        /"progressNote"/,
+      );
+
+      const automationPath = body.paths?.["/v1/repositories/{repositoryId}/automation/evaluations"];
+      assert.equal(isRecord(automationPath), true);
+      const automationSpec = JSON.stringify(
+        (automationPath as Readonly<Record<string, unknown>>).post,
+      );
+      assert.match(automationSpec, /"issueIds"/);
+      assert.match(automationSpec, /"severityThreshold"/);
+      assert.match(automationSpec, /"checkedTicketIds"/);
+      assert.match(automationSpec, /"additionalProperties":false/);
     } finally {
       await api.dispose();
+    }
+  });
+
+  it("rejects undeclared HTTP body fields before dispatching usecases", async () => {
+    const { api, calls } = makeTestApi();
+
+    try {
+      const response = await api.fetch(
+        new Request("http://cycle.test/v1/repositories/test-repository/issues", {
+          ...authed({
+            debug: true,
+            title: "Strict HTTP payload",
+          }),
+          method: "POST",
+        }),
+      );
+      const body = (await response.json()) as {
+        readonly error?: {
+          readonly code?: string;
+          readonly message?: string;
+          readonly requestId?: string;
+          readonly retryable?: boolean;
+        };
+      };
+
+      assert.equal(response.status, 400);
+      assert.equal(response.headers.get("x-request-id"), "req_test");
+      assert.equal(body.error?.code, "INVALID_REQUEST");
+      assert.equal(body.error?.requestId, "req_test");
+      assert.equal(body.error?.retryable, false);
+      assert.equal(calls.includes("IssueCreate"), false);
+    } finally {
+      await api.dispose();
+    }
+  });
+
+  it("normalizes framework schema failures through the listening server", async () => {
+    const calls: Array<string> = [];
+    const runner: UseCaseRunnerShape = {
+      run: (useCase: CycleUseCase) =>
+        Effect.sync(() => {
+          calls.push(useCase.name);
+          return makeIssue("ISSUE-1", "Should not dispatch", "") as never;
+        }),
+    };
+    const handle = await startCycleApiServer({ runner, staticToken: token });
+
+    try {
+      const response = await fetch(`${handle.baseUrl}/v1/repositories/${repository.id}/issues`, {
+        ...authed({
+          debug: true,
+          title: "Strict HTTP payload",
+        }),
+        method: "POST",
+      });
+      const body = (await response.json()) as {
+        readonly error?: {
+          readonly code?: string;
+          readonly requestId?: string;
+          readonly retryable?: boolean;
+        };
+      };
+
+      assert.equal(response.status, 400);
+      assert.equal(response.headers.get("x-request-id"), "req_test");
+      assert.equal(body.error?.code, "INVALID_REQUEST");
+      assert.equal(body.error?.requestId, "req_test");
+      assert.equal(body.error?.retryable, false);
+      assert.deepEqual(calls, []);
+    } finally {
+      await handle.close();
     }
   });
 
@@ -452,6 +714,15 @@ describe("@cycle/api", () => {
 
   it("serves local app config and profile updates through the authenticated API", async () => {
     let appConfig = {
+      agentProviders: {
+        preferences: [],
+      },
+      api: {
+        enabled: true,
+        host: "127.0.0.1",
+        port: 4738,
+        staticToken: token,
+      },
       localWorkspace: {
         repositories: [],
       },
@@ -462,6 +733,7 @@ describe("@cycle/api", () => {
         displayName: "Desktop User",
         email: "desktop@example.com",
       },
+      schemaVersion: 3,
       theme: {
         preference: "system",
       },
@@ -688,6 +960,44 @@ describe("@cycle/api", () => {
       assert.equal(body.data?.providers?.[1]?.status, "unsupported");
     } finally {
       await api.dispose();
+    }
+  });
+
+  it("rejects invalid chat WebSocket command payloads at the schema boundary", async () => {
+    const agentChatStore = makeInMemoryAgentChatStore();
+    const handle = await startCycleApiServer({
+      agentChatStore,
+      runner: {
+        run: (useCase: CycleUseCase) =>
+          Effect.die(new Error(`Unexpected usecase: ${useCase.name}`)),
+      },
+      staticToken: token,
+    });
+    const client = await connectChatSocket(handle.baseUrl);
+
+    try {
+      client.sendRaw({
+        commandId: "cmd_invalid_payload",
+        payload: {
+          debug: true,
+          providerId: "codex",
+        },
+        type: "thread.create",
+        version: 1,
+      });
+      const error = await client.waitFor(
+        (message) =>
+          message.type === "command.error" &&
+          isRecord(message.payload) &&
+          message.payload.code === "INVALID_MESSAGE",
+      );
+
+      assert.equal(isRecord(error.payload), true);
+      assert.match(String(isRecord(error.payload) ? error.payload.message : ""), /invalid message/u);
+      assert.deepEqual(await agentChatStore.listThreads(), []);
+    } finally {
+      client.close();
+      await handle.close();
     }
   });
 

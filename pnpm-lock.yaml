@@ -26,6 +26,9 @@ importers:
       '@cycle/codex-app-server':
         specifier: workspace:*
         version: link:../codex-app-server
+      '@cycle/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@effect/platform-node':
         specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.11.1)
@@ -51,9 +54,6 @@ importers:
       '@cycle/logging':
         specifier: workspace:*
         version: link:../logging
-      '@cycle/mcp':
-        specifier: workspace:*
-        version: link:../mcp
       '@cycle/usecases':
         specifier: workspace:*
         version: link:../usecases
@@ -127,7 +127,7 @@ importers:
         specifier: workspace:*
         version: link:../git-db
       effect:
-        specifier: beta
+        specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78
     devDependencies:
       vitest:
@@ -164,13 +164,13 @@ importers:
         specifier: workspace:*
         version: link:../usecases
       '@effect/platform-node':
-        specifier: beta
-        version: 4.0.0-beta.84(effect@4.0.0-beta.78)(ioredis@5.11.1)
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.11.1)
       '@tanstack/react-query':
         specifier: ^5.101.0
         version: 5.101.0(react@19.2.7)
       effect:
-        specifier: beta
+        specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78
       lucide-react:
         specifier: ^1.17.0
@@ -216,10 +216,10 @@ importers:
   packages/git:
     dependencies:
       '@effect/platform-node':
-        specifier: beta
+        specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.11.1)
       effect:
-        specifier: beta
+        specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78
     devDependencies:
       vitest:
@@ -232,10 +232,10 @@ importers:
         specifier: workspace:*
         version: link:../git
       '@effect/platform-node':
-        specifier: beta
+        specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.11.1)
       effect:
-        specifier: beta
+        specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78
     devDependencies:
       vitest:
@@ -244,25 +244,6 @@ importers:
 
   packages/logging:
     dependencies:
-      effect:
-        specifier: 4.0.0-beta.78
-        version: 4.0.0-beta.78
-    devDependencies:
-      vitest:
-        specifier: ^4.1.8
-        version: 4.1.8(@types/node@25.9.2)(vite@8.0.16(@types/node@25.9.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
-
-  packages/mcp:
-    dependencies:
-      '@cycle/contracts':
-        specifier: workspace:*
-        version: link:../contracts
-      '@cycle/logging':
-        specifier: workspace:*
-        version: link:../logging
-      '@effect/platform-node':
-        specifier: 4.0.0-beta.78
-        version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.11.1)
       effect:
         specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78
@@ -557,13 +538,6 @@ packages:
     engines: {node: '>=18.0.0'}
     peerDependencies:
       effect: ^4.0.0-beta.78
-      ioredis: ^5.7.0
-
-  '@effect/platform-node@4.0.0-beta.84':
-    resolution: {integrity: sha512-WHPXaaIR1NpiANg+TOfTRupx9Uf2h/WVFZxRQdg5soUpa8bU61NwKxi3A5F/zLpp2AkRPgHTw1rQjwUD+/uA9A==}
-    engines: {node: '>=18.0.0'}
-    peerDependencies:
-      effect: ^4.0.0-beta.84
       ioredis: ^5.7.0
 
   '@electron/get@5.0.0':
@@ -3956,17 +3930,6 @@ snapshots:
       - utf-8-validate
 
   '@effect/platform-node@4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.11.1)':
-    dependencies:
-      '@effect/platform-node-shared': 4.0.0-beta.84(effect@4.0.0-beta.78)
-      effect: 4.0.0-beta.78
-      ioredis: 5.11.1
-      mime: 4.1.0
-      undici: 8.4.1
-    transitivePeerDependencies:
-      - bufferutil
-      - utf-8-validate
-
-  '@effect/platform-node@4.0.0-beta.84(effect@4.0.0-beta.78)(ioredis@5.11.1)':
     dependencies:
       '@effect/platform-node-shared': 4.0.0-beta.84(effect@4.0.0-beta.78)
       effect: 4.0.0-beta.78

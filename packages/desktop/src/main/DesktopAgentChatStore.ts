@@ -10,6 +10,7 @@ import type {
   AgentChatThreadWithMessages,
   AgentChatTurnRecord,
 } from "@cycle/api";
+import { Schema } from "effect";
 import { DatabaseSync } from "node:sqlite";
 
 type ThreadRow = {
@@ -91,6 +92,24 @@ type EventRow = {
   readonly thread_id: string;
   readonly type: string;
 };
+
+const JsonRecord = Schema.Record(Schema.String, Schema.Unknown);
+const StrictDecodeOptions = { onExcessProperty: "error" } as const;
+const AgentChatQuestionItem = Schema.Struct({
+  header: Schema.String,
+  id: Schema.String,
+  multiSelect: Schema.Boolean,
+  options: Schema.Array(
+    Schema.Struct({
+      description: Schema.optional(Schema.NullOr(Schema.String)),
+      disabled: Schema.optional(Schema.Boolean),
+      label: Schema.String,
+      value: Schema.optional(Schema.String),
+    }),
+  ),
+  question: Schema.String,
+});
+const AgentChatQuestionItems = Schema.Array(AgentChatQuestionItem);
 
 export const makeDesktopAgentChatStore = (path: string): AgentChatStoreShape => {
   ensureDatabaseParentDirectorySync(path);
@@ -465,9 +484,7 @@ const parseJsonRecord = (value: string | null): Readonly<Record<string, unknown>
 
   try {
     const parsed = JSON.parse(value) as unknown;
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-      ? (parsed as Readonly<Record<string, unknown>>)
-      : undefined;
+    return Schema.decodeUnknownSync(JsonRecord, StrictDecodeOptions)(parsed);
   } catch {
     return undefined;
   }
@@ -476,10 +493,18 @@ const parseJsonRecord = (value: string | null): Readonly<Record<string, unknown>
 const parseQuestionItems = (value: string): readonly AgentChatQuestionItemRecord[] => {
   try {
     const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed) ? (parsed as readonly AgentChatQuestionItemRecord[]) : [];
+    return Schema.decodeUnknownSync(AgentChatQuestionItems, StrictDecodeOptions)(parsed);
   } catch {
     return [];
   }
+};
+
+const jsonRecordProperty = <Key extends string>(
+  key: Key,
+  value: string | null,
+): Partial<Record<Key, Readonly<Record<string, unknown>>>> => {
+  const parsed = parseJsonRecord(value);
+  return parsed === undefined ? {} : ({ [key]: parsed } as Record<Key, typeof parsed>);
 };
 
 const threadFromRow = (row: ThreadRow): AgentChatThreadRecord => ({
@@ -503,7 +528,7 @@ const messageFromRow = (row: MessageRow): AgentChatMessageRecord => ({
   body: row.body,
   createdAt: row.created_at,
   id: row.message_id,
-  ...(row.metadata_json === null ? {} : { metadata: parseJsonRecord(row.metadata_json) ?? {} }),
+  ...jsonRecordProperty("metadata", row.metadata_json),
   ...(row.sequence === null ? {} : { sequence: row.sequence }),
   streaming: row.streaming === 1,
   threadId: row.thread_id,
@@ -518,7 +543,7 @@ const turnFromRow = (row: TurnRow): AgentChatTurnRecord => ({
   id: row.turn_id,
   inputMessageId: row.input_message_id,
   ...(row.last_error === null ? {} : { lastError: row.last_error }),
-  ...(row.metadata_json === null ? {} : { metadata: parseJsonRecord(row.metadata_json) ?? {} }),
+  ...jsonRecordProperty("metadata", row.metadata_json),
   ...(row.model === null ? {} : { model: row.model }),
   providerId: row.provider_id,
   status: row.status,
@@ -532,7 +557,7 @@ const activityFromRow = (row: ActivityRow): AgentChatActivityRecord => ({
   ...(row.detail === null ? {} : { detail: row.detail }),
   id: row.activity_id,
   kind: row.kind,
-  ...(row.payload_json === null ? {} : { payload: parseJsonRecord(row.payload_json) ?? {} }),
+  ...jsonRecordProperty("payload", row.payload_json),
   ...(row.status === null ? {} : { status: row.status }),
   threadId: row.thread_id,
   title: row.title,
@@ -541,7 +566,7 @@ const activityFromRow = (row: ActivityRow): AgentChatActivityRecord => ({
 });
 
 const questionFromRow = (row: QuestionRow): AgentChatQuestionRecord => ({
-  ...(row.answer_json === null ? {} : { answer: parseJsonRecord(row.answer_json) ?? {} }),
+  ...jsonRecordProperty("answer", row.answer_json),
   ...(row.answered_at === null ? {} : { answeredAt: row.answered_at }),
   createdAt: row.created_at,
   id: row.question_id,

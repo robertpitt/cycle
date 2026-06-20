@@ -22,8 +22,8 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@effect/platform-node": "beta",
-    "effect": "beta"
+    "@effect/platform-node": "4.0.0-beta.78",
+    "effect": "4.0.0-beta.78"
   },
   "devDependencies": {
     "vitest": "^4.1.8"

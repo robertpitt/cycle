@@ -464,7 +464,11 @@ describe("DesktopBootstrapLive", () => {
                     remoteSnapshot = await advanceRemoteCycleRef(remote);
                   }
 
-                  return repositoryStatus(repositoryId, "ready", await readCycleRef(repositoryPath));
+                  return repositoryStatus(
+                    repositoryId,
+                    "ready",
+                    await readCycleRef(repositoryPath),
+                  );
                 },
                 catch: (cause) => cause,
               }),

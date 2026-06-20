@@ -16,6 +16,7 @@ const workspaceRoutePaths = [
   "initiatives",
   "views",
   "settings",
+  "settings/:settingsSection",
   "repositories/:repositoryId/issues",
   "repositories/:repositoryId/issues/:issueId",
   "repositories/:repositoryId/views",

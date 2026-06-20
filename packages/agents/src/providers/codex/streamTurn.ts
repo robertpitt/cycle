@@ -47,7 +47,7 @@ export async function* streamCodexTurn<TStructured = unknown>(
     raw: unknown,
   ): AgentTurnResult<TStructured> => {
     const text = streamState.finalText();
-    const structured = parseStructured(request.responseFormat, text);
+    const structured = parseStructured<TStructured>(request.responseFormat, text);
 
     return {
       artifacts: [...artifactByItemId.values()],

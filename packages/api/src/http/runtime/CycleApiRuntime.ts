@@ -1,5 +1,5 @@
 import { type RepositoryInput } from "@cycle/contracts";
-import type { AgentProviderProfile, AgentSessionStore } from "@cycle/agents/types";
+import type { AgentProviderId, AgentProviderProfile, AgentSessionStore } from "@cycle/agents/types";
 import { type AgentServiceRegistryShape } from "@cycle/agents/service";
 import { type UseCaseRunnerShape } from "@cycle/usecases";
 import { Context } from "effect";
@@ -21,22 +21,30 @@ export type LocalSettingsProfileUpdateInput = {
   readonly email?: string;
 };
 
+export type LocalSettingsThemePreference = "light" | "dark" | "system";
+export type LocalSettingsRepositoryCommitStyle = "descriptive" | "compact";
+export type LocalSettingsRepositoryPreferences = {
+  readonly autoSync?: boolean;
+  readonly commitStyle?: LocalSettingsRepositoryCommitStyle;
+  readonly sidebarExpanded?: boolean;
+};
+
 export type LocalSettingsOnboardingInput = {
   readonly displayName: string;
   readonly email: string;
-  readonly enabledAgentProviderIds?: ReadonlyArray<string>;
-  readonly themePreference: string;
+  readonly enabledAgentProviderIds?: ReadonlyArray<AgentProviderId>;
+  readonly themePreference: LocalSettingsThemePreference;
 };
 
 export type LocalSettingsRepositoryPreferencesInput = {
   readonly id: string;
-  readonly preferences: Readonly<Record<string, unknown>>;
+  readonly preferences: LocalSettingsRepositoryPreferences;
 };
 
 export type LocalSettingsProviderShape = {
   readonly completeOnboarding?: (input: LocalSettingsOnboardingInput) => Promise<unknown>;
   readonly read: () => Promise<unknown>;
-  readonly setThemePreference?: (preference: string) => Promise<unknown>;
+  readonly setThemePreference?: (preference: LocalSettingsThemePreference) => Promise<unknown>;
   readonly updateProfile?: (input: LocalSettingsProfileUpdateInput) => Promise<unknown>;
   readonly updateRepositoryPreferences?: (
     input: LocalSettingsRepositoryPreferencesInput,

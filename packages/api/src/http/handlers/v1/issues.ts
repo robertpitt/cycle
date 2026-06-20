@@ -1,4 +1,5 @@
 import {
+  ContractSchemas,
   IssueArchive,
   IssueCreate,
   IssueDiff,
@@ -20,10 +21,12 @@ import { HttpServerResponse } from "effect/unstable/http";
 import {
   asPage,
   collectionResponse,
+  decodeHttpValue,
   errorResponse,
   historyQueryFrom,
   issueQueryFrom,
   meta,
+  objectPayload,
   optionalString,
   pageLimitFrom,
   recordQueryFrom,
@@ -41,20 +44,39 @@ export const withIssueHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const url = urlFromRequest(request);
-        const query = issueQueryFrom(url.searchParams);
-        const useCase =
-          typeof query.text === "string" && query.text.length > 0
-            ? IssueSearch(
-                scoped(params.repositoryId, {
-                  cursor: query["cursor"] as string | undefined,
-                  limit: query["limit"] as number | undefined,
-                  repositoryIds: query["repositoryIds"] as ReadonlyArray<string> | undefined,
-                  text: query["text"] as string,
-                }),
-                meta(requestId),
-              )
-            : IssueList(scoped(params.repositoryId, query), meta(requestId));
-        const pageValue = yield* runUseCase(useCase);
+        const query = yield* decodeHttpValue(
+          ContractSchemas.IssueQuery,
+          issueQueryFrom(url.searchParams),
+          requestId,
+          { code: "INVALID_ISSUE_QUERY", message: "Invalid issue query." },
+        );
+        if (HttpServerResponse.isHttpServerResponse(query)) return query;
+        const useCase = (() => {
+          if (typeof query.text !== "string" || query.text.length === 0) {
+            return Effect.succeed(IssueList(scoped(params.repositoryId, query), meta(requestId)));
+          }
+
+          return decodeHttpValue(
+            ContractSchemas.SearchTicketsInput,
+            {
+              cursor: query.cursor,
+              limit: query.limit,
+              repositoryIds: query.repositoryIds,
+              text: query.text,
+            },
+            requestId,
+            { code: "INVALID_ISSUE_SEARCH", message: "Invalid issue search query." },
+          ).pipe(
+            Effect.map((input) =>
+              HttpServerResponse.isHttpServerResponse(input)
+                ? input
+                : IssueSearch(scoped(params.repositoryId, input), meta(requestId)),
+            ),
+          );
+        })();
+        const resolvedUseCase = yield* useCase;
+        if (HttpServerResponse.isHttpServerResponse(resolvedUseCase)) return resolvedUseCase;
+        const pageValue = yield* runUseCase(resolvedUseCase);
         if (HttpServerResponse.isHttpServerResponse(pageValue)) return pageValue;
         const result = asPage(pageValue);
 
@@ -70,8 +92,13 @@ export const withIssueHandlers = (handlers: any) =>
     .handle("createIssue", ({ params, payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
+        const input = yield* decodeHttpValue(ContractSchemas.CreateIssueInput, payload, requestId, {
+          code: "INVALID_ISSUE_PAYLOAD",
+          message: "Invalid issue payload.",
+        });
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          IssueCreate(scoped(params.repositoryId, payload as any), meta(requestId)),
+          IssueCreate(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -94,14 +121,18 @@ export const withIssueHandlers = (handlers: any) =>
     .handle("updateIssue", ({ params, payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
+        const input = yield* decodeHttpValue(
+          ContractSchemas.UpdateIssueRequestInput,
+          {
+            id: params.issueId,
+            patch: payload,
+          },
+          requestId,
+          { code: "INVALID_ISSUE_PAYLOAD", message: "Invalid issue payload." },
+        );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          IssueUpdate(
-            scoped(params.repositoryId, {
-              id: params.issueId,
-              patch: payload,
-            }),
-            meta(requestId),
-          ),
+          IssueUpdate(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -111,15 +142,18 @@ export const withIssueHandlers = (handlers: any) =>
     .handle("transitionIssue", ({ params, payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
+        const input = yield* decodeHttpValue(
+          ContractSchemas.TransitionIssueInput,
+          {
+            ...objectPayload(payload),
+            id: params.issueId,
+          },
+          requestId,
+          { code: "INVALID_ISSUE_TRANSITION", message: "Invalid issue transition payload." },
+        );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          IssueTransition(
-            scoped(params.repositoryId, {
-              id: params.issueId,
-              reason: payload.reason,
-              status: payload.status,
-            }),
-            meta(requestId),
-          ),
+          IssueTransition(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -129,14 +163,18 @@ export const withIssueHandlers = (handlers: any) =>
     .handle("archiveIssue", ({ params, payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
+        const input = yield* decodeHttpValue(
+          ContractSchemas.ArchiveIssueInput,
+          {
+            id: params.issueId,
+            reason: optionalString(objectPayload(payload).reason),
+          },
+          requestId,
+          { code: "INVALID_ISSUE_ARCHIVE", message: "Invalid issue archive payload." },
+        );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          IssueArchive(
-            scoped(params.repositoryId, {
-              id: params.issueId,
-              reason: optionalString(payload.reason),
-            }),
-            meta(requestId),
-          ),
+          IssueArchive(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -146,14 +184,18 @@ export const withIssueHandlers = (handlers: any) =>
     .handle("restoreIssue", ({ params, payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
+        const input = yield* decodeHttpValue(
+          ContractSchemas.RestoreIssueInput,
+          {
+            id: params.issueId,
+            reason: optionalString(objectPayload(payload).reason),
+          },
+          requestId,
+          { code: "INVALID_ISSUE_RESTORE", message: "Invalid issue restore payload." },
+        );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          IssueRestore(
-            scoped(params.repositoryId, {
-              id: params.issueId,
-              reason: optionalString(payload.reason),
-            }),
-            meta(requestId),
-          ),
+          IssueRestore(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -164,14 +206,18 @@ export const withIssueHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const url = urlFromRequest(request);
+        const input = yield* decodeHttpValue(
+          ContractSchemas.IssueHistoryInput,
+          {
+            id: params.issueId,
+            options: historyQueryFrom(url.searchParams),
+          },
+          requestId,
+          { code: "INVALID_ISSUE_HISTORY_QUERY", message: "Invalid issue history query." },
+        );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const pageValue = yield* runUseCase(
-          IssueHistoryList(
-            scoped(params.repositoryId, {
-              id: params.issueId,
-              options: historyQueryFrom(url.searchParams),
-            }),
-            meta(requestId),
-          ),
+          IssueHistoryList(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(pageValue)) return pageValue;
         const result = asPage(pageValue);
@@ -188,14 +234,18 @@ export const withIssueHandlers = (handlers: any) =>
     .handle("getIssueRevision", ({ params, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
+        const input = yield* decodeHttpValue(
+          ContractSchemas.IssueRevisionInput,
+          {
+            id: params.issueId,
+            snapshotId: params.snapshotId,
+          },
+          requestId,
+          { code: "INVALID_ISSUE_REVISION", message: "Invalid issue revision request." },
+        );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          IssueRevisionGet(
-            scoped(params.repositoryId, {
-              id: params.issueId,
-              snapshotId: params.snapshotId,
-            }),
-            meta(requestId),
-          ),
+          IssueRevisionGet(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -211,25 +261,22 @@ export const withIssueHandlers = (handlers: any) =>
         const fromSnapshotId =
           url.searchParams.get("fromSnapshotId") ?? url.searchParams.get("from");
         const toSnapshotId = url.searchParams.get("toSnapshotId") ?? url.searchParams.get("to");
-
-        if (fromSnapshotId === null || toSnapshotId === null) {
-          return errorResponse(
-            requestId,
-            400,
-            "INVALID_QUERY",
-            "Issue diff requires fromSnapshotId and toSnapshotId query parameters.",
-          );
-        }
-
+        const input = yield* decodeHttpValue(
+          ContractSchemas.IssueDiffInput,
+          {
+            fromSnapshotId,
+            id: params.issueId,
+            toSnapshotId,
+          },
+          requestId,
+          {
+            code: "INVALID_ISSUE_DIFF_QUERY",
+            message: "Issue diff requires fromSnapshotId and toSnapshotId query parameters.",
+          },
+        );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          IssueDiff(
-            scoped(params.repositoryId, {
-              fromSnapshotId,
-              id: params.issueId,
-              toSnapshotId,
-            }),
-            meta(requestId),
-          ),
+          IssueDiff(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -239,14 +286,18 @@ export const withIssueHandlers = (handlers: any) =>
     .handle("addIssueRelation", ({ params, payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
+        const input = yield* decodeHttpValue(
+          ContractSchemas.RelationIssueInput,
+          {
+            id: params.issueId,
+            relation: payload,
+          },
+          requestId,
+          { code: "INVALID_ISSUE_RELATION", message: "Invalid issue relation payload." },
+        );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          IssueRelationAdd(
-            scoped(params.repositoryId, {
-              id: params.issueId,
-              relation: payload,
-            } as any),
-            meta(requestId),
-          ),
+          IssueRelationAdd(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -256,14 +307,18 @@ export const withIssueHandlers = (handlers: any) =>
     .handle("removeIssueRelation", ({ params, payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
+        const input = yield* decodeHttpValue(
+          ContractSchemas.RelationIssueInput,
+          {
+            id: params.issueId,
+            relation: payload,
+          },
+          requestId,
+          { code: "INVALID_ISSUE_RELATION", message: "Invalid issue relation payload." },
+        );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          IssueRelationRemove(
-            scoped(params.repositoryId, {
-              id: params.issueId,
-              relation: payload,
-            } as any),
-            meta(requestId),
-          ),
+          IssueRelationRemove(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -274,14 +329,18 @@ export const withIssueHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const url = urlFromRequest(request);
+        const input = yield* decodeHttpValue(
+          ContractSchemas.RecordsForIssueInput,
+          {
+            issueId: params.issueId,
+            query: recordQueryFrom(url.searchParams),
+          },
+          requestId,
+          { code: "INVALID_RECORD_QUERY", message: "Invalid issue record query." },
+        );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const pageValue = yield* runUseCase(
-          RecordListForIssue(
-            scoped(params.repositoryId, {
-              issueId: params.issueId,
-              query: recordQueryFrom(url.searchParams),
-            }),
-            meta(requestId),
-          ),
+          RecordListForIssue(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(pageValue)) return pageValue;
         const result = asPage(pageValue);
@@ -298,17 +357,21 @@ export const withIssueHandlers = (handlers: any) =>
     .handle("addIssueRecord", ({ params, payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
+        const body = objectPayload(payload);
+        const input = yield* decodeHttpValue(
+          ContractSchemas.AddLinkedRecordInput,
+          {
+            issueId: params.issueId,
+            payload: body.payload,
+            recordType: stringField(body, "recordType", "note"),
+            userVisible: typeof body.userVisible === "boolean" ? body.userVisible : undefined,
+          },
+          requestId,
+          { code: "INVALID_RECORD_PAYLOAD", message: "Invalid issue record payload." },
+        );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          RecordAdd(
-            scoped(params.repositoryId, {
-              issueId: params.issueId,
-              payload: "payload" in payload ? payload.payload : payload,
-              recordType: stringField(payload, "recordType", "note"),
-              userVisible:
-                typeof payload.userVisible === "boolean" ? payload.userVisible : undefined,
-            }),
-            meta(requestId),
-          ),
+          RecordAdd(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 

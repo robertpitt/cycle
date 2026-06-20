@@ -1,13 +1,16 @@
 import {
+  ContractSchemas,
   InboxArchive,
   InboxList,
   InboxMarkRead,
   InboxMarkUnread,
   InboxSummaryGet,
+  type InboxQuery,
 } from "@cycle/contracts";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {
+  decodeHttpValue,
   inboxQueryFrom,
   meta,
   requestIdFromHeaders,
@@ -22,9 +25,9 @@ export const withInboxHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const url = urlFromRequest(request);
-        const result = yield* runUseCase(
-          InboxList(inboxQueryFrom(url.searchParams) as any, meta(requestId)),
-        );
+        const input = yield* decodeInboxQuery(url.searchParams, requestId);
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
+        const result = yield* runUseCase(InboxList(input, meta(requestId)));
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
         return resourceResponse(requestId, 200, result);
@@ -34,9 +37,9 @@ export const withInboxHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const url = urlFromRequest(request);
-        const result = yield* runUseCase(
-          InboxSummaryGet(inboxQueryFrom(url.searchParams) as any, meta(requestId)),
-        );
+        const input = yield* decodeInboxQuery(url.searchParams, requestId);
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
+        const result = yield* runUseCase(InboxSummaryGet(input, meta(requestId)));
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
         return resourceResponse(requestId, 200, result);
@@ -69,3 +72,12 @@ export const withInboxHandlers = (handlers: any) =>
         return resourceResponse(requestId, 200, result);
       }),
     );
+
+const decodeInboxQuery = (
+  params: URLSearchParams,
+  requestId: string,
+): Effect.Effect<InboxQuery | HttpServerResponse.HttpServerResponse> =>
+  decodeHttpValue(ContractSchemas.InboxQuery, inboxQueryFrom(params), requestId, {
+    code: "INVALID_INBOX_QUERY",
+    message: "Invalid inbox query.",
+  });

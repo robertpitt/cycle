@@ -12,7 +12,7 @@ import { logError } from "@cycle/logging";
 import { UseCaseRunner, type UseCaseRunnerShape } from "@cycle/usecases";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect, FileSystem, Path } from "effect";
+import { Effect, FileSystem, Path, Schema } from "effect";
 import { DesktopRuntime } from "../platform/DesktopRuntime.ts";
 import { AppConfig, appConfigError, type RepositoryRecord } from "../shared/AppConfig.ts";
 import { DesktopBootstrap, type DesktopBootstrapService } from "../shared/Bootstrap.ts";
@@ -28,6 +28,22 @@ export const desktopApiRuntimeDiscoveryPath = (): string =>
 
 const cliConfigPath = (): string =>
   process.env.CYCLE_CONFIG_PATH ?? cycleCliConfigPathFromHome(homedir());
+
+const UnknownRecord = Schema.Record(Schema.String, Schema.Unknown);
+const CycleCliConfigFile = Schema.StructWithRest(
+  Schema.Struct({
+    api: Schema.optional(
+      Schema.StructWithRest(
+        Schema.Struct({
+          staticToken: Schema.optional(Schema.String),
+        }),
+        [UnknownRecord],
+      ),
+    ),
+  }),
+  [UnknownRecord],
+);
+type CycleCliConfigFile = typeof CycleCliConfigFile.Type;
 
 const repositoryMetadata = (metadata: GitRepositoryMetadata): RepositoryMetadata => ({
   ...(metadata.currentBranch === undefined ? {} : { currentBranch: metadata.currentBranch }),
@@ -67,17 +83,17 @@ const writeCliConfigToken = (
     const text = yield* fs
       .readFileString(configPath, "utf8")
       .pipe(Effect.catch(() => Effect.succeed(undefined)));
-    let current: Record<string, unknown> = {};
+    let current: CycleCliConfigFile = {};
 
     if (text !== undefined) {
       try {
-        current = JSON.parse(text) as Record<string, unknown>;
+        current = Schema.decodeUnknownSync(CycleCliConfigFile)(JSON.parse(text) as unknown);
       } catch {
         current = {};
       }
     }
 
-    const api = typeof current.api === "object" && current.api !== null ? current.api : {};
+    const api = current.api ?? {};
     yield* fs.makeDirectory(path.dirname(configPath), { recursive: true, mode: 0o700 });
     yield* fs.writeFileString(
       configPath,
@@ -208,17 +224,15 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
                   preferences.completeOnboarding({
                     displayName: input.displayName,
                     email: input.email,
-                    enabledAgentProviderIds: input.enabledAgentProviderIds as
-                      | readonly ("codex" | "claude" | "opencode")[]
-                      | undefined,
-                    themePreference: input.themePreference as "light" | "dark" | "system",
+                    enabledAgentProviderIds: input.enabledAgentProviderIds,
+                    themePreference: input.themePreference,
                   }),
                 ),
               read: () => runtime.runPromise("api.localSettings.read", preferences.read()),
               setThemePreference: (preference) =>
                 runtime.runPromise(
                   "api.localSettings.setThemePreference",
-                  preferences.setThemePreference(preference as "light" | "dark" | "system"),
+                  preferences.setThemePreference(preference),
                 ),
               updateProfile: (input) =>
                 runtime.runPromise(

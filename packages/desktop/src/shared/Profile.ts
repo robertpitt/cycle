@@ -1,23 +1,21 @@
-import { Context, Effect } from "effect";
-import type {
-  AppConfigError,
-  AppConfigState,
-  ProfileConfig,
-  ThemePreference,
-} from "./AppConfig.ts";
-import type { AgentProviderId } from "./AgentProviders.ts";
+import { AgentProviderId } from "@cycle/contracts/schemas";
+import { Context, Effect, Schema } from "effect";
+import type { AppConfigError, AppConfigState, ProfileConfig } from "./AppConfig.ts";
+import { ThemePreference } from "./AppConfig.ts";
 
-export type ProfileUpdateInput = {
-  readonly displayName?: string;
-  readonly email?: string;
-};
+export const ProfileUpdateInput = Schema.Struct({
+  displayName: Schema.optional(Schema.String),
+  email: Schema.optional(Schema.String),
+});
+export type ProfileUpdateInput = typeof ProfileUpdateInput.Type;
 
-export type CompleteOnboardingInput = {
-  readonly displayName: string;
-  readonly email: string;
-  readonly enabledAgentProviderIds?: ReadonlyArray<AgentProviderId>;
-  readonly themePreference: ThemePreference;
-};
+export const CompleteOnboardingInput = Schema.Struct({
+  displayName: Schema.String,
+  email: Schema.String,
+  enabledAgentProviderIds: Schema.optional(Schema.Array(AgentProviderId)),
+  themePreference: ThemePreference,
+});
+export type CompleteOnboardingInput = typeof CompleteOnboardingInput.Type;
 
 export type ProfileService = {
   readonly completeOnboarding: (

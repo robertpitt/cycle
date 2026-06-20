@@ -41,7 +41,7 @@ export const useUpdateProfileMutation = ({ appConfig }: SettingsMutationOptions 
   });
 };
 
-export const useSetThemePreferenceMutation = ({ appConfig }: SettingsMutationOptions = {}) => {
+export const useSetThemePreferenceMutation = (_options: SettingsMutationOptions = {}) => {
   const queryClient = useQueryClient();
 
   return useMutation({

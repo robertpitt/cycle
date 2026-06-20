@@ -1,5 +1,6 @@
 import { NodeServices } from "@effect/platform-node";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
+import { ApiErrorEnvelope } from "../http/schemas.ts";
 import {
   discoverCycleApiEffect,
   type CycleMcpApiDiscoveryInput,
@@ -23,15 +24,20 @@ export type CycleApiEnvelope<T = unknown> = {
   readonly page?: unknown;
 };
 
-export type CycleApiErrorEnvelope = {
-  readonly error?: {
-    readonly code?: string;
-    readonly details?: unknown;
-    readonly message?: string;
-    readonly requestId?: string;
-    readonly retryable?: boolean;
-  };
-};
+export type CycleApiErrorEnvelope = ApiErrorEnvelope;
+
+const StrictDecodeOptions = { onExcessProperty: "error" } as const;
+const CycleApiEnvelopeSchema = Schema.Struct({
+  data: Schema.Unknown,
+  links: Schema.optional(Schema.Unknown),
+  meta: Schema.optional(
+    Schema.Struct({
+      requestId: Schema.optional(Schema.String),
+      totalCount: Schema.optional(Schema.NullOr(Schema.Number)),
+    }),
+  ),
+  page: Schema.optional(Schema.Unknown),
+});
 
 export type CycleMcpApiClientShape = {
   readonly discover: () => Effect.Effect<CycleMcpApiDiscoveryResult, CycleMcpDiscoveryError>;
@@ -44,7 +50,7 @@ export type CycleMcpApiClientShape = {
 };
 
 export class CycleMcpApiClient extends Context.Service<CycleMcpApiClient, CycleMcpApiClientShape>()(
-  "@cycle/mcp/CycleMcpApiClient",
+  "@cycle/api/CycleMcpApiClient",
 ) {}
 
 export const makeCycleMcpApiClient = async (
@@ -115,7 +121,10 @@ export const makeCycleMcpApiClientEffect = (
               const payload = await readJsonResponse(response);
 
               if (!response.ok) {
-                const apiError = payload as CycleApiErrorEnvelope;
+                const apiError = Schema.decodeUnknownSync(
+                  ApiErrorEnvelope,
+                  StrictDecodeOptions,
+                )(payload);
                 throw cycleMcpApiError({
                   code: apiError.error?.code ?? `HTTP_${response.status}`,
                   details: apiError.error?.details,
@@ -126,7 +135,10 @@ export const makeCycleMcpApiClientEffect = (
                 });
               }
 
-              return payload as CycleApiEnvelope<T>;
+              return Schema.decodeUnknownSync(
+                CycleApiEnvelopeSchema,
+                StrictDecodeOptions,
+              )(payload) as CycleApiEnvelope<T>;
             },
             catch: (error) =>
               isCycleMcpApiError(error)
@@ -144,7 +156,7 @@ export const makeCycleMcpApiClientEffect = (
               "http.method": request.method.toUpperCase(),
               "http.route": request.path.split("?")[0] ?? request.path,
               "mcp.api.requestId": request.requestId ?? null,
-              service: "@cycle/mcp",
+              service: "@cycle/api",
             },
           }),
         ),

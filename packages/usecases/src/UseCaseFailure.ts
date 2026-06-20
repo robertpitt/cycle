@@ -1,38 +1,7 @@
 import type { DatabaseFailure } from "@cycle/database";
-import type { UseCaseName } from "./contracts/index.ts";
+import type { UseCaseFailure, UseCaseFailureTag, UseCaseName } from "./contracts/index.ts";
 
-export type UseCaseFailureTag =
-  | "AutomationEvaluationFailure"
-  | "AuthorizationFailure"
-  | "ConflictFailure"
-  | "ConsistencyFailure"
-  | "InterruptionFailure"
-  | "InvalidInputFailure"
-  | "NotFoundFailure"
-  | "PolicyViolationFailure"
-  | "PushFailure"
-  | "RepositoryNotOpenFailure"
-  | "RepositoryUnavailableFailure"
-  | "StaleCursorFailure"
-  | "StorageFailure"
-  | "SyncFailure"
-  | "TimeoutFailure"
-  | "UnexpectedDefectFailure"
-  | "UnknownUseCaseFailure"
-  | "UnsupportedAliasFailure";
-
-export type UseCaseFailure = {
-  readonly _tag: UseCaseFailureTag;
-  readonly code?: string;
-  readonly details?: Readonly<Record<string, unknown>>;
-  readonly field?: string;
-  readonly message: string;
-  readonly repositoryId?: string;
-  readonly requestId: string;
-  readonly retryable: boolean;
-  readonly ticketId?: string;
-  readonly useCase: string;
-};
+export type { UseCaseFailure, UseCaseFailureTag } from "./contracts/index.ts";
 
 type FailureInput = {
   readonly code?: string;

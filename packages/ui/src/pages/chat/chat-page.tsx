@@ -1,19 +1,8 @@
-import {
-  GitBranch,
-  History,
-  Inbox,
-  ListTodo,
-  MessageSquare,
-  Plus,
-  Search,
-} from "lucide-react";
+import { GitBranch, History, Inbox, ListTodo, MessageSquare, Plus, Search } from "lucide-react";
 import * as React from "react";
 import { Button } from "../../atoms/button/index.ts";
 import { cn } from "../../lib/cn.ts";
-import {
-  AgentChatShell,
-  type AgentChatShellProps,
-} from "../../organisms/agent-chat/index.ts";
+import { AgentChatShell, type AgentChatShellProps } from "../../organisms/agent-chat/index.ts";
 import {
   AppShellFrame,
   AppShellHeader,
@@ -114,10 +103,18 @@ export const ChatPage = ({ className, onCreateThread, ...chatProps }: ChatPagePr
           <AppShellHeader
             actions={
               <>
-                <Button leftIcon={<Search aria-hidden className="size-4" />} size="sm" variant="outline">
+                <Button
+                  leftIcon={<Search aria-hidden className="size-4" />}
+                  size="sm"
+                  variant="outline"
+                >
                   Search
                 </Button>
-                <Button leftIcon={<Plus aria-hidden className="size-4" />} onClick={onCreateThread} size="sm">
+                <Button
+                  leftIcon={<Plus aria-hidden className="size-4" />}
+                  onClick={onCreateThread}
+                  size="sm"
+                >
                   New chat
                 </Button>
               </>

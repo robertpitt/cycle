@@ -1,19 +1,20 @@
-import type {
+import { Schema } from "effect";
+import {
   AppConfigState,
   RepositoryCommitStyle,
+  RepositoryRecord,
   ThemePreference,
 } from "../shared/AppConfig.ts";
-import type { AgentProviderId, DetectedAgentProvider } from "../shared/AgentProviders.ts";
-import type { BootstrapStatus } from "../shared/Bootstrap.ts";
-import type { ElectronThemeState, ElectronThemeSource } from "../platform/ElectronTheme.ts";
-import type { CompleteOnboardingInput, ProfileUpdateInput } from "../shared/Profile.ts";
-import type {
+import { AgentProviderId, DetectedAgentProvider } from "../shared/AgentProviders.ts";
+import { BootstrapStatus } from "../shared/Bootstrap.ts";
+import { ElectronThemeSource, ElectronThemeState } from "../platform/ElectronTheme.ts";
+import { CompleteOnboardingInput, ProfileUpdateInput } from "../shared/Profile.ts";
+import {
   InitializeRepositoryPathInput,
   SelectRepositoryFolderResult,
   UpdateRepositoryPreferencesInput,
   UpsertRepositoryPathInput,
 } from "../shared/LocalWorkspace.ts";
-import type { RepositoryRecord } from "../shared/AppConfig.ts";
 
 export const getAppConfigChannel = "cycle:desktop:app-config/get";
 export const updateProfileChannel = "cycle:desktop:profile/update";
@@ -37,24 +38,28 @@ export const getBootstrapStatusChannel = "cycle:desktop:bootstrap/status";
 export const getBackendLogPathChannel = "cycle:desktop:logs/path";
 export const getApiConnectionChannel = "cycle:desktop:api/connection";
 
-export type ApiConnection = {
-  readonly baseUrl: string;
-  readonly token: string;
-};
+export const ApiConnection = Schema.Struct({
+  baseUrl: Schema.String,
+  token: Schema.String,
+});
+export type ApiConnection = typeof ApiConnection.Type;
 
-export type OpenExternalRequest = {
-  readonly targetUrl: string;
-};
+export const OpenExternalRequest = Schema.Struct({
+  targetUrl: Schema.String,
+});
+export type OpenExternalRequest = typeof OpenExternalRequest.Type;
 
-export type SetThemePreferenceRequest = {
-  readonly preference: ThemePreference;
-};
+export const SetThemePreferenceRequest = Schema.Struct({
+  preference: ThemePreference,
+});
+export type SetThemePreferenceRequest = typeof SetThemePreferenceRequest.Type;
 
 export type { ElectronThemeState, ElectronThemeSource };
 
-export type RemoveRepositoryRequest = {
-  readonly id: string;
-};
+export const RemoveRepositoryRequest = Schema.Struct({
+  id: Schema.String,
+});
+export type RemoveRepositoryRequest = typeof RemoveRepositoryRequest.Type;
 
 export type CycleDesktopBridge = {
   readonly completeOnboarding: (input: CompleteOnboardingInput) => Promise<AppConfigState>;
@@ -91,72 +96,39 @@ declare global {
   }
 }
 
-export const isOpenExternalRequest = (value: unknown): value is OpenExternalRequest =>
-  typeof value === "object" &&
-  value !== null &&
-  "targetUrl" in value &&
-  typeof (value as { readonly targetUrl?: unknown }).targetUrl === "string";
+const isSchema =
+  <S extends Schema.Top>(schema: S) =>
+  (value: unknown): value is S["Type"] =>
+    Schema.is(schema)(value);
 
-export const isThemePreferenceValue = (value: unknown): value is ThemePreference =>
-  value === "light" || value === "dark" || value === "system";
+export const isOpenExternalRequest = isSchema(OpenExternalRequest);
 
-export const isElectronThemeSourceValue = (value: unknown): value is ElectronThemeSource =>
-  value === "light" || value === "dark" || value === "system";
+export const isThemePreferenceValue = isSchema(ThemePreference);
 
-export const isRepositoryCommitStyleValue = (value: unknown): value is RepositoryCommitStyle =>
-  value === "descriptive" || value === "compact";
+export const isElectronThemeSourceValue = isSchema(ElectronThemeSource);
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+export const isRepositoryCommitStyleValue = isSchema(RepositoryCommitStyle);
 
-const isAgentProviderId = (value: unknown): value is AgentProviderId =>
-  value === "codex" || value === "claude" || value === "opencode";
+export const isElectronThemeState = isSchema(ElectronThemeState);
 
-export const isElectronThemeState = (value: unknown): value is ElectronThemeState =>
-  isRecord(value) &&
-  isElectronThemeSourceValue(value.source) &&
-  (value.resolvedMode === "light" || value.resolvedMode === "dark") &&
-  typeof value.shouldUseDarkColors === "boolean";
+export const isProfileUpdateInput = isSchema(ProfileUpdateInput);
 
-export const isProfileUpdateInput = (value: unknown): value is ProfileUpdateInput =>
-  isRecord(value) &&
-  (value.displayName === undefined || typeof value.displayName === "string") &&
-  (value.email === undefined || typeof value.email === "string");
+export const isCompleteOnboardingInput = isSchema(CompleteOnboardingInput);
 
-export const isCompleteOnboardingInput = (value: unknown): value is CompleteOnboardingInput =>
-  isRecord(value) &&
-  typeof value.displayName === "string" &&
-  typeof value.email === "string" &&
-  (value.enabledAgentProviderIds === undefined ||
-    (Array.isArray(value.enabledAgentProviderIds) &&
-      value.enabledAgentProviderIds.every(isAgentProviderId))) &&
-  (value.themePreference === "light" ||
-    value.themePreference === "dark" ||
-    value.themePreference === "system");
+export const isSetThemePreferenceRequest = isSchema(SetThemePreferenceRequest);
 
-export const isSetThemePreferenceRequest = (value: unknown): value is SetThemePreferenceRequest =>
-  isRecord(value) && isThemePreferenceValue(value.preference);
+export const isUpsertRepositoryPathInput = isSchema(UpsertRepositoryPathInput);
 
-export const isUpsertRepositoryPathInput = (value: unknown): value is UpsertRepositoryPathInput =>
-  isRecord(value) &&
-  typeof value.path === "string" &&
-  (value.displayName === undefined || typeof value.displayName === "string");
+export const isInitializeRepositoryPathInput = isSchema(InitializeRepositoryPathInput);
 
-export const isInitializeRepositoryPathInput = (
-  value: unknown,
-): value is InitializeRepositoryPathInput => isUpsertRepositoryPathInput(value);
+export const isUpdateRepositoryPreferencesInput = isSchema(UpdateRepositoryPreferencesInput);
 
-export const isUpdateRepositoryPreferencesInput = (
-  value: unknown,
-): value is UpdateRepositoryPreferencesInput =>
-  isRecord(value) &&
-  typeof value.id === "string" &&
-  isRecord(value.preferences) &&
-  (value.preferences.autoSync === undefined || typeof value.preferences.autoSync === "boolean") &&
-  (value.preferences.commitStyle === undefined ||
-    isRepositoryCommitStyleValue(value.preferences.commitStyle)) &&
-  (value.preferences.sidebarExpanded === undefined ||
-    typeof value.preferences.sidebarExpanded === "boolean");
+export const isRemoveRepositoryRequest = isSchema(RemoveRepositoryRequest);
 
-export const isRemoveRepositoryRequest = (value: unknown): value is RemoveRepositoryRequest =>
-  isRecord(value) && typeof value.id === "string";
+export const isApiConnection = isSchema(ApiConnection);
+export const isAppConfigState = isSchema(AppConfigState);
+export const isBootstrapStatus = isSchema(BootstrapStatus);
+export const isDetectedAgentProviderArray = isSchema(Schema.Array(DetectedAgentProvider));
+export const isRepositoryRecord = isSchema(RepositoryRecord);
+export const isRepositoryRecordArray = isSchema(Schema.Array(RepositoryRecord));
+export const isSelectRepositoryFolderResult = isSchema(SelectRepositoryFolderResult);

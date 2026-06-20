@@ -58,10 +58,13 @@ export const startCycleApiServerEffect = (
       ...serverOptions,
       baseUrl: `http://${host}:${options.port ?? 0}`,
     });
-    const { createServer } = yield* Effect.promise(() => import("node:http"));
-    const routes = (
-      makeCycleApiLayer(serverOptions) as Layer.Layer<never, unknown, any>
-    ).pipe(Layer.provide(CycleLoggingLive(logging)));
+    const { createServer } = yield* Effect.tryPromise({
+      try: () => import("node:http"),
+      catch: (cause) => cause,
+    });
+    const routes = (makeCycleApiLayer(serverOptions) as Layer.Layer<never, unknown, any>).pipe(
+      Layer.provide(CycleLoggingLive(logging)),
+    );
     const serverLayer = HttpRouter.serve(routes, {
       disableListenLog: true,
       disableLogger: true,
@@ -78,7 +81,7 @@ export const startCycleApiServerEffect = (
 
     if (server.address._tag !== "TcpAddress") {
       yield* Scope.close(scope, Exit.void);
-      yield* Effect.promise(() => api.dispose());
+      yield* disposeApi(api);
       return yield* Effect.die(new Error("Cycle API server did not bind to a TCP address."));
     }
 
@@ -114,20 +117,24 @@ export const startCycleApiServerEffect = (
         Effect.runPromise(
           Effect.gen(function* () {
             yield* Scope.close(scope, Exit.void);
-            yield* Effect.promise(() => api.dispose());
+            yield* disposeApi(api);
             if (options.runtimeFile !== undefined) {
               const fs = yield* FileSystem.FileSystem;
               yield* fs.remove(options.runtimeFile, { force: true });
             }
             yield* logInfo("api", "api server stopped", { baseUrl });
-          }).pipe(
-            Effect.provide([NodeServices.layer, CycleLoggingLive(logging)]),
-          ),
+          }).pipe(Effect.provide([NodeServices.layer, CycleLoggingLive(logging)])),
         ),
       port: server.address.port,
       server,
     };
   }) as Effect.Effect<CycleApiServerHandle, unknown, NodeServices.NodeServices>;
+
+const disposeApi = (api: CycleApi): Effect.Effect<void, unknown> =>
+  Effect.tryPromise({
+    try: () => api.dispose(),
+    catch: (cause) => cause,
+  });
 
 const withServerMcpDefaults = (options: CycleApiServerOptions): CycleApiServerOptions => {
   const mcp = options.mcp;

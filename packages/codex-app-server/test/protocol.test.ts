@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import {
   CodexAppServerProcessExitedError,
+  CodexAppServerProtocolParseError,
   CodexAppServerSchemaDecodeError,
   makeCodexAppServerClient,
   makeCodexAppServerProtocol,
@@ -130,6 +131,40 @@ describe("@cycle/codex-app-server protocol", () => {
     input.push(JSON.stringify({ id: request.id, result: { cwd: "/tmp/cycle" } }) + "\n");
 
     await assert.rejects(response, CodexAppServerSchemaDecodeError);
+  });
+
+  it("rejects undeclared JSON-RPC frame fields before dispatch", async () => {
+    const input = new Pushable<string>();
+    const errors: unknown[] = [];
+    const outgoing: string[] = [];
+    makeCodexAppServerProtocol({
+      onError: (error) => {
+        errors.push(error);
+      },
+      transport: {
+        input,
+        send: (line) => {
+          outgoing.push(line);
+        },
+      },
+    });
+
+    input.push(
+      JSON.stringify({
+        debug: true,
+        id: "server_req_1",
+        method: "thread/start",
+        params: {},
+      }) + "\n",
+    );
+
+    await waitFor(() => errors.length === 1);
+    assert.equal(errors[0] instanceof CodexAppServerProtocolParseError, true);
+    assert.equal(
+      (errors[0] as CodexAppServerProtocolParseError).detail,
+      "Invalid JSON-RPC message.",
+    );
+    assert.equal(outgoing.length, 0);
   });
 
   it("dispatches typed notifications", async () => {

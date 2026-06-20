@@ -8,27 +8,23 @@ import {
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {
+  AutocompleteOutput,
+  AutocompleteQuery,
+  type AutocompleteEntityType,
+  type AutocompleteQuery as AutocompleteQueryInput,
+  type HttpAutocompleteResultOutput as AutocompleteResult,
+} from "../../schemas.ts";
+import {
   asPage,
+  decodeHttpValue,
+  errorResponse,
   meta,
-  pageLimitFrom,
   requestIdFromHeaders,
   resourceResponse,
   runUseCase,
   scoped,
   urlFromRequest,
 } from "../shared.ts";
-
-type AutocompleteEntityType = "repository" | "ticket";
-
-type AutocompleteResult = {
-  readonly id: string;
-  readonly metadata?: Readonly<Record<string, unknown>>;
-  readonly name: string;
-  readonly repositoryId?: string;
-  readonly subtitle?: string;
-  readonly type: AutocompleteEntityType;
-  readonly uri: string;
-};
 
 const supportedTypes = new Set<AutocompleteEntityType>(["repository", "ticket"]);
 
@@ -37,9 +33,20 @@ export const withAutocompleteHandlers = (handlers: any) =>
     Effect.gen(function* () {
       const requestId = yield* requestIdFromHeaders(request.headers);
       const url = urlFromRequest(request);
-      const query = (url.searchParams.get("q") ?? "").trim();
-      const limit = autocompleteLimitFrom(url.searchParams);
-      const requestedTypes = requestedAutocompleteTypes(url.searchParams);
+      const input = yield* decodeHttpValue(
+        AutocompleteQuery,
+        autocompleteQueryFrom(url.searchParams),
+        requestId,
+        {
+          code: "INVALID_AUTOCOMPLETE_QUERY",
+          message: "Invalid autocomplete query.",
+        },
+      );
+      if (HttpServerResponse.isHttpServerResponse(input)) return input;
+      const query = (input.q ?? "").trim();
+      const limit = autocompleteLimitFrom(input);
+      const requestedTypes = requestedAutocompleteTypes(input, requestId);
+      if (HttpServerResponse.isHttpServerResponse(requestedTypes)) return requestedTypes;
       const repositories = (yield* runUseCase(
         RepositoryList({}, meta(requestId)),
       )) as ReadonlyArray<RepositoryStatus>;
@@ -67,22 +74,48 @@ export const withAutocompleteHandlers = (handlers: any) =>
         results.push(...ticketResults);
       }
 
-      return resourceResponse(requestId, 200, {
-        results: results.slice(0, limit),
-      });
+      const output = yield* decodeHttpValue(
+        AutocompleteOutput,
+        {
+          results: results.slice(0, limit),
+        },
+        requestId,
+        {
+          code: "INVALID_AUTOCOMPLETE_OUTPUT",
+          message: "Autocomplete results did not match the API contract.",
+          status: 500,
+        },
+      );
+      if (HttpServerResponse.isHttpServerResponse(output)) return output;
+
+      return resourceResponse(requestId, 200, output);
     }),
   );
 
-const requestedAutocompleteTypes = (params: URLSearchParams): ReadonlySet<AutocompleteEntityType> => {
-  const raw = params.get("types") ?? params.get("type");
-  if (raw === null || raw.trim().length === 0) return supportedTypes;
+const requestedAutocompleteTypes = (
+  input: AutocompleteQueryInput,
+  requestId: string,
+): ReadonlySet<AutocompleteEntityType> | HttpServerResponse.HttpServerResponse => {
+  const raw = input.types ?? input.type;
+  if (raw === undefined || raw.trim().length === 0) return supportedTypes;
 
-  const requested = raw
+  const entries = raw
     .split(",")
     .map((entry) => entry.trim())
-    .filter((entry): entry is AutocompleteEntityType =>
-      supportedTypes.has(entry as AutocompleteEntityType),
+    .filter((entry) => entry.length > 0);
+  const unsupported = entries.find((entry) => !supportedTypes.has(entry as AutocompleteEntityType));
+  if (unsupported !== undefined) {
+    return errorResponse(
+      requestId,
+      400,
+      "INVALID_AUTOCOMPLETE_QUERY",
+      `Unsupported autocomplete type: ${unsupported}.`,
+      false,
+      { type: unsupported },
     );
+  }
+
+  const requested = entries as ReadonlyArray<AutocompleteEntityType>;
 
   return requested.length === 0 ? new Set() : new Set(requested);
 };
@@ -132,8 +165,8 @@ const ticketAutocompleteResults = (input: {
           );
     if (HttpServerResponse.isHttpServerResponse(pageValue)) return pageValue;
 
-    return asPage(pageValue).entries
-      .map(ticketFromAutocompleteEntry)
+    return asPage(pageValue)
+      .entries.map(ticketFromAutocompleteEntry)
       .flatMap((ticket) => {
         const repositoryId = ticketRepositoryId(ticket);
         if (repositoryId === undefined) return [];
@@ -216,15 +249,17 @@ const repositoryDisplayName = (repository: RepositoryStatus): string => {
 
 const encodeUriSegment = (value: string): string => encodeURIComponent(value);
 
-const autocompleteLimitFrom = (params: URLSearchParams): number => {
-  const raw = params.get("limit");
-  if (raw !== null) {
-    const limit = Number(raw);
-    if (Number.isInteger(limit) && limit > 0 && limit <= 100) return limit;
+const autocompleteQueryFrom = (params: URLSearchParams): Record<string, string> => {
+  const input: Record<string, string> = {};
+  for (const key of ["limit", "page[limit]", "q", "type", "types"]) {
+    const value = params.get(key);
+    if (value !== null) input[key] = value;
   }
-
-  return pageLimitFrom(params);
+  return input;
 };
+
+const autocompleteLimitFrom = (input: AutocompleteQueryInput): number =>
+  input.limit ?? input["page[limit]"] ?? 50;
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);

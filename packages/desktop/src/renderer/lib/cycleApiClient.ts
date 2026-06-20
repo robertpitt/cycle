@@ -1,20 +1,28 @@
-import type {
-  InboxMutationResult,
-  InboxPage,
-  InboxSummary,
-  MaterializationWarning,
-  RepositoryStatus,
-  SavedViewDocument,
-  TicketDocument,
-  TicketPage,
+import {
+  ApiErrorEnvelope as ApiErrorEnvelopeSchema,
+  AutocompleteOutput as AutocompleteOutputSchema,
+  CollectionEnvelopeOf,
+  ResourceEnvelopeOf,
+  type AutocompleteEntityType as ApiAutocompleteEntityType,
+  type HttpAutocompleteResultOutput as ApiAutocompleteResult,
+} from "@cycle/api/api";
+import {
+  ContractSchemas,
+  type RepositoryStatus,
+  type TicketDocument,
+  type TicketPage,
 } from "@cycle/contracts";
 import type {
   UseCaseAlias,
   UseCasePayloadsByAlias,
   UseCaseSuccessesByAlias,
 } from "@cycle/contracts/contracts";
+import { Schema } from "effect";
 import {
+  AppConfigState as AppConfigStateSchema,
   DEFAULT_API_PORT,
+  ProfileConfig as ProfileConfigSchema,
+  RepositoryRecord as AppRepositoryRecordSchema,
   type AppConfigState,
   type ProfileConfig,
   type RepositoryRecord as AppRepositoryRecord,
@@ -57,44 +65,27 @@ type ApiDiscovery = {
 
 export type CycleApiConnection = ApiDiscovery;
 
-type ApiEnvelope<T> = {
-  readonly data: T;
-  readonly meta?: {
-    readonly requestId?: string;
-  };
-  readonly page?: {
-    readonly nextCursor?: string | null;
-  };
-};
-
-type ApiErrorEnvelope = {
-  readonly error?: {
-    readonly code?: string;
-    readonly details?: unknown;
-    readonly message?: string;
-    readonly requestId?: string;
-    readonly retryable?: boolean;
-  };
-};
-
 type QueryInput = Readonly<Record<string, unknown>>;
-
-export type AutocompleteEntityType = "repository" | "tag" | "ticket" | "user" | (string & {});
-
-export type AutocompleteResult = {
-  readonly id: string;
-  readonly metadata?: Readonly<Record<string, unknown>>;
-  readonly name: string;
-  readonly repositoryId?: string;
-  readonly subtitle?: string;
-  readonly type: AutocompleteEntityType;
-  readonly uri: string;
+type ResourceEnvelope<Data> = {
+  readonly data: Data;
 };
+type CollectionEnvelope<Entry> = {
+  readonly data: ReadonlyArray<Entry>;
+  readonly page: {
+    readonly nextCursor: string | null;
+  };
+};
+
+export type AutocompleteEntityType = ApiAutocompleteEntityType;
+export type AutocompleteResult = ApiAutocompleteResult;
 
 const API_URL_STORAGE_KEY = "cycle.api.baseUrl";
 const API_TOKEN_STORAGE_KEY = "cycle.api.token";
 const DEV_PROXY_BASE_URL = "/cycle-api";
 const REPOSITORY_ISSUE_CURSOR_KEY = "__cycleRepositoryIssueCursors";
+const RepositoryIssueCursorEnvelope = Schema.Struct({
+  [REPOSITORY_ISSUE_CURSOR_KEY]: Schema.Record(Schema.String, Schema.String),
+});
 
 export class CycleApiRequestError extends Error {
   readonly code: string;
@@ -267,6 +258,8 @@ export const chatWebSocketUrlForConnection = (
   return httpUrl.toString();
 };
 
+const StrictDecodeOptions = { onExcessProperty: "error" } as const;
+
 const readJsonResponse = async (response: Response): Promise<unknown> => {
   const text = await response.text();
   if (text.length === 0) return {};
@@ -282,11 +275,57 @@ const readJsonResponse = async (response: Response): Promise<unknown> => {
   }
 };
 
-const request = async <T>(
+const decodeApiResponse = <S extends Schema.Top>(
+  schema: S,
+  value: unknown,
+  status: number,
+  path: string,
+): S["Type"] => {
+  try {
+    return (
+      Schema.decodeUnknownSync(schema as never, StrictDecodeOptions) as (
+        input: unknown,
+      ) => S["Type"]
+    )(value);
+  } catch (error) {
+    throw new CycleApiRequestError({
+      code: "INVALID_API_RESPONSE",
+      details: {
+        parseError: String(error),
+        path,
+      },
+      message: "Cycle API response did not match the expected schema.",
+      status,
+    });
+  }
+};
+
+const decodeApiErrorResponse = (
+  value: unknown,
+  status: number,
+  path: string,
+): typeof ApiErrorEnvelopeSchema.Type => {
+  try {
+    return Schema.decodeUnknownSync(ApiErrorEnvelopeSchema, StrictDecodeOptions)(value);
+  } catch (error) {
+    throw new CycleApiRequestError({
+      code: "INVALID_API_RESPONSE",
+      details: {
+        parseError: String(error),
+        path,
+      },
+      message: "Cycle API error response did not match the expected schema.",
+      status,
+    });
+  }
+};
+
+const request = async <S extends Schema.Top>(
   method: string,
   path: string,
+  schema: S,
   body?: unknown,
-): Promise<ApiEnvelope<T>> => {
+): Promise<S["Type"]> => {
   const discovery = await discoverApi();
   requireDirectToken(discovery);
 
@@ -313,7 +352,7 @@ const request = async <T>(
 
   const payload = await readJsonResponse(response);
   if (!response.ok) {
-    const apiError = payload as ApiErrorEnvelope;
+    const apiError = decodeApiErrorResponse(payload, response.status, path);
     throw new CycleApiRequestError({
       code: apiError.error?.code ?? `HTTP_${response.status}`,
       details: apiError.error?.details,
@@ -324,42 +363,65 @@ const request = async <T>(
     });
   }
 
-  return payload as ApiEnvelope<T>;
+  return decodeApiResponse(schema, payload, response.status, path);
 };
 
-const resource = async <T>(method: string, path: string, body?: unknown): Promise<T> => {
-  const response = await request<T>(method, path, body);
+const resource = async <S extends Schema.Top>(
+  method: string,
+  path: string,
+  dataSchema: S,
+  body?: unknown,
+): Promise<S["Type"]> => {
+  const response = (await request(
+    method,
+    path,
+    ResourceEnvelopeOf(dataSchema),
+    body,
+  )) as ResourceEnvelope<S["Type"]>;
   return response.data;
 };
 
-const resourceOrNull = async <T>(
+const resourceOrNull = async <S extends Schema.Top>(
   method: string,
   path: string,
+  dataSchema: S,
   body?: unknown,
-): Promise<T | null> => {
+): Promise<S["Type"] | null> => {
   try {
-    return await resource<T>(method, path, body);
+    return await resource(method, path, dataSchema, body);
   } catch (error) {
     if (error instanceof CycleApiRequestError && error.status === 404) return null;
     throw error;
   }
 };
 
-const collection = async <T>(
+const collection = async <S extends Schema.Top>(
   method: string,
   path: string,
+  entrySchema: S,
   body?: unknown,
-): Promise<ReadonlyArray<T>> => {
-  const response = await request<ReadonlyArray<T>>(method, path, body);
+): Promise<ReadonlyArray<S["Type"]>> => {
+  const response = (await request(
+    method,
+    path,
+    CollectionEnvelopeOf(entrySchema),
+    body,
+  )) as CollectionEnvelope<S["Type"]>;
   return response.data;
 };
 
-const page = async <Entry>(
+const page = async <S extends Schema.Top>(
   method: string,
   path: string,
+  entrySchema: S,
   body?: unknown,
-): Promise<{ readonly entries: ReadonlyArray<Entry>; readonly nextCursor?: string }> => {
-  const response = await request<ReadonlyArray<Entry>>(method, path, body);
+): Promise<{ readonly entries: ReadonlyArray<S["Type"]>; readonly nextCursor?: string }> => {
+  const response = (await request(
+    method,
+    path,
+    CollectionEnvelopeOf(entrySchema),
+    body,
+  )) as CollectionEnvelope<S["Type"]>;
   const nextCursor = response.page?.nextCursor;
 
   return {
@@ -489,7 +551,11 @@ const initiativeIdFromInput = (input: unknown): string => {
 };
 
 const listIssuesForRepository = (repositoryId: string, query: QueryInput): Promise<TicketPage> =>
-  page<TicketDocument>("GET", withQuery(`${repositoryPath(repositoryId)}/issues`, query));
+  page(
+    "GET",
+    withQuery(`${repositoryPath(repositoryId)}/issues`, query),
+    ContractSchemas.TicketDocumentOutput,
+  );
 
 const listIssuesForRepositories = async (
   repositoryIds: ReadonlyArray<string>,
@@ -610,21 +676,21 @@ const withoutRepositoryIds = (query: QueryInput): QueryInput => {
   return rest;
 };
 
-const decodeRepositoryIssueCursor = (
+export const decodeRepositoryIssueCursor = (
   cursor: unknown,
 ): Readonly<Record<string, string>> | undefined => {
   if (typeof cursor !== "string") return undefined;
 
   try {
-    const parsed = JSON.parse(cursor) as unknown;
-    if (!isRecord(parsed)) return undefined;
-
+    const parsed = Schema.decodeUnknownSync(
+      RepositoryIssueCursorEnvelope,
+      StrictDecodeOptions,
+    )(JSON.parse(cursor) as unknown);
     const cursors = parsed[REPOSITORY_ISSUE_CURSOR_KEY];
-    if (!isRecord(cursors)) return undefined;
 
     return Object.fromEntries(
       Object.entries(cursors).filter(
-        (entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0,
+        (entry): entry is [string, string] => entry[1].length > 0,
       ),
     );
   } catch {
@@ -652,6 +718,7 @@ const addIssueRecord = async (repositoryId: string, input: QueryInput): Promise<
   return resource(
     "POST",
     `${repositoryPath(repositoryId)}/issues/${encodeSegment(issueId)}/records`,
+    ContractSchemas.LinkedRecordOutput,
     {
       payload: input.payload,
       recordType: input.recordType,
@@ -666,35 +733,41 @@ export const cycleApiClient = {
     readonly query?: string;
     readonly types?: readonly AutocompleteEntityType[];
   }): Promise<readonly AutocompleteResult[]> => {
-    const response = await resource<{ readonly results: readonly AutocompleteResult[] }>(
+    const response = await resource(
       "GET",
       withQuery("/v1/autocomplete", {
         limit: input.limit,
         q: input.query,
         types: input.types,
       }),
+      AutocompleteOutputSchema,
     );
     return response.results;
   },
 
   completeOnboarding: (input: CompleteOnboardingInput): Promise<AppConfigState> =>
-    resource<AppConfigState>("POST", "/v1/profile/onboarding", input),
+    resource("POST", "/v1/profile/onboarding", AppConfigStateSchema, input),
 
   getAppConfig: (): Promise<AppConfigState> =>
-    resource<AppConfigState>("GET", "/v1/app-config"),
+    resource("GET", "/v1/app-config", AppConfigStateSchema),
 
   setThemePreference: (preference: ThemePreference): Promise<AppConfigState> =>
-    resource<AppConfigState>("PATCH", "/v1/theme", { preference }),
+    resource("PATCH", "/v1/theme", AppConfigStateSchema, { preference }),
 
   updateProfile: (input: ProfileUpdateInput): Promise<ProfileConfig> =>
-    resource<ProfileConfig>("PATCH", "/v1/profile", input),
+    resource("PATCH", "/v1/profile", ProfileConfigSchema, input),
 
   updateRepositoryPreferences: (
     input: UpdateRepositoryPreferencesInput,
   ): Promise<AppRepositoryRecord | null> =>
-    resource<AppRepositoryRecord | null>("PATCH", `${repositoryPath(input.id)}/preferences`, {
-      preferences: input.preferences,
-    }),
+    resource(
+      "PATCH",
+      `${repositoryPath(input.id)}/preferences`,
+      Schema.NullOr(AppRepositoryRecordSchema),
+      {
+        preferences: input.preferences,
+      },
+    ),
 
   call: async <Alias extends SupportedCycleApiAlias>(
     alias: Alias,
@@ -704,30 +777,42 @@ export const cycleApiClient = {
 
     switch (alias) {
       case "inbox.list":
-        return resource<InboxPage>("GET", withQuery(inboxPath, payload as QueryInput)) as Promise<
-          UseCaseSuccessesByAlias[Alias]
-        >;
+        return resource(
+          "GET",
+          withQuery(inboxPath, payload as QueryInput),
+          ContractSchemas.InboxPageOutput,
+        ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "inbox.summary":
-        return resource<InboxSummary>(
+        return resource(
           "GET",
           withQuery(`${inboxPath}/summary`, payload as QueryInput),
+          ContractSchemas.InboxSummaryOutput,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "inbox.markRead":
-        return resource<InboxMutationResult>("POST", `${inboxPath}/read`, payload) as Promise<
-          UseCaseSuccessesByAlias[Alias]
-        >;
+        return resource(
+          "POST",
+          `${inboxPath}/read`,
+          ContractSchemas.InboxMutationResultOutput,
+          payload,
+        ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "inbox.markUnread":
-        return resource<InboxMutationResult>("POST", `${inboxPath}/unread`, payload) as Promise<
-          UseCaseSuccessesByAlias[Alias]
-        >;
+        return resource(
+          "POST",
+          `${inboxPath}/unread`,
+          ContractSchemas.InboxMutationResultOutput,
+          payload,
+        ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "inbox.archive":
-        return resource<InboxMutationResult>("POST", `${inboxPath}/archive`, payload) as Promise<
-          UseCaseSuccessesByAlias[Alias]
-        >;
+        return resource(
+          "POST",
+          `${inboxPath}/archive`,
+          ContractSchemas.InboxMutationResultOutput,
+          payload,
+        ) as Promise<UseCaseSuccessesByAlias[Alias]>;
     }
 
     const repositoryId = repositoryIdFromPayload(payload);
@@ -735,17 +820,23 @@ export const cycleApiClient = {
 
     switch (alias) {
       case "repository.status.get":
-        return resource<RepositoryStatus>("GET", base) as Promise<UseCaseSuccessesByAlias[Alias]>;
+        return resource("GET", base, ContractSchemas.RepositoryStatusOutput) as Promise<
+          UseCaseSuccessesByAlias[Alias]
+        >;
 
       case "repository.materializationWarnings":
-        return collection<MaterializationWarning>("GET", `${base}/warnings`) as Promise<
-          UseCaseSuccessesByAlias[Alias]
-        >;
+        return collection(
+          "GET",
+          `${base}/warnings`,
+          ContractSchemas.MaterializationWarningOutput,
+        ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "repository.history.list":
-        return page("GET", withQuery(`${base}/history`, input)) as Promise<
-          UseCaseSuccessesByAlias[Alias]
-        >;
+        return page(
+          "GET",
+          withQuery(`${base}/history`, input),
+          ContractSchemas.HistoryCommitOutput,
+        ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "ticket.issue.list": {
         const repositoryIds = repositoryIdsFromIssueQuery(input);
@@ -759,22 +850,31 @@ export const cycleApiClient = {
       }
 
       case "ticket.issue.create":
-        return resource("POST", `${base}/issues`, input) as Promise<UseCaseSuccessesByAlias[Alias]>;
+        return resource(
+          "POST",
+          `${base}/issues`,
+          ContractSchemas.TicketDocumentOutput,
+          input,
+        ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "ticket.issue.get": {
         const issueId = issueIdFromInput(input);
-        return resourceOrNull<TicketDocument>(
+        return resourceOrNull(
           "GET",
           `${base}/issues/${encodeSegment(issueId)}`,
+          ContractSchemas.TicketDocumentOutput,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
       }
 
       case "ticket.issue.update": {
         const issueId = issueIdFromInput(input);
         const patch = isRecord(input) ? input.patch : {};
-        return resource("PATCH", `${base}/issues/${encodeSegment(issueId)}`, patch) as Promise<
-          UseCaseSuccessesByAlias[Alias]
-        >;
+        return resource(
+          "PATCH",
+          `${base}/issues/${encodeSegment(issueId)}`,
+          ContractSchemas.TicketDocumentOutput,
+          patch,
+        ) as Promise<UseCaseSuccessesByAlias[Alias]>;
       }
 
       case "ticket.issue.history": {
@@ -783,6 +883,7 @@ export const cycleApiClient = {
         return page(
           "GET",
           withQuery(`${base}/issues/${encodeSegment(issueId)}/history`, options),
+          ContractSchemas.HistoryCommitOutput,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
       }
 
@@ -795,6 +896,7 @@ export const cycleApiClient = {
         return page(
           "GET",
           withQuery(`${base}/issues/${encodeSegment(issueId)}/records`, query),
+          ContractSchemas.LinkedRecordOutput,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
       }
 
@@ -802,41 +904,56 @@ export const cycleApiClient = {
         return addIssueRecord(repositoryId, input) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "ticket.user.list":
-        return page("GET", withQuery(`${base}/users`, input)) as Promise<
-          UseCaseSuccessesByAlias[Alias]
-        >;
+        return page(
+          "GET",
+          withQuery(`${base}/users`, input),
+          ContractSchemas.UserProfileDocumentOutput,
+        ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "ticket.label.list":
-        return page("GET", withQuery(`${base}/labels`, input)) as Promise<
-          UseCaseSuccessesByAlias[Alias]
-        >;
+        return page(
+          "GET",
+          withQuery(`${base}/labels`, input),
+          ContractSchemas.LabelDefinitionDocumentOutput,
+        ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "ticket.view.list":
-        return page("GET", withQuery(`${base}/views`, input)) as Promise<
-          UseCaseSuccessesByAlias[Alias]
-        >;
+        return page(
+          "GET",
+          withQuery(`${base}/views`, input),
+          ContractSchemas.SavedViewDocumentOutput,
+        ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "ticket.view.create":
-        return resource("POST", `${base}/views`, input) as Promise<UseCaseSuccessesByAlias[Alias]>;
+        return resource(
+          "POST",
+          `${base}/views`,
+          ContractSchemas.SavedViewDocumentOutput,
+          input,
+        ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "ticket.view.get": {
         const viewId = viewIdFromInput(input);
-        return resourceOrNull<SavedViewDocument>(
+        return resourceOrNull(
           "GET",
           `${base}/views/${encodeSegment(viewId)}`,
+          ContractSchemas.SavedViewDocumentOutput,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
       }
 
       case "ticket.template.list":
-        return page("GET", withQuery(`${base}/templates`, input)) as Promise<
-          UseCaseSuccessesByAlias[Alias]
-        >;
+        return page(
+          "GET",
+          withQuery(`${base}/templates`, input),
+          ContractSchemas.IssueTemplateDocumentOutput,
+        ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "ticket.initiative.progress": {
         const initiativeId = initiativeIdFromInput(input);
         return resource(
           "GET",
           `${base}/initiatives/${encodeSegment(initiativeId)}/progress`,
+          ContractSchemas.InitiativeProgressOutput,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
       }
 
@@ -846,5 +963,5 @@ export const cycleApiClient = {
   },
 
   listRepositories: (): Promise<ReadonlyArray<RepositoryStatus>> =>
-    collection<RepositoryStatus>("GET", "/v1/repositories"),
+    collection("GET", "/v1/repositories", ContractSchemas.RepositoryStatusOutput),
 };

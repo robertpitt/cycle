@@ -12,7 +12,7 @@ import {
   type AgentTurnRequest,
   type AgentUserInputAnswer,
 } from "@cycle/agents";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http";
 import type {
   AgentChatActivityRecord,
@@ -30,12 +30,125 @@ import { prepareChatTurn, requestOrigin } from "./prepare.ts";
 
 type WriteMessage = (message: ServerMessage) => Promise<void>;
 
-type ClientMessage = {
-  readonly commandId?: string;
-  readonly payload?: unknown;
-  readonly type?: string;
-  readonly version?: number;
-};
+const StrictDecodeOptions = { onExcessProperty: "error" } as const;
+const JsonRecord = Schema.Record(Schema.String, Schema.Json);
+const AnswerRecord = Schema.Record(Schema.String, Schema.Json);
+const OptionalEmptyPayload = Schema.optional(Schema.Struct({}));
+const BaseClientMessageFields = {
+  commandId: Schema.optional(Schema.String),
+  version: Schema.optional(Schema.Literal(1)),
+} as const;
+const ClientMessage = Schema.Union([
+  Schema.Struct({
+    ...BaseClientMessageFields,
+    payload: Schema.optional(
+      Schema.Struct({
+        token: Schema.optional(Schema.String),
+      }),
+    ),
+    type: Schema.Literal("connection.authenticate"),
+  }),
+  Schema.Struct({
+    ...BaseClientMessageFields,
+    payload: OptionalEmptyPayload,
+    type: Schema.Literal("provider.list"),
+  }),
+  Schema.Struct({
+    ...BaseClientMessageFields,
+    payload: Schema.optional(
+      Schema.Struct({
+        includeArchived: Schema.optional(Schema.Boolean),
+      }),
+    ),
+    type: Schema.Literal("thread.list"),
+  }),
+  Schema.Struct({
+    ...BaseClientMessageFields,
+    payload: Schema.optional(
+      Schema.Struct({
+        model: Schema.optional(Schema.NullOr(Schema.String)),
+        providerId: Schema.optional(Schema.NullOr(Schema.String)),
+        thinkingLevel: Schema.optional(Schema.NullOr(Schema.String)),
+        title: Schema.optional(Schema.String),
+      }),
+    ),
+    type: Schema.Literal("thread.create"),
+  }),
+  Schema.Struct({
+    ...BaseClientMessageFields,
+    payload: Schema.Struct({
+      threadId: Schema.String,
+    }),
+    type: Schema.Literal("thread.subscribe"),
+  }),
+  Schema.Struct({
+    ...BaseClientMessageFields,
+    payload: Schema.Struct({
+      threadId: Schema.String,
+    }),
+    type: Schema.Literal("thread.unsubscribe"),
+  }),
+  Schema.Struct({
+    ...BaseClientMessageFields,
+    payload: Schema.Struct({
+      model: Schema.optional(Schema.NullOr(Schema.String)),
+      providerId: Schema.optional(Schema.NullOr(Schema.String)),
+      thinkingLevel: Schema.optional(Schema.NullOr(Schema.String)),
+      threadId: Schema.String,
+    }),
+    type: Schema.Literal("thread.update_settings"),
+  }),
+  Schema.Struct({
+    ...BaseClientMessageFields,
+    payload: Schema.Struct({
+      threadId: Schema.String,
+    }),
+    type: Schema.Literal("thread.delete"),
+  }),
+  Schema.Struct({
+    ...BaseClientMessageFields,
+    payload: Schema.Struct({
+      message: Schema.String,
+      metadata: Schema.optional(JsonRecord),
+      model: Schema.optional(Schema.NullOr(Schema.String)),
+      providerId: Schema.String,
+      thinkingLevel: Schema.optional(Schema.NullOr(Schema.String)),
+      threadId: Schema.String,
+    }),
+    type: Schema.Literal("turn.send"),
+  }),
+  Schema.Struct({
+    ...BaseClientMessageFields,
+    payload: Schema.Struct({
+      threadId: Schema.String,
+    }),
+    type: Schema.Literal("turn.cancel"),
+  }),
+  Schema.Struct({
+    ...BaseClientMessageFields,
+    payload: Schema.Struct({
+      answers: AnswerRecord,
+      questionId: Schema.String,
+      threadId: Schema.String,
+    }),
+    type: Schema.Literal("question.respond"),
+  }),
+  Schema.Struct({
+    ...BaseClientMessageFields,
+    payload: Schema.Struct({
+      decision: Schema.Literals(["accept", "acceptForSession", "decline", "cancel"]),
+      requestId: Schema.String,
+      threadId: Schema.String,
+    }),
+    type: Schema.Literal("approval.respond"),
+  }),
+  Schema.Struct({
+    ...BaseClientMessageFields,
+    payload: OptionalEmptyPayload,
+    type: Schema.Literal("ping"),
+  }),
+]);
+type ClientMessage = typeof ClientMessage.Type;
 
 type ServerMessage = {
   readonly commandId?: string;
@@ -90,9 +203,12 @@ export const makeChatWebSocketLayer = (
 
         const readLoop = socket
           .runString((raw) =>
-            Effect.promise(async () => {
-              connection ??= gateway.connect(send, origin, authorizationToken);
-              await gateway.handleRawMessage(connection, raw);
+            Effect.tryPromise({
+              try: async () => {
+                connection ??= gateway.connect(send, origin, authorizationToken);
+                await gateway.handleRawMessage(connection, raw);
+              },
+              catch: (cause) => cause,
             }),
           )
           .pipe(
@@ -562,14 +678,6 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
         });
         return;
       }
-
-      default:
-        await sendCommandError(
-          connection,
-          command,
-          "INVALID_MESSAGE",
-          `Unknown chat command: ${command.type ?? "unknown"}.`,
-        );
     }
   };
 
@@ -593,7 +701,7 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
         await safeSend(connection, {
           payload: {
             code: "INVALID_MESSAGE",
-            message: "Chat socket received invalid JSON.",
+            message: "Chat socket received invalid message.",
             retryable: false,
           },
           type: "command.error",
@@ -1651,16 +1759,14 @@ const safeSend = (connection: ChatConnection, message: ServerMessage): Promise<v
 const parseClientMessage = (raw: string): ClientMessage | undefined => {
   try {
     const parsed = JSON.parse(raw) as unknown;
-    return isRecord(parsed) && typeof parsed.type === "string"
-      ? (parsed as ClientMessage)
-      : undefined;
+    return Schema.decodeUnknownSync(ClientMessage, StrictDecodeOptions)(parsed);
   } catch {
     return undefined;
   }
 };
 
 const objectPayload = (command: ClientMessage): Readonly<Record<string, unknown>> =>
-  isRecord(command.payload) ? command.payload : {};
+  command.payload ?? {};
 
 const bearerTokenFromHeaders = (
   headers: Readonly<Record<string, string | undefined>>,

@@ -3,6 +3,9 @@ import { CreateDraftInput, IssueQuery } from "./Inputs.ts";
 
 const StringList = Schema.Array(Schema.String);
 const UnknownRecord = Schema.Record(Schema.String, Schema.Unknown);
+const NonNegativeInteger = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+const EstimateValue = Schema.Union([Schema.Finite, Schema.String]);
+const NullableEstimateValue = Schema.NullOr(EstimateValue);
 
 export const ActorOutput = Schema.Struct({
   email: Schema.optional(Schema.String),
@@ -115,7 +118,7 @@ export const IssueTemplateDefaultsOutput = Schema.Struct({
   assignee: Schema.optional(Schema.NullOr(Schema.String)),
   body: Schema.optional(Schema.String),
   dueDate: Schema.optional(Schema.NullOr(Schema.String)),
-  estimate: Schema.optional(Schema.NullOr(Schema.Union([Schema.Number, Schema.String]))),
+  estimate: Schema.optional(NullableEstimateValue),
   externalLinks: Schema.optional(Schema.Array(ExternalLinkOutput)),
   labels: Schema.optional(StringList),
   parent: Schema.optional(Schema.NullOr(Schema.String)),
@@ -152,11 +155,11 @@ export const IssueTemplatePageOutput = Schema.Struct({
 });
 
 export const InitiativeProgressOutput = Schema.Struct({
-  completedEstimate: Schema.Number,
-  completedIssues: Schema.Number,
-  estimateTotal: Schema.Number,
-  issueTotal: Schema.Number,
-  statusCounts: Schema.Record(Schema.String, Schema.Number),
+  completedEstimate: Schema.Finite,
+  completedIssues: NonNegativeInteger,
+  estimateTotal: Schema.Finite,
+  issueTotal: NonNegativeInteger,
+  statusCounts: Schema.Record(Schema.String, NonNegativeInteger),
 });
 
 export const IssueRelationOutput = Schema.Struct({
@@ -177,7 +180,7 @@ export const IssueFrontmatterOutput = Schema.StructWithRest(
     deletedBy: Schema.optional(Schema.NullOr(ActorOutput)),
     duplicateOf: Schema.optional(Schema.NullOr(Schema.String)),
     dueDate: Schema.optional(Schema.NullOr(Schema.String)),
-    estimate: Schema.optional(Schema.NullOr(Schema.Union([Schema.Number, Schema.String]))),
+    estimate: Schema.optional(NullableEstimateValue),
     externalLinks: Schema.optional(Schema.Array(ExternalLinkOutput)),
     id: Schema.String,
     labels: Schema.optional(StringList),
@@ -204,7 +207,7 @@ export const TicketDocumentOutput = Schema.Struct({
   createdBy: Schema.String,
   deletedAt: Schema.optional(Schema.String),
   dueDate: Schema.optional(Schema.String),
-  estimate: Schema.optional(Schema.Union([Schema.Number, Schema.String])),
+  estimate: Schema.optional(EstimateValue),
   frontmatter: IssueFrontmatterOutput,
   id: Schema.String,
   labels: Schema.optional(StringList),
@@ -235,6 +238,8 @@ export const TicketSearchPageOutput = Schema.Struct({
   nextCursor: Schema.optional(Schema.String),
 });
 
+// Linked record payloads are record-kind-owned extension data and are preserved
+// for adapters that know how to decode the specific record type.
 export const LinkedRecordOutput = Schema.Struct({
   createdAt: Schema.String,
   createdBy: ActorOutput,
@@ -275,7 +280,7 @@ export const CycleRepositoryMetadataOutput = Schema.Struct({
 });
 
 export const RepositoryStatusOutput = Schema.Struct({
-  activeGeneration: Schema.Number,
+  activeGeneration: NonNegativeInteger,
   activeSnapshotId: Schema.NullOr(Schema.String),
   cycleMetadata: Schema.optional(CycleRepositoryMetadataOutput),
   lastSyncCompletedAt: Schema.optional(Schema.String),
@@ -284,7 +289,7 @@ export const RepositoryStatusOutput = Schema.Struct({
   metadata: Schema.optional(RepositoryMetadataOutput),
   repositoryId: Schema.String,
   status: Schema.Literals(["degraded", "empty", "failed", "ready", "syncing"]),
-  warningCount: Schema.Number,
+  warningCount: NonNegativeInteger,
 });
 
 export const MaterializationWarningOutput = Schema.Struct({
@@ -305,9 +310,9 @@ export const HistoryCommitOutput = Schema.Struct({
   committedAt: Schema.optional(Schema.String),
   message: Schema.optional(Schema.String),
   parentIds: StringList,
-  sequence: Schema.Number,
+  sequence: NonNegativeInteger,
   snapshotId: Schema.String,
-  warningCount: Schema.Number,
+  warningCount: NonNegativeInteger,
 });
 
 export const HistoryPageOutput = Schema.Struct({
@@ -330,7 +335,7 @@ export const InboxEntryOutput = Schema.Struct({
   reason: Schema.Literals(["assigned", "comment_assigned", "comment_created", "mention"]),
   recordId: Schema.optional(Schema.String),
   repositoryId: Schema.String,
-  sequence: Schema.Number,
+  sequence: NonNegativeInteger,
   snapshotId: Schema.String,
   sourceState: Schema.Literals(["active", "source_archived", "source_deleted"]),
   status: Schema.Literals(["archived", "read", "snoozed", "unread"]),
@@ -349,24 +354,24 @@ export const InboxRepositorySummaryOutput = Schema.Struct({
   activeSnapshotId: Schema.NullOr(Schema.String),
   repositoryId: Schema.String,
   status: Schema.String,
-  warningCount: Schema.Number,
+  warningCount: NonNegativeInteger,
 });
 
 export const InboxSummaryOutput = Schema.Struct({
-  archivedCount: Schema.Number,
-  byReason: Schema.Record(Schema.String, Schema.Number),
-  byRepository: Schema.Record(Schema.String, Schema.Number),
+  archivedCount: NonNegativeInteger,
+  byReason: Schema.Record(Schema.String, NonNegativeInteger),
+  byRepository: Schema.Record(Schema.String, NonNegativeInteger),
   latestItemTimestamp: Schema.optional(Schema.String),
-  readCount: Schema.Number,
+  readCount: NonNegativeInteger,
   repositories: Schema.Array(InboxRepositorySummaryOutput),
-  unreadCount: Schema.Number,
+  unreadCount: NonNegativeInteger,
 });
 
 export const InboxMutationResultOutput = Schema.Struct({
-  matchedCount: Schema.Number,
+  matchedCount: NonNegativeInteger,
   missingItemIds: Schema.Array(Schema.String),
   status: Schema.Literals(["archived", "read", "snoozed", "unread"]),
-  updatedCount: Schema.Number,
+  updatedCount: NonNegativeInteger,
 });
 
 export const TicketRevisionDiffFileOutput = Schema.Struct({
@@ -377,6 +382,7 @@ export const TicketRevisionDiffFileOutput = Schema.Struct({
   oldPath: Schema.String,
 });
 
+// Metadata diffs expose before/after values from arbitrary frontmatter fields.
 export const TicketRevisionMetadataChangeOutput = Schema.Struct({
   after: Schema.Unknown,
   before: Schema.Unknown,

@@ -1,9 +1,10 @@
-import { CommentAdd, RecordListForIssue } from "@cycle/contracts";
+import { CommentAdd, ContractSchemas, RecordListForIssue, contractFor } from "@cycle/contracts";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {
   asPage,
   collectionResponse,
+  decodeHttpValue,
   errorResponse,
   meta,
   pageLimitFrom,
@@ -20,18 +21,22 @@ export const withCommentHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const url = urlFromRequest(request);
+        const input = yield* decodeHttpValue(
+          ContractSchemas.RecordsForIssueInput,
+          {
+            issueId: params.issueId,
+            query: {
+              cursor: url.searchParams.get("page[cursor]") ?? undefined,
+              limit: pageLimitFrom(url.searchParams),
+              recordType: "comment",
+            },
+          },
+          requestId,
+          { code: "INVALID_COMMENT_QUERY", message: "Invalid issue comment query." },
+        );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const pageValue = yield* runUseCase(
-          RecordListForIssue(
-            scoped(params.repositoryId, {
-              issueId: params.issueId,
-              query: {
-                cursor: url.searchParams.get("page[cursor]") ?? undefined,
-                limit: pageLimitFrom(url.searchParams),
-                recordType: "comment",
-              },
-            }),
-            meta(requestId),
-          ),
+          RecordListForIssue(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(pageValue)) return pageValue;
         const result = asPage(pageValue);
@@ -48,15 +53,17 @@ export const withCommentHandlers = (handlers: any) =>
     .handle("addIssueComment", ({ params, payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
-        const result = yield* runUseCase(
-          CommentAdd(
-            scoped(params.repositoryId, {
-              body: payload.body,
-              issueId: params.issueId,
-            }),
-            meta(requestId),
-          ),
+        const input = yield* decodeHttpValue(
+          contractFor("CommentAdd").inputSchema,
+          scoped(params.repositoryId, {
+            body: payload.body,
+            issueId: params.issueId,
+          }),
+          requestId,
+          { code: "INVALID_COMMENT_PAYLOAD", message: "Invalid issue comment payload." },
         );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
+        const result = yield* runUseCase(CommentAdd(input, meta(requestId)));
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
         return resourceResponse(requestId, 201, result);

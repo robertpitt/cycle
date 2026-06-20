@@ -1,40 +1,53 @@
 import type { SyncResult } from "@cycle/git-db";
-import { Context, Effect } from "effect";
+import { Context, Effect, Schema } from "effect";
 
-export type BootstrapPhase =
-  | "idle"
-  | "starting"
-  | "loading-repositories"
-  | "opening-repository"
-  | "ready"
-  | "ready-with-background-sync"
-  | "failed";
+const NonNegativeInteger = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
-export type BootstrapRepositoryStage = "pending" | "opening" | "ready" | "syncing" | "failed";
+export const BootstrapPhase = Schema.Literals([
+  "idle",
+  "starting",
+  "loading-repositories",
+  "opening-repository",
+  "ready",
+  "ready-with-background-sync",
+  "failed",
+]);
+export type BootstrapPhase = typeof BootstrapPhase.Type;
 
-export type BootstrapRepositoryStatus = {
-  readonly activeSnapshotId?: string | null;
-  readonly currentBranch?: string;
-  readonly defaultRemote?: string;
-  readonly defaultRemoteUrl?: string;
-  readonly displayName: string;
-  readonly error?: string;
-  readonly path: string;
-  readonly repositoryId: string;
-  readonly stage: BootstrapRepositoryStage;
-  readonly updatedAt: string;
-  readonly warningCount?: number;
-};
+export const BootstrapRepositoryStage = Schema.Literals([
+  "pending",
+  "opening",
+  "ready",
+  "syncing",
+  "failed",
+]);
+export type BootstrapRepositoryStage = typeof BootstrapRepositoryStage.Type;
 
-export type BootstrapStatus = {
-  readonly blocking: boolean;
-  readonly completedAt?: string;
-  readonly error?: string;
-  readonly message: string;
-  readonly phase: BootstrapPhase;
-  readonly repositories: ReadonlyArray<BootstrapRepositoryStatus>;
-  readonly startedAt?: string;
-};
+export const BootstrapRepositoryStatus = Schema.Struct({
+  activeSnapshotId: Schema.optional(Schema.NullOr(Schema.String)),
+  currentBranch: Schema.optional(Schema.String),
+  defaultRemote: Schema.optional(Schema.String),
+  defaultRemoteUrl: Schema.optional(Schema.String),
+  displayName: Schema.String,
+  error: Schema.optional(Schema.String),
+  path: Schema.String,
+  repositoryId: Schema.String,
+  stage: BootstrapRepositoryStage,
+  updatedAt: Schema.String,
+  warningCount: Schema.optional(NonNegativeInteger),
+});
+export type BootstrapRepositoryStatus = typeof BootstrapRepositoryStatus.Type;
+
+export const BootstrapStatus = Schema.Struct({
+  blocking: Schema.Boolean,
+  completedAt: Schema.optional(Schema.String),
+  error: Schema.optional(Schema.String),
+  message: Schema.String,
+  phase: BootstrapPhase,
+  repositories: Schema.Array(BootstrapRepositoryStatus),
+  startedAt: Schema.optional(Schema.String),
+});
+export type BootstrapStatus = typeof BootstrapStatus.Type;
 
 export type DesktopBootstrapService = {
   readonly ensureRepositoryOpened: (repositoryId: string) => Effect.Effect<void, unknown>;

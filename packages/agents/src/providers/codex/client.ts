@@ -1,9 +1,16 @@
 import { Codex, type CodexOptions, type ThreadOptions, type TurnOptions } from "@openai/codex-sdk";
+import { Schema } from "effect";
 import type { AgentMcpAttachment, AgentResponseFormat, AgentTurnRequest } from "../../types.ts";
 import { mcpBearerTokenEnvVar } from "./constants.ts";
 import type { CodexAgentServiceOptions, CodexClientLike } from "./types.ts";
 
 type CodexConfig = NonNullable<CodexOptions["config"]>;
+const StrictDecodeOptions = { onExcessProperty: "error" } as const;
+
+const decodeStructuredValue = <TStructured>(
+  schema: Schema.Codec<TStructured>,
+  value: unknown,
+): TStructured => Schema.decodeUnknownSync(schema, StrictDecodeOptions)(value) as TStructured;
 
 const inputText = (request: AgentTurnRequest): string =>
   typeof request.input === "string"
@@ -131,7 +138,11 @@ export const parseStructured = <TStructured>(
   text: string,
 ): TStructured | undefined => {
   if (format?.type !== "json_schema") return undefined;
-  if (format.parse !== undefined) return format.parse(text);
 
-  return JSON.parse(text) as TStructured;
+  if (format.effectSchema !== undefined) {
+    const parsed = format.parse === undefined ? (JSON.parse(text) as unknown) : format.parse(text);
+    return decodeStructuredValue(format.effectSchema, parsed);
+  }
+
+  return format.parse(text);
 };

@@ -1,16 +1,16 @@
-# @cycle/mcp Specification
+# @cycle/api MCP Specification
 
 Status: Draft implementation specification
 
 Version: 0.2.0
 
-Package: `@cycle/mcp`
+Package: `@cycle/api/mcp`
 
 Primary implementation reference: `vendor/effect-v4/packages/effect/src/unstable/ai/McpServer.ts`
 
 ## 1. Purpose
 
-`@cycle/mcp` provides a Model Context Protocol server for agents working inside Cycle. It exposes
+`@cycle/api/mcp` provides a Model Context Protocol server for agents working inside Cycle. It exposes
 a curated set of workspace, inbox, issue-management, planning, and project-setup tools so an agent
 can discover repository context, inspect existing work, reply to mentions, create planned tickets,
 connect tickets with relations, and update Cycle state while it is planning or implementing work.
@@ -42,9 +42,9 @@ and provide tool schemas and annotations that are precise enough for agent clien
 
 ## 4. Goals
 
-`@cycle/mcp` MUST:
+`@cycle/api/mcp` MUST:
 
-1. Provide a first-class MCP server package under `packages/mcp`.
+1. Provide a first-class MCP server package under `packages/api/src/mcp`.
 2. Expose both stdio and HTTP MCP transports.
 3. Use Effect v4 MCP primitives from `effect/unstable/ai/McpServer`.
 4. Talk to the local Cycle REST API as its backend, using the same discovery and authentication
@@ -65,7 +65,7 @@ true`, not as protocol-level failures.
 
 ## 5. Non-Goals
 
-`@cycle/mcp` v0.2 MUST NOT:
+`@cycle/api/mcp` v0.2 MUST NOT:
 
 1. Open or register repositories.
 2. Synchronize or push repositories.
@@ -96,21 +96,21 @@ The target dependency direction is:
 @cycle/cli
   REST API discovery and client behavior
 
-@cycle/mcp
+@cycle/api/mcp
   -> @cycle/contracts
   -> local REST API client/discovery helper
   -> effect/unstable/ai/McpServer
   MCP tool schemas, handlers, stdio transport, HTTP transport
 ```
 
-`@cycle/mcp` SHOULD reuse or share the CLI REST discovery/client implementation. If importing
+`@cycle/api/mcp` SHOULD reuse or share the CLI REST discovery/client implementation. If importing
 `@cycle/cli` would pull in command parsing or an undesirable package boundary, the shared REST
-client/discovery logic SHOULD be extracted into a smaller package or module before `@cycle/mcp`
+client/discovery logic SHOULD be extracted into a smaller package or module before `@cycle/api/mcp`
 duplicates it.
 
 ### 6.2 Main Components
 
-`@cycle/mcp` owns:
+`@cycle/api/mcp` owns:
 
 - MCP tool definitions for the curated issue-management subset.
 - MCP tool handler implementations that translate calls into REST API requests.
@@ -121,7 +121,7 @@ duplicates it.
 - MCP logging, request IDs, and transport lifecycle.
 - Tests and conformance fixtures for the MCP adapter behavior.
 
-`@cycle/mcp` does not own:
+`@cycle/api/mcp` does not own:
 
 - Durable issue storage.
 - Usecase execution.
@@ -163,7 +163,7 @@ The relevant Effect MCP APIs are:
 The MCP server identity MUST include:
 
 - name: `cycle`
-- version: package version or the implementation-defined `@cycle/mcp` version
+- version: package version or the implementation-defined `@cycle/api/mcp` version
 
 The implementation MAY expose a package option to override the server name and version for tests,
 but production defaults MUST be stable.
@@ -271,7 +271,7 @@ separate security review and configuration flag.
 The HTTP transport MUST require authentication by default. The default authentication mechanism
 SHOULD be bearer-token authentication using either:
 
-- an explicit MCP HTTP token supplied to `@cycle/mcp`, or
+- an explicit MCP HTTP token supplied to `@cycle/api/mcp`, or
 - the existing local Cycle API static token when explicitly configured to reuse it.
 
 Missing, malformed, or invalid HTTP MCP credentials MUST be rejected before the request reaches the
@@ -989,7 +989,7 @@ Logs MUST NOT include:
 
 ## 19. Configuration
 
-`@cycle/mcp` SHOULD be configurable entirely through constructor options and environment variables.
+`@cycle/api/mcp` SHOULD be configurable entirely through constructor options and environment variables.
 It MUST NOT require desktop-specific config services at runtime.
 
 Recognized environment variables SHOULD include:
@@ -1156,7 +1156,7 @@ When the desktop local API is available, smoke tests SHOULD verify:
 
 An implementation is complete when:
 
-1. `packages/mcp` exists as `@cycle/mcp`.
+1. `packages/api/src/mcp` exists as `@cycle/api/mcp`.
 2. Package exports include stdio and HTTP server construction.
 3. The package uses `effect/unstable/ai/McpServer` for protocol handling.
 4. The package uses local REST API discovery and bearer authentication.

@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect";
+import { Effect, Result, Stream } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import { CycleApiRuntime } from "../../runtime/CycleApiRuntime.ts";
 import { errorResponse, requestIdFromHeaders, resourceResponse } from "../shared.ts";
@@ -104,29 +104,47 @@ export const withChatHandlers = (handlers: any) =>
           );
         }
 
-        const result = yield* Effect.promise(async () => {
-          try {
-            const turnResult = await service.run(prepared.sessionId, {
-              ...prepared.agentRequest,
-              signal: activeTurn.record.abortController.signal,
-            });
-            runtime.activeAgentTurns.finish(
-              prepared.provider,
-              prepared.sessionId,
-              turnResult.status,
-              turnResult.error?.message,
-            );
-            return turnResult;
-          } catch (error) {
-            runtime.activeAgentTurns.finish(
-              prepared.provider,
-              prepared.sessionId,
-              activeTurn.record.abortController.signal.aborted ? "cancelled" : "failed",
-              error instanceof Error ? error.message : String(error),
-            );
-            throw error;
-          }
-        });
+        const turn = yield* Effect.result(
+          Effect.tryPromise({
+            try: () =>
+              service.run(prepared.sessionId, {
+                ...prepared.agentRequest,
+                signal: activeTurn.record.abortController.signal,
+              }),
+            catch: (error) => {
+              runtime.activeAgentTurns.finish(
+                prepared.provider,
+                prepared.sessionId,
+                activeTurn.record.abortController.signal.aborted ? "cancelled" : "failed",
+                error instanceof Error ? error.message : String(error),
+              );
+              return error;
+            },
+          }).pipe(
+            Effect.tap((turnResult) =>
+              Effect.sync(() => {
+                runtime.activeAgentTurns.finish(
+                  prepared.provider,
+                  prepared.sessionId,
+                  turnResult.status,
+                  turnResult.error?.message,
+                );
+              }),
+            ),
+          ),
+        );
+
+        if (Result.isFailure(turn)) {
+          return errorResponse(
+            requestId,
+            500,
+            "AGENT_TURN_FAILED",
+            turn.failure instanceof Error ? turn.failure.message : "Agent turn failed.",
+            false,
+          );
+        }
+
+        const result = turn.success;
         const message = messageFromTurnResult(result);
 
         return resourceResponse(requestId, 200, {

@@ -1,6 +1,5 @@
 import { mcpBearerTokenEnvVar } from "@cycle/agents";
 import { makeDefaultAgentServiceRegistry } from "@cycle/agents/service";
-import { makeCycleMcpHttpLayer, type CycleMcpHttpOptions } from "@cycle/mcp/server";
 import { NodeServices } from "@effect/platform-node";
 import { Layer } from "effect";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http";
@@ -12,6 +11,7 @@ import {
 import { listLocalAgentProviderProfiles } from "./agents/services/AgentProviderProfiles.ts";
 import { CycleHttpApi, makeOpenApiDocument } from "./api.ts";
 import { CycleAuthorizationLive } from "./http/handlers/Authorization.ts";
+import { FrameworkErrorEnvelopeLive } from "./http/handlers/FrameworkErrors.ts";
 import { SystemApiHandlers } from "./http/handlers/System.ts";
 import { V1ApiHandlers } from "./http/handlers/V1.ts";
 import { makeChatWebSocketLayer } from "./http/handlers/v1/chat/ws.ts";
@@ -37,6 +37,7 @@ import {
   type RepositoryOpenRequest,
   type RuntimeDiscoveryFile,
 } from "./http/runtime/CycleApiRuntime.ts";
+import { makeCycleMcpHttpLayer, type CycleMcpHttpOptions } from "./mcp/server/index.ts";
 
 export {
   CycleApiRuntime,
@@ -127,6 +128,7 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
     mcpLayer,
     chatWebSocketLayer,
     corsLayer,
+    FrameworkErrorEnvelopeLive,
   ) as Layer.Layer<never, unknown, any>;
 };
 

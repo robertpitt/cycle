@@ -57,10 +57,7 @@ import {
   type LexicalEditor,
 } from "lexical";
 import { $findMatchingParent } from "@lexical/utils";
-import {
-  MarkdownRenderer,
-  type MarkdownReferenceHandlers,
-} from "../markdown-renderer/index.ts";
+import { MarkdownRenderer, type MarkdownReferenceHandlers } from "../markdown-renderer/index.ts";
 import { cn } from "../../lib/cn.ts";
 import { getCycleReferenceHref, type CycleReferenceKind } from "../../lib/markdown-references.ts";
 import { focusRing, typography } from "../../lib/styles.ts";
@@ -1055,10 +1052,7 @@ const MarkdownEditorTagAutocompletePlugin = ({
     () => getEditorSelectionAnchorRect(editor),
     [editor],
   );
-  const {
-    floatingRef: tagMenuRef,
-    floatingStyle: tagMenuStyle,
-  } = useViewportFloatingMenu({
+  const { floatingRef: tagMenuRef, floatingStyle: tagMenuStyle } = useViewportFloatingMenu({
     getAnchorRect: getTagMenuAnchorRect,
     open,
     updateKey: suggestions,
@@ -1318,14 +1312,12 @@ export const MarkdownEditor = React.forwardRef<HTMLDivElement, MarkdownEditorPro
         editorShellRef.current?.getBoundingClientRect(),
       [],
     );
-    const {
-      floatingRef: commandMenuRef,
-      floatingStyle: commandMenuStyle,
-    } = useViewportFloatingMenu({
-      getAnchorRect: getCommandMenuAnchorRect,
-      open: isCommandMenuVisible,
-      updateKey: `${currentMarkdown.length}:${String(commandMenuOpen)}`,
-    });
+    const { floatingRef: commandMenuRef, floatingStyle: commandMenuStyle } =
+      useViewportFloatingMenu({
+        getAnchorRect: getCommandMenuAnchorRect,
+        open: isCommandMenuVisible,
+        updateKey: `${currentMarkdown.length}:${String(commandMenuOpen)}`,
+      });
 
     return (
       <div

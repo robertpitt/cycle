@@ -62,7 +62,7 @@ const ticket = (id: string, title = `Ticket ${id}`) => ({
   updatedDate: "2026-01-01T00:00:00.000Z",
 });
 
-describe("@cycle/mcp", () => {
+describe("@cycle/api/mcp", () => {
   it("registers only the curated v0.2 tool names", () => {
     assert.deepEqual(cycleMcpToolNames, [
       "cycle_repository_list",
@@ -190,23 +190,41 @@ describe("@cycle/mcp", () => {
 
   it("builds issue list query parameters using the API format", () => {
     const params = issueListSearchParams({
+      archived: false,
+      assignee: null,
+      blocked: true,
       cursor: "next",
+      dueBefore: "2026-07-01",
+      hasLabels: true,
       labelIn: ["bug", "backend"],
       limit: 25,
+      orderBy: "updatedAt",
+      orderDirection: "desc",
+      parent: "CYC-10",
       priority: "high",
       repositoryIds: ["repo-a", "repo-b"],
       statusIn: ["ready", "in-progress"],
       text: "auth",
       type: "feature",
+      updatedAfter: "2026-06-01",
     });
 
     assert.equal(params.get("page[cursor]"), "next");
     assert.equal(params.get("page[limit]"), "25");
+    assert.equal(params.get("filter[archived]"), "false");
+    assert.equal(params.get("filter[assignee]"), "null");
+    assert.equal(params.get("filter[blocked]"), "true");
+    assert.equal(params.get("filter[dueBefore]"), "2026-07-01");
+    assert.equal(params.get("filter[hasLabels]"), "true");
     assert.equal(params.get("filter[label][in]"), "bug,backend");
+    assert.equal(params.get("filter[parent]"), "CYC-10");
     assert.equal(params.get("filter[priority]"), "high");
     assert.equal(params.get("filter[repository][in]"), "repo-a,repo-b");
     assert.equal(params.get("filter[status][in]"), "ready,in-progress");
     assert.equal(params.get("filter[type]"), "feature");
+    assert.equal(params.get("filter[updatedAfter]"), "2026-06-01");
+    assert.equal(params.get("sort[field]"), "updatedAt");
+    assert.equal(params.get("sort[direction]"), "desc");
     assert.equal(params.get("q"), "auth");
   });
 
@@ -228,7 +246,7 @@ describe("@cycle/mcp", () => {
               warningCount: 0,
             },
           ],
-          links: {},
+          links: { next: null, self: "/v1/repositories?filter%5Bpath%5D=%2Fworkspace%2Frepo" },
           meta: { requestId: "req-repos", totalCount: null },
           page: { hasMore: false, limit: 50, nextCursor: null },
         }),

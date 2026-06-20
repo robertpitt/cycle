@@ -1,31 +1,48 @@
-import { Context, Effect } from "effect";
-import type { AppConfigError, RepositoryPreferences, RepositoryRecord } from "./AppConfig.ts";
+import { Context, Effect, Schema } from "effect";
+import {
+  RepositoryCommitStyle,
+  RepositoryRecord,
+  type AppConfigError,
+  type RepositoryPreferences,
+} from "./AppConfig.ts";
 
-export type UpsertRepositoryPathInput = {
-  readonly displayName?: string;
-  readonly path: string;
-};
+export const UpsertRepositoryPathInput = Schema.Struct({
+  displayName: Schema.optional(Schema.String),
+  path: Schema.String,
+});
+export type UpsertRepositoryPathInput = typeof UpsertRepositoryPathInput.Type;
 
-export type InitializeRepositoryPathInput = UpsertRepositoryPathInput;
+export const InitializeRepositoryPathInput = UpsertRepositoryPathInput;
+export type InitializeRepositoryPathInput = typeof InitializeRepositoryPathInput.Type;
 
-export type UpdateRepositoryPreferencesInput = {
-  readonly id: string;
-  readonly preferences: Partial<RepositoryPreferences>;
-};
+export const RepositoryPreferencesPatch = Schema.Struct({
+  autoSync: Schema.optional(Schema.Boolean),
+  commitStyle: Schema.optional(RepositoryCommitStyle),
+  sidebarExpanded: Schema.optional(Schema.Boolean),
+});
+export type RepositoryPreferencesPatch = typeof RepositoryPreferencesPatch.Type;
 
-export type SelectRepositoryFolderResult =
-  | {
-      readonly status: "added";
-      readonly repository: RepositoryRecord;
-    }
-  | {
-      readonly status: "cancelled";
-    }
-  | {
-      readonly status: "not-git";
-      readonly message: string;
-      readonly path: string;
-    };
+export const UpdateRepositoryPreferencesInput = Schema.Struct({
+  id: Schema.String,
+  preferences: RepositoryPreferencesPatch,
+});
+export type UpdateRepositoryPreferencesInput = typeof UpdateRepositoryPreferencesInput.Type;
+
+export const SelectRepositoryFolderResult = Schema.Union([
+  Schema.Struct({
+    repository: RepositoryRecord,
+    status: Schema.Literal("added"),
+  }),
+  Schema.Struct({
+    status: Schema.Literal("cancelled"),
+  }),
+  Schema.Struct({
+    message: Schema.String,
+    path: Schema.String,
+    status: Schema.Literal("not-git"),
+  }),
+]);
+export type SelectRepositoryFolderResult = typeof SelectRepositoryFolderResult.Type;
 
 export type LocalWorkspaceService = {
   readonly initializeRepositoryPath: (

@@ -45,7 +45,7 @@ export const runCodexTurn = async <TStructured = unknown>(
     const completedAt = now();
     const nativeThreadId = thread.id ?? session.native?.threadId;
     const text = turn.finalResponse;
-    const structured = parseStructured(request.responseFormat, text);
+    const structured = parseStructured<TStructured>(request.responseFormat, text);
     session = await runtime.storeNativeThreadId(session, nativeThreadId, completedAt);
 
     return {

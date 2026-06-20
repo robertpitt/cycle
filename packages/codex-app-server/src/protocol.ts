@@ -1,12 +1,58 @@
+import { Schema } from "effect";
 import {
   CodexAppServerProtocolParseError,
   CodexAppServerRequestError,
   CodexAppServerTransportError,
   type CodexAppServerError,
-  type CodexAppServerProtocolErrorShape,
 } from "./errors.ts";
 
-export type JsonRpcId = string | number;
+const StrictDecodeOptions = { onExcessProperty: "error" } as const;
+
+const JsonRpcIdSchema = Schema.Union([Schema.String, Schema.Finite]);
+export type JsonRpcId = typeof JsonRpcIdSchema.Type;
+
+const JsonRpcVersion = Schema.optional(Schema.Literal("2.0"));
+const JsonRpcParams = Schema.optional(Schema.Unknown);
+const ProtocolErrorShape = Schema.Struct({
+  code: Schema.Finite,
+  data: Schema.optional(Schema.Unknown),
+  message: Schema.String,
+});
+const IncomingRequestMessage = Schema.Struct({
+  id: JsonRpcIdSchema,
+  jsonrpc: JsonRpcVersion,
+  method: Schema.String,
+  params: JsonRpcParams,
+});
+const IncomingNotificationMessage = Schema.Struct({
+  jsonrpc: JsonRpcVersion,
+  method: Schema.String,
+  params: JsonRpcParams,
+});
+const IncomingSuccessResponseMessage = Schema.Struct({
+  id: JsonRpcIdSchema,
+  jsonrpc: JsonRpcVersion,
+  result: Schema.optional(Schema.Unknown),
+});
+const IncomingErrorResponseMessage = Schema.Struct({
+  error: ProtocolErrorShape,
+  id: JsonRpcIdSchema,
+  jsonrpc: JsonRpcVersion,
+});
+const JsonRpcMessage = Schema.Union([
+  IncomingRequestMessage,
+  IncomingErrorResponseMessage,
+  IncomingSuccessResponseMessage,
+  IncomingNotificationMessage,
+]).annotate({ parseOptions: StrictDecodeOptions });
+type JsonRpcMessage = typeof JsonRpcMessage.Type;
+
+const OutgoingMessage = Schema.Union([
+  IncomingRequestMessage,
+  IncomingErrorResponseMessage,
+  IncomingSuccessResponseMessage,
+  IncomingNotificationMessage,
+]).annotate({ parseOptions: StrictDecodeOptions });
 
 export type CodexAppServerIncomingRequest = {
   readonly id: JsonRpcId;
@@ -56,15 +102,6 @@ type PendingRequest = {
   readonly resolve: (value: unknown) => void;
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const isJsonRpcId = (value: unknown): value is JsonRpcId =>
-  typeof value === "string" || typeof value === "number";
-
-const isProtocolError = (value: unknown): value is CodexAppServerProtocolErrorShape =>
-  isRecord(value) && typeof value.code === "number" && typeof value.message === "string";
-
 const readChunk = (chunk: string | Uint8Array, decoder: TextDecoder): string =>
   typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
 
@@ -106,8 +143,9 @@ export const makeCodexAppServerProtocol = (
       });
     }
 
-    log({ direction: "outgoing", payload: message, stage: "decoded" });
-    const line = `${JSON.stringify(message)}\n`;
+    const decoded = Schema.decodeUnknownSync(OutgoingMessage, StrictDecodeOptions)(message);
+    log({ direction: "outgoing", payload: decoded, stage: "decoded" });
+    const line = `${JSON.stringify(decoded)}\n`;
     log({ direction: "outgoing", payload: line, stage: "raw" });
     await options.transport.send(line);
   };
@@ -117,17 +155,8 @@ export const makeCodexAppServerProtocol = (
   const respondError = (requestId: JsonRpcId, error: CodexAppServerRequestError) =>
     write({ error: error.toProtocolError(), id: requestId });
 
-  const route = async (message: unknown): Promise<void> => {
-    if (!isRecord(message)) {
-      throw new CodexAppServerProtocolParseError({ detail: "Message must be an object." });
-    }
-
-    if ("id" in message && "method" in message && typeof message.method === "string") {
-      if (!isJsonRpcId(message.id)) {
-        throw new CodexAppServerProtocolParseError({
-          detail: "Incoming request id must be a string or number.",
-        });
-      }
+  const route = async (message: JsonRpcMessage): Promise<void> => {
+    if ("id" in message && "method" in message) {
       const request = {
         id: message.id,
         method: message.method,
@@ -150,30 +179,19 @@ export const makeCodexAppServerProtocol = (
       return;
     }
 
-    if ("id" in message && ("result" in message || "error" in message)) {
-      if (!isJsonRpcId(message.id)) {
-        throw new CodexAppServerProtocolParseError({
-          detail: "Incoming response id must be a string or number.",
-        });
-      }
+    if ("id" in message) {
       const pendingRequest = pending.get(String(message.id));
       if (pendingRequest === undefined) return;
       pending.delete(String(message.id));
-      if (message.error !== undefined) {
-        pendingRequest.reject(
-          CodexAppServerRequestError.fromProtocolError(
-            isProtocolError(message.error)
-              ? message.error
-              : { code: -32603, message: "Codex App Server returned an invalid error." },
-          ),
-        );
+      if ("error" in message) {
+        pendingRequest.reject(CodexAppServerRequestError.fromProtocolError(message.error));
         return;
       }
-      pendingRequest.resolve(message.result);
+      pendingRequest.resolve("result" in message ? message.result : undefined);
       return;
     }
 
-    if ("method" in message && typeof message.method === "string") {
+    if ("method" in message) {
       await options.onNotification?.({
         method: message.method,
         ...(message.params === undefined ? {} : { params: message.params }),
@@ -201,8 +219,20 @@ export const makeCodexAppServerProtocol = (
       options.onError?.(error);
       return;
     }
-    log({ direction: "incoming", payload: parsed, stage: "decoded" });
-    await route(parsed);
+    let message: JsonRpcMessage;
+    try {
+      message = Schema.decodeUnknownSync(JsonRpcMessage, StrictDecodeOptions)(parsed);
+    } catch (cause) {
+      const error = new CodexAppServerProtocolParseError({
+        detail: "Invalid JSON-RPC message.",
+        cause,
+      });
+      log({ direction: "incoming", payload: { detail: error.detail }, stage: "decode_failed" });
+      options.onError?.(error);
+      return;
+    }
+    log({ direction: "incoming", payload: message, stage: "decoded" });
+    await route(message);
   };
 
   void (async () => {

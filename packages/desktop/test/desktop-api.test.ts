@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitRepository } from "@cycle/git";
@@ -189,6 +189,17 @@ describe("desktop API startup", () => {
     const runtimeFile = join(directory, "runtime.json");
     const configFile = join(directory, "config.json");
     const config = makeConfig();
+    await writeFile(
+      configFile,
+      JSON.stringify({
+        api: {
+          previous: true,
+          staticToken: "old-token",
+        },
+        existing: "preserved",
+      }),
+      "utf8",
+    );
 
     await withEnv(
       {
@@ -202,41 +213,57 @@ describe("desktop API startup", () => {
               yield* startDesktopApi();
 
               const runtime = JSON.parse(
-                yield* Effect.promise(() => readFile(runtimeFile, "utf8")),
+                yield* Effect.tryPromise({
+                  try: () => readFile(runtimeFile, "utf8"),
+                  catch: (cause) => cause,
+                }),
               ) as {
                 readonly baseUrl: string;
                 readonly mcpPath?: string;
                 readonly mcpUrl?: string;
               };
               const cliConfig = JSON.parse(
-                yield* Effect.promise(() => readFile(configFile, "utf8")),
+                yield* Effect.tryPromise({
+                  try: () => readFile(configFile, "utf8"),
+                  catch: (cause) => cause,
+                }),
               ) as {
                 readonly api?: {
                   readonly staticToken?: string;
                 };
               };
 
-              const health = yield* Effect.promise(() => fetch(`${runtime.baseUrl}/health`));
-              const mcp = yield* Effect.promise(() =>
-                fetch(runtime.mcpUrl ?? `${runtime.baseUrl}/mcp`, {
-                  body: JSON.stringify({
-                    id: 1,
-                    jsonrpc: "2.0",
-                    method: "ping",
-                    params: {},
+              const health = yield* Effect.tryPromise({
+                try: () => fetch(`${runtime.baseUrl}/health`),
+                catch: (cause) => cause,
+              });
+              const mcp = yield* Effect.tryPromise({
+                try: () =>
+                  fetch(runtime.mcpUrl ?? `${runtime.baseUrl}/mcp`, {
+                    body: JSON.stringify({
+                      id: 1,
+                      jsonrpc: "2.0",
+                      method: "ping",
+                      params: {},
+                    }),
+                    headers: {
+                      "content-type": "application/json",
+                    },
+                    method: "POST",
                   }),
-                  headers: {
-                    "content-type": "application/json",
-                  },
-                  method: "POST",
-                }),
-              );
+                catch: (cause) => cause,
+              });
 
               assert.equal(health.status, 200);
               assert.equal(runtime.mcpPath, "/mcp");
               assert.equal(runtime.mcpUrl, `${runtime.baseUrl}/mcp`);
               assert.equal(mcp.status, 401);
               assert.equal(cliConfig.api?.staticToken, config.api.staticToken);
+              assert.equal(
+                (cliConfig.api as { readonly previous?: boolean } | undefined)?.previous,
+                true,
+              );
+              assert.equal((cliConfig as { readonly existing?: string }).existing, "preserved");
             }).pipe(Effect.provide(makeLayer(config))),
           ),
         ),

@@ -1,5 +1,10 @@
 import * as ContractSchemas from "@cycle/contracts/schemas";
 import { Schema } from "effect";
+import {
+  AutocompleteOutput,
+  CollectionEnvelopeOf,
+  ResourceEnvelopeOf,
+} from "../../http/schemas.ts";
 
 const RequestId = {
   requestId: Schema.optional(Schema.String),
@@ -7,11 +12,6 @@ const RequestId = {
 
 const RepositoryFields = {
   repositoryId: Schema.String,
-  ...RequestId,
-};
-
-const OptionalRepositoryFields = {
-  repositoryId: Schema.optional(Schema.String),
   ...RequestId,
 };
 
@@ -24,57 +24,29 @@ const TargetIssueFields = {
   targetIssueId: Schema.optional(Schema.String),
 };
 
+const EstimateInput = Schema.Union([Schema.Finite, Schema.String]);
+const NullableEstimateInput = Schema.NullOr(EstimateInput);
 const PageLimit = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
-const UnknownRecord = Schema.Record(Schema.String, Schema.Unknown);
-const StringList = Schema.Array(Schema.String);
-
-const ExternalLinkInput = Schema.Struct({
-  source: Schema.optional(Schema.String),
-  title: Schema.optional(Schema.String),
-  url: Schema.String,
+const HttpStatusCode = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(100),
+  Schema.isLessThanOrEqualTo(599),
+);
+const IssueRelationType = ContractSchemas.IssueRelation.fields.type;
+const IssueQueryInput = Schema.Struct({
+  ...ContractSchemas.IssueQuery.fields,
+  estimate: Schema.optional(EstimateInput),
 });
-
+const IssueListQueryFields = (({ from: _from, relation: _relation, ...fields }) => fields)(
+  IssueQueryInput.fields,
+);
 const IssueCreateFields = {
-  assignee: Schema.optional(Schema.NullOr(Schema.String)),
-  body: Schema.optional(Schema.String),
-  dueDate: Schema.optional(Schema.NullOr(Schema.String)),
-  estimate: Schema.optional(Schema.NullOr(Schema.Union([Schema.Number, Schema.String]))),
-  externalLinks: Schema.optional(Schema.Array(ExternalLinkInput)),
-  labels: Schema.optional(StringList),
-  parent: Schema.optional(Schema.NullOr(Schema.String)),
-  planningNotRequired: Schema.optional(Schema.Boolean),
-  priority: Schema.optional(Schema.String),
-  repository: Schema.optional(Schema.String),
-  status: Schema.optional(Schema.String),
-  title: Schema.String,
-  type: Schema.optional(Schema.String),
+  ...ContractSchemas.CreateIssueInput.fields,
+  estimate: Schema.optional(NullableEstimateInput),
 };
-
-const SearchTextInput = {
-  cursor: Schema.optional(Schema.String),
-  limit: Schema.optional(PageLimit),
-  text: Schema.optional(Schema.String),
-};
-
-export const IssueRelationType = Schema.Literals([
-  "related",
-  "blocked-by",
-  "blocking",
-  "duplicate",
-]);
 
 export const IssueListQueryInput = Schema.Struct({
-  cursor: Schema.optional(Schema.String),
-  label: Schema.optional(Schema.String),
-  labelIn: Schema.optional(Schema.Array(Schema.String)),
+  ...IssueListQueryFields,
   limit: Schema.optional(PageLimit),
-  priority: Schema.optional(Schema.String),
-  priorityIn: Schema.optional(Schema.Array(Schema.String)),
-  repositoryIds: Schema.optional(Schema.Array(Schema.String)),
-  status: Schema.optional(Schema.String),
-  statusIn: Schema.optional(Schema.Array(Schema.String)),
-  text: Schema.optional(Schema.String),
-  type: Schema.optional(Schema.String),
 });
 export type IssueListQueryInput = typeof IssueListQueryInput.Type;
 
@@ -99,26 +71,14 @@ export const AutocompleteInput = Schema.Struct({
 export type AutocompleteInput = typeof AutocompleteInput.Type;
 
 export const InboxListInput = Schema.Struct({
-  createdAfter: Schema.optional(Schema.String),
-  createdBefore: Schema.optional(Schema.String),
-  cursor: Schema.optional(Schema.String),
-  includeSourceInactive: Schema.optional(Schema.Boolean),
+  ...ContractSchemas.InboxQuery.fields,
   limit: Schema.optional(PageLimit),
-  reason: Schema.optional(
-    Schema.Literals(["assigned", "comment_assigned", "comment_created", "mention"]),
-  ),
-  repositoryIds: Schema.optional(Schema.Array(Schema.String)),
-  status: Schema.optional(Schema.Literals(["archived", "read", "snoozed", "unread", "all"])),
-  ticketId: Schema.optional(Schema.String),
-  userId: Schema.String,
   ...RequestId,
 });
 export type InboxListInput = typeof InboxListInput.Type;
 
 export const InboxMutationInput = Schema.Struct({
-  allowMissing: Schema.optional(Schema.Boolean),
-  itemIds: Schema.Array(Schema.String),
-  userId: Schema.String,
+  ...ContractSchemas.InboxMutationInput.fields,
   ...RequestId,
 });
 export type InboxMutationInput = typeof InboxMutationInput.Type;
@@ -139,10 +99,8 @@ export type IssueListInput = typeof IssueListInput.Type;
 export const IssueSearchInput = Schema.Struct({
   ...RepositoryFields,
   issueId: Schema.optional(Schema.String),
-  cursor: Schema.optional(Schema.String),
+  ...ContractSchemas.SearchTicketsInput.fields,
   limit: Schema.optional(PageLimit),
-  repositoryIds: Schema.optional(Schema.Array(Schema.String)),
-  text: Schema.String,
 });
 export type IssueSearchInput = typeof IssueSearchInput.Type;
 
@@ -155,17 +113,15 @@ export type IssueCreateInput = typeof IssueCreateInput.Type;
 export const IssueUpdateInput = Schema.Struct({
   ...IssueContextFields,
   ...TargetIssueFields,
-  body: Schema.optional(Schema.String),
-  frontmatter: Schema.optional(UnknownRecord),
-  message: Schema.optional(Schema.String),
+  ...ContractSchemas.UpdateIssueInput.fields,
 });
 export type IssueUpdateInput = typeof IssueUpdateInput.Type;
 
 export const IssueTransitionInput = Schema.Struct({
   ...IssueContextFields,
   ...TargetIssueFields,
-  reason: Schema.optional(Schema.String),
-  status: Schema.String,
+  reason: ContractSchemas.TransitionIssueInput.fields.reason,
+  status: ContractSchemas.TransitionIssueInput.fields.status,
 });
 export type IssueTransitionInput = typeof IssueTransitionInput.Type;
 
@@ -204,9 +160,9 @@ export type IssueRecordsListInput = typeof IssueRecordsListInput.Type;
 export const IssueRecordAddInput = Schema.Struct({
   ...IssueContextFields,
   ...TargetIssueFields,
-  payload: Schema.Unknown,
-  recordType: Schema.String,
-  userVisible: Schema.optional(Schema.Boolean),
+  payload: ContractSchemas.AddLinkedRecordInput.fields.payload,
+  recordType: ContractSchemas.AddLinkedRecordInput.fields.recordType,
+  userVisible: ContractSchemas.AddLinkedRecordInput.fields.userVisible,
 });
 export type IssueRecordAddInput = typeof IssueRecordAddInput.Type;
 
@@ -223,65 +179,66 @@ export type IssueRelationRemoveInput = typeof IssueRelationRemoveInput.Type;
 
 export const LabelListInput = Schema.Struct({
   ...RepositoryFields,
-  archived: Schema.optional(Schema.Boolean),
-  cursor: Schema.optional(Schema.String),
+  ...ContractSchemas.LabelDefinitionQuery.fields,
   limit: Schema.optional(PageLimit),
-  text: Schema.optional(Schema.String),
 });
 export type LabelListInput = typeof LabelListInput.Type;
 
 export const UserListInput = Schema.Struct({
   ...RepositoryFields,
-  cursor: Schema.optional(Schema.String),
-  disabled: Schema.optional(Schema.Boolean),
+  ...ContractSchemas.UserProfileQuery.fields,
   limit: Schema.optional(PageLimit),
-  text: Schema.optional(Schema.String),
 });
 export type UserListInput = typeof UserListInput.Type;
 
 export const TemplateListInput = Schema.Struct({
   ...RepositoryFields,
-  active: Schema.optional(Schema.Boolean),
-  cursor: Schema.optional(Schema.String),
-  kind: Schema.optional(Schema.Literals(["bug", "feature", "implementation", "initiative", "qa"])),
+  ...ContractSchemas.IssueTemplateQuery.fields,
   limit: Schema.optional(PageLimit),
-  text: Schema.optional(Schema.String),
 });
 export type TemplateListInput = typeof TemplateListInput.Type;
 
 export const ViewListInput = Schema.Struct({
   ...RepositoryFields,
-  cursor: Schema.optional(Schema.String),
-  kind: Schema.optional(Schema.Literals(["board", "list"])),
+  ...ContractSchemas.SavedViewQuery.fields,
   limit: Schema.optional(PageLimit),
-  pinned: Schema.optional(Schema.Boolean),
-  text: Schema.optional(Schema.String),
 });
 export type ViewListInput = typeof ViewListInput.Type;
 
 export const ViewCreateInput = Schema.Struct({
   ...RepositoryFields,
-  description: Schema.optional(Schema.String),
-  display: Schema.optional(UnknownRecord),
-  groupBy: Schema.optional(
-    Schema.Literals(["assignee", "dueDate", "label", "none", "parent", "priority", "status"]),
-  ),
-  kind: Schema.optional(Schema.Literals(["board", "list"])),
-  name: Schema.String,
-  pinned: Schema.optional(Schema.Boolean),
-  query: Schema.optional(UnknownRecord),
-  sort: Schema.optional(UnknownRecord),
+  ...ContractSchemas.CreateSavedViewInput.fields,
+  query: Schema.optional(IssueQueryInput),
 });
 export type ViewCreateInput = typeof ViewCreateInput.Type;
 
-export const AutomationEvaluateInput = Schema.Struct({
+const AutomationEvaluateInputBase = Schema.Struct({
   ...RepositoryFields,
   failOnWarnings: Schema.optional(Schema.Boolean),
   issueIds: Schema.optional(Schema.Array(Schema.String)),
-  query: Schema.optional(UnknownRecord),
+  query: Schema.optional(IssueQueryInput),
   requireFresh: Schema.optional(Schema.Boolean),
-  severityThreshold: Schema.optional(Schema.Literals(["error", "fatal", "warning"])),
+  severityThreshold: ContractSchemas.AutomationEvaluateIssuesInput.fields.severityThreshold,
 });
+export const AutomationEvaluateInput = AutomationEvaluateInputBase.check(
+  Schema.makeFilter<typeof AutomationEvaluateInputBase.Type>(
+    (value) => {
+      const issueMode = value.issueIds !== undefined;
+      const queryMode = value.query !== undefined;
+      const repositoryOnlyOptions =
+        value.failOnWarnings !== undefined || value.requireFresh !== undefined;
+
+      if (issueMode && value.issueIds.length === 0) return "at least one issue id";
+      if (Number(issueMode) + Number(queryMode) > 1) return "a single automation evaluation mode";
+      if ((issueMode || queryMode) && repositoryOnlyOptions) {
+        return "repository-only options cannot be combined with issue or query evaluation";
+      }
+
+      return true;
+    },
+    { expected: "an automation evaluation request" },
+  ),
+);
 export type AutomationEvaluateInput = typeof AutomationEvaluateInput.Type;
 
 export const PlanApplyIssueInput = Schema.Struct({
@@ -306,24 +263,8 @@ export const PlanApplyInput = Schema.Struct({
 });
 export type PlanApplyInput = typeof PlanApplyInput.Type;
 
-export const ApiMetaOutput = Schema.Struct({
-  requestId: Schema.optional(Schema.String),
-  totalCount: Schema.optional(Schema.NullOr(Schema.Number)),
-});
-
-export const ApiResourceEnvelope = <A extends Schema.Top>(data: A) =>
-  Schema.Struct({
-    data,
-    meta: Schema.optional(ApiMetaOutput),
-  });
-
-export const ApiCollectionEnvelope = <A extends Schema.Top>(entry: A) =>
-  Schema.Struct({
-    data: Schema.Array(entry),
-    links: Schema.optional(Schema.Unknown),
-    meta: Schema.optional(ApiMetaOutput),
-    page: Schema.optional(Schema.Unknown),
-  });
+export const ApiResourceEnvelope = ResourceEnvelopeOf;
+export const ApiCollectionEnvelope = CollectionEnvelopeOf;
 
 export const TicketResourceEnvelope = ApiResourceEnvelope(ContractSchemas.TicketDocumentOutput);
 export const TicketCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.TicketDocumentOutput);
@@ -340,20 +281,7 @@ export const RepositoryCollectionEnvelope = ApiCollectionEnvelope(
 export const RepositoryResourceEnvelope = ApiResourceEnvelope(
   ContractSchemas.RepositoryStatusOutput,
 );
-export const AutocompleteResultOutput = Schema.Struct({
-  id: Schema.String,
-  metadata: Schema.optional(UnknownRecord),
-  name: Schema.String,
-  repositoryId: Schema.optional(Schema.String),
-  subtitle: Schema.optional(Schema.String),
-  type: Schema.Literals(["repository", "ticket"]),
-  uri: Schema.String,
-});
-export const AutocompleteEnvelope = ApiResourceEnvelope(
-  Schema.Struct({
-    results: Schema.Array(AutocompleteResultOutput),
-  }),
-);
+export const AutocompleteEnvelope = ApiResourceEnvelope(AutocompleteOutput);
 export const InboxPageEnvelope = ApiResourceEnvelope(ContractSchemas.InboxPageOutput);
 export const InboxMutationEnvelope = ApiResourceEnvelope(ContractSchemas.InboxMutationResultOutput);
 export const CommentCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.LinkedRecordOutput);
@@ -401,7 +329,7 @@ export const ToolErrorOutput = Schema.Struct({
     message: Schema.String,
     requestId: Schema.String,
     retryable: Schema.Boolean,
-    status: Schema.optional(Schema.Number),
+    status: Schema.optional(HttpStatusCode),
   }),
   meta: Schema.Struct({
     issueId: Schema.optional(Schema.String),

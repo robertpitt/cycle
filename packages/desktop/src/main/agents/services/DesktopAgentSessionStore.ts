@@ -1,6 +1,6 @@
 import type { AgentSessionBinding, AgentSessionStore, JsonObject } from "@cycle/agents";
 import { agentSessionBindingSchemaSql, ensureDatabaseParentDirectorySync } from "@cycle/database";
-import { Context, Layer } from "effect";
+import { Context, Layer, Schema } from "effect";
 import { DatabaseSync } from "node:sqlite";
 
 type SessionBindingRow = {
@@ -99,6 +99,10 @@ export const DesktopAgentSessionStoreLive = (path: string) =>
 export const DesktopAgentSessionStoreTest = (store: AgentSessionStore) =>
   Layer.succeed(DesktopAgentSessionStore, DesktopAgentSessionStore.of(store));
 
+const JsonRecord = Schema.Record(Schema.String, Schema.Unknown);
+const JsonObjectSchema = Schema.Record(Schema.String, Schema.Json);
+const StrictDecodeOptions = { onExcessProperty: "error" } as const;
+
 const stringifyJson = (value: unknown): string | null =>
   value === undefined ? null : JSON.stringify(value);
 
@@ -107,16 +111,25 @@ const parseRecord = (value: string | null): Readonly<Record<string, unknown>> | 
 
   try {
     const parsed = JSON.parse(value) as unknown;
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-      ? (parsed as Readonly<Record<string, unknown>>)
-      : undefined;
+    return Schema.decodeUnknownSync(JsonRecord, StrictDecodeOptions)(parsed);
   } catch {
     return undefined;
   }
 };
 
-const parseJsonObject = (value: string | null): JsonObject | undefined =>
-  parseRecord(value) as JsonObject | undefined;
+const parseJsonObject = (value: string | null): JsonObject | undefined => {
+  if (value === null) return undefined;
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Schema.decodeUnknownSync(
+      JsonObjectSchema,
+      StrictDecodeOptions,
+    )(parsed) as unknown as JsonObject;
+  } catch {
+    return undefined;
+  }
+};
 
 const bindingFromRow = (row: SessionBindingRow): AgentSessionBinding => {
   const metadata = parseJsonObject(row.metadata_json);

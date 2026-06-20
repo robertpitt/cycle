@@ -15,7 +15,6 @@ import {
   type AutomationViolation,
   type CycleUseCase,
   type UseCaseContract,
-  type UseCaseInput,
   type UseCaseName,
   type UseCaseSuccess,
 } from "./contracts/index.ts";
@@ -56,6 +55,8 @@ const defaultTransitions: Readonly<Record<string, ReadonlyArray<string>>> = {
   todo: ["backlog", "ready", "canceled"],
 };
 
+const StrictDecodeOptions = { onExcessProperty: "error" } as const;
+
 export const makeUseCaseRunner = (database: UseCasePersistenceGatewayShape): UseCaseRunnerShape => {
   let requestCounter = 0;
 
@@ -85,7 +86,10 @@ export const makeUseCaseRunner = (database: UseCasePersistenceGatewayShape): Use
           context,
           "input.decode",
           annotations,
-          Schema.decodeUnknownEffect(contract.inputSchema)(useCase.input).pipe(
+          Schema.decodeUnknownEffect(
+            contract.inputSchema,
+            StrictDecodeOptions,
+          )(useCase.input).pipe(
             Effect.mapError((error) =>
               invalidInputFailure({
                 details: {
@@ -108,7 +112,7 @@ export const makeUseCaseRunner = (database: UseCasePersistenceGatewayShape): Use
             ...context,
             useCase: {
               ...useCase,
-              input: decoded as UseCaseInput<Name>,
+              input: decoded,
             },
           }),
         ),
@@ -118,7 +122,10 @@ export const makeUseCaseRunner = (database: UseCasePersistenceGatewayShape): Use
           context,
           "success.decode",
           annotations,
-          Schema.decodeUnknownEffect(contract.successSchema)(value).pipe(
+          Schema.decodeUnknownEffect(
+            contract.successSchema,
+            StrictDecodeOptions,
+          )(value).pipe(
             Effect.mapError((error) =>
               useCaseFailure({
                 code: "INVALID_USECASE_SUCCESS",
@@ -132,8 +139,7 @@ export const makeUseCaseRunner = (database: UseCasePersistenceGatewayShape): Use
           ),
         ),
       ),
-      Effect.map((value) => value as UseCaseSuccess<Name>),
-    ) as Effect.Effect<UseCaseSuccess<Name>, UseCaseFailure>;
+    );
 
     const tracedProgram = applyDeadlineWithSpan(context, annotations, program);
 
@@ -592,7 +598,7 @@ const spanSegment = (value: string): string =>
 
 const validateUseCaseMetadata = <Name extends UseCaseName>(
   context: RequestContext<Name>,
-  contract: UseCaseContract<Name>,
+  contract: UseCaseContract,
 ): Effect.Effect<void, UseCaseFailure> => {
   const meta = context.useCase.meta;
 

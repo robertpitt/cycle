@@ -30,6 +30,10 @@ import { RepositoryRef } from "./RepositoryRef.ts";
 
 const StringList = Schema.Array(Schema.String);
 const UnknownRecord = Schema.Record(Schema.String, Schema.Unknown);
+const NonNegativeInteger = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+const PositiveInteger = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
+const EstimateValue = Schema.Union([Schema.Finite, Schema.String]);
+const NullableEstimateValue = Schema.NullOr(EstimateValue);
 const InboxReason = Schema.Literals(["assigned", "comment_assigned", "comment_created", "mention"]);
 const InboxStatus = Schema.Literals(["archived", "read", "snoozed", "unread"]);
 const ExternalLinkSchema = Schema.Struct({
@@ -52,8 +56,8 @@ export type ReadOptions = {
 export const HistoryOptions = Schema.Struct({
   cursor: Schema.optional(Schema.String),
   from: Schema.optional(Schema.String),
-  limit: Schema.optional(Schema.Number),
-  max: Schema.optional(Schema.Number),
+  limit: Schema.optional(PositiveInteger),
+  max: Schema.optional(PositiveInteger),
 });
 export type HistoryOptions = RepositoryHistoryQuery & {
   readonly from?: string;
@@ -62,8 +66,8 @@ export type HistoryOptions = RepositoryHistoryQuery & {
 
 export const RepositoryHistoryInput = Schema.Struct({
   cursor: Schema.optional(Schema.String),
-  limit: Schema.optional(Schema.Number),
-  max: Schema.optional(Schema.Number),
+  limit: Schema.optional(PositiveInteger),
+  max: Schema.optional(PositiveInteger),
   ticketId: Schema.optional(Schema.String),
 });
 export type RepositoryHistoryInput = RepositoryHistoryQuery & {
@@ -75,7 +79,7 @@ export const InboxQuery = Schema.Struct({
   createdBefore: Schema.optional(Schema.String),
   cursor: Schema.optional(Schema.String),
   includeSourceInactive: Schema.optional(Schema.Boolean),
-  limit: Schema.optional(Schema.Number),
+  limit: Schema.optional(PositiveInteger),
   reason: Schema.optional(InboxReason),
   repositoryIds: Schema.optional(Schema.Array(Schema.String)),
   status: Schema.optional(Schema.Union([InboxStatus, Schema.Literal("all")])),
@@ -96,11 +100,13 @@ export type InboxMutationInput = DatabaseInboxMutationInput;
 export type InboxReason = DatabaseInboxReason;
 export type InboxStatus = DatabaseInboxStatus;
 
+// Extension fields here are producer-owned: repository adapters own metadata/store,
+// linked record types own payload, and draft importers own source.
 export const RepositoryOpenInput = Schema.Struct({
   displayName: Schema.optional(Schema.String),
   gitDir: Schema.optional(Schema.String),
   metadata: Schema.optional(Schema.Unknown),
-  pollIntervalMs: Schema.optional(Schema.Union([Schema.Literal(false), Schema.Number])),
+  pollIntervalMs: Schema.optional(Schema.Union([Schema.Literal(false), NonNegativeInteger])),
   repositoryId: Schema.String,
   store: Schema.Unknown,
   syncOnOpen: Schema.optional(Schema.Boolean),
@@ -117,7 +123,7 @@ export const IssueQuery = Schema.Struct({
   deleted: Schema.optional(Schema.Boolean),
   dueAfter: Schema.optional(Schema.String),
   dueBefore: Schema.optional(Schema.String),
-  estimate: Schema.optional(Schema.Union([Schema.Number, Schema.String])),
+  estimate: Schema.optional(EstimateValue),
   from: Schema.optional(Schema.String),
   hasAssignee: Schema.optional(Schema.Boolean),
   hasDueDate: Schema.optional(Schema.Boolean),
@@ -125,7 +131,7 @@ export const IssueQuery = Schema.Struct({
   hasLabels: Schema.optional(Schema.Boolean),
   label: Schema.optional(Schema.String),
   labelIn: Schema.optional(Schema.Array(Schema.String)),
-  limit: Schema.optional(Schema.Number),
+  limit: Schema.optional(PositiveInteger),
   orderBy: Schema.optional(
     Schema.Literals(["createdAt", "dueDate", "priority", "title", "updatedAt"]),
   ),
@@ -155,7 +161,7 @@ export type IssueQuery = TicketQuery & {
 export const RecordQuery = Schema.Struct({
   cursor: Schema.optional(Schema.String),
   from: Schema.optional(Schema.String),
-  limit: Schema.optional(Schema.Number),
+  limit: Schema.optional(PositiveInteger),
   recordType: Schema.optional(Schema.String),
 });
 export type RecordQuery = DatabaseRecordQuery & {
@@ -166,7 +172,7 @@ export const CreateIssueInput = Schema.Struct({
   assignee: Schema.optional(Schema.NullOr(Schema.String)),
   body: Schema.optional(Schema.String),
   dueDate: Schema.optional(Schema.NullOr(Schema.String)),
-  estimate: Schema.optional(Schema.NullOr(Schema.Union([Schema.Number, Schema.String]))),
+  estimate: Schema.optional(NullableEstimateValue),
   externalLinks: Schema.optional(Schema.Array(ExternalLinkSchema)),
   labels: Schema.optional(StringList),
   parent: Schema.optional(Schema.NullOr(Schema.String)),
@@ -183,7 +189,7 @@ const IssueTemplateDefaultsInput = Schema.Struct({
   assignee: Schema.optional(Schema.NullOr(Schema.String)),
   body: Schema.optional(Schema.String),
   dueDate: Schema.optional(Schema.NullOr(Schema.String)),
-  estimate: Schema.optional(Schema.NullOr(Schema.Union([Schema.Number, Schema.String]))),
+  estimate: Schema.optional(NullableEstimateValue),
   externalLinks: Schema.optional(Schema.Array(ExternalLinkSchema)),
   labels: Schema.optional(StringList),
   parent: Schema.optional(Schema.NullOr(Schema.String)),
@@ -223,7 +229,7 @@ export type AddLinkedRecordInput = AddRecordInput & {
 
 export const SearchTicketsInput = Schema.Struct({
   cursor: Schema.optional(Schema.String),
-  limit: Schema.optional(Schema.Number),
+  limit: Schema.optional(PositiveInteger),
   repositoryIds: Schema.optional(Schema.Array(Schema.String)),
   text: Schema.String,
 });
@@ -276,7 +282,7 @@ export const CreateDraftInput = Schema.Struct({
   assignee: Schema.optional(Schema.NullOr(Schema.String)),
   body: Schema.optional(Schema.String),
   dueDate: Schema.optional(Schema.NullOr(Schema.String)),
-  estimate: Schema.optional(Schema.NullOr(Schema.Union([Schema.Number, Schema.String]))),
+  estimate: Schema.optional(NullableEstimateValue),
   externalLinks: Schema.optional(Schema.Array(ExternalLinkSchema)),
   labels: Schema.optional(StringList),
   parent: Schema.optional(Schema.NullOr(Schema.String)),
@@ -343,7 +349,7 @@ export type UpdateIssueRequestInput = typeof UpdateIssueRequestInput.Type;
 export const UserProfileQuery = Schema.Struct({
   cursor: Schema.optional(Schema.String),
   disabled: Schema.optional(Schema.Boolean),
-  limit: Schema.optional(Schema.Number),
+  limit: Schema.optional(PositiveInteger),
   text: Schema.optional(Schema.String),
 });
 export type UserProfileQuery = DatabaseUserProfileQuery;
@@ -362,7 +368,7 @@ export type UpsertUserInput = CreateOrUpdateUserProfileInput;
 export const LabelDefinitionQuery = Schema.Struct({
   archived: Schema.optional(Schema.Boolean),
   cursor: Schema.optional(Schema.String),
-  limit: Schema.optional(Schema.Number),
+  limit: Schema.optional(PositiveInteger),
   text: Schema.optional(Schema.String),
 });
 export type LabelDefinitionQuery = DatabaseLabelDefinitionQuery;
@@ -408,7 +414,7 @@ const SavedViewDisplay = Schema.Struct({
 export const SavedViewQuery = Schema.Struct({
   cursor: Schema.optional(Schema.String),
   kind: Schema.optional(SavedViewKind),
-  limit: Schema.optional(Schema.Number),
+  limit: Schema.optional(PositiveInteger),
   pinned: Schema.optional(Schema.Boolean),
   text: Schema.optional(Schema.String),
 });
@@ -461,7 +467,7 @@ export const IssueTemplateQuery = Schema.Struct({
   active: Schema.optional(Schema.Boolean),
   cursor: Schema.optional(Schema.String),
   kind: Schema.optional(IssueTemplateKind),
-  limit: Schema.optional(Schema.Number),
+  limit: Schema.optional(PositiveInteger),
   text: Schema.optional(Schema.String),
 });
 export type IssueTemplateQuery = DatabaseIssueTemplateQuery;

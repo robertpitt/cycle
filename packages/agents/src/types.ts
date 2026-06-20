@@ -1,10 +1,23 @@
-export type AgentProviderId = "codex" | "claude" | "opencode";
+import type {
+  AgentCapabilities as ContractAgentCapabilities,
+  AgentHarnessStatus as ContractAgentHarnessStatus,
+  AgentProvider as ContractAgentProvider,
+  AgentProviderId as ContractAgentProviderId,
+  AgentProviderProfile as ContractAgentProviderProfile,
+  AgentWorkJobType as ContractAgentWorkJobType,
+  DetectedAgentProvider as ContractDetectedAgentProvider,
+  JsonObject as ContractJsonObject,
+  JsonValue as ContractJsonValue,
+} from "@cycle/contracts/schemas";
+import type { Schema } from "effect";
 
-export type AgentProvider = AgentProviderId;
+export type AgentProviderId = ContractAgentProviderId;
+
+export type AgentProvider = ContractAgentProvider;
 
 export type JsonPrimitive = string | number | boolean | null;
-export type JsonValue = JsonPrimitive | JsonValue[] | { readonly [key: string]: JsonValue };
-export type JsonObject = { readonly [key: string]: JsonValue };
+export type JsonValue = ContractJsonValue;
+export type JsonObject = ContractJsonObject;
 export type JsonSchema = Record<string, unknown>;
 
 export type AgentRuntimeMode = "read-only" | "workspace-write" | "full-access";
@@ -14,49 +27,13 @@ export type AgentModelRef = {
   readonly id: string;
 };
 
-export type AgentWorkJobType =
-  | "chat"
-  | "quick_action"
-  | "comment_response"
-  | "review_issue"
-  | "draft_issue"
-  | "expand_issue"
-  | "split_issue"
-  | "plan_epic"
-  | "implement_issue"
-  | "review_implementation";
+export type AgentWorkJobType = ContractAgentWorkJobType;
 
-export type AgentCapabilities = {
-  readonly provider: AgentProvider;
-  readonly streaming: boolean;
-  readonly structuredOutput: boolean;
-  readonly sessionPersistence: "application" | "provider-local" | "provider-server";
-  readonly workspace: "none" | "read" | "write" | "provider-defined";
-  readonly supportedJobTypes: readonly AgentWorkJobType[];
-  readonly supports: {
-    readonly abort: boolean;
-    readonly artifacts: boolean;
-    readonly fileChanges: boolean;
-    readonly mcp: boolean;
-    readonly toolEvents: boolean;
-    readonly usage: boolean;
-  };
-};
+export type AgentCapabilities = ContractAgentCapabilities;
 
-export type AgentHarnessStatus = "available" | "missing" | "degraded" | "disabled" | "unsupported";
+export type AgentHarnessStatus = ContractAgentHarnessStatus;
 
-export type AgentProviderProfile = {
-  readonly provider: AgentProviderId;
-  readonly displayName: string;
-  readonly executableName: string;
-  readonly executablePath?: string;
-  readonly status: AgentHarnessStatus;
-  readonly capabilities: AgentCapabilities;
-  readonly checkedAt: string;
-  readonly message?: string;
-  readonly models: readonly string[];
-  readonly configuration: JsonObject;
-};
+export type AgentProviderProfile = ContractAgentProviderProfile;
 
 export type AgentProviderDefinition = {
   readonly executable: string;
@@ -64,15 +41,7 @@ export type AgentProviderDefinition = {
   readonly name: string;
 };
 
-export type DetectedAgentProvider = {
-  readonly capabilities?: AgentCapabilities;
-  readonly detectedAt: string;
-  readonly executable: string;
-  readonly executablePath?: string;
-  readonly id: AgentProviderId;
-  readonly name: string;
-  readonly status: "available" | "missing";
-};
+export type DetectedAgentProvider = ContractDetectedAgentProvider;
 
 export type AgentHarness = {
   readonly capabilities: AgentCapabilities;
@@ -180,16 +149,24 @@ export type AgentTextPart = {
   readonly text: string;
 };
 
+type AgentJsonSchemaResponseFormatBase = {
+  readonly type: "json_schema";
+  readonly name?: string;
+  readonly schema: JsonSchema;
+};
+
 export type AgentResponseFormat<TStructured = unknown> =
   | {
       readonly type: "text";
     }
-  | {
-      readonly type: "json_schema";
-      readonly name?: string;
-      readonly schema: JsonSchema;
-      readonly parse?: (text: string) => TStructured;
-    };
+  | (AgentJsonSchemaResponseFormatBase & {
+      readonly effectSchema: Schema.Codec<TStructured>;
+      readonly parse?: (text: string) => unknown;
+    })
+  | (AgentJsonSchemaResponseFormatBase & {
+      readonly effectSchema?: undefined;
+      readonly parse: (text: string) => TStructured;
+    });
 
 export type AgentMcpAttachment =
   | {

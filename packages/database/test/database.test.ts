@@ -16,6 +16,7 @@ import {
   type CreateTicketInput,
   type LinkedRecord,
 } from "../src/index.ts";
+import { Projection } from "../src/store/Projection.ts";
 import { assert, describe, it } from "./effect-vitest.ts";
 
 const makeStore = (database: string) =>
@@ -195,6 +196,44 @@ const appendExternalComment = (
   });
 
 describe("@cycle/database", () => {
+  it("schema-validates persisted projection document JSON during hydration", () => {
+    const projection = new Projection(":memory:");
+    const now = "2026-06-20T00:00:00.000Z";
+
+    try {
+      projection.db
+        .prepare(
+          `INSERT INTO users (
+            repository_id, user_id, snapshot_id, email, display_name, source,
+            created_at, updated_at, profile_json, schema_version
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          "projection-schema-repo",
+          "user-1",
+          "snapshot-1",
+          "user@example.invalid",
+          "User One",
+          "manual",
+          now,
+          now,
+          JSON.stringify({
+            createdAt: now,
+            displayName: "User One",
+            id: "user-1",
+            schemaVersion: 1,
+            source: "manual",
+            updatedAt: now,
+          }),
+          1,
+        );
+
+      assert.throws(() => projection.getUser("projection-schema-repo", "user-1"), /email/u);
+    } finally {
+      projection.close();
+    }
+  });
+
   it.effect(
     "writes tickets to GitDB, resyncs SQLite before returning, and queries multiple repositories",
     () =>
@@ -1304,6 +1343,13 @@ describe("@cycle/database", () => {
       const labels = yield* database.listLabels("linear-metadata-repo", {
         archived: false,
       });
+      const firstLabelPage = yield* database.listLabels("linear-metadata-repo", {
+        limit: 1,
+      });
+      const invalidCursorLabelPage = yield* database.listLabels("linear-metadata-repo", {
+        cursor: Buffer.from(JSON.stringify({ offset: -1 }), "utf8").toString("base64url"),
+        limit: 1,
+      });
       const views = yield* database.listViews("linear-metadata-repo", {
         pinned: true,
       });
@@ -1324,6 +1370,10 @@ describe("@cycle/database", () => {
       assert.strictEqual(initiativeUpdate.recordType, "initiative-update");
       assert.ok(labels.entries.some((entry) => entry.id === label.id));
       assert.ok(labels.entries.some((entry) => entry.id === "bug"));
+      assert.deepStrictEqual(
+        invalidCursorLabelPage.entries.map((entry) => entry.id),
+        firstLabelPage.entries.map((entry) => entry.id),
+      );
       assert.ok(views.entries.some((entry) => entry.id === view.id));
       assert.ok(views.entries.some((entry) => entry.id === "triage"));
       assert.deepStrictEqual(

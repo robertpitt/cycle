@@ -47,6 +47,18 @@ describe("workspace route helpers", () => {
         scope: "workspace",
       }),
     ).toBe("/settings");
+    expect(parseWorkspacePath("/settings/profile")).toEqual({
+      page: "settings",
+      scope: "workspace",
+      settingsSection: "profile",
+    });
+    expect(
+      toWorkspacePath({
+        page: "settings",
+        scope: "workspace",
+        settingsSection: "keyboard-shortcuts",
+      }),
+    ).toBe("/settings/keyboard-shortcuts");
   });
 
   it("round-trips repository issue paths", () => {
@@ -86,6 +98,7 @@ describe("workspace route helpers", () => {
     expect(parseWorkspacePath("/repositories/repo-a")).toBeUndefined();
     expect(parseWorkspacePath("/repositories/repo-a/views/view-1/issues")).toBeUndefined();
     expect(parseWorkspacePath("/repositories/repo-a/issues/ticket/extra")).toBeUndefined();
+    expect(parseWorkspacePath("/settings/profile/extra")).toBeUndefined();
     expect(parseWorkspacePath("/unknown")).toBeUndefined();
   });
 
@@ -134,12 +147,14 @@ describe("workspace route helpers", () => {
     expect(readStoredWorkspacePath(storage("/repositories/repo-a/issues/ticket-1"))).toBe(
       "/repositories/repo-a/issues/ticket-1",
     );
+    expect(readStoredWorkspacePath(storage("/settings/mcp-servers"))).toBe("/settings/mcp-servers");
     expect(readStoredWorkspacePath(storage("/not-workspace"))).toBeUndefined();
 
     const target = storage();
     writeStoredWorkspacePath(target, "/repositories/repo-a/history");
+    writeStoredWorkspacePath(target, "/settings/skills");
     writeStoredWorkspacePath(target, "/bad");
-    expect(target.values.get(lastWorkspaceRouteStorageKey)).toBe("/repositories/repo-a/history");
+    expect(target.values.get(lastWorkspaceRouteStorageKey)).toBe("/settings/skills");
   });
 
   it("chooses invalid repository fallback paths", () => {

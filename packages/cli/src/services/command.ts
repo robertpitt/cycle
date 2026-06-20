@@ -36,7 +36,7 @@ const writeSuccess = (
   json: boolean,
   output: CommandOutput,
 ): Effect.Effect<void> =>
-  Effect.promise(() =>
+  writeOutput(() =>
     runtime.writeStdout(json ? `${JSON.stringify(output.json)}\n` : `${output.human}\n`),
   );
 
@@ -45,7 +45,7 @@ export const writeFailure = (
   json: boolean,
   failure: CliFailure,
 ): Effect.Effect<void> =>
-  Effect.promise(() =>
+  writeOutput(() =>
     runtime.writeStderr(
       json
         ? `${JSON.stringify({
@@ -59,6 +59,12 @@ export const writeFailure = (
         : `${failure.code}: ${failure.message}\n`,
     ),
   );
+
+const writeOutput = (write: () => Promise<void>): Effect.Effect<void> =>
+  Effect.tryPromise({
+    try: write,
+    catch: () => undefined,
+  }).pipe(Effect.catch(() => Effect.void));
 
 export const optionToUndefined = <A>(option: {
   readonly _tag: string;

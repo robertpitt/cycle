@@ -1,4 +1,5 @@
-import type { CycleUseCase, UseCaseInput, UseCaseMeta, UseCaseName } from "./Types.ts";
+import type { CycleUseCase, UseCaseInput, UseCaseName } from "./Contracts.ts";
+import type { UseCaseMeta } from "./Types.ts";
 
 export const makeUseCase = <Name extends UseCaseName>(
   name: Name,

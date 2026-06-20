@@ -35,7 +35,7 @@ export type CycleMcpHttpServerHandle = {
   readonly server: HttpServer.HttpServer["Service"];
 };
 
-const mcpLogging = { packageName: "mcp" } as const;
+const mcpLogging = { packageName: "api" } as const;
 
 export const makeCycleMcpStdioLayer = (options: CycleMcpOptions): Layer.Layer<never, unknown> =>
   CycleMcpToolsLive.pipe(
@@ -94,7 +94,10 @@ export const startCycleMcpHttpServerEffect = (
     assertLoopback(host);
 
     const scope = yield* Scope.make("sequential");
-    const { createServer } = yield* Effect.promise(() => import("node:http"));
+    const { createServer } = yield* Effect.tryPromise({
+      try: () => import("node:http"),
+      catch: (cause) => cause,
+    });
     const routes = (
       Layer.mergeAll(
         makeCycleMcpHttpLayer(options),

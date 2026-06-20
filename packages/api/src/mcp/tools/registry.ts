@@ -80,6 +80,8 @@ import type {
   ViewListInput as ViewListInputType,
 } from "./schemas.ts";
 
+const StrictDecodeOptions = { onExcessProperty: "error" } as const;
+
 export type CycleMcpToolName =
   | "cycle_repository_list"
   | "cycle_repository_get"
@@ -439,7 +441,7 @@ export const callCycleMcpTool = (
     }
 
     const decoded = yield* Effect.try({
-      try: () => Schema.decodeUnknownSync(definition.inputSchema)(payload),
+      try: () => Schema.decodeUnknownSync(definition.inputSchema, StrictDecodeOptions)(payload),
       catch: (error) =>
         cycleMcpApiError({
           code: "INVALID_MCP_TOOL_INPUT",
@@ -462,11 +464,11 @@ export const callCycleMcpTool = (
     Effect.withSpan(`mcp.tool.${spanSegment(name)}`, {
       attributes: {
         "mcp.tool.name": name,
-        service: "@cycle/mcp",
+        service: "@cycle/api",
       },
     }),
     Effect.annotateLogs({
-      service: "@cycle/mcp",
+      service: "@cycle/api",
       tool: name,
     }),
   );
@@ -1041,7 +1043,7 @@ const apiRequest = <Input extends ToolContextInput, A extends Schema.Decoder<unk
     }
 
     const decoded = yield* Effect.try({
-      try: () => Schema.decodeUnknownSync(schema)(response.success),
+      try: () => Schema.decodeUnknownSync(schema, StrictDecodeOptions)(response.success),
       catch: (error) =>
         cycleMcpApiError({
           code: "INVALID_API_RESPONSE",
@@ -1142,14 +1144,32 @@ export const issueListSearchParams = (
   const params = new URLSearchParams();
   setParam(params, "page[cursor]", query.cursor);
   setParam(params, "page[limit]", query.limit);
+  setParam(params, "filter[archived]", query.archived);
+  setNullableParam(params, "filter[assignee]", query.assignee);
+  setParam(params, "filter[assignee][in]", query.assigneeIn?.join(","));
+  setParam(params, "filter[blocked]", query.blocked);
+  setParam(params, "filter[deleted]", query.deleted);
+  setParam(params, "filter[dueAfter]", query.dueAfter);
+  setParam(params, "filter[dueBefore]", query.dueBefore);
+  setParam(params, "filter[estimate]", query.estimate);
+  setParam(params, "filter[hasAssignee]", query.hasAssignee);
+  setParam(params, "filter[hasDueDate]", query.hasDueDate);
+  setParam(params, "filter[hasEstimate]", query.hasEstimate);
+  setParam(params, "filter[hasLabels]", query.hasLabels);
   setParam(params, "filter[label]", query.label);
   setParam(params, "filter[label][in]", query.labelIn?.join(","));
+  setNullableParam(params, "filter[parent]", query.parent);
   setParam(params, "filter[priority]", query.priority);
   setParam(params, "filter[priority][in]", query.priorityIn?.join(","));
   setParam(params, "filter[repository][in]", query.repositoryIds?.join(","));
+  setParam(params, "filter[staleBefore]", query.staleBefore);
   setParam(params, "filter[status]", query.status);
   setParam(params, "filter[status][in]", query.statusIn?.join(","));
   setParam(params, "filter[type]", query.type);
+  setParam(params, "filter[updatedAfter]", query.updatedAfter);
+  setParam(params, "filter[updatedBefore]", query.updatedBefore);
+  setParam(params, "sort[field]", query.orderBy);
+  setParam(params, "sort[direction]", query.orderDirection);
   setParam(params, "q", query.text);
 
   return params;
@@ -1258,7 +1278,7 @@ const decodeApiEnvelope = <A extends Schema.Decoder<unknown>>(
 ) =>
   Effect.runSync(
     Effect.try({
-      try: () => Schema.decodeUnknownSync(schema)(value),
+      try: () => Schema.decodeUnknownSync(schema, StrictDecodeOptions)(value),
       catch: (error) =>
         cycleMcpApiError({
           code: "INVALID_API_RESPONSE",
@@ -1279,6 +1299,11 @@ const withQuery = (path: string, params: URLSearchParams): string => {
 const setParam = (params: URLSearchParams, key: string, value: unknown): void => {
   if (value === undefined || value === null) return;
   params.set(key, String(value));
+};
+
+const setNullableParam = (params: URLSearchParams, key: string, value: unknown): void => {
+  if (value === undefined) return;
+  params.set(key, value === null ? "null" : String(value));
 };
 
 const stripUndefined = (input: Readonly<Record<string, unknown>>): Record<string, unknown> =>

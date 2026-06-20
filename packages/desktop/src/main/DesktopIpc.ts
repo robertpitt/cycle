@@ -1,6 +1,7 @@
 import { dialog, ipcMain, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron";
-import { Effect, FileSystem } from "effect";
+import { Effect, FileSystem, Schema } from "effect";
 import {
+  ApiConnection,
   completeOnboardingChannel,
   clearCacheChannel,
   detectAgentProvidersChannel,
@@ -9,60 +10,50 @@ import {
   getBackendLogPathChannel,
   getBootstrapStatusChannel,
   getThemeStateChannel,
-  isCompleteOnboardingInput,
-  isInitializeRepositoryPathInput,
-  isOpenExternalRequest,
-  isProfileUpdateInput,
-  isRemoveRepositoryRequest,
-  isSetThemePreferenceRequest,
-  isUpdateRepositoryPreferencesInput,
-  isUpsertRepositoryPathInput,
   initializeRepositoryPathChannel,
   listRepositoriesChannel,
+  OpenExternalRequest,
   openExternalChannel,
+  RemoveRepositoryRequest,
   removeRepositoryChannel,
   selectRepositoryFolderChannel,
+  SetThemePreferenceRequest,
   setThemePreferenceChannel,
   themeStateChangedChannel,
   updateRepositoryPreferencesChannel,
   updateProfileChannel,
   upsertRepositoryPathChannel,
-  type ApiConnection,
-  type OpenExternalRequest,
   type ElectronThemeState,
 } from "../ipc/index.ts";
 import { DesktopRuntime, type DesktopRuntimeService } from "../platform/DesktopRuntime.ts";
 import { electronSecurityError, type ElectronError } from "../platform/ElectronError.ts";
 import { ElectronShell } from "../platform/ElectronShell.ts";
-import { AppConfigError, DEFAULT_API_PORT, type ApiConfig } from "../shared/AppConfig.ts";
-import { AgentProviderDetector } from "@cycle/agents/detection";
-import type { ThemePreference } from "../shared/AppConfig.ts";
-import { DesktopBootstrap } from "../shared/Bootstrap.ts";
+import { ElectronThemeState as ElectronThemeStateSchema } from "../platform/ElectronTheme.ts";
 import {
+  AppConfigError,
+  AppConfigState,
+  DEFAULT_API_PORT,
+  ProfileConfig,
+  RepositoryRecord,
+  type ApiConfig,
+} from "../shared/AppConfig.ts";
+import { AgentProviderDetector } from "@cycle/agents/detection";
+import { DetectedAgentProvider } from "../shared/AgentProviders.ts";
+import { BootstrapStatus, DesktopBootstrap } from "../shared/Bootstrap.ts";
+import {
+  InitializeRepositoryPathInput,
   LocalWorkspace,
-  type InitializeRepositoryPathInput,
+  SelectRepositoryFolderResult,
   type LocalWorkspaceService,
-  type SelectRepositoryFolderResult,
-  type UpdateRepositoryPreferencesInput,
-  type UpsertRepositoryPathInput,
+  UpdateRepositoryPreferencesInput,
+  UpsertRepositoryPathInput,
 } from "../shared/LocalWorkspace.ts";
-import type { CompleteOnboardingInput, ProfileUpdateInput } from "../shared/Profile.ts";
+import { CompleteOnboardingInput, ProfileUpdateInput } from "../shared/Profile.ts";
 import { desktopApiRuntimeDiscoveryPath } from "./DesktopApi.ts";
+import { parseRuntimeBaseUrlFromDiscoveryText } from "./DesktopApiRuntimeDiscovery.ts";
 import { currentDesktopWindow } from "./DesktopWindowLive.ts";
 import { DesktopLogger } from "./DesktopLoggerLive.ts";
 import { ElectronPreferences } from "./ElectronPreferences.ts";
-
-type SetThemePreferenceRequest = {
-  readonly preference: ThemePreference;
-};
-
-type RemoveRepositoryRequest = {
-  readonly id: string;
-};
-
-type DesktopApiRuntimeFile = {
-  readonly baseUrl?: unknown;
-};
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -122,103 +113,130 @@ const validateInvokeSender = (
 const decodeOpenExternalRequest = (
   value: unknown,
 ): Effect.Effect<OpenExternalRequest, ElectronError> => {
-  if (!isOpenExternalRequest(value)) {
-    return Effect.fail(
-      electronSecurityError("ipc.openExternal", "Expected { targetUrl: string } from renderer."),
-    );
-  }
+  const decoded = decodeSchema(
+    OpenExternalRequest,
+    "ipc.openExternal",
+    "Expected { targetUrl: string } from renderer.",
+  )(value);
 
-  return Effect.try({
-    try: () => {
-      const url = new URL(value.targetUrl);
-      if (!["https:", "http:", "mailto:"].includes(url.protocol)) {
-        throw new Error(`Unsupported protocol ${url.protocol}`);
-      }
-      return { targetUrl: url.toString() };
-    },
+  return decoded.pipe(
+    Effect.flatMap((request) =>
+      Effect.try({
+        try: () => {
+          const url = new URL(request.targetUrl);
+          if (!["https:", "http:", "mailto:"].includes(url.protocol)) {
+            throw new Error(`Unsupported protocol ${url.protocol}`);
+          }
+          return { targetUrl: url.toString() };
+        },
+        catch: (cause) =>
+          electronSecurityError(
+            "ipc.openExternal",
+            "Renderer requested an invalid external URL.",
+            cause,
+          ),
+      }),
+    ),
+  );
+};
+
+const StrictDecodeOptions = { onExcessProperty: "error" } as const;
+
+const decodeSchema =
+  <S extends Schema.Top>(schema: S, category: string, message: string) =>
+  (value: unknown): Effect.Effect<S["Type"], ElectronError> =>
+    Effect.try({
+      try: () =>
+        (
+          Schema.decodeUnknownSync(schema as never, StrictDecodeOptions) as (
+            input: unknown,
+          ) => S["Type"]
+        )(value),
+      catch: (cause) => electronSecurityError(category, message, cause),
+    });
+
+const decodeIpcOutput = <S extends Schema.Top>(
+  schema: S,
+  channel: string,
+  value: unknown,
+): Effect.Effect<S["Type"], ElectronError> =>
+  Effect.try({
+    try: () =>
+      (
+        Schema.decodeUnknownSync(schema as never, StrictDecodeOptions) as (
+          input: unknown,
+        ) => S["Type"]
+      )(value),
     catch: (cause) =>
       electronSecurityError(
-        "ipc.openExternal",
-        "Renderer requested an invalid external URL.",
+        "ipc.response",
+        `Main process produced an invalid response for ${channel}.`,
         cause,
       ),
   });
-};
 
 const decodeProfileUpdateInput = (
   value: unknown,
 ): Effect.Effect<ProfileUpdateInput, ElectronError> =>
-  isProfileUpdateInput(value)
-    ? Effect.succeed(value)
-    : Effect.fail(
-        electronSecurityError("ipc.profile", "Expected profile update input from renderer."),
-      );
+  decodeSchema(
+    ProfileUpdateInput,
+    "ipc.profile",
+    "Expected profile update input from renderer.",
+  )(value);
 
 const decodeCompleteOnboardingInput = (
   value: unknown,
 ): Effect.Effect<CompleteOnboardingInput, ElectronError> =>
-  isCompleteOnboardingInput(value)
-    ? Effect.succeed(value)
-    : Effect.fail(
-        electronSecurityError("ipc.profile", "Expected onboarding completion input from renderer."),
-      );
+  decodeSchema(
+    CompleteOnboardingInput,
+    "ipc.profile",
+    "Expected onboarding completion input from renderer.",
+  )(value);
 
 const decodeSetThemePreferenceRequest = (
   value: unknown,
 ): Effect.Effect<SetThemePreferenceRequest, ElectronError> =>
-  isSetThemePreferenceRequest(value)
-    ? Effect.succeed(value)
-    : Effect.fail(
-        electronSecurityError("ipc.theme", "Expected theme preference input from renderer."),
-      );
+  decodeSchema(
+    SetThemePreferenceRequest,
+    "ipc.theme",
+    "Expected theme preference input from renderer.",
+  )(value);
 
 const decodeUpsertRepositoryPathInput = (
   value: unknown,
 ): Effect.Effect<UpsertRepositoryPathInput, ElectronError> =>
-  isUpsertRepositoryPathInput(value)
-    ? Effect.succeed(value)
-    : Effect.fail(
-        electronSecurityError(
-          "ipc.localWorkspace",
-          "Expected repository path input from renderer.",
-        ),
-      );
+  decodeSchema(
+    UpsertRepositoryPathInput,
+    "ipc.localWorkspace",
+    "Expected repository path input from renderer.",
+  )(value);
 
 const decodeInitializeRepositoryPathInput = (
   value: unknown,
 ): Effect.Effect<InitializeRepositoryPathInput, ElectronError> =>
-  isInitializeRepositoryPathInput(value)
-    ? Effect.succeed(value)
-    : Effect.fail(
-        electronSecurityError(
-          "ipc.localWorkspace",
-          "Expected repository path input from renderer.",
-        ),
-      );
+  decodeSchema(
+    InitializeRepositoryPathInput,
+    "ipc.localWorkspace",
+    "Expected repository path input from renderer.",
+  )(value);
 
 const decodeRemoveRepositoryRequest = (
   value: unknown,
 ): Effect.Effect<RemoveRepositoryRequest, ElectronError> =>
-  isRemoveRepositoryRequest(value)
-    ? Effect.succeed(value)
-    : Effect.fail(
-        electronSecurityError(
-          "ipc.localWorkspace",
-          "Expected repository removal input from renderer.",
-        ),
-      );
+  decodeSchema(
+    RemoveRepositoryRequest,
+    "ipc.localWorkspace",
+    "Expected repository removal input from renderer.",
+  )(value);
 
 const decodeUpdateRepositoryPreferencesInput = (
   value: unknown,
 ): Effect.Effect<UpdateRepositoryPreferencesInput, ElectronError> =>
-  isUpdateRepositoryPreferencesInput(value)
-    ? Effect.succeed(value)
-    : Effect.fail(
-        electronSecurityError(
-          "ipc.localWorkspace",
-          "Expected repository preferences input from renderer.",
-        ),
-      );
+  decodeSchema(
+    UpdateRepositoryPreferencesInput,
+    "ipc.localWorkspace",
+    "Expected repository preferences input from renderer.",
+  )(value);
 
 const decodeEmptyRequest = (value: unknown): Effect.Effect<void, ElectronError> =>
   value === undefined
@@ -235,13 +253,9 @@ const readDesktopApiRuntimeBaseUrl = (): Effect.Effect<
 > =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const parsed = JSON.parse(
+    return parseRuntimeBaseUrlFromDiscoveryText(
       yield* fs.readFileString(desktopApiRuntimeDiscoveryPath(), "utf8"),
-    ) as DesktopApiRuntimeFile;
-
-    return typeof parsed.baseUrl === "string" && parsed.baseUrl.length > 0
-      ? parsed.baseUrl.replace(/\/+$/u, "")
-      : undefined;
+    );
   }).pipe(Effect.catch(() => Effect.succeed(undefined)));
 
 const selectRepositoryFolder = (
@@ -301,6 +315,7 @@ const registerIpcHandler = <A, B>(
   channel: string,
   decode: (value: unknown) => Effect.Effect<A, ElectronError>,
   handle: (request: A) => Effect.Effect<B, unknown>,
+  outputSchema?: Schema.Top,
 ) =>
   Effect.acquireRelease(
     Effect.sync(() => {
@@ -311,7 +326,9 @@ const registerIpcHandler = <A, B>(
             Effect.gen(function* () {
               yield* validateInvokeSender(event, channel);
               const request = yield* decode(payload);
-              return yield* handle(request);
+              const output = yield* handle(request);
+              if (outputSchema === undefined) return output;
+              return yield* decodeIpcOutput(outputSchema, channel, output);
             }),
           )
           .catch((error: unknown) => {
@@ -350,45 +367,64 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
   yield* registerIpcHandler(runtime, openExternalChannel, decodeOpenExternalRequest, (request) =>
     shell.openExternal(request.targetUrl),
   );
-  yield* registerIpcHandler(runtime, getAppConfigChannel, decodeEmptyRequest, () =>
-    preferences.read(),
+  yield* registerIpcHandler(
+    runtime,
+    getAppConfigChannel,
+    decodeEmptyRequest,
+    () => preferences.read(),
+    AppConfigState,
   );
-  yield* registerIpcHandler(runtime, getApiConnectionChannel, decodeEmptyRequest, () =>
-    Effect.gen(function* () {
-      const config = yield* preferences.read();
-      const runtimeBaseUrl = yield* readDesktopApiRuntimeBaseUrl().pipe(
-        Effect.provideService(FileSystem.FileSystem, fs),
-      );
-
-      if (!config.api.enabled) {
-        return yield* Effect.fail(
-          electronSecurityError("ipc.apiConnection", "The local Cycle API is disabled."),
+  yield* registerIpcHandler(
+    runtime,
+    getApiConnectionChannel,
+    decodeEmptyRequest,
+    () =>
+      Effect.gen(function* () {
+        const config = yield* preferences.read();
+        const runtimeBaseUrl = yield* readDesktopApiRuntimeBaseUrl().pipe(
+          Effect.provideService(FileSystem.FileSystem, fs),
         );
-      }
 
-      return {
-        baseUrl: runtimeBaseUrl ?? apiBaseUrlFromConfig(config.api),
-        token: config.api.staticToken,
-      } satisfies ApiConnection;
-    }),
+        if (!config.api.enabled) {
+          return yield* Effect.fail(
+            electronSecurityError("ipc.apiConnection", "The local Cycle API is disabled."),
+          );
+        }
+
+        return {
+          baseUrl: runtimeBaseUrl ?? apiBaseUrlFromConfig(config.api),
+          token: config.api.staticToken,
+        } satisfies ApiConnection;
+      }),
+    ApiConnection,
   );
   yield* registerIpcHandler(
     runtime,
     getThemeStateChannel,
     decodeEmptyRequest,
     () => preferences.themeState,
+    ElectronThemeStateSchema,
   );
   yield* registerIpcHandler(
     runtime,
     getBackendLogPathChannel,
     decodeEmptyRequest,
     () => logger.path,
+    Schema.String,
   );
-  yield* registerIpcHandler(runtime, getBootstrapStatusChannel, decodeEmptyRequest, () =>
-    bootstrap.status(),
+  yield* registerIpcHandler(
+    runtime,
+    getBootstrapStatusChannel,
+    decodeEmptyRequest,
+    () => bootstrap.status(),
+    BootstrapStatus,
   );
-  yield* registerIpcHandler(runtime, updateProfileChannel, decodeProfileUpdateInput, (request) =>
-    preferences.updateProfile(request),
+  yield* registerIpcHandler(
+    runtime,
+    updateProfileChannel,
+    decodeProfileUpdateInput,
+    (request) => preferences.updateProfile(request),
+    ProfileConfig,
   );
   yield* registerIpcHandler(
     runtime,
@@ -401,6 +437,7 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
         yield* broadcastThemeState(state);
         return next;
       }),
+    AppConfigState,
   );
   yield* registerIpcHandler(
     runtime,
@@ -413,41 +450,58 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
         yield* broadcastThemeState(state);
         return next;
       }),
+    AppConfigState,
   );
   yield* registerIpcHandler(runtime, clearCacheChannel, decodeEmptyRequest, () =>
     preferences.clearCache(),
   );
-  yield* registerIpcHandler(runtime, listRepositoriesChannel, decodeEmptyRequest, () =>
-    localWorkspace.listRepositories(),
+  yield* registerIpcHandler(
+    runtime,
+    listRepositoriesChannel,
+    decodeEmptyRequest,
+    () => localWorkspace.listRepositories(),
+    Schema.Array(RepositoryRecord),
   );
-  yield* registerIpcHandler(runtime, selectRepositoryFolderChannel, decodeEmptyRequest, () =>
-    selectRepositoryFolder(localWorkspace),
+  yield* registerIpcHandler(
+    runtime,
+    selectRepositoryFolderChannel,
+    decodeEmptyRequest,
+    () => selectRepositoryFolder(localWorkspace),
+    SelectRepositoryFolderResult,
   );
   yield* registerIpcHandler(
     runtime,
     upsertRepositoryPathChannel,
     decodeUpsertRepositoryPathInput,
     (request) => localWorkspace.upsertRepositoryPath(request),
+    RepositoryRecord,
   );
   yield* registerIpcHandler(
     runtime,
     initializeRepositoryPathChannel,
     decodeInitializeRepositoryPathInput,
     (request) => localWorkspace.initializeRepositoryPath(request),
+    RepositoryRecord,
   );
   yield* registerIpcHandler(
     runtime,
     removeRepositoryChannel,
     decodeRemoveRepositoryRequest,
     (request) => localWorkspace.removeRepository(request.id),
+    Schema.Array(RepositoryRecord),
   );
   yield* registerIpcHandler(
     runtime,
     updateRepositoryPreferencesChannel,
     decodeUpdateRepositoryPreferencesInput,
     (request) => preferences.updateRepositoryPreferences(request),
+    Schema.NullOr(RepositoryRecord),
   );
-  yield* registerIpcHandler(runtime, detectAgentProvidersChannel, decodeEmptyRequest, () =>
-    agentProviderDetector.detect(),
+  yield* registerIpcHandler(
+    runtime,
+    detectAgentProvidersChannel,
+    decodeEmptyRequest,
+    () => agentProviderDetector.detect(),
+    Schema.Array(DetectedAgentProvider),
   );
 });

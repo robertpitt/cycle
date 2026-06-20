@@ -1,15 +1,27 @@
-import { DraftCommit, DraftCreate, DraftUpdate } from "@cycle/contracts";
+import { ContractSchemas, DraftCommit, DraftCreate, DraftUpdate } from "@cycle/contracts";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
-import { meta, requestIdFromHeaders, resourceResponse, runUseCase, scoped } from "../shared.ts";
+import {
+  decodeHttpValue,
+  meta,
+  requestIdFromHeaders,
+  resourceResponse,
+  runUseCase,
+  scoped,
+} from "../shared.ts";
 
 export const withDraftHandlers = (handlers: any) =>
   handlers
     .handle("createDraft", ({ params, payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
+        const input = yield* decodeHttpValue(ContractSchemas.CreateDraftInput, payload, requestId, {
+          code: "INVALID_DRAFT_PAYLOAD",
+          message: "Invalid draft payload.",
+        });
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          DraftCreate(scoped(params.repositoryId, payload as any), meta(requestId)),
+          DraftCreate(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -19,14 +31,23 @@ export const withDraftHandlers = (handlers: any) =>
     .handle("updateDraft", ({ params, payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
+        const input = yield* decodeHttpValue(
+          ContractSchemas.UpdateDraftInput,
+          {
+            ...(typeof payload === "object" && payload !== null && !Array.isArray(payload)
+              ? payload
+              : {}),
+            draftId: params.draftId,
+          },
+          requestId,
+          {
+            code: "INVALID_DRAFT_PAYLOAD",
+            message: "Invalid draft payload.",
+          },
+        );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          DraftUpdate(
-            scoped(params.repositoryId, {
-              ...payload,
-              draftId: params.draftId,
-            }),
-            meta(requestId),
-          ),
+          DraftUpdate(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 

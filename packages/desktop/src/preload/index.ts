@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import { Schema } from "effect";
 import {
+  ApiConnection,
   clearCacheChannel,
   completeOnboardingChannel,
   detectAgentProvidersChannel,
@@ -8,18 +10,14 @@ import {
   getBackendLogPathChannel,
   getBootstrapStatusChannel,
   getThemeStateChannel,
-  isCompleteOnboardingInput,
-  isElectronThemeState,
-  isInitializeRepositoryPathInput,
-  isProfileUpdateInput,
-  isThemePreferenceValue,
-  isUpdateRepositoryPreferencesInput,
-  isUpsertRepositoryPathInput,
   initializeRepositoryPathChannel,
   listRepositoriesChannel,
+  OpenExternalRequest,
   openExternalChannel,
+  RemoveRepositoryRequest,
   removeRepositoryChannel,
   selectRepositoryFolderChannel,
+  SetThemePreferenceRequest,
   setThemePreferenceChannel,
   themeStateChangedChannel,
   updateRepositoryPreferencesChannel,
@@ -27,59 +25,108 @@ import {
   upsertRepositoryPathChannel,
   type CycleDesktopBridge,
 } from "../ipc/index.ts";
+import { ElectronThemeState } from "../platform/ElectronTheme.ts";
+import {
+  AppConfigState,
+  ProfileConfig,
+  RepositoryRecord,
+  ThemePreference,
+} from "../shared/AppConfig.ts";
+import { DetectedAgentProvider } from "../shared/AgentProviders.ts";
+import { BootstrapStatus } from "../shared/Bootstrap.ts";
+import { CompleteOnboardingInput, ProfileUpdateInput } from "../shared/Profile.ts";
+import {
+  InitializeRepositoryPathInput,
+  SelectRepositoryFolderResult,
+  UpdateRepositoryPreferencesInput,
+  UpsertRepositoryPathInput,
+} from "../shared/LocalWorkspace.ts";
+
+const StrictDecodeOptions = { onExcessProperty: "error" } as const;
+
+const decodeValue = <S extends Schema.Top>(
+  schema: S,
+  value: unknown,
+  message: string,
+): S["Type"] => {
+  try {
+    return (
+      Schema.decodeUnknownSync(schema as never, StrictDecodeOptions) as (
+        input: unknown,
+      ) => S["Type"]
+    )(value);
+  } catch (error) {
+    throw new TypeError(`${message}: ${String(error)}`);
+  }
+};
+
+const invoke = async <S extends Schema.Top>(
+  channel: string,
+  outputSchema: S,
+  payload?: unknown,
+): Promise<S["Type"]> => {
+  const output: unknown = await ipcRenderer.invoke(channel, payload);
+  return decodeValue(
+    outputSchema,
+    output,
+    `main process returned an invalid response for ${channel}`,
+  );
+};
 
 const desktopBridge: CycleDesktopBridge = {
   completeOnboarding: async (input) => {
-    if (!isCompleteOnboardingInput(input)) {
-      throw new TypeError("input must include displayName, email, and themePreference.");
-    }
+    const request = decodeValue(
+      CompleteOnboardingInput,
+      input,
+      "input must include displayName, email, and themePreference",
+    );
 
-    return ipcRenderer.invoke(completeOnboardingChannel, input);
+    return invoke(completeOnboardingChannel, AppConfigState, request);
   },
   clearCache: async () => ipcRenderer.invoke(clearCacheChannel),
-  detectAgentProviders: async () => ipcRenderer.invoke(detectAgentProvidersChannel),
-  getApiConnection: async () => ipcRenderer.invoke(getApiConnectionChannel),
-  getBackendLogPath: async () => ipcRenderer.invoke(getBackendLogPathChannel),
-  getBootstrapStatus: async () => ipcRenderer.invoke(getBootstrapStatusChannel),
-  getAppConfig: async () => ipcRenderer.invoke(getAppConfigChannel),
-  getThemeState: async () => {
-    const state: unknown = await ipcRenderer.invoke(getThemeStateChannel);
-    if (!isElectronThemeState(state)) {
-      throw new TypeError("main process returned an invalid theme state.");
-    }
-
-    return state;
-  },
+  detectAgentProviders: async () =>
+    invoke(detectAgentProvidersChannel, Schema.Array(DetectedAgentProvider)),
+  getApiConnection: async () => invoke(getApiConnectionChannel, ApiConnection),
+  getBackendLogPath: async () => invoke(getBackendLogPathChannel, Schema.String),
+  getBootstrapStatus: async () => invoke(getBootstrapStatusChannel, BootstrapStatus),
+  getAppConfig: async () => invoke(getAppConfigChannel, AppConfigState),
+  getThemeState: async () => invoke(getThemeStateChannel, ElectronThemeState),
   initializeRepositoryPath: async (input) => {
-    if (!isInitializeRepositoryPathInput(input)) {
-      throw new TypeError("input must include a repository path.");
-    }
+    const request = decodeValue(
+      InitializeRepositoryPathInput,
+      input,
+      "input must include a repository path",
+    );
 
-    return ipcRenderer.invoke(initializeRepositoryPathChannel, input);
+    return invoke(initializeRepositoryPathChannel, RepositoryRecord, request);
   },
-  listRepositories: async () => ipcRenderer.invoke(listRepositoriesChannel),
+  listRepositories: async () => invoke(listRepositoriesChannel, Schema.Array(RepositoryRecord)),
   openExternal: async (targetUrl) => {
-    if (typeof targetUrl !== "string") {
-      throw new TypeError("targetUrl must be a string.");
-    }
+    const request = decodeValue(OpenExternalRequest, { targetUrl }, "targetUrl must be a string");
 
-    await ipcRenderer.invoke(openExternalChannel, { targetUrl });
+    await ipcRenderer.invoke(openExternalChannel, request);
   },
   platform: process.platform,
   removeRepository: async (id) => {
-    if (typeof id !== "string") {
-      throw new TypeError("id must be a string.");
-    }
+    const request = decodeValue(RemoveRepositoryRequest, { id }, "id must be a string");
 
-    return ipcRenderer.invoke(removeRepositoryChannel, { id });
+    return invoke(removeRepositoryChannel, Schema.Array(RepositoryRecord), request);
   },
-  selectRepositoryFolder: async () => ipcRenderer.invoke(selectRepositoryFolderChannel),
+  selectRepositoryFolder: async () =>
+    invoke(selectRepositoryFolderChannel, SelectRepositoryFolderResult),
   setThemePreference: async (preference) => {
-    if (!isThemePreferenceValue(preference)) {
-      throw new TypeError("preference must be light, dark, or system.");
-    }
+    const nextPreference = decodeValue(
+      ThemePreference,
+      preference,
+      "preference must be light, dark, or system",
+    );
+    const request = decodeValue(
+      SetThemePreferenceRequest,
+      { preference: nextPreference },
+      "preference must be light, dark, or system",
+    );
 
-    return ipcRenderer.invoke(setThemePreferenceChannel, { preference });
+    return invoke(setThemePreferenceChannel, AppConfigState, request);
   },
   onThemeStateChanged: (listener) => {
     if (typeof listener !== "function") {
@@ -87,7 +134,7 @@ const desktopBridge: CycleDesktopBridge = {
     }
 
     const handler = (_event: IpcRendererEvent, state: unknown): void => {
-      if (isElectronThemeState(state)) listener(state);
+      if (Schema.is(ElectronThemeState)(state)) listener(state);
     };
 
     ipcRenderer.on(themeStateChangedChannel, handler);
@@ -96,25 +143,27 @@ const desktopBridge: CycleDesktopBridge = {
     };
   },
   updateRepositoryPreferences: async (input) => {
-    if (!isUpdateRepositoryPreferencesInput(input)) {
-      throw new TypeError("input must include a repository id and preferences.");
-    }
+    const request = decodeValue(
+      UpdateRepositoryPreferencesInput,
+      input,
+      "input must include a repository id and preferences",
+    );
 
-    return ipcRenderer.invoke(updateRepositoryPreferencesChannel, input);
+    return invoke(updateRepositoryPreferencesChannel, Schema.NullOr(RepositoryRecord), request);
   },
   updateProfile: async (input) => {
-    if (!isProfileUpdateInput(input)) {
-      throw new TypeError("input must be a profile update object.");
-    }
+    const request = decodeValue(ProfileUpdateInput, input, "input must be a profile update object");
 
-    return ipcRenderer.invoke(updateProfileChannel, input);
+    return invoke(updateProfileChannel, ProfileConfig, request);
   },
   upsertRepositoryPath: async (input) => {
-    if (!isUpsertRepositoryPathInput(input)) {
-      throw new TypeError("input must include a repository path.");
-    }
+    const request = decodeValue(
+      UpsertRepositoryPathInput,
+      input,
+      "input must include a repository path",
+    );
 
-    return ipcRenderer.invoke(upsertRepositoryPathChannel, input);
+    return invoke(upsertRepositoryPathChannel, RepositoryRecord, request);
   },
 };
 

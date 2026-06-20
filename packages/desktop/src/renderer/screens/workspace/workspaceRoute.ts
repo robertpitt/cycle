@@ -1,11 +1,16 @@
 export const lastWorkspaceRouteStorageKey = "cycle.desktop.lastWorkspaceRoute.v1";
 
-type WorkspaceTopLevelPage = "chat" | "inbox" | "initiatives" | "issues" | "settings" | "views";
+type WorkspaceTopLevelPage = "chat" | "inbox" | "initiatives" | "issues" | "views";
 
 export type WorkspaceLocation =
   | {
       readonly page: WorkspaceTopLevelPage;
       readonly scope: "workspace";
+    }
+  | {
+      readonly page: "settings";
+      readonly scope: "workspace";
+      readonly settingsSection?: string;
     }
   | {
       readonly issueId?: string;
@@ -33,7 +38,6 @@ const topLevelPages = new Set<WorkspaceTopLevelPage>([
   "inbox",
   "initiatives",
   "issues",
-  "settings",
   "views",
 ]);
 
@@ -60,6 +64,12 @@ const splitWorkspacePath = (path: string): readonly string[] => {
 
 export const toWorkspacePath = (location: WorkspaceLocation): string => {
   if (location.scope === "workspace") {
+    if (location.page === "settings") {
+      return location.settingsSection
+        ? `/settings/${encodeSegment(location.settingsSection)}`
+        : "/settings";
+    }
+
     return `/${location.page}`;
   }
 
@@ -90,6 +100,14 @@ export const parseWorkspacePath = (path: string): WorkspaceLocation | undefined 
   const segments = splitWorkspacePath(path);
 
   if (segments.some((segment) => segment.length === 0)) return undefined;
+
+  if (segments[0] === "settings" && (segments.length === 1 || segments.length === 2)) {
+    return {
+      page: "settings",
+      scope: "workspace",
+      ...(segments[1] ? { settingsSection: segments[1] } : {}),
+    };
+  }
 
   if (segments.length === 1 && topLevelPages.has(segments[0] as WorkspaceTopLevelPage)) {
     return {

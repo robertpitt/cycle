@@ -1,5 +1,6 @@
 import {
   ApplicationSettingsPanel as UiApplicationSettingsPanel,
+  type ApplicationSettingsSection,
   type ApplicationSettingsProfile,
 } from "@cycle/ui/organisms";
 import * as React from "react";
@@ -16,6 +17,7 @@ import {
 
 type ApplicationSettingsPanelProps = {
   readonly appConfig: AppConfigState;
+  readonly section: ApplicationSettingsSection;
 };
 
 const themeItems = [
@@ -33,7 +35,7 @@ const themeItems = [
   },
 ] satisfies ReadonlyArray<{ readonly label: string; readonly value: ThemePreference }>;
 
-export const ApplicationSettingsPanel = ({ appConfig }: ApplicationSettingsPanelProps) => {
+export const ApplicationSettingsPanel = ({ appConfig, section }: ApplicationSettingsPanelProps) => {
   const [cacheCleared, setCacheCleared] = React.useState(false);
   const updateProfile = useUpdateProfileMutation({ appConfig });
   const setThemePreference = useSetThemePreferenceMutation({ appConfig });
@@ -81,6 +83,7 @@ export const ApplicationSettingsPanel = ({ appConfig }: ApplicationSettingsPanel
           : undefined
       }
       profileLoading={updateProfile.isPending}
+      section={section}
       themeItems={themeItems}
       themePreference={appConfig.theme.preference}
     />

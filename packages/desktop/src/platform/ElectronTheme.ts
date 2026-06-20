@@ -1,15 +1,18 @@
-import { Context, Effect, Scope } from "effect";
+import { Context, Effect, Schema, Scope } from "effect";
 import type { ElectronError } from "./ElectronError.ts";
 
 export const electronThemeSources = ["system", "light", "dark"] as const;
-export type ElectronThemeSource = (typeof electronThemeSources)[number];
-export type ElectronThemeResolvedMode = "light" | "dark";
+export const ElectronThemeSource = Schema.Literals(electronThemeSources);
+export type ElectronThemeSource = typeof ElectronThemeSource.Type;
+export const ElectronThemeResolvedMode = Schema.Literals(["light", "dark"]);
+export type ElectronThemeResolvedMode = typeof ElectronThemeResolvedMode.Type;
 
-export type ElectronThemeState = {
-  readonly resolvedMode: ElectronThemeResolvedMode;
-  readonly shouldUseDarkColors: boolean;
-  readonly source: ElectronThemeSource;
-};
+export const ElectronThemeState = Schema.Struct({
+  resolvedMode: ElectronThemeResolvedMode,
+  shouldUseDarkColors: Schema.Boolean,
+  source: ElectronThemeSource,
+});
+export type ElectronThemeState = typeof ElectronThemeState.Type;
 
 export type ElectronThemeLifecycleHandlers = {
   readonly onUpdated: (state: ElectronThemeState) => Effect.Effect<void, unknown>;

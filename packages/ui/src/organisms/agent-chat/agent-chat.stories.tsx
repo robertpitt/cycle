@@ -1,9 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { AgentChatShell } from "./index.ts";
-import {
-  createAgentChatFixture,
-  withQuestionDraft,
-} from "../../pages/chat/chat-page.fixtures.ts";
+import { createAgentChatFixture, withQuestionDraft } from "../../pages/chat/chat-page.fixtures.ts";
 
 const meta = {
   component: AgentChatShell,

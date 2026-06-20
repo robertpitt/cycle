@@ -1,6 +1,15 @@
 import { DatabaseService, DatabaseTest, type DatabaseServiceShape } from "@cycle/database";
 import { GitDbInMemory, Store as GitDbStore } from "@cycle/git-db";
-import { Effect, Layer, Result } from "effect";
+import {
+  UseCaseAliasList,
+  UseCaseContracts,
+  UseCaseFailure,
+  UseCasePayloadSchemasByAlias,
+  UseCaseSuccessSchemasByAlias,
+  contractForAlias,
+  type UseCaseAlias,
+} from "@cycle/contracts/contracts";
+import { Effect, Layer, Result, Schema } from "effect";
 import type { Span } from "effect/Tracer";
 import {
   AutomationEvaluateQuery,
@@ -19,6 +28,7 @@ import { assert, describe, it } from "./effect-vitest.ts";
 
 const repository = { id: "usecase-repository" };
 const TestLayer = UseCaseRunnerLive.pipe(Layer.provideMerge(DatabaseTest()));
+const StrictDecodeOptions = { onExcessProperty: "error" } as const;
 
 const databaseStub = (overrides: Partial<DatabaseServiceShape>): DatabaseServiceShape =>
   new Proxy(overrides, {
@@ -54,6 +64,43 @@ const withOpenRepository = <A>(
   }).pipe(Effect.provide(TestLayer));
 
 describe("@cycle/usecases", () => {
+  it.effect("exposes schema-backed contracts for every canonical usecase alias", () =>
+    Effect.sync(() => {
+      const observedAliases = new Set<string>();
+
+      for (const [name, contract] of Object.entries(UseCaseContracts)) {
+        assert.equal(contract.name, name);
+        assert.equal(contract.failureSchema, UseCaseFailure);
+        assert.doesNotThrow(() =>
+          Schema.decodeUnknownSync(
+            contract.failureSchema,
+            StrictDecodeOptions,
+          )({
+            _tag: "InvalidInputFailure",
+            details: {
+              reason: "registry-conformance",
+            },
+            message: "Invalid input.",
+            requestId: "registry-conformance",
+            retryable: false,
+            useCase: contract.name,
+          }),
+        );
+
+        for (const alias of contract.aliases) {
+          const typedAlias = alias as UseCaseAlias;
+          assert.equal(observedAliases.has(alias), false);
+          observedAliases.add(alias);
+          assert.equal(contractForAlias(typedAlias).name, contract.name);
+          assert.equal(UseCasePayloadSchemasByAlias[typedAlias], contract.inputSchema);
+          assert.equal(UseCaseSuccessSchemasByAlias[typedAlias], contract.successSchema);
+        }
+      }
+
+      assert.deepEqual([...UseCaseAliasList].sort(), [...observedAliases].sort());
+    }),
+  );
+
   it.effect("creates trace spans around usecase execution", () =>
     Effect.gen(function* () {
       let observedSpan: Span | undefined;
@@ -154,6 +201,103 @@ describe("@cycle/usecases", () => {
         assert.equal(result.failure.requestId, "invalid-input");
       }
     }).pipe(withOpenRepository),
+  );
+
+  it.effect("rejects undeclared usecase input fields with typed failures", () =>
+    Effect.gen(function* () {
+      const runner = makeUseCaseRunner(databaseStub({}));
+      const result = yield* runner
+        .run(
+          IssueCreate(
+            {
+              input: {
+                debug: true,
+                title: "Strict contract input",
+              },
+              repository,
+            } as never,
+            { requestId: "strict-input", source: "test" },
+          ),
+        )
+        .pipe(Effect.result);
+
+      assert.equal(Result.isFailure(result), true);
+      if (Result.isFailure(result)) {
+        assert.equal(result.failure._tag, "InvalidInputFailure");
+        assert.equal(result.failure.requestId, "strict-input");
+      }
+    }),
+  );
+
+  it.effect("rejects invalid usecase success values with typed failures", () =>
+    Effect.gen(function* () {
+      const runner = makeUseCaseRunner(
+        databaseStub({
+          repositoryStatus: (repositoryId) =>
+            Effect.succeed({
+              activeSnapshotId: null,
+              repositoryId,
+              status: "empty" as const,
+            } as never),
+        }),
+      );
+
+      const result = yield* runner
+        .run(
+          RepositoryStatusGet(
+            {
+              input: {},
+              repository,
+            },
+            { requestId: "invalid-success", source: "test" },
+          ),
+        )
+        .pipe(Effect.result);
+
+      assert.equal(Result.isFailure(result), true);
+      if (Result.isFailure(result)) {
+        assert.equal(result.failure._tag, "UnexpectedDefectFailure");
+        assert.equal(result.failure.code, "INVALID_USECASE_SUCCESS");
+        assert.equal(result.failure.requestId, "invalid-success");
+      }
+    }),
+  );
+
+  it.effect("rejects undeclared usecase success fields with typed failures", () =>
+    Effect.gen(function* () {
+      const runner = makeUseCaseRunner(
+        databaseStub({
+          repositoryStatus: (repositoryId) =>
+            Effect.succeed({
+              activeGeneration: 0,
+              activeSnapshotId: null,
+              debug: true,
+              repositoryId,
+              status: "empty" as const,
+              warningCount: 0,
+            } as never),
+        }),
+      );
+
+      const result = yield* runner
+        .run(
+          RepositoryStatusGet(
+            {
+              input: {},
+              repository,
+            },
+            { requestId: "strict-success", source: "test" },
+          ),
+        )
+        .pipe(Effect.result);
+
+      assert.equal(Result.isFailure(result), true);
+      if (Result.isFailure(result)) {
+        assert.equal(result.failure._tag, "UnexpectedDefectFailure");
+        assert.equal(result.failure.code, "INVALID_USECASE_SUCCESS");
+        assert.equal(result.failure.requestId, "strict-success");
+      }
+    }),
   );
 
   it.effect("maps compatibility aliases to canonical usecases", () =>

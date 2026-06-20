@@ -24,6 +24,7 @@ import {
   PageBodyPlaceholder,
   RepositoryHistoryPanel,
   RepositorySettingsPanel,
+  SettingsSidebar,
   SetupScreen,
   ViewIssuePanel,
   ViewsPanel,
@@ -62,9 +63,14 @@ import {
   defaultCreateIssueMoreActionMessage,
 } from "./workspace/createIssueOptions.tsx";
 import {
+  applicationSettingsSectionFromNavItemId,
   activePageTitleForNavItem,
+  createRendererSettingsNavSections,
   createRendererNavSections,
+  defaultApplicationSettingsSection,
+  isApplicationSettingsSection,
   repositoryIdFromNavItem,
+  settingsNavItemIdForApplicationSection,
 } from "./workspace/navigation.tsx";
 import {
   invalidRepositoryFallbackPath,
@@ -94,11 +100,16 @@ const workspaceLocationForNavItemId = (itemId: string): WorkspaceLocation | unde
     case "chat":
     case "inbox":
     case "issues":
-    case "settings":
     case "views":
       return {
         page: itemId,
         scope: "workspace",
+      };
+    case "settings":
+      return {
+        page: "settings",
+        scope: "workspace",
+        settingsSection: defaultApplicationSettingsSection,
       };
     case "projects":
       return {
@@ -134,6 +145,13 @@ export const WorkspaceScreen = () => {
   const workspaceLocation = parseWorkspacePath(location.pathname) ?? defaultWorkspaceLocation;
   const currentWorkspacePath = toWorkspacePath(workspaceLocation);
   const activeItemId = activeItemIdForWorkspaceLocation(workspaceLocation);
+  const applicationSettingsRouteSection =
+    workspaceLocation.scope === "workspace" && workspaceLocation.page === "settings"
+      ? workspaceLocation.settingsSection
+      : undefined;
+  const applicationSettingsSection = isApplicationSettingsSection(applicationSettingsRouteSection)
+    ? applicationSettingsRouteSection
+    : defaultApplicationSettingsSection;
   const routeHistoryRef = React.useRef<string[]>([]);
   const skipNextRouteHistoryPush = React.useRef(false);
   const [setupStep, setSetupStep] = React.useState<InitialSetupStep>("profile");
@@ -209,6 +227,10 @@ export const WorkspaceScreen = () => {
     workspaceLocation.scope === "repository" && workspaceLocation.page === "settings";
   const isApplicationSettingsPage =
     workspaceLocation.scope === "workspace" && workspaceLocation.page === "settings";
+  const isSettingsPage = isApplicationSettingsPage;
+  const activeSettingsItemId = isApplicationSettingsPage
+    ? settingsNavItemIdForApplicationSection(applicationSettingsSection)
+    : undefined;
 
   const completeOnboarding = useCompleteOnboardingMutation({
     appConfig: appConfigQuery.data,
@@ -442,6 +464,27 @@ export const WorkspaceScreen = () => {
   ]);
 
   React.useEffect(() => {
+    if (!onboardingCompleted || appConfigQuery.isLoading || !isApplicationSettingsPage) return;
+    if (applicationSettingsRouteSection === applicationSettingsSection) return;
+
+    navigateWorkspace(
+      {
+        page: "settings",
+        scope: "workspace",
+        settingsSection: applicationSettingsSection,
+      },
+      { replace: true },
+    );
+  }, [
+    appConfigQuery.isLoading,
+    applicationSettingsRouteSection,
+    applicationSettingsSection,
+    isApplicationSettingsPage,
+    navigateWorkspace,
+    onboardingCompleted,
+  ]);
+
+  React.useEffect(() => {
     if (!activeRepository?.id || repositoryStatus === undefined) return;
     if (repositoryStatus.status === "syncing") return;
 
@@ -602,6 +645,7 @@ export const WorkspaceScreen = () => {
           navigateWorkspace({
             page: "settings",
             scope: "workspace",
+            settingsSection: defaultApplicationSettingsSection,
           }),
       }),
       [navigateWorkspace, navigationShortcutsDisabled],
@@ -797,6 +841,7 @@ export const WorkspaceScreen = () => {
       />
     ),
   });
+  const settingsNavSections = createRendererSettingsNavSections();
   const activePageTitle = isIssueDetailPage
     ? (selectedIssueId ?? "Issue")
     : selectedSavedView
@@ -911,24 +956,45 @@ export const WorkspaceScreen = () => {
     const nextLocation = workspaceLocationForNavItemId(item.id);
     if (nextLocation) navigateWorkspace(nextLocation);
   };
+  const handleSettingsNavItemSelect = (item: AppShellNavSection["items"][number]) => {
+    const applicationSection = applicationSettingsSectionFromNavItemId(item.id);
+    if (applicationSection !== undefined) {
+      navigateWorkspace({
+        page: "settings",
+        scope: "workspace",
+        settingsSection: applicationSection,
+      });
+      return;
+    }
+  };
 
   return (
     <>
       <AppShellRoot className="h-full overflow-hidden">
         <AppShellFrame className="h-full !min-h-0" collapsed={collapsed}>
-          <AppShellSidebar
-            activeItemId={activeItemId}
-            collapsed={collapsed}
-            navSections={rendererNavSections}
-            onNavItemSelect={handleNavItemSelect}
-            onSettingsSelect={() =>
-              navigateWorkspace({
-                page: "settings",
-                scope: "workspace",
-              })
-            }
-            settingsActive={activeItemId === "settings"}
-          />
+          {isSettingsPage ? (
+            <SettingsSidebar
+              activeItemId={activeSettingsItemId}
+              navSections={settingsNavSections}
+              onBack={navigateToParent}
+              onNavItemSelect={handleSettingsNavItemSelect}
+            />
+          ) : (
+            <AppShellSidebar
+              activeItemId={activeItemId}
+              collapsed={collapsed}
+              navSections={rendererNavSections}
+              onNavItemSelect={handleNavItemSelect}
+              onSettingsSelect={() =>
+                navigateWorkspace({
+                  page: "settings",
+                  scope: "workspace",
+                  settingsSection: defaultApplicationSettingsSection,
+                })
+              }
+              settingsActive={activeItemId === "settings"}
+            />
+          )}
           {/* add rounded corners */}
           <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-surface">
             <AppShellHeader title={activePageTitle} actions={pageHeaderActions} />
@@ -940,7 +1006,10 @@ export const WorkspaceScreen = () => {
               }
             >
               {isApplicationSettingsPage && appConfigQuery.data ? (
-                <ApplicationSettingsPanel appConfig={appConfigQuery.data} />
+                <ApplicationSettingsPanel
+                  appConfig={appConfigQuery.data}
+                  section={applicationSettingsSection}
+                />
               ) : isChatPage ? (
                 <ChatPanel
                   agentProviders={detectedAgentProviders}

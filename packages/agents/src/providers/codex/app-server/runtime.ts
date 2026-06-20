@@ -8,6 +8,7 @@ import {
   type ThreadItem,
   type ToolRequestUserInputParams,
 } from "@cycle/codex-app-server";
+import { Schema } from "effect";
 import type {
   AgentApprovalDecision,
   AgentApprovalRequest,
@@ -41,6 +42,13 @@ import {
   runtimeModeFromUnknown,
   runtimeModeToCodexThreadConfig,
 } from "./modes.ts";
+
+const StrictDecodeOptions = { onExcessProperty: "error" } as const;
+
+const decodeStructuredValue = <TStructured>(
+  schema: Schema.Codec<TStructured>,
+  value: unknown,
+): TStructured => Schema.decodeUnknownSync(schema, StrictDecodeOptions)(value) as TStructured;
 
 type QueueTake<T> = {
   readonly reject: (error: unknown) => void;
@@ -357,8 +365,16 @@ const parseStructured = <TStructured>(
   text: string,
 ): TStructured | undefined => {
   if (request.responseFormat?.type !== "json_schema") return undefined;
-  if (request.responseFormat.parse !== undefined) return request.responseFormat.parse(text);
-  return JSON.parse(text) as TStructured;
+
+  if (request.responseFormat.effectSchema !== undefined) {
+    const parsed =
+      request.responseFormat.parse === undefined
+        ? (JSON.parse(text) as unknown)
+        : request.responseFormat.parse(text);
+    return decodeStructuredValue(request.responseFormat.effectSchema, parsed);
+  }
+
+  return request.responseFormat.parse(text);
 };
 
 const approvalDecisionToCodexCommandDecision = (

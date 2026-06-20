@@ -16,6 +16,7 @@ const meta = {
       displayName: "Robert Pitt",
       email: "robert@example.com",
     },
+    section: "general",
     themeItems,
     themePreference: "system",
   },

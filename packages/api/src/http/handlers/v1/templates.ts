@@ -1,4 +1,5 @@
 import {
+  ContractSchemas,
   TemplateArchive,
   TemplateCreate,
   TemplateGet,
@@ -8,6 +9,7 @@ import {
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {
+  decodeHttpValue,
   errorResponse,
   meta,
   pagedUseCaseResponse,
@@ -32,8 +34,18 @@ export const withTemplateHandlers = (handlers: any) =>
     .handle("createTemplate", ({ params, payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
+        const input = yield* decodeHttpValue(
+          ContractSchemas.CreateIssueTemplateInput,
+          payload,
+          requestId,
+          {
+            code: "INVALID_TEMPLATE_PAYLOAD",
+            message: "Invalid template payload.",
+          },
+        );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          TemplateCreate(scoped(params.repositoryId, payload as any), meta(requestId)),
+          TemplateCreate(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -56,14 +68,21 @@ export const withTemplateHandlers = (handlers: any) =>
     .handle("updateTemplate", ({ params, payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
+        const input = yield* decodeHttpValue(
+          ContractSchemas.UpdateTemplateRequestInput,
+          {
+            id: params.templateId,
+            patch: payload,
+          },
+          requestId,
+          {
+            code: "INVALID_TEMPLATE_PAYLOAD",
+            message: "Invalid template payload.",
+          },
+        );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          TemplateUpdate(
-            scoped(params.repositoryId, {
-              id: params.templateId,
-              patch: payload,
-            }),
-            meta(requestId),
-          ),
+          TemplateUpdate(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 

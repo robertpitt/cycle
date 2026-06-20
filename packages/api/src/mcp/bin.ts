@@ -9,7 +9,7 @@ import {
   type CycleMcpOptions,
 } from "./server/index.ts";
 
-const logging = { packageName: "mcp" } as const;
+const logging = { packageName: "api" } as const;
 const flags = parseFlags(process.argv.slice(2));
 const env = process.env;
 const common: CycleMcpOptions = {
@@ -39,7 +39,10 @@ if ((flags.transport ?? env.CYCLE_MCP_TRANSPORT) === "http") {
   };
 
   Effect.acquireRelease(startCycleMcpHttpServerEffect(options), (server) =>
-    Effect.promise(() => server.close()),
+    Effect.tryPromise({
+      try: () => server.close(),
+      catch: (cause) => cause,
+    }).pipe(Effect.catch(() => Effect.void)),
   ).pipe(
     Effect.flatMap(() => Effect.never),
     Effect.scoped,

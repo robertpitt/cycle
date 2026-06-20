@@ -1,9 +1,11 @@
-import { LabelArchive, LabelList, LabelUpsert } from "@cycle/contracts";
+import { ContractSchemas, LabelArchive, LabelList, LabelUpsert } from "@cycle/contracts";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {
+  decodeHttpValue,
   labelQueryFrom,
   meta,
+  objectPayload,
   pagedUseCaseResponse,
   requestIdFromHeaders,
   resourceResponse,
@@ -25,14 +27,21 @@ export const withLabelHandlers = (handlers: any) =>
     .handle("upsertLabel", ({ params, payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
+        const input = yield* decodeHttpValue(
+          ContractSchemas.UpsertLabelInput,
+          {
+            ...objectPayload(payload),
+            id: params.labelId,
+          },
+          requestId,
+          {
+            code: "INVALID_LABEL_PAYLOAD",
+            message: "Invalid label payload.",
+          },
+        );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          LabelUpsert(
-            scoped(params.repositoryId, {
-              ...payload,
-              id: params.labelId,
-            } as any),
-            meta(requestId),
-          ),
+          LabelUpsert(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 

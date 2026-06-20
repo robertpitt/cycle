@@ -1,12 +1,20 @@
-import type { AppShellNavSection } from "@cycle/ui/organisms";
+import type { ApplicationSettingsSection, AppShellNavSection } from "@cycle/ui/organisms";
 import {
   History,
   Inbox,
+  Keyboard,
   ListTodo,
   MessageSquare,
+  Monitor,
+  Plug,
   PanelsTopLeft,
+  Server,
   Settings,
+  SlidersHorizontal,
+  Sparkles,
   SquareKanban,
+  User,
+  Wrench,
 } from "lucide-react";
 import type { RepositoryRecord } from "../../../shared/AppConfig.ts";
 
@@ -106,6 +114,103 @@ export const createRendererNavSections = (
       id: "repositories",
       items: createRepositoryNavItems(repositories),
       title: "Repositories",
+    },
+  ] satisfies readonly AppShellNavSection[];
+
+export const defaultApplicationSettingsSection = "general" satisfies ApplicationSettingsSection;
+
+const applicationSettingsSections = new Set<ApplicationSettingsSection>([
+  "appearance",
+  "configuration",
+  "connectors",
+  "general",
+  "keyboard-shortcuts",
+  "mcp-servers",
+  "personalisation",
+  "profile",
+  "skills",
+]);
+
+const applicationSettingsNavItemPrefix = "settings:application:";
+
+export const isApplicationSettingsSection = (
+  value: string | null | undefined,
+): value is ApplicationSettingsSection =>
+  value !== null &&
+  value !== undefined &&
+  applicationSettingsSections.has(value as ApplicationSettingsSection);
+
+export const settingsNavItemIdForApplicationSection = (
+  section: ApplicationSettingsSection,
+): string => `${applicationSettingsNavItemPrefix}${section}`;
+
+export const applicationSettingsSectionFromNavItemId = (
+  itemId: string,
+): ApplicationSettingsSection | undefined => {
+  if (!itemId.startsWith(applicationSettingsNavItemPrefix)) return undefined;
+
+  const section = itemId.slice(applicationSettingsNavItemPrefix.length);
+  return isApplicationSettingsSection(section) ? section : undefined;
+};
+
+export const createRendererSettingsNavSections = () =>
+  [
+    {
+      id: "settings-personal",
+      items: [
+        {
+          icon: <Settings aria-hidden className="size-4" />,
+          id: settingsNavItemIdForApplicationSection("general"),
+          label: "General",
+        },
+        {
+          icon: <User aria-hidden className="size-4" />,
+          id: settingsNavItemIdForApplicationSection("profile"),
+          label: "Profile",
+        },
+        {
+          icon: <Monitor aria-hidden className="size-4" />,
+          id: settingsNavItemIdForApplicationSection("appearance"),
+          label: "Appearance",
+        },
+        {
+          icon: <SlidersHorizontal aria-hidden className="size-4" />,
+          id: settingsNavItemIdForApplicationSection("configuration"),
+          label: "Configuration",
+        },
+        {
+          icon: <Sparkles aria-hidden className="size-4" />,
+          id: settingsNavItemIdForApplicationSection("personalisation"),
+          label: "Personalisation",
+        },
+        {
+          icon: <Keyboard aria-hidden className="size-4" />,
+          id: settingsNavItemIdForApplicationSection("keyboard-shortcuts"),
+          label: "Keyboard Shortcuts",
+        },
+      ],
+      title: "Personal",
+    },
+    {
+      id: "settings-integrations",
+      items: [
+        {
+          icon: <Plug aria-hidden className="size-4" />,
+          id: settingsNavItemIdForApplicationSection("connectors"),
+          label: "Connectors",
+        },
+        {
+          icon: <Server aria-hidden className="size-4" />,
+          id: settingsNavItemIdForApplicationSection("mcp-servers"),
+          label: "MCP Servers",
+        },
+        {
+          icon: <Wrench aria-hidden className="size-4" />,
+          id: settingsNavItemIdForApplicationSection("skills"),
+          label: "Skills",
+        },
+      ],
+      title: "Integrations",
     },
   ] satisfies readonly AppShellNavSection[];
 

@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { Schema } from "effect";
 import { cycleDatabasePath, ensureDatabaseParentDirectorySync } from "../paths.ts";
 import { agentChatSchemaSql } from "./AgentChatSchema.ts";
 import type {
@@ -217,6 +218,220 @@ const WATCHED_REF = "refs/gitdb/cycle/main";
 const CURRENT_PROJECTION_SCHEMA_VERSION = 5;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 250;
+const StrictDecodeOptions = { onExcessProperty: "error" } as const;
+const NonNegativeInteger = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+const JsonRecord = Schema.Record(Schema.String, Schema.Unknown);
+const JsonValue = Schema.Json;
+const StringListJson = Schema.Array(Schema.String);
+const EstimateValueJson = Schema.Union([Schema.Finite, Schema.String]);
+const NullableEstimateValueJson = Schema.NullOr(EstimateValueJson);
+const ActorJson = Schema.Struct({
+  email: Schema.optional(Schema.String),
+  name: Schema.String,
+  provider: Schema.optional(Schema.String),
+  type: Schema.Literals(["agent", "human", "import"]),
+});
+const ExternalLinkJson = Schema.Struct({
+  source: Schema.optional(Schema.String),
+  title: Schema.optional(Schema.String),
+  url: Schema.String,
+});
+const IssueRelationTypeJson = Schema.Literals(["blocked-by", "blocking", "duplicate", "related"]);
+const IssueRelationJson = Schema.Struct({
+  issueId: Schema.String,
+  type: IssueRelationTypeJson,
+});
+const TicketQueryJson = Schema.Struct({
+  archived: Schema.optional(Schema.Boolean),
+  assignee: Schema.optional(Schema.NullOr(Schema.String)),
+  assigneeIn: Schema.optional(StringListJson),
+  blocked: Schema.optional(Schema.Boolean),
+  cursor: Schema.optional(Schema.String),
+  deleted: Schema.optional(Schema.Boolean),
+  dueAfter: Schema.optional(Schema.String),
+  dueBefore: Schema.optional(Schema.String),
+  estimate: Schema.optional(EstimateValueJson),
+  hasAssignee: Schema.optional(Schema.Boolean),
+  hasDueDate: Schema.optional(Schema.Boolean),
+  hasEstimate: Schema.optional(Schema.Boolean),
+  hasLabels: Schema.optional(Schema.Boolean),
+  label: Schema.optional(Schema.String),
+  labelIn: Schema.optional(StringListJson),
+  limit: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+  orderBy: Schema.optional(
+    Schema.Literals(["createdAt", "dueDate", "priority", "title", "updatedAt"]),
+  ),
+  orderDirection: Schema.optional(Schema.Literals(["asc", "desc"])),
+  parent: Schema.optional(Schema.NullOr(Schema.String)),
+  priority: Schema.optional(Schema.String),
+  priorityIn: Schema.optional(StringListJson),
+  relation: Schema.optional(
+    Schema.Struct({
+      issueId: Schema.optional(Schema.String),
+      type: Schema.optional(IssueRelationTypeJson),
+    }),
+  ),
+  repositoryIds: Schema.optional(StringListJson),
+  staleBefore: Schema.optional(Schema.String),
+  status: Schema.optional(Schema.String),
+  statusIn: Schema.optional(StringListJson),
+  text: Schema.optional(Schema.String),
+  type: Schema.optional(Schema.String),
+  updatedAfter: Schema.optional(Schema.String),
+  updatedBefore: Schema.optional(Schema.String),
+});
+const IssueFrontmatterJson = Schema.StructWithRest(
+  Schema.Struct({
+    agentProvenance: Schema.optional(JsonRecord),
+    archivedAt: Schema.optional(Schema.NullOr(Schema.String)),
+    archivedBy: Schema.optional(Schema.NullOr(ActorJson)),
+    assignee: Schema.optional(Schema.NullOr(Schema.String)),
+    children: Schema.optional(StringListJson),
+    createdAt: Schema.String,
+    createdBy: ActorJson,
+    deletedAt: Schema.optional(Schema.NullOr(Schema.String)),
+    deletedBy: Schema.optional(Schema.NullOr(ActorJson)),
+    duplicateOf: Schema.optional(Schema.NullOr(Schema.String)),
+    dueDate: Schema.optional(Schema.NullOr(Schema.String)),
+    estimate: Schema.optional(NullableEstimateValueJson),
+    externalLinks: Schema.optional(Schema.Array(ExternalLinkJson)),
+    id: Schema.String,
+    labels: Schema.optional(StringListJson),
+    parent: Schema.optional(Schema.NullOr(Schema.String)),
+    planAcceptedAt: Schema.optional(Schema.String),
+    planAcceptedBy: Schema.optional(ActorJson),
+    planningNotRequired: Schema.optional(Schema.Boolean),
+    priority: Schema.String,
+    relations: Schema.optional(Schema.Array(IssueRelationJson)),
+    repository: Schema.optional(Schema.String),
+    status: Schema.String,
+    title: Schema.String,
+    type: Schema.String,
+    updatedAt: Schema.String,
+  }),
+  [JsonRecord],
+);
+const UserProfileDocumentJson = Schema.StructWithRest(
+  Schema.Struct({
+    aliases: Schema.optional(StringListJson),
+    avatarUrl: Schema.optional(Schema.String),
+    createdAt: Schema.String,
+    disabledAt: Schema.optional(Schema.String),
+    displayName: Schema.String,
+    email: Schema.String,
+    id: Schema.String,
+    schemaVersion: Schema.Literal(1),
+    source: Schema.Literals(["import", "local-profile", "manual"]),
+    timezone: Schema.optional(Schema.String),
+    updatedAt: Schema.String,
+  }),
+  [JsonRecord],
+);
+const LabelDefinitionDocumentJson = Schema.StructWithRest(
+  Schema.Struct({
+    archivedAt: Schema.optional(Schema.String),
+    color: Schema.String,
+    createdAt: Schema.String,
+    createdBy: ActorJson,
+    description: Schema.optional(Schema.String),
+    id: Schema.String,
+    name: Schema.String,
+    schemaVersion: Schema.Literal(1),
+    updatedAt: Schema.String,
+  }),
+  [JsonRecord],
+);
+const SavedViewSortJson = Schema.Struct({
+  direction: Schema.optional(Schema.Literals(["asc", "desc"])),
+  field: Schema.optional(
+    Schema.Literals(["createdAt", "dueDate", "priority", "title", "updatedAt"]),
+  ),
+});
+const SavedViewDisplayJson = Schema.Struct({
+  density: Schema.optional(Schema.Literals(["comfortable", "compact"])),
+  properties: Schema.optional(
+    Schema.Array(
+      Schema.Literals(["assignee", "dueDate", "estimate", "labels", "priority", "status"]),
+    ),
+  ),
+});
+const SavedViewDocumentJson = Schema.StructWithRest(
+  Schema.Struct({
+    builtIn: Schema.optional(Schema.Boolean),
+    createdAt: Schema.String,
+    createdBy: ActorJson,
+    description: Schema.optional(Schema.String),
+    display: Schema.optional(SavedViewDisplayJson),
+    groupBy: Schema.Literals([
+      "assignee",
+      "dueDate",
+      "label",
+      "none",
+      "parent",
+      "priority",
+      "status",
+    ]),
+    id: Schema.String,
+    kind: Schema.Literals(["board", "list"]),
+    name: Schema.String,
+    ownerUserId: Schema.optional(Schema.String),
+    pinned: Schema.Boolean,
+    query: TicketQueryJson,
+    repositoryScope: Schema.optional(Schema.Literal("current-repository")),
+    schemaVersion: Schema.Literal(1),
+    sort: Schema.optional(SavedViewSortJson),
+    updatedAt: Schema.String,
+  }),
+  [JsonRecord],
+);
+const IssueTemplateDefaultsJson = Schema.Struct({
+  assignee: Schema.optional(Schema.NullOr(Schema.String)),
+  body: Schema.optional(Schema.String),
+  dueDate: Schema.optional(Schema.NullOr(Schema.String)),
+  estimate: Schema.optional(NullableEstimateValueJson),
+  externalLinks: Schema.optional(Schema.Array(ExternalLinkJson)),
+  labels: Schema.optional(StringListJson),
+  parent: Schema.optional(Schema.NullOr(Schema.String)),
+  planningNotRequired: Schema.optional(Schema.Boolean),
+  priority: Schema.optional(Schema.String),
+  repository: Schema.optional(Schema.String),
+  status: Schema.optional(Schema.String),
+  title: Schema.optional(Schema.String),
+  type: Schema.optional(Schema.String),
+});
+const IssueTemplateDocumentJson = Schema.StructWithRest(
+  Schema.Struct({
+    active: Schema.Boolean,
+    bodyTemplate: Schema.String,
+    childTemplates: Schema.optional(StringListJson),
+    createdAt: Schema.String,
+    createdBy: ActorJson,
+    defaults: Schema.optional(IssueTemplateDefaultsJson),
+    description: Schema.optional(Schema.String),
+    id: Schema.String,
+    kind: Schema.Literals(["bug", "feature", "implementation", "initiative", "qa"]),
+    name: Schema.String,
+    schemaVersion: Schema.Literal(1),
+    titleTemplate: Schema.String,
+    updatedAt: Schema.String,
+  }),
+  [JsonRecord],
+);
+const RepositoryRemoteJson = Schema.Struct({
+  name: Schema.String,
+  url: Schema.optional(Schema.String),
+});
+const RepositoryRemotesJson = Schema.Array(RepositoryRemoteJson);
+const CycleRepositoryMetadataJson = Schema.Struct({
+  createdAt: Schema.String,
+  schemaVersion: Schema.Literal(1),
+  ticketIdFormat: Schema.Literal("prefix-base36-5+"),
+  ticketPrefix: Schema.String,
+  updatedAt: Schema.String,
+});
+const ProjectionCursorJson = Schema.Struct({
+  offset: NonNegativeInteger,
+});
 
 export class Projection {
   readonly db: DatabaseSync;
@@ -2435,20 +2650,7 @@ const parseRemotes = (value: string | null): RepositoryMetadata["remotes"] => {
 
   try {
     const parsed = JSON.parse(value) as unknown;
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed.flatMap((remote) => {
-      if (remote === null || typeof remote !== "object") return [];
-      const record = remote as Readonly<Record<string, unknown>>;
-      if (typeof record.name !== "string") return [];
-
-      return [
-        {
-          name: record.name,
-          ...(typeof record.url === "string" ? { url: record.url } : {}),
-        },
-      ];
-    });
+    return Schema.decodeUnknownSync(RepositoryRemotesJson, StrictDecodeOptions)(parsed);
   } catch {
     return [];
   }
@@ -2488,26 +2690,7 @@ const cycleMetadataFromRepositoryRow = (
 
   try {
     const parsed = JSON.parse(row.cycle_metadata_json) as unknown;
-    if (parsed === null || typeof parsed !== "object") return undefined;
-
-    const value = parsed as Partial<CycleRepositoryMetadata>;
-    if (
-      value.schemaVersion !== 1 ||
-      value.ticketIdFormat !== "prefix-base36-5+" ||
-      typeof value.ticketPrefix !== "string" ||
-      typeof value.createdAt !== "string" ||
-      typeof value.updatedAt !== "string"
-    ) {
-      return undefined;
-    }
-
-    return {
-      createdAt: value.createdAt,
-      schemaVersion: 1,
-      ticketIdFormat: "prefix-base36-5+",
-      ticketPrefix: value.ticketPrefix,
-      updatedAt: value.updatedAt,
-    };
+    return Schema.decodeUnknownSync(CycleRepositoryMetadataJson, StrictDecodeOptions)(parsed);
   } catch {
     return undefined;
   }
@@ -2531,9 +2714,23 @@ const repositoryStatusFromRow = (row: RepositoryRow): RepositoryStatus => {
   };
 };
 
-const ticketFromRow = (row: TicketRow): TicketDocument => {
-  const frontmatter = JSON.parse(row.frontmatter_json) as TicketDocument["frontmatter"];
+const decodeJson = <S extends Schema.Top>(schema: S, value: string): S["Type"] =>
+  Schema.decodeUnknownSync(schema as never, StrictDecodeOptions)(JSON.parse(value)) as S["Type"];
 
+const ticketFromRow = (row: TicketRow): TicketDocument => {
+  const frontmatter = decodeJson(
+    IssueFrontmatterJson,
+    row.frontmatter_json,
+  ) as unknown as TicketDocument["frontmatter"];
+
+  const labels = row.labels_json === null ? undefined : decodeJson(StringListJson, row.labels_json);
+  const relations =
+    row.relation_summary_json === null
+      ? undefined
+      : (decodeJson(
+          Schema.Array(IssueRelationJson),
+          row.relation_summary_json,
+        ) as unknown as TicketDocument["relations"]);
   return {
     archivedAt: row.archived_at ?? undefined,
     assignee: row.assignee ?? undefined,
@@ -2545,11 +2742,10 @@ const ticketFromRow = (row: TicketRow): TicketDocument => {
     estimate: frontmatter.estimate ?? undefined,
     frontmatter,
     id: row.ticket_id,
-    labels: row.labels_json === null ? undefined : JSON.parse(row.labels_json),
+    labels,
     parent: row.parent_id,
     priority: row.priority,
-    relations:
-      row.relation_summary_json === null ? undefined : JSON.parse(row.relation_summary_json),
+    relations,
     repository: row.repository_key ?? undefined,
     repositoryId: row.repository_id,
     schemaVersion: 1,
@@ -2570,34 +2766,30 @@ const recordFromRow = (row: RecordRow): LinkedRecord => ({
   createdDate: row.created_date,
   id: row.record_id,
   issueId: row.ticket_id,
-  payload: JSON.parse(row.payload_json),
+  payload: decodeJson(JsonValue, row.payload_json),
   recordType: row.record_type,
   schemaVersion: 1,
 });
 
 const userFromRow = (row: UserRow): UserProfileDocument =>
-  JSON.parse(row.profile_json) as UserProfileDocument;
+  decodeJson(UserProfileDocumentJson, row.profile_json) as unknown as UserProfileDocument;
 
 const labelFromRow = (row: LabelRow): LabelDefinitionDocument =>
-  JSON.parse(row.label_json) as LabelDefinitionDocument;
+  decodeJson(LabelDefinitionDocumentJson, row.label_json) as unknown as LabelDefinitionDocument;
 
 const viewFromRow = (row: SavedViewRow): SavedViewDocument =>
-  JSON.parse(row.view_json) as SavedViewDocument;
+  decodeJson(SavedViewDocumentJson, row.view_json) as unknown as SavedViewDocument;
 
 const templateFromRow = (row: IssueTemplateRow): IssueTemplateDocument =>
-  JSON.parse(row.template_json) as IssueTemplateDocument;
+  decodeJson(IssueTemplateDocumentJson, row.template_json) as unknown as IssueTemplateDocument;
 
 const historyFromRow = (row: HistoryRow): HistoryCommit => ({
   authorEmail: row.author_email ?? undefined,
   authorName: row.author_name ?? undefined,
-  changedTicketIds: JSON.parse(row.changed_ticket_ids ?? "[]").filter(
-    (value: unknown): value is string => typeof value === "string",
-  ),
+  changedTicketIds: parseStringListJson(row.changed_ticket_ids),
   committedAt: row.committed_at ?? undefined,
   message: row.message ?? undefined,
-  parentIds: JSON.parse(row.parent_ids ?? "[]").filter(
-    (value: unknown): value is string => typeof value === "string",
-  ),
+  parentIds: parseStringListJson(row.parent_ids),
   sequence: row.sequence,
   snapshotId: row.snapshot_id,
   warningCount: row.warning_count,
@@ -2644,11 +2836,20 @@ const parseInboxMetadata = (
 
   try {
     const parsed = JSON.parse(value) as unknown;
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
-
-    return parsed as Readonly<Record<string, unknown>>;
+    return Schema.decodeUnknownSync(JsonRecord, StrictDecodeOptions)(parsed);
   } catch {
     return undefined;
+  }
+};
+
+const parseStringListJson = (value: string | null): ReadonlyArray<string> => {
+  if (value === null) return [];
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Schema.decodeUnknownSync(StringListJson, StrictDecodeOptions)(parsed);
+  } catch {
+    return [];
   }
 };
 
@@ -2680,10 +2881,9 @@ const decodeCursor = (cursor: string | undefined): { readonly offset: number } =
     const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as {
       readonly offset?: unknown;
     };
+    const decoded = Schema.decodeUnknownSync(ProjectionCursorJson, StrictDecodeOptions)(parsed);
 
-    return typeof parsed.offset === "number" && parsed.offset >= 0
-      ? { offset: Math.trunc(parsed.offset) }
-      : { offset: 0 };
+    return { offset: decoded.offset };
   } catch {
     return { offset: 0 };
   }

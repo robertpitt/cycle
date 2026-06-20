@@ -1,7 +1,15 @@
-import { ViewCreate, ViewDelete, ViewGet, ViewList, ViewUpdate } from "@cycle/contracts";
+import {
+  ContractSchemas,
+  ViewCreate,
+  ViewDelete,
+  ViewGet,
+  ViewList,
+  ViewUpdate,
+} from "@cycle/contracts";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {
+  decodeHttpValue,
   errorResponse,
   meta,
   pagedUseCaseResponse,
@@ -26,8 +34,18 @@ export const withViewHandlers = (handlers: any) =>
     .handle("createView", ({ params, payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
+        const input = yield* decodeHttpValue(
+          ContractSchemas.CreateSavedViewInput,
+          payload,
+          requestId,
+          {
+            code: "INVALID_VIEW_PAYLOAD",
+            message: "Invalid view payload.",
+          },
+        );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          ViewCreate(scoped(params.repositoryId, payload as any), meta(requestId)),
+          ViewCreate(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -50,14 +68,21 @@ export const withViewHandlers = (handlers: any) =>
     .handle("updateView", ({ params, payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
+        const input = yield* decodeHttpValue(
+          ContractSchemas.UpdateViewRequestInput,
+          {
+            id: params.viewId,
+            patch: payload,
+          },
+          requestId,
+          {
+            code: "INVALID_VIEW_PAYLOAD",
+            message: "Invalid view payload.",
+          },
+        );
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          ViewUpdate(
-            scoped(params.repositoryId, {
-              id: params.viewId,
-              patch: payload,
-            }),
-            meta(requestId),
-          ),
+          ViewUpdate(scoped(params.repositoryId, input), meta(requestId)),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 

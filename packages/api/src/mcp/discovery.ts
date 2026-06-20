@@ -1,5 +1,5 @@
 import { NodeServices } from "@effect/platform-node";
-import { Effect, FileSystem, Path } from "effect";
+import { Effect, FileSystem, Path, Schema } from "effect";
 
 export type CycleMcpApiDiscoveryInput = {
   readonly apiToken?: string;
@@ -12,15 +12,28 @@ export type CycleMcpApiDiscoveryResult = {
   readonly token: string;
 };
 
-type RuntimeDiscoveryFile = {
-  readonly baseUrl?: unknown;
-};
-
-type CycleConfigFile = {
-  readonly api?: {
-    readonly staticToken?: unknown;
-  };
-};
+const UnknownRecord = Schema.Record(Schema.String, Schema.Unknown);
+// Discovery/config files may contain fields owned by other processes; MCP only
+// decodes the projection it needs and treats the rest as extension data.
+const RuntimeDiscoveryFile = Schema.StructWithRest(
+  Schema.Struct({
+    baseUrl: Schema.optional(Schema.String),
+  }),
+  [UnknownRecord],
+);
+const CycleConfigFile = Schema.StructWithRest(
+  Schema.Struct({
+    api: Schema.optional(
+      Schema.StructWithRest(
+        Schema.Struct({
+          staticToken: Schema.optional(Schema.String),
+        }),
+        [UnknownRecord],
+      ),
+    ),
+  }),
+  [UnknownRecord],
+);
 
 export const discoverCycleApi = (
   input: CycleMcpApiDiscoveryInput,
@@ -109,9 +122,9 @@ const readRuntimeDiscovery = (
       return undefined;
     }
 
-    const parsed = JSON.parse(yield* fs.readFileString(path, "utf8")) as RuntimeDiscoveryFile;
+    const parsed = decodeRuntimeDiscoveryFile(yield* fs.readFileString(path, "utf8"));
 
-    return typeof parsed.baseUrl === "string" ? { baseUrl: parsed.baseUrl } : undefined;
+    return parsed.baseUrl === undefined ? undefined : { baseUrl: parsed.baseUrl };
   }).pipe(Effect.catch(() => Effect.succeed(undefined)));
 
 const readConfigToken = (
@@ -125,11 +138,21 @@ const readConfigToken = (
       return undefined;
     }
 
-    const parsed = JSON.parse(yield* fs.readFileString(path, "utf8")) as CycleConfigFile;
+    const parsed = decodeCycleConfigFile(yield* fs.readFileString(path, "utf8"));
     const token = parsed.api?.staticToken;
 
-    return typeof token === "string" && token.length > 0 ? token : undefined;
+    return token !== undefined && token.length > 0 ? token : undefined;
   }).pipe(Effect.catch(() => Effect.succeed(undefined)));
+
+const decodeRuntimeDiscoveryFile = (text: string): typeof RuntimeDiscoveryFile.Type => {
+  const parsed = JSON.parse(text) as unknown;
+  return Schema.decodeUnknownSync(RuntimeDiscoveryFile)(parsed);
+};
+
+const decodeCycleConfigFile = (text: string): typeof CycleConfigFile.Type => {
+  const parsed = JSON.parse(text) as unknown;
+  return Schema.decodeUnknownSync(CycleConfigFile)(parsed);
+};
 
 const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/u, "");
 

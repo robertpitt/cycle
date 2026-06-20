@@ -1,7 +1,9 @@
 import { strict as assert } from "node:assert";
 import { makeCodexAppServerClient, type CodexAppServerClient } from "@cycle/codex-app-server";
+import { Schema } from "effect";
 import { describe, it } from "vitest";
 import { makeCodexAgentService } from "../src/codex.ts";
+import { parseStructured } from "../src/providers/codex/client.ts";
 import type { AgentEvent, AgentSessionBinding, AgentSessionStore } from "../src/types.ts";
 
 class Pushable<T> implements AsyncIterable<T> {
@@ -139,6 +141,29 @@ const startTurn = async (peer: ReturnType<typeof makeMockPeer>) => {
 };
 
 describe("@cycle/agents codex app-server adapter", () => {
+  it("schema-decodes structured output strictly", () => {
+    const StructuredOutput = Schema.Struct({
+      title: Schema.String,
+    });
+    const format = {
+      effectSchema: StructuredOutput,
+      schema: {
+        additionalProperties: false,
+        properties: {
+          title: { type: "string" },
+        },
+        required: ["title"],
+        type: "object",
+      },
+      type: "json_schema",
+    } as const;
+
+    assert.deepEqual(parseStructured(format, JSON.stringify({ title: "Plan" })), {
+      title: "Plan",
+    });
+    assert.throws(() => parseStructured(format, JSON.stringify({ debug: true, title: "Plan" })));
+  });
+
   it("streams normalized events and persists app-server session binding state", async () => {
     const peer = makeMockPeer();
     const bindings = new Map<string, AgentSessionBinding>();
@@ -219,6 +244,53 @@ describe("@cycle/agents codex app-server adapter", () => {
     assert.deepEqual(stored?.native?.resumeCursor, { threadId: "native_thread" });
     assert.equal(stored?.native?.runtimeMode, "workspace-write");
     assert.equal(stored?.status, "idle");
+  });
+
+  it("schema-decodes structured app-server stream results", async () => {
+    const peer = makeMockPeer();
+    const service = makeCodexAgentService({ appServerClient: peer.client });
+    const session = await service.createSession();
+    const StructuredOutput = Schema.Struct({
+      title: Schema.String,
+    });
+    const eventsPromise = collect(
+      service.stream(session.id, {
+        input: "Return JSON",
+        responseFormat: {
+          effectSchema: StructuredOutput,
+          schema: {
+            additionalProperties: false,
+            properties: {
+              title: { type: "string" },
+            },
+            required: ["title"],
+            type: "object",
+          },
+          type: "json_schema",
+        },
+      }),
+    );
+
+    await completeStartup(peer);
+    await startTurn(peer);
+    peer.notify("item/agentMessage/delta", {
+      delta: JSON.stringify({ title: "Plan" }),
+      itemId: "message_1",
+      threadId: "native_thread",
+      turnId: "native_turn",
+    });
+    peer.notify("turn/completed", {
+      threadId: "native_thread",
+      turn: {
+        id: "native_turn",
+        status: "completed",
+      },
+    });
+
+    const events = await eventsPromise;
+    const completed = events.find((event) => event.type === "turn.completed");
+    assert.equal(completed?.type, "turn.completed");
+    assert.deepEqual(completed.result.structured, { title: "Plan" });
   });
 
   it("preloads Cycle MCP before starting an app-server turn", async () => {

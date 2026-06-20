@@ -26,6 +26,7 @@ import {
   discoverCycleApiConnection,
   type CycleApiConnection,
 } from "../lib/cycleApiClient.ts";
+import { parseChatProtocolMessage, type ChatProtocolMessage } from "../lib/chatProtocol.ts";
 import { createMarkdownTagSuggestions } from "../lib/markdownTagSuggestions.ts";
 import { useIssueListQuery, useUserListQuery } from "../queries/index.ts";
 
@@ -33,17 +34,6 @@ type ChatPanelProps = {
   readonly agentProviders: readonly DetectedAgentProvider[];
   readonly profile?: ProfileConfig;
   readonly repositories: readonly RepositoryRecord[];
-};
-
-type ChatProtocolMessage = {
-  readonly commandId?: string;
-  readonly createdAt?: string;
-  readonly eventId?: string;
-  readonly payload?: unknown;
-  readonly sequence?: number;
-  readonly threadId?: string;
-  readonly type?: string;
-  readonly version?: number;
 };
 
 type PendingCommand = (message: ChatProtocolMessage) => void;
@@ -792,7 +782,7 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
                       ...entry.activity,
                       detail: decision ?? entry.activity.detail,
                       payload: {
-                        ...(entry.activity.payload ?? {}),
+                        ...entry.activity.payload,
                         decision,
                         requestId,
                       },
@@ -913,10 +903,9 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
 
       socket.onmessage = (event) => {
         try {
-          const parsed = JSON.parse(String(event.data)) as unknown;
-          if (isRecord(parsed)) handleServerMessage(parsed as ChatProtocolMessage);
+          handleServerMessage(parseChatProtocolMessage(String(event.data)));
         } catch (error) {
-          console.warn("Agent chat socket received invalid JSON.", error);
+          console.warn("Agent chat socket received invalid message.", error);
         }
       };
 
@@ -1019,7 +1008,7 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
                     payloadPatch === undefined
                       ? entry.activity.payload
                       : {
-                          ...(entry.activity.payload ?? {}),
+                          ...entry.activity.payload,
                           ...payloadPatch,
                         },
                 },

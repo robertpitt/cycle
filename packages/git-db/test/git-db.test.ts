@@ -140,10 +140,7 @@ describe("@cycle/git-db", () => {
       assert.strictEqual(first.text(), '{"field":"status","op":"update","value":"in-progress"}');
       assert.strictEqual(first.objectId, second.objectId);
       assert.ok(duplicate instanceof InvalidPathError);
-      assert.strictEqual(
-        liveLikePath,
-        "collections/events/ticket/A7/UKN-A7ABC/evt_live_like.json",
-      );
+      assert.strictEqual(liveLikePath, "collections/events/ticket/A7/UKN-A7ABC/evt_live_like.json");
       assert.deepStrictEqual(
         events.map((event) => ({
           aggregateId: event.aggregateId,
