@@ -84,6 +84,21 @@ const configDirectory = (userData: string): string => dirname(configPath(userDat
 const readPersistedConfig = async (userData: string): Promise<AppConfigState> =>
   JSON.parse(await readFile(configPath(userData), "utf8")) as AppConfigState;
 
+const readCycleRootCommit = async (repositoryPath: string): Promise<string> => {
+  const { stdout } = await execFileAsync(
+    "git",
+    ["rev-list", "--max-parents=0", "refs/gitdb/cycle/main"],
+    {
+      cwd: repositoryPath,
+    },
+  );
+
+  return stdout.trim();
+};
+
+const repositoryIdForCycleRoot = (rootCommit: string): string =>
+  `repo_${rootCommit.toLowerCase().slice(0, 5)}`;
+
 const assertGeneratedToken = (token: string): void => {
   assert.match(token, /^[A-Za-z0-9_-]{43}$/u);
 };
@@ -270,6 +285,9 @@ describe("desktop app config", () => {
     );
 
     assert.equal(result.first.id, result.second.id);
+    const rootCommit = await readCycleRootCommit(repositoryPath);
+    assert.equal(result.first.id, repositoryIdForCycleRoot(rootCommit));
+    assert.equal(result.first.gitDbRootCommitId, rootCommit);
     assert.equal(result.first.preferences.autoSync, true);
     assert.equal(result.first.preferences.commitStyle, "descriptive");
     assert.equal(result.first.preferences.sidebarExpanded, true);
@@ -341,7 +359,10 @@ describe("desktop app config", () => {
     );
 
     assert.equal(gitEntry.isDirectory(), true);
+    const rootCommit = await readCycleRootCommit(repositoryPath);
     assert.equal(repository.path, repositoryPath);
+    assert.equal(repository.id, repositoryIdForCycleRoot(rootCommit));
+    assert.equal(repository.gitDbRootCommitId, rootCommit);
     assert.equal(config.localWorkspace.repositories[0]?.id, repository.id);
   });
 

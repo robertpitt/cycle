@@ -79,6 +79,7 @@ export const defaultRepositoryPreferences = (): RepositoryPreferences => ({
 export const RepositoryRecord = Schema.Struct({
   addedAt: Schema.String,
   displayName: Schema.String,
+  gitDbRootCommitId: Schema.optional(Schema.String),
   id: Schema.String,
   lastOpenedAt: Schema.optional(Schema.String),
   path: Schema.String,

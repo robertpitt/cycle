@@ -73,6 +73,7 @@ const DatabaseConsumerDependenciesLive = Layer.mergeAll(
   DesktopRuntimeLive,
   ElectronPreferencesServiceLive,
   GitRepositoryServiceLive,
+  LocalWorkspaceServiceLive,
 );
 
 const DatabaseConsumersLive = DesktopBootstrapLive.pipe(

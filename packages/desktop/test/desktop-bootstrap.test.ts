@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { DesktopRuntimeLive } from "../src/platform/DesktopRuntimeLive.ts";
 import { defaultAppConfig, type RepositoryRecord } from "../src/shared/AppConfig.ts";
 import { DesktopBootstrap } from "../src/shared/Bootstrap.ts";
+import { LocalWorkspace } from "../src/shared/LocalWorkspace.ts";
 import { DesktopBootstrapLive } from "../src/main/DesktopBootstrapLive.ts";
 import { DesktopLogger } from "../src/main/DesktopLoggerLive.ts";
 import { ElectronPreferences } from "../src/main/ElectronPreferences.ts";
@@ -351,8 +352,33 @@ const makeLayer = (
     }),
   );
 
+  const localWorkspace = Layer.succeed(LocalWorkspace)(
+    LocalWorkspace.of({
+      initializeRepositoryPath: (input) =>
+        Effect.succeed(
+          repositories.find((repository) => repository.path === input.path) ??
+            repositories[0] ??
+            makeRepository(input.path),
+        ),
+      listRepositories: () => Effect.succeed(repositories),
+      markRepositoryOpened: (id) =>
+        Effect.succeed(repositories.find((repository) => repository.id === id) ?? null),
+      removeRepository: () => Effect.succeed(repositories),
+      updateRepositoryPreferences: (input) =>
+        Effect.succeed(repositories.find((repository) => repository.id === input.id) ?? null),
+      upsertRepositoryPath: (input) =>
+        Effect.succeed(
+          repositories.find((repository) => repository.path === input.path) ??
+            repositories[0] ??
+            makeRepository(input.path),
+        ),
+    }),
+  );
+
   return DesktopBootstrapLive.pipe(
-    Layer.provide(Layer.mergeAll(DesktopRuntimeLive, preferences, database, git, logger)),
+    Layer.provide(
+      Layer.mergeAll(DesktopRuntimeLive, preferences, database, git, localWorkspace, logger),
+    ),
   );
 };
 

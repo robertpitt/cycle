@@ -147,7 +147,10 @@ watched ref: refs/gitdb/cycle/main
 ```
 
 The implementation MUST poll the local ref `refs/gitdb/cycle/main` for each opened repository.
-Missing refs MUST be treated as an empty repository database until the first write creates the ref.
+Desktop repository opening MUST initialize missing refs before registering repositories with this
+package. If a lower-level caller opens a store with a missing ref, the package MAY still report an
+empty projection, but conforming desktop callers MUST supply a GitDB-root-derived repository ID and
+an initialized `refs/gitdb/cycle/main` ref.
 
 ### 7.3 Event Store Boundary
 
@@ -439,7 +442,8 @@ configurable. Polling MUST be disabled when a repository is closed.
 Each repository has these projection states:
 
 - `unopened`: repository is not registered.
-- `empty`: repository is open but `refs/gitdb/cycle/main` does not exist.
+- `empty`: repository is open but `refs/gitdb/cycle/main` does not exist. This is a defensive
+  lower-level state; normal desktop repository open initializes the ref before registration.
 - `ready`: SQLite is fully materialized for `active_snapshot_id`.
 - `syncing`: a newer snapshot is being materialized.
 - `degraded`: the latest sync completed with skipped-object warnings.

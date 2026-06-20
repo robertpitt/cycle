@@ -319,8 +319,8 @@ The implementation MUST provide an identity resolver equivalent to:
 
 ```ts
 type GitDbRepositoryIdentity = {
-  readonly repositoryId: string;      // repo_<root5>
-  readonly rootCommitId: string;      // full Git object ID
+  readonly repositoryId: string; // repo_<root5>
+  readonly rootCommitId: string; // full Git object ID
   readonly source: "local" | "remote" | "created" | "adopted-remote";
   readonly ref: "refs/gitdb/cycle/main";
 };
@@ -520,7 +520,7 @@ function ensureIdentity(repository, remote) {
   if (remote !== undefined) {
     const fetched = fetchRemoteGitDbRef(remote, "refs/gitdb/cycle/main");
     if (fetched.status === "found" && local.status === "missing") {
-      setLocalRef("refs/gitdb/cycle/main", fetched.snapshotId, expected = null);
+      setLocalRef("refs/gitdb/cycle/main", fetched.snapshotId, null);
       return identity(resolveRootCommit("refs/gitdb/cycle/main").rootCommitId, "remote");
     }
 
@@ -537,7 +537,7 @@ function ensureIdentity(repository, remote) {
 
   if (remote === undefined) return identity(created.id, "created");
 
-  const pushed = pushWithLease(remote, "refs/gitdb/cycle/main", created.id, expectedRemote = null);
+  const pushed = pushWithLease(remote, "refs/gitdb/cycle/main", created.id, null);
   if (pushed) return identity(created.id, "created");
 
   const remoteSnapshot = fetchRequiredRemoteGitDbRef(remote, "refs/gitdb/cycle/main");

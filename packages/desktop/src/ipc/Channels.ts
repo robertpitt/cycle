@@ -5,7 +5,7 @@ import {
   RepositoryRecord,
   ThemePreference,
 } from "../shared/AppConfig.ts";
-import { AgentProviderId, DetectedAgentProvider } from "../shared/AgentProviders.ts";
+import { DetectedAgentProvider } from "../shared/AgentProviders.ts";
 import { BootstrapStatus } from "../shared/Bootstrap.ts";
 import { ElectronThemeSource, ElectronThemeState } from "../platform/ElectronTheme.ts";
 import { CompleteOnboardingInput, ProfileUpdateInput } from "../shared/Profile.ts";

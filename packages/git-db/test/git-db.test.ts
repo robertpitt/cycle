@@ -84,6 +84,29 @@ const documentOp = (document: { json: () => unknown } | null | undefined): unkno
 };
 
 describe("@cycle/git-db", () => {
+  it.effect("creates a deterministic repository identity from the GitDB root commit", () =>
+    Effect.gen(function* () {
+      const store = yield* StoreApi.StoreService;
+      const identity = yield* store.ensureRepositoryIdentity();
+      const snapshot = yield* store.snapshot(identity.rootCommitId);
+      const entries = yield* store.list("", { from: identity.rootCommitId });
+      const reopened = yield* store.deriveRepositoryIdentity();
+
+      assert.match(identity.repositoryId, /^repo_[0-9a-f]{5}$/u);
+      assert.strictEqual(identity.repositoryId, `repo_${identity.rootCommitId.slice(0, 5)}`);
+      assert.strictEqual(identity.source, "created");
+      assert.strictEqual(snapshot.parents.length, 0);
+      assert.match(snapshot.message ?? "", /^Initialize Cycle GitDB\n\nSeed: [0-9a-f]{32}$/u);
+      assert.deepStrictEqual(entries, []);
+      assert.deepStrictEqual(reopened, {
+        ref: "refs/gitdb/cycle/main",
+        repositoryId: identity.repositoryId,
+        rootCommitId: identity.rootCommitId,
+        source: "local",
+      });
+    }).pipe(Effect.provide(GitDbInMemory({ database: "cycle" }))),
+  );
+
   it.effect("appends immutable canonical event files with blob deduplication", () =>
     Effect.gen(function* () {
       const store = yield* StoreApi.StoreService;
@@ -307,6 +330,34 @@ describe("@cycle/git-db", () => {
         },
       ]);
     }).pipe(Effect.provide(GitDbInMemory())),
+  );
+
+  it.effect("adopts the same root identity across checkouts through the remote GitDB ref", () =>
+    withTempDir("cycle-gitdb-identity-", (root) =>
+      Effect.gen(function* () {
+        const remote = path.join(root, "origin.git");
+        const first = path.join(root, "first");
+        const second = path.join(root, "second");
+
+        yield* attemptPromise(() => mkdir(first));
+        yield* attemptPromise(() => mkdir(second));
+        yield* git(root, ["init", "--bare", remote]);
+        yield* git(first, ["init", "--initial-branch=main"]);
+        yield* git(first, ["remote", "add", "origin", remote]);
+        yield* git(second, ["init", "--initial-branch=main"]);
+        yield* git(second, ["remote", "add", "origin", remote]);
+
+        const firstStore = yield* storeFor(first);
+        const secondStore = yield* storeFor(second);
+        const firstIdentity = yield* firstStore.ensureRepositoryIdentity({ remote: "origin" });
+        const secondIdentity = yield* secondStore.ensureRepositoryIdentity({ remote: "origin" });
+
+        assert.strictEqual(firstIdentity.source, "created");
+        assert.strictEqual(secondIdentity.source, "remote");
+        assert.strictEqual(secondIdentity.rootCommitId, firstIdentity.rootCommitId);
+        assert.strictEqual(secondIdentity.repositoryId, firstIdentity.repositoryId);
+      }),
+    ),
   );
 
   it.effect("rebases local GitDB commits onto fetched remote commits without merge commits", () =>

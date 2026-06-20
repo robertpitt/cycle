@@ -1,6 +1,22 @@
-import { Cache, Context, Effect, FileSystem, HashMap, Layer, Option, Path, TxRef } from "effect";
+import {
+  Cache,
+  Context,
+  Crypto,
+  Effect,
+  FileSystem,
+  HashMap,
+  Layer,
+  Option,
+  Path,
+  TxRef,
+} from "effect";
 import { Git, type GitService } from "@cycle/git/object-store/Git";
-import type { GitAdapterError, RemoteFetchError, RemotePushError } from "@cycle/git/errors";
+import {
+  gitAdapterError,
+  type GitAdapterError,
+  type RemoteFetchError,
+  type RemotePushError,
+} from "@cycle/git/errors";
 import type {
   CommitObject,
   DeleteRefInput,
@@ -18,6 +34,7 @@ import * as Tree from "./Tree.ts";
 import {
   pointerConflict,
   pointerNotFound,
+  repositoryIdentityConflict,
   snapshotNotFound,
   storeNotFound,
   syncConflict,
@@ -87,7 +104,13 @@ export type StoreServiceShape = {
   readonly currentSnapshotForPointer: (
     pointer: string,
   ) => Effect.Effect<Snapshot | null, GitDbError>;
+  readonly deriveRepositoryIdentity: (
+    pointer?: string,
+  ) => Effect.Effect<RepositoryIdentity | null, GitDbError>;
   readonly diff: (a: string, b: string) => Effect.Effect<ChangeSet, GitDbError>;
+  readonly ensureRepositoryIdentity: (
+    options?: EnsureRepositoryIdentityOptions,
+  ) => Effect.Effect<RepositoryIdentity, GitDbError>;
   readonly get: (path: string, options?: ReadOptions) => Effect.Effect<Document | null, GitDbError>;
   readonly history: (
     from?: string,
@@ -106,6 +129,20 @@ export type StoreServiceShape = {
   readonly resolveSnapshotId: (from?: string) => Effect.Effect<string | null, GitDbError>;
   readonly snapshot: (id: string) => Effect.Effect<Snapshot, GitDbError>;
   readonly sync: (options?: SyncOptions) => Effect.Effect<SyncResult, GitDbError>;
+};
+
+export type RepositoryIdentitySource = "adopted-remote" | "created" | "local" | "remote";
+
+export type RepositoryIdentity = {
+  readonly ref: string;
+  readonly repositoryId: string;
+  readonly rootCommitId: string;
+  readonly source: RepositoryIdentitySource;
+};
+
+export type EnsureRepositoryIdentityOptions = {
+  readonly pointer?: string;
+  readonly remote?: string;
 };
 
 export type StorePointer = {
@@ -144,6 +181,7 @@ type StoreRuntime = {
   readonly adapter: StoreGit;
   readonly cache: StoreRuntimeCache;
   readonly config: Store;
+  readonly randomBytes: (size: number) => Effect.Effect<Uint8Array, unknown>;
 };
 
 type StoreRuntimeCache = {
@@ -160,6 +198,9 @@ type StateUpdateResult =
       readonly _tag: "error";
       readonly error: GitDbError;
     };
+
+const bytesToHex = (bytes: Uint8Array): string =>
+  [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 
 type StoreGit = {
   readonly deleteRef: (input: DeleteRefInput) => Effect.Effect<void, GitAdapterError>;
@@ -188,6 +229,7 @@ export const live = Layer.effect(
   StoreService,
   Effect.gen(function* () {
     const config = yield* StoreConfig;
+    const crypto = yield* Crypto.Crypto;
     const git = yield* Git;
     const baseAdapter = bindGitAdapter(git, config);
     let listEntriesLookup: (key: string) => Effect.Effect<ReadonlyArray<Entry>, GitDbError> =
@@ -200,6 +242,7 @@ export const live = Layer.effect(
       adapter,
       cache,
       config,
+      randomBytes: (size) => crypto.randomBytes(size),
     };
     const store = makeStore(runtime);
 
@@ -350,12 +393,26 @@ const makeStore = (runtime: StoreRuntime): StoreServiceShape => {
 
         return snapshotId ? yield* store.snapshot(snapshotId) : null;
       }),
+    deriveRepositoryIdentity: (pointer = config.defaultPointer) =>
+      Effect.gen(function* () {
+        const pointerName = yield* validatePointerName(pointer);
+        const ref = `${refPrefix}/${pointerName}`;
+        const snapshotId = yield* adapter.readRef(ref);
+
+        if (snapshotId === null) return null;
+
+        const rootCommitId = yield* rootCommitForSnapshot(store, pointerName, snapshotId);
+
+        return repositoryIdentity(ref, rootCommitId, "local");
+      }),
     diff: (a, b) =>
       Effect.gen(function* () {
         const snapshotA = yield* snapshotOrResolve(store, a);
         const snapshotB = yield* snapshotOrResolve(store, b);
         return yield* diffSnapshotTrees(adapter, snapshotA.root, snapshotB.root);
       }),
+    ensureRepositoryIdentity: (options: EnsureRepositoryIdentityOptions = {}) =>
+      ensureRepositoryIdentity(store, runtime, options),
     get: (path, options: ReadOptions = {}) =>
       Effect.gen(function* () {
         const normalizedPath = yield* normalizeStorePath(path);
@@ -500,6 +557,180 @@ const makeStore = (runtime: StoreRuntime): StoreServiceShape => {
 
   return store;
 };
+
+const repositoryIdentity = (
+  ref: string,
+  rootCommitId: string,
+  source: RepositoryIdentitySource,
+): RepositoryIdentity => {
+  const normalized = rootCommitId.toLowerCase();
+
+  return {
+    ref,
+    repositoryId: `repo_${normalized.slice(0, 5)}`,
+    rootCommitId: normalized,
+    source,
+  };
+};
+
+const rootCommitForSnapshot = (
+  store: StoreServiceShape,
+  pointer: string,
+  snapshotId: string,
+): Effect.Effect<string, GitDbError> =>
+  Effect.gen(function* () {
+    const snapshots = yield* store.history(snapshotId);
+    const roots = snapshots
+      .filter((snapshot) => snapshot.parents.length === 0)
+      .map((snapshot) => snapshot.id.toLowerCase())
+      .sort();
+
+    if (roots.length === 1) return roots[0]!;
+
+    return yield* Effect.fail(
+      repositoryIdentityConflict({
+        pointer,
+        reason: roots.length === 0 ? "no-root" : "multiple-roots",
+        roots,
+      }),
+    );
+  });
+
+const randomSeedHex = (runtime: StoreRuntime): Effect.Effect<string, GitDbError> =>
+  runtime.randomBytes(16).pipe(
+    Effect.map(bytesToHex),
+    Effect.mapError((cause) =>
+      gitAdapterError("gitdb identity seed", "Unable to generate repository identity seed.", {
+        cause,
+      }),
+    ),
+  );
+
+const createBootstrapRoot = (
+  store: StoreServiceShape,
+  runtime: StoreRuntime,
+  pointer: string,
+): Effect.Effect<Snapshot, GitDbError> =>
+  Effect.gen(function* () {
+    const seed = yield* randomSeedHex(runtime);
+    const transaction = yield* store.begin(pointer);
+
+    return yield* transaction.commit({
+      expectedSnapshot: null,
+      message: `Initialize Cycle GitDB\n\nSeed: ${seed}`,
+    });
+  });
+
+const ensureRepositoryIdentity = (
+  store: StoreServiceShape,
+  runtime: StoreRuntime,
+  options: EnsureRepositoryIdentityOptions,
+): Effect.Effect<RepositoryIdentity, GitDbError> =>
+  Effect.gen(function* () {
+    const pointer = yield* validatePointerName(options.pointer ?? runtime.config.defaultPointer);
+    const localRef = yield* store.pointerRef(pointer);
+    const localBefore = yield* runtime.adapter.readRef(localRef);
+    const remote =
+      options.remote === undefined ? undefined : yield* validateRemoteName(options.remote);
+    let remoteFetchFailed = false;
+
+    if (remote !== undefined) {
+      const remoteRef = yield* store.remotePointerRef(remote, pointer);
+      const remotePrefix = yield* store.remoteRefPrefix(remote);
+      const fetched = yield* runtime.adapter
+        .fetch({
+          prune: true,
+          refspecs: [`+${store.refPrefix}/*:${remotePrefix}/*`],
+          remote,
+        })
+        .pipe(
+          Effect.andThen(runtime.adapter.readRef(remoteRef)),
+          Effect.matchEffect({
+            onFailure: () =>
+              Effect.sync(() => {
+                remoteFetchFailed = true;
+                return null;
+              }),
+            onSuccess: (snapshotId) => Effect.succeed(snapshotId),
+          }),
+        );
+
+      if (fetched !== null) {
+        const remoteRoot = yield* rootCommitForSnapshot(store, pointer, fetched);
+
+        if (localBefore === null) {
+          yield* movePointerRef(runtime, localRef, fetched, null, pointer);
+          return repositoryIdentity(localRef, remoteRoot, "remote");
+        }
+
+        const localRoot = yield* rootCommitForSnapshot(store, pointer, localBefore);
+
+        if (localRoot !== remoteRoot) {
+          return yield* Effect.fail(
+            repositoryIdentityConflict({
+              localRoot,
+              pointer,
+              reason: "root-mismatch",
+              remoteRoot,
+            }),
+          );
+        }
+
+        return repositoryIdentity(localRef, localRoot, "local");
+      }
+    }
+
+    if (localBefore !== null) {
+      const localRoot = yield* rootCommitForSnapshot(store, pointer, localBefore);
+      return repositoryIdentity(localRef, localRoot, "local");
+    }
+
+    const created = yield* createBootstrapRoot(store, runtime, pointer);
+    const createdIdentity = repositoryIdentity(localRef, created.id, "created");
+
+    if (remote === undefined || remoteFetchFailed) return createdIdentity;
+
+    const remoteRef = yield* store.remotePointerRef(remote, pointer);
+    const remotePrefix = yield* store.remoteRefPrefix(remote);
+    const pushed = yield* runtime.adapter
+      .push({
+        forceWithLease: [{ expected: null, ref: localRef }],
+        refspecs: [`${localRef}:${localRef}`],
+        remote,
+      })
+      .pipe(
+        Effect.matchEffect({
+          onFailure: (error) =>
+            Effect.succeed({
+              _tag: "failed" as const,
+              error,
+            }),
+          onSuccess: () =>
+            Effect.succeed({
+              _tag: "pushed" as const,
+            }),
+        }),
+      );
+
+    if (pushed._tag === "pushed") return createdIdentity;
+
+    const remoteAfter = yield* runtime.adapter
+      .fetch({
+        prune: true,
+        refspecs: [`+${store.refPrefix}/*:${remotePrefix}/*`],
+        remote,
+      })
+      .pipe(Effect.andThen(runtime.adapter.readRef(remoteRef)));
+
+    if (remoteAfter === null) {
+      return yield* Effect.fail(pushed.error);
+    }
+
+    yield* movePointerRef(runtime, localRef, remoteAfter, created.id, pointer);
+    const remoteRoot = yield* rootCommitForSnapshot(store, pointer, remoteAfter);
+
+    return repositoryIdentity(localRef, remoteRoot, "adopted-remote");
+  });
 
 const makeStorePointer = (
   store: StoreServiceShape,

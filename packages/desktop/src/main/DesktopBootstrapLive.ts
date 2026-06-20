@@ -9,6 +9,7 @@ import {
   type BootstrapRepositoryStatus,
   type BootstrapStatus,
 } from "../shared/Bootstrap.ts";
+import { LocalWorkspace } from "../shared/LocalWorkspace.ts";
 import { DesktopLogger } from "./DesktopLoggerLive.ts";
 import { ElectronPreferences } from "./ElectronPreferences.ts";
 
@@ -126,6 +127,7 @@ export const DesktopBootstrapLive = Layer.effect(
     const preferences = yield* ElectronPreferences;
     const database = yield* DatabaseService;
     const gitRepository = yield* GitRepository;
+    const localWorkspace = yield* LocalWorkspace;
     const logger = yield* DesktopLogger;
     const runtime = yield* DesktopRuntime;
     const changeSignals = yield* Queue.unbounded<string>();
@@ -496,6 +498,21 @@ export const DesktopBootstrapLive = Layer.effect(
             service: "@cycle/desktop",
           },
         }),
+      );
+
+    const resolveConfiguredRepositories = (
+      repositories: ReadonlyArray<RepositoryRecord>,
+    ): Effect.Effect<ReadonlyArray<RepositoryRecord>, unknown> =>
+      Effect.forEach(
+        repositories,
+        (repository) =>
+          localWorkspace.upsertRepositoryPath({
+            displayName: repository.displayName,
+            path: repository.path,
+          }),
+        {
+          concurrency: 1,
+        },
       );
 
     const repositoryById = (repositoryId: string): Effect.Effect<RepositoryRecord, unknown> =>
@@ -979,19 +996,21 @@ export const DesktopBootstrapLive = Layer.effect(
         })),
       });
 
-      for (const repository of config.localWorkspace.repositories) {
+      const repositories = yield* resolveConfiguredRepositories(config.localWorkspace.repositories);
+
+      for (const repository of repositories) {
         setRepositoryStatus(repository, {
           stage: "pending",
         });
       }
 
-      yield* openConfiguredRepositories(config.localWorkspace.repositories);
+      yield* openConfiguredRepositories(repositories);
 
       setStatus({
         blocking: false,
         completedAt: nowIso(),
         message:
-          config.localWorkspace.repositories.length === 0
+          repositories.length === 0
             ? "No repositories configured"
             : "Repository projections are ready",
         phase: "ready-with-background-sync",

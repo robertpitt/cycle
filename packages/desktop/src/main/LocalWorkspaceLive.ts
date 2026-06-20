@@ -1,5 +1,6 @@
+import { GitDb, Store as GitDbStore } from "@cycle/git-db";
 import { GitRepository, type GitRepositoryServiceShape } from "@cycle/git";
-import { Crypto, Effect, Layer, Path } from "effect";
+import { Effect, Layer, Path } from "effect";
 import {
   AppConfig,
   appConfigError,
@@ -12,11 +13,6 @@ import {
   type UpdateRepositoryPreferencesInput,
   type UpsertRepositoryPathInput,
 } from "../shared/LocalWorkspace.ts";
-
-const bytesToHex = (bytes: Uint8Array): string =>
-  Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-
-const textEncoder = new TextEncoder();
 
 const ensureGitRepository = (gitRepository: GitRepositoryServiceShape, repositoryPath: string) =>
   gitRepository
@@ -47,15 +43,32 @@ export const LocalWorkspaceLive = Layer.effect(
   LocalWorkspace,
   Effect.gen(function* () {
     const appConfig = yield* AppConfig;
-    const crypto = yield* Crypto.Crypto;
     const gitRepository = yield* GitRepository;
     const path = yield* Path.Path;
 
-    const repositoryId = (repositoryPath: string) =>
-      crypto.digest("SHA-256", textEncoder.encode(repositoryPath)).pipe(
-        Effect.map((digest) => `repo_${bytesToHex(digest).slice(0, 16)}`),
+    const repositoryIdentity = (repositoryPath: string) =>
+      Effect.gen(function* () {
+        const metadata = yield* gitRepository.metadata(repositoryPath);
+        const store = yield* GitDbStore.StoreService.pipe(
+          Effect.provide(
+            GitDb.GitDbLive({
+              cwd: repositoryPath,
+              database: "cycle",
+              gitDir: metadata.gitDir,
+            }),
+          ),
+        );
+
+        return yield* store.ensureRepositoryIdentity({
+          remote: metadata.defaultRemote,
+        });
+      }).pipe(
         Effect.mapError((cause) =>
-          appConfigError("LocalWorkspace.repositoryId", "Unable to derive repository id.", cause),
+          appConfigError(
+            "LocalWorkspace.repositoryIdentity",
+            "Unable to derive repository id.",
+            cause,
+          ),
         ),
       );
 
@@ -74,9 +87,33 @@ export const LocalWorkspaceLive = Layer.effect(
       Effect.gen(function* () {
         const normalizedPath = normalizeRepositoryPath(input.path);
         yield* ensureGitRepository(gitRepository, normalizedPath);
-        const id = yield* repositoryId(normalizedPath);
+        const identity = yield* repositoryIdentity(normalizedPath);
+        const id = identity.repositoryId;
         const now = new Date().toISOString();
-        const existing = (yield* listRepositories()).find(
+        const repositories = yield* listRepositories();
+        const collision = repositories.find(
+          (repository) =>
+            repository.id === id &&
+            repository.path !== normalizedPath &&
+            repository.gitDbRootCommitId !== identity.rootCommitId,
+        );
+
+        if (collision !== undefined) {
+          return yield* Effect.fail(
+            appConfigError(
+              "LocalWorkspace.repositoryIdentity",
+              `Repository id collision for ${id}.`,
+              {
+                existingPath: collision.path,
+                existingRoot: collision.gitDbRootCommitId,
+                nextPath: normalizedPath,
+                nextRoot: identity.rootCommitId,
+              },
+            ),
+          );
+        }
+
+        const existing = repositories.find(
           (repository) => repository.path === normalizedPath || repository.id === id,
         );
         const nextRepository: RepositoryRecord =
@@ -84,6 +121,7 @@ export const LocalWorkspaceLive = Layer.effect(
             ? {
                 addedAt: now,
                 displayName: input.displayName?.trim() || displayNameForPath(normalizedPath),
+                gitDbRootCommitId: identity.rootCommitId,
                 id,
                 path: normalizedPath,
                 preferences: defaultRepositoryPreferences(),
@@ -91,6 +129,8 @@ export const LocalWorkspaceLive = Layer.effect(
             : {
                 ...existing,
                 displayName: input.displayName?.trim() || existing.displayName,
+                gitDbRootCommitId: identity.rootCommitId,
+                id,
                 path: normalizedPath,
               };
 

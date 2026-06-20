@@ -106,7 +106,14 @@ export const layer = Layer.effect(
           spawner,
           store.gitDir,
           store.cwd,
-          ["push", input.remote, ...input.refspecs],
+          [
+            "push",
+            ...(input.forceWithLease ?? []).map(
+              (lease) => `--force-with-lease=${lease.ref}:${lease.expected ?? ""}`,
+            ),
+            input.remote,
+            ...input.refspecs,
+          ],
           {},
           (args, result, cause) =>
             remotePushError(

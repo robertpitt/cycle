@@ -187,7 +187,7 @@ Persisted sections:
 
 Repository records include:
 
-- stable id derived from the normalized path hash
+- stable id derived from the root commit of `refs/gitdb/cycle/main`
 - display name
 - absolute path
 - added/opened timestamps
@@ -472,9 +472,12 @@ Main page body selection:
 2. Main opens an Electron folder dialog.
 3. Selected path is passed to `LocalWorkspace.upsertRepositoryPath`.
 4. `LocalWorkspaceLive` normalizes the path and requires it to be a Git repo.
-5. A stable repository id is derived from the normalized path.
-6. The repository is inserted or updated in `app-config.json`.
-7. Renderer refreshes the app config query cache.
+5. `LocalWorkspaceLive` ensures `refs/gitdb/cycle/main` exists, creating an empty-tree root commit
+   with a random seed in the commit message when needed.
+6. A stable repository id is derived as `repo_` plus the first five hex characters of that GitDB
+   root commit.
+7. The repository is inserted or updated in `app-config.json`.
+8. Renderer refreshes the app config query cache.
 
 If the folder is not a Git repository, the result is `not-git`. The renderer
 opens `RepositoryInitialiseDialog`; confirming it calls
