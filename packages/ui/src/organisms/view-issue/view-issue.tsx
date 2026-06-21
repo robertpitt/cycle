@@ -286,6 +286,26 @@ type ActivityTimelineItem =
       readonly time?: number;
     };
 
+type ActivityTimelineGroup =
+  | {
+      readonly authorKey: string;
+      readonly events: ViewIssueActivityEvent[];
+      readonly id: string;
+      readonly kind: "events";
+    }
+  | {
+      readonly comment: ViewIssueComment;
+      readonly id: string;
+      readonly kind: "comment";
+    };
+
+const activityAuthorKey = (author: IssueAuthor): string => {
+  const authorName =
+    typeof author.name === "string" || typeof author.name === "number" ? String(author.name) : "";
+
+  return [author.avatarSrc ?? "", author.initials, authorName].join(":");
+};
+
 export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(function ViewIssue(
   {
     activityEvents = defaultActivityEvents,
@@ -401,12 +421,44 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
     });
   }, [activityEvents, localComments]);
 
+  const activityTimelineGroups = React.useMemo<readonly ActivityTimelineGroup[]>(() => {
+    const groups: ActivityTimelineGroup[] = [];
+
+    for (const item of activityTimeline) {
+      if (item.kind === "comment") {
+        groups.push({
+          comment: item.comment,
+          id: `comment-${item.comment.id}`,
+          kind: "comment",
+        });
+        continue;
+      }
+
+      const authorKey = activityAuthorKey(item.event.author);
+      const previousGroup = groups[groups.length - 1];
+
+      if (previousGroup?.kind === "events" && previousGroup.authorKey === authorKey) {
+        previousGroup.events.push(item.event);
+        continue;
+      }
+
+      groups.push({
+        authorKey,
+        events: [item.event],
+        id: `events-${item.event.id}`,
+        kind: "events",
+      });
+    }
+
+    return groups;
+  }, [activityTimeline]);
+
   return (
     <div
       {...props}
       ref={ref}
       className={cn(
-        "min-h-[820px] bg-background text-foreground",
+        "h-full min-h-0 overflow-hidden bg-background text-foreground",
         "grid grid-cols-[minmax(0,1fr)_360px] gap-10 px-8 py-7",
         "max-xl:grid-cols-1 max-xl:px-6",
         className,
@@ -422,7 +474,7 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
         ref={fileInputRef}
         type="file"
       />
-      <main className="mx-auto grid w-full max-w-[1120px] content-start gap-8">
+      <main className="mx-auto grid h-full min-h-0 w-full max-w-[1120px] content-start gap-8 overflow-y-auto overscroll-contain pr-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="grid gap-7">
           <EditableText
             defaultValue={defaultTitle}
@@ -526,27 +578,32 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
             </div>
           </div>
           <div className="grid gap-5">
-            {activityTimeline.map((item) =>
-              item.kind === "event" ? (
-                <IssueActivityEvent
-                  author={item.event.author}
-                  key={item.event.id}
-                  timestamp={item.event.timestamp}
-                >
-                  {item.event.body}
-                </IssueActivityEvent>
+            {activityTimelineGroups.map((group) =>
+              group.kind === "events" ? (
+                <div className="grid gap-1.5" key={group.id}>
+                  {group.events.map((event, eventIndex) => (
+                    <IssueActivityEvent
+                      author={event.author}
+                      key={event.id}
+                      showAuthor={eventIndex === 0}
+                      timestamp={event.timestamp}
+                    >
+                      {event.body}
+                    </IssueActivityEvent>
+                  ))}
+                </div>
               ) : (
                 <IssueCommentCard
-                  author={item.comment.author}
-                  body={item.comment.body}
-                  key={item.comment.id}
+                  author={group.comment.author}
+                  body={group.comment.body}
+                  key={group.id}
                   onAgentReferenceClick={onAgentReferenceClick}
                   onCommitReferenceClick={onCommitReferenceClick}
                   onCycleReferenceClick={onCycleReferenceClick}
                   onIssueReferenceClick={onIssueReferenceClick}
                   onRepositoryReferenceClick={onRepositoryReferenceClick}
                   onUserReferenceClick={onUserReferenceClick}
-                  timestamp={item.comment.timestamp}
+                  timestamp={group.comment.timestamp}
                 />
               ),
             )}
@@ -562,7 +619,7 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
         </section>
       </main>
 
-      <aside className="grid h-fit content-start gap-3 max-xl:hidden">
+      <aside className="sticky top-0 grid max-h-full min-h-0 content-start gap-3 self-start overflow-y-auto overscroll-contain pr-1 max-xl:hidden">
         <ViewIssueActions />
         <IssueSidebarSection
           className="overflow-visible"

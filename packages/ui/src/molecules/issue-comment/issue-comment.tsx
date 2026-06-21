@@ -1,4 +1,4 @@
-import { ArrowUp, Paperclip } from "lucide-react";
+import { ArrowUp, Paperclip, Plus } from "lucide-react";
 import * as React from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "../../atoms/avatar/index.ts";
 import { IconButton } from "../../atoms/icon-button/index.ts";
@@ -17,6 +17,7 @@ export type IssueAuthor = {
 export type IssueActivityEventProps = React.HTMLAttributes<HTMLDivElement> & {
   readonly author: IssueAuthor;
   readonly children: React.ReactNode;
+  readonly showAuthor?: boolean;
   readonly timestamp?: React.ReactNode;
 };
 
@@ -57,22 +58,33 @@ const IssueAvatar = ({
 );
 
 export const IssueActivityEvent = React.forwardRef<HTMLDivElement, IssueActivityEventProps>(
-  function IssueActivityEvent({ author, children, className, timestamp, ...props }, ref) {
+  function IssueActivityEvent(
+    { author, children, className, showAuthor = true, timestamp, ...props },
+    ref,
+  ) {
     return (
       <div
         {...props}
         ref={ref}
         className={cn(
-          "flex min-w-0 items-center gap-3 text-muted-foreground",
+          "grid min-w-0 grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-3 text-muted-foreground",
           typography.control,
           className,
         )}
       >
-        <IssueAvatar author={author} />
+        {showAuthor ? <IssueAvatar author={author} /> : <span aria-hidden className="w-7" />}
         <span className="min-w-0 truncate">
-          <span className="font-medium text-foreground">{author.name}</span> {children}
-          {timestamp ? <span> - {timestamp}</span> : null}
+          {showAuthor ? <span className="font-medium text-foreground">{author.name} </span> : null}
+          {!showAuthor ? (
+            <Plus
+              aria-hidden
+              className="mr-2 inline size-3.5 text-muted-foreground/70"
+              strokeWidth={2}
+            />
+          ) : null}
+          {children}
         </span>
+        {timestamp ? <span className="shrink-0 text-right">{timestamp}</span> : null}
       </div>
     );
   },
@@ -101,49 +113,54 @@ export const IssueCommentCard = React.forwardRef<HTMLDivElement, IssueCommentCar
         {...props}
         ref={ref}
         className={cn(
-          "overflow-hidden rounded-lg border border-border bg-elevated text-elevated-foreground",
+          "grid min-w-0 grid-cols-[1.75rem_minmax(0,1fr)_auto] items-start gap-3 text-elevated-foreground",
           className,
         )}
       >
-        <div className="grid gap-3 p-4">
-          <div className={cn("flex min-w-0 items-center gap-3", typography.control)}>
-            <IssueAvatar author={author} />
-            <span className="font-semibold text-foreground">{author.name}</span>
-            {timestamp ? <span className="text-muted-foreground">{timestamp}</span> : null}
-          </div>
-          <div className={cn("text-foreground", typography.bodyCompact)}>
-            {typeof body === "string" ? (
-              <MarkdownRenderer
-                markdown={body}
-                onAgentReferenceClick={onAgentReferenceClick}
-                onCommitReferenceClick={onCommitReferenceClick}
-                onCycleReferenceClick={onCycleReferenceClick}
-                onIssueReferenceClick={onIssueReferenceClick}
-                onRepositoryReferenceClick={onRepositoryReferenceClick}
-                onUserReferenceClick={onUserReferenceClick}
-              />
-            ) : (
-              body
-            )}
-          </div>
-        </div>
-        <div className="flex min-h-14 items-center gap-3 border-t border-border px-4">
-          <IssueAvatar author={author} className="size-6 opacity-80" />
-          <span className={cn("min-w-0 flex-1 text-muted-foreground", typography.bodyCompact)}>
-            {replyPlaceholder}
+        <IssueAvatar author={author} />
+        <span className={cn("min-w-0 truncate text-muted-foreground", typography.control)}>
+          <span className="font-medium text-foreground">{author.name}</span> commented
+        </span>
+        {timestamp ? (
+          <span className={cn("shrink-0 text-right text-muted-foreground", typography.control)}>
+            {timestamp}
           </span>
-          <IconButton
-            icon={<Paperclip aria-hidden className="size-4" />}
-            label="Attach reply file"
-            size="sm"
-            title="Attach reply file"
-          />
-          <IconButton
-            icon={<ArrowUp aria-hidden className="size-4" />}
-            label="Send reply"
-            size="sm"
-            title="Send reply"
-          />
+        ) : null}
+        <div className="col-start-2 col-end-4 min-w-0 overflow-hidden rounded-lg border border-border bg-elevated">
+          <div className="grid gap-3 p-4">
+            <div className="text-foreground">
+              {typeof body === "string" ? (
+                <MarkdownRenderer
+                  markdown={body}
+                  onAgentReferenceClick={onAgentReferenceClick}
+                  onCommitReferenceClick={onCommitReferenceClick}
+                  onCycleReferenceClick={onCycleReferenceClick}
+                  onIssueReferenceClick={onIssueReferenceClick}
+                  onRepositoryReferenceClick={onRepositoryReferenceClick}
+                  onUserReferenceClick={onUserReferenceClick}
+                />
+              ) : (
+                body
+              )}
+            </div>
+          </div>
+          <div className="flex min-h-14 items-center gap-3 border-t border-border px-4">
+            <span className={cn("min-w-0 flex-1 text-muted-foreground", typography.bodyCompact)}>
+              {replyPlaceholder}
+            </span>
+            <IconButton
+              icon={<Paperclip aria-hidden className="size-4" />}
+              label="Attach reply file"
+              size="sm"
+              title="Attach reply file"
+            />
+            <IconButton
+              icon={<ArrowUp aria-hidden className="size-4" />}
+              label="Send reply"
+              size="sm"
+              title="Send reply"
+            />
+          </div>
         </div>
       </article>
     );

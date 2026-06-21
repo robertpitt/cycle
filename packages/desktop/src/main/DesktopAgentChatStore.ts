@@ -20,6 +20,7 @@ type ThreadRow = {
   readonly created_at: string;
   readonly last_error: string | null;
   readonly model: string | null;
+  readonly runtime_mode: string | null;
   readonly session_id: string | null;
   readonly status: AgentChatThreadRecord["status"];
   readonly summary: string;
@@ -51,6 +52,7 @@ type TurnRow = {
   readonly metadata_json: string | null;
   readonly model: string | null;
   readonly provider_id: string;
+  readonly runtime_mode: string | null;
   readonly status: AgentChatTurnRecord["status"];
   readonly thinking_level: string | null;
   readonly thread_id: string;
@@ -384,21 +386,22 @@ export const makeDesktopAgentChatStore = (path: string): AgentChatStoreShape => 
     upsertThread: async (input: AgentChatThreadRecord): Promise<AgentChatThreadRecord> => {
       db.prepare(
         `INSERT INTO agent_chat_threads (
-          thread_id, title, summary, status, agent_id, session_id, model, thinking_level,
-          active_turn_id, last_error, archived_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(thread_id) DO UPDATE SET
-          title = excluded.title,
-          summary = excluded.summary,
-          status = excluded.status,
-          agent_id = excluded.agent_id,
-          session_id = excluded.session_id,
-          model = excluded.model,
-          thinking_level = excluded.thinking_level,
-          active_turn_id = excluded.active_turn_id,
-          last_error = excluded.last_error,
-          archived_at = excluded.archived_at,
-          updated_at = excluded.updated_at`,
+	          thread_id, title, summary, status, agent_id, session_id, model, runtime_mode, thinking_level,
+	          active_turn_id, last_error, archived_at, created_at, updated_at
+	        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	        ON CONFLICT(thread_id) DO UPDATE SET
+	          title = excluded.title,
+	          summary = excluded.summary,
+	          status = excluded.status,
+	          agent_id = excluded.agent_id,
+	          session_id = excluded.session_id,
+	          model = excluded.model,
+	          runtime_mode = excluded.runtime_mode,
+	          thinking_level = excluded.thinking_level,
+	          active_turn_id = excluded.active_turn_id,
+	          last_error = excluded.last_error,
+	          archived_at = excluded.archived_at,
+	          updated_at = excluded.updated_at`,
       ).run(
         input.id,
         input.title,
@@ -407,6 +410,7 @@ export const makeDesktopAgentChatStore = (path: string): AgentChatStoreShape => 
         input.agentId ?? null,
         input.sessionId ?? null,
         input.model ?? null,
+        input.runtimeMode ?? null,
         input.thinkingLevel ?? null,
         input.activeTurnId ?? null,
         input.lastError ?? null,
@@ -420,18 +424,19 @@ export const makeDesktopAgentChatStore = (path: string): AgentChatStoreShape => 
     upsertTurn: async (input): Promise<AgentChatTurnRecord> => {
       db.prepare(
         `INSERT INTO agent_chat_turns (
-          thread_id, turn_id, input_message_id, assistant_message_id, provider_id, model,
-          thinking_level, status, last_error, metadata_json, completed_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(thread_id, turn_id) DO UPDATE SET
-          input_message_id = excluded.input_message_id,
-          assistant_message_id = excluded.assistant_message_id,
-          provider_id = excluded.provider_id,
-          model = excluded.model,
-          thinking_level = excluded.thinking_level,
-          status = excluded.status,
-          last_error = excluded.last_error,
-          metadata_json = excluded.metadata_json,
+	          thread_id, turn_id, input_message_id, assistant_message_id, provider_id, model,
+	          runtime_mode, thinking_level, status, last_error, metadata_json, completed_at, created_at, updated_at
+	        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	        ON CONFLICT(thread_id, turn_id) DO UPDATE SET
+	          input_message_id = excluded.input_message_id,
+	          assistant_message_id = excluded.assistant_message_id,
+	          provider_id = excluded.provider_id,
+	          model = excluded.model,
+	          runtime_mode = excluded.runtime_mode,
+	          thinking_level = excluded.thinking_level,
+	          status = excluded.status,
+	          last_error = excluded.last_error,
+	          metadata_json = excluded.metadata_json,
           completed_at = excluded.completed_at,
           updated_at = excluded.updated_at`,
       ).run(
@@ -441,6 +446,7 @@ export const makeDesktopAgentChatStore = (path: string): AgentChatStoreShape => 
         input.assistantMessageId ?? null,
         input.providerId,
         input.model ?? null,
+        input.runtimeMode ?? null,
         input.thinkingLevel ?? null,
         input.status,
         input.lastError ?? null,
@@ -458,6 +464,7 @@ export const makeDesktopAgentChatStore = (path: string): AgentChatStoreShape => 
 const ensureChatSchemaCompatibility = (db: DatabaseSync): void => {
   const columns: ReadonlyArray<readonly [string, string]> = [
     ["agent_chat_threads", "model TEXT"],
+    ["agent_chat_threads", "runtime_mode TEXT"],
     ["agent_chat_threads", "thinking_level TEXT"],
     ["agent_chat_threads", "active_turn_id TEXT"],
     ["agent_chat_threads", "last_error TEXT"],
@@ -466,6 +473,7 @@ const ensureChatSchemaCompatibility = (db: DatabaseSync): void => {
     ["agent_chat_messages", "streaming INTEGER NOT NULL DEFAULT 0"],
     ["agent_chat_messages", "metadata_json TEXT"],
     ["agent_chat_messages", "updated_at TEXT"],
+    ["agent_chat_turns", "runtime_mode TEXT"],
   ];
 
   for (const [table, column] of columns) {
@@ -507,6 +515,13 @@ const jsonRecordProperty = <Key extends string>(
   return parsed === undefined ? {} : ({ [key]: parsed } as Record<Key, typeof parsed>);
 };
 
+const runtimeModeFromString = (
+  value: string | null,
+): AgentChatThreadRecord["runtimeMode"] | undefined =>
+  value === "read-only" || value === "workspace-write" || value === "full-access"
+    ? value
+    : undefined;
+
 const threadFromRow = (row: ThreadRow): AgentChatThreadRecord => ({
   ...(row.active_turn_id === null ? {} : { activeTurnId: row.active_turn_id }),
   ...(row.agent_id === null ? {} : { agentId: row.agent_id }),
@@ -515,6 +530,9 @@ const threadFromRow = (row: ThreadRow): AgentChatThreadRecord => ({
   id: row.thread_id,
   ...(row.last_error === null ? {} : { lastError: row.last_error }),
   ...(row.model === null ? {} : { model: row.model }),
+  ...(runtimeModeFromString(row.runtime_mode) === undefined
+    ? {}
+    : { runtimeMode: runtimeModeFromString(row.runtime_mode) }),
   ...(row.session_id === null ? {} : { sessionId: row.session_id }),
   status: row.status,
   summary: row.summary,
@@ -546,6 +564,9 @@ const turnFromRow = (row: TurnRow): AgentChatTurnRecord => ({
   ...jsonRecordProperty("metadata", row.metadata_json),
   ...(row.model === null ? {} : { model: row.model }),
   providerId: row.provider_id,
+  ...(runtimeModeFromString(row.runtime_mode) === undefined
+    ? {}
+    : { runtimeMode: runtimeModeFromString(row.runtime_mode) }),
   status: row.status,
   ...(row.thinking_level === null ? {} : { thinkingLevel: row.thinking_level }),
   threadId: row.thread_id,

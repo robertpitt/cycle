@@ -11,6 +11,7 @@ import type {
   AgentChatQuestionDraft,
   AgentChatQuestionItem,
   AgentChatQuestionStatus,
+  AgentChatRuntimeMode,
   AgentChatThreadDetail,
   AgentChatThreadListEntry,
   AgentChatThreadStatus,
@@ -64,6 +65,9 @@ const booleanValue = (value: unknown): boolean | undefined =>
   typeof value === "boolean" ? value : undefined;
 
 const arrayValue = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : []);
+
+const runtimeMode = (value: unknown): AgentChatRuntimeMode | null =>
+  value === "read-only" || value === "workspace-write" || value === "full-access" ? value : null;
 
 const threadStatus = (value: unknown): AgentChatThreadStatus => {
   if (
@@ -123,8 +127,6 @@ const activityStatus = (value: unknown): AgentChatActivityStatus | null => {
 const hiddenProviderItemTypes = new Set([
   "agentMessage",
   "agent_message",
-  "commandExecution",
-  "command_execution",
   "contextCompaction",
   "context_compaction",
   "fileChange",
@@ -163,6 +165,7 @@ const protocolThread = (value: unknown): AgentChatThreadListEntry | undefined =>
     lastError: stringOrNull(value.lastError),
     model: stringOrNull(value.model),
     providerId: stringOrNull(value.providerId),
+    runtimeMode: runtimeMode(value.runtimeMode),
     status: threadStatus(value.status),
     summary: stringOrNull(value.summary),
     thinkingLevel: stringOrNull(value.thinkingLevel),
@@ -171,7 +174,7 @@ const protocolThread = (value: unknown): AgentChatThreadListEntry | undefined =>
   };
 };
 
-const protocolMessage = (value: unknown): AgentChatMessage | undefined => {
+const protocolMessage = (value: unknown, sequence?: number): AgentChatMessage | undefined => {
   if (!isRecord(value)) return undefined;
   const id = stringValue(value.id);
   const createdAt = stringValue(value.createdAt);
@@ -187,7 +190,7 @@ const protocolMessage = (value: unknown): AgentChatMessage | undefined => {
     createdAt,
     id,
     role,
-    sequence: numberValue(value.sequence),
+    sequence: sequence ?? numberValue(value.timelineSequence) ?? numberValue(value.sequence),
     streaming: booleanValue(value.streaming),
     text,
     turnId: stringOrNull(value.turnId),
@@ -195,7 +198,7 @@ const protocolMessage = (value: unknown): AgentChatMessage | undefined => {
   };
 };
 
-const protocolActivity = (value: unknown): AgentChatActivity | undefined => {
+const protocolActivity = (value: unknown, sequence?: number): AgentChatActivity | undefined => {
   if (!isRecord(value)) return undefined;
   const id = stringValue(value.id);
   const createdAt = stringValue(value.createdAt);
@@ -211,6 +214,7 @@ const protocolActivity = (value: unknown): AgentChatActivity | undefined => {
     id,
     kind: activityKind(value.kind),
     payload,
+    sequence: sequence ?? numberValue(value.timelineSequence) ?? numberValue(value.sequence),
     status: activityStatus(value.status),
     title,
     turnId: stringOrNull(value.turnId),
@@ -241,7 +245,7 @@ const protocolQuestionItem = (value: unknown): AgentChatQuestionItem | undefined
   };
 };
 
-const protocolQuestion = (value: unknown): AgentChatQuestion | undefined => {
+const protocolQuestion = (value: unknown, sequence?: number): AgentChatQuestion | undefined => {
   if (!isRecord(value)) return undefined;
   const id = stringValue(value.id);
   const createdAt = stringValue(value.createdAt);
@@ -257,6 +261,7 @@ const protocolQuestion = (value: unknown): AgentChatQuestion | undefined => {
     id,
     prompt,
     questions: arrayValue(value.questions).map(protocolQuestionItem).filter(isDefined),
+    sequence: sequence ?? numberValue(value.timelineSequence) ?? numberValue(value.sequence),
     status: questionStatus(value.status),
     turnId,
     updatedAt: stringOrNull(value.updatedAt),
@@ -366,6 +371,7 @@ const activityEntry = (activity: AgentChatActivity): AgentChatTimelineEntry => (
   id: `activity:${activity.id}`,
   kind: "activity",
   activity,
+  sequence: activity.sequence,
 });
 
 const questionEntry = (question: AgentChatQuestion): AgentChatTimelineEntry => ({
@@ -373,6 +379,7 @@ const questionEntry = (question: AgentChatQuestion): AgentChatTimelineEntry => (
   id: `question:${question.id}`,
   kind: "question",
   question,
+  sequence: question.sequence,
 });
 
 const upsertTimelineEntry = (
@@ -500,6 +507,7 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
   const [composerValue, setComposerValue] = React.useState("");
   const [draftProviderId, setDraftProviderId] = React.useState<string | null>(null);
   const [draftModel, setDraftModel] = React.useState<string | null>(null);
+  const [draftRuntimeMode, setDraftRuntimeMode] = React.useState<AgentChatRuntimeMode | null>(null);
   const [draftThinkingLevel, setDraftThinkingLevel] = React.useState<string | null>(null);
   const [questionDrafts, setQuestionDrafts] = React.useState<
     Record<string, AgentChatQuestionDraft>
@@ -655,7 +663,9 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
 
         case "message.created":
         case "message.completed": {
-          const messagePayload = isRecord(payload) ? protocolMessage(payload.message) : undefined;
+          const messagePayload = isRecord(payload)
+            ? protocolMessage(payload.message, message.sequence)
+            : undefined;
           const threadId = message.threadId;
           if (messagePayload === undefined || threadId === undefined) break;
           setDetailsById((current) => {
@@ -706,7 +716,9 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
         }
 
         case "activity.upserted": {
-          const activity = isRecord(payload) ? protocolActivity(payload.activity) : undefined;
+          const activity = isRecord(payload)
+            ? protocolActivity(payload.activity, message.sequence)
+            : undefined;
           const threadId = message.threadId;
           if (activity === undefined) break;
           setDetailsById((current) => {
@@ -717,6 +729,26 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
               [detail.id]: {
                 ...detail,
                 timeline: upsertTimelineEntry(detail.timeline, activityEntry(activity)),
+              },
+            };
+          });
+          break;
+        }
+
+        case "question.created": {
+          const question = isRecord(payload)
+            ? protocolQuestion(payload.question, message.sequence)
+            : undefined;
+          const threadId = message.threadId;
+          if (question === undefined || threadId === undefined) break;
+          setDetailsById((current) => {
+            const detail = current[threadId];
+            if (detail === undefined) return current;
+            return {
+              ...current,
+              [detail.id]: {
+                ...detail,
+                timeline: upsertTimelineEntry(detail.timeline, questionEntry(question)),
               },
             };
           });
@@ -817,6 +849,16 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
           const active =
             status === "queued" || status === "running" || status === "waiting_for_user";
           if (threadId === undefined || status === null) break;
+          const nextRuntimeMode = runtimeMode(turn.runtimeMode);
+          const settingsPatch = {
+            ...(typeof turn.model === "string" || turn.model === null
+              ? { model: stringOrNull(turn.model) }
+              : {}),
+            ...(nextRuntimeMode === null ? {} : { runtimeMode: nextRuntimeMode }),
+            ...(typeof turn.thinkingLevel === "string" || turn.thinkingLevel === null
+              ? { thinkingLevel: stringOrNull(turn.thinkingLevel) }
+              : {}),
+          };
 
           setDetailsById((current) => {
             const detail = current[threadId];
@@ -827,6 +869,7 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
                 ...detail,
                 activeTurnId: active ? stringOrNull(turn.id) : null,
                 lastError: stringOrNull(turn.lastError),
+                ...settingsPatch,
                 turnStatus: status,
               },
             };
@@ -838,6 +881,7 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
                     ...thread,
                     activeTurnId: active ? stringOrNull(turn.id) : null,
                     lastError: stringOrNull(turn.lastError),
+                    ...settingsPatch,
                     status:
                       status === "failed"
                         ? "error"
@@ -947,6 +991,7 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
   const rawSelectedModel =
     selectedThread?.model ?? draftModel ?? providerDefaultModel(providers, selectedProviderId);
   const selectedModel = supportedModelForProvider(providers, selectedProviderId, rawSelectedModel);
+  const selectedRuntimeMode = selectedThread?.runtimeMode ?? draftRuntimeMode ?? "read-only";
   const selectedThinkingLevel =
     selectedThread?.thinkingLevel ??
     draftThinkingLevel ??
@@ -956,6 +1001,7 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
     (patch: {
       readonly model?: string | null;
       readonly providerId?: string | null;
+      readonly runtimeMode?: AgentChatRuntimeMode | null;
       readonly thinkingLevel?: string | null;
     }) => {
       const threadId = selectedThreadIdRef.current;
@@ -1027,6 +1073,7 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
       {
         ...(model === null ? {} : { model }),
         ...(providerId === null ? {} : { providerId }),
+        runtimeMode: selectedRuntimeMode,
         ...(selectedThinkingLevel === null ? {} : { thinkingLevel: selectedThinkingLevel }),
       },
       (ack) => {
@@ -1043,6 +1090,7 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
     providers,
     selectedModel,
     selectedProviderId,
+    selectedRuntimeMode,
     selectedThinkingLevel,
     sendCommand,
     subscribeThread,
@@ -1092,6 +1140,7 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
         message: text,
         ...(model === null ? {} : { model }),
         providerId,
+        runtimeMode: settings.runtimeMode ?? selectedRuntimeMode,
         ...((settings.thinkingLevel ?? selectedThinkingLevel)
           ? { thinkingLevel: settings.thinkingLevel ?? selectedThinkingLevel }
           : {}),
@@ -1099,7 +1148,14 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
       });
       setComposerValue("");
     },
-    [providers, selectedModel, selectedProviderId, selectedThinkingLevel, sendCommand],
+    [
+      providers,
+      selectedModel,
+      selectedProviderId,
+      selectedRuntimeMode,
+      selectedThinkingLevel,
+      sendCommand,
+    ],
   );
 
   const cancelTurn = React.useCallback(
@@ -1210,6 +1266,19 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
     [patchSelectedThreadSettings, sendCommand],
   );
 
+  const updateRuntimeMode = React.useCallback(
+    (nextRuntimeMode: AgentChatRuntimeMode | null) => {
+      const resolvedRuntimeMode = nextRuntimeMode ?? "read-only";
+      setDraftRuntimeMode(resolvedRuntimeMode);
+      patchSelectedThreadSettings({ runtimeMode: resolvedRuntimeMode });
+      const threadId = selectedThreadIdRef.current;
+      if (threadId !== null) {
+        sendCommand("thread.update_settings", { runtimeMode: resolvedRuntimeMode, threadId });
+      }
+    },
+    [patchSelectedThreadSettings, sendCommand],
+  );
+
   const answerQuestion = React.useCallback(
     (answer: AgentChatQuestionAnswer) => {
       const threadId = selectedThreadIdRef.current;
@@ -1255,12 +1324,14 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
       onProviderChange={updateProvider}
       onQuestionAnswer={answerQuestion}
       onQuestionDraftChange={updateQuestionDraft}
+      onRuntimeModeChange={updateRuntimeMode}
       onThinkingLevelChange={updateThinkingLevel}
       onThreadDelete={connectionStatus === "connected" ? deleteThread : undefined}
       onThreadSelect={selectThread}
       providerId={selectedProviderId}
       providers={providers}
       questionDrafts={questionDrafts}
+      runtimeMode={selectedRuntimeMode}
       selectedThread={selectedThread}
       selectedThreadId={selectedThreadId}
       tagSuggestions={tagSuggestions}

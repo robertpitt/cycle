@@ -18,6 +18,7 @@ describe("DesktopAgentChatStore", () => {
       await store.upsertThread({
         createdAt: now,
         id: "thread-1",
+        runtimeMode: "workspace-write",
         status: "draft",
         summary: "Persisted chat",
         title: "Persisted chat",
@@ -38,6 +39,7 @@ describe("DesktopAgentChatStore", () => {
         inputMessageId: "message-1",
         metadata: { thinkingLevel: "high" },
         providerId: "codex",
+        runtimeMode: "workspace-write",
         status: "queued",
         threadId: "thread-1",
         updatedAt: now,
@@ -88,9 +90,11 @@ describe("DesktopAgentChatStore", () => {
       });
 
       assert.deepEqual((await store.listMessages("thread-1"))[0]?.metadata, { source: "test" });
+      assert.equal((await store.getThread?.("thread-1"))?.runtimeMode, "workspace-write");
       assert.deepEqual((await store.listTurns?.("thread-1"))?.[0]?.metadata, {
         thinkingLevel: "high",
       });
+      assert.equal((await store.listTurns?.("thread-1"))?.[0]?.runtimeMode, "workspace-write");
       assert.deepEqual((await store.listActivities?.("thread-1"))?.[0]?.payload, {
         tool: "cycle_issue_list",
       });

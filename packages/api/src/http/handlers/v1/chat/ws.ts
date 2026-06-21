@@ -9,6 +9,7 @@ import {
   type AgentEvent,
   type AgentProviderId,
   type AgentProviderProfile,
+  type AgentRuntimeMode,
   type AgentTurnRequest,
   type AgentUserInputAnswer,
 } from "@cycle/agents";
@@ -34,6 +35,7 @@ const StrictDecodeOptions = { onExcessProperty: "error" } as const;
 const JsonRecord = Schema.Record(Schema.String, Schema.Json);
 const AnswerRecord = Schema.Record(Schema.String, Schema.Json);
 const OptionalEmptyPayload = Schema.optional(Schema.Struct({}));
+const RuntimeMode = Schema.Literals(["read-only", "workspace-write", "full-access"]);
 const BaseClientMessageFields = {
   commandId: Schema.optional(Schema.String),
   version: Schema.optional(Schema.Literal(1)),
@@ -68,6 +70,7 @@ const ClientMessage = Schema.Union([
       Schema.Struct({
         model: Schema.optional(Schema.NullOr(Schema.String)),
         providerId: Schema.optional(Schema.NullOr(Schema.String)),
+        runtimeMode: Schema.optional(Schema.NullOr(RuntimeMode)),
         thinkingLevel: Schema.optional(Schema.NullOr(Schema.String)),
         title: Schema.optional(Schema.String),
       }),
@@ -93,6 +96,7 @@ const ClientMessage = Schema.Union([
     payload: Schema.Struct({
       model: Schema.optional(Schema.NullOr(Schema.String)),
       providerId: Schema.optional(Schema.NullOr(Schema.String)),
+      runtimeMode: Schema.optional(Schema.NullOr(RuntimeMode)),
       thinkingLevel: Schema.optional(Schema.NullOr(Schema.String)),
       threadId: Schema.String,
     }),
@@ -112,6 +116,7 @@ const ClientMessage = Schema.Union([
       metadata: Schema.optional(JsonRecord),
       model: Schema.optional(Schema.NullOr(Schema.String)),
       providerId: Schema.String,
+      runtimeMode: Schema.optional(Schema.NullOr(RuntimeMode)),
       thinkingLevel: Schema.optional(Schema.NullOr(Schema.String)),
       threadId: Schema.String,
     }),
@@ -475,6 +480,7 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
           createdAt: now,
           id: chatId("thread"),
           model: stringOrNull(payload.model),
+          runtimeMode: runtimeModeOrNull(payload.runtimeMode),
           status: "draft",
           summary: "New conversation",
           thinkingLevel: stringOrNull(payload.thinkingLevel),
@@ -544,6 +550,9 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
             : { agentId: providerFromUnknown(payload.providerId) }),
           ...(typeof payload.model === "string" || payload.model === null
             ? { model: stringOrNull(payload.model) }
+            : {}),
+          ...(typeof payload.runtimeMode === "string" || payload.runtimeMode === null
+            ? { runtimeMode: runtimeModeOrNull(payload.runtimeMode) }
             : {}),
           ...(typeof payload.thinkingLevel === "string" || payload.thinkingLevel === null
             ? { thinkingLevel: stringOrNull(payload.thinkingLevel) }
@@ -797,6 +806,7 @@ const sendTurn = async (input: {
     metadata: isRecord(payload.metadata) ? payload.metadata : undefined,
     model: stringOrNull(payload.model),
     providerId,
+    runtimeMode: runtimeModeFromUnknown(payload.runtimeMode) ?? thread.runtimeMode ?? null,
     status: "queued",
     thinkingLevel: stringOrNull(payload.thinkingLevel),
     threadId,
@@ -808,6 +818,7 @@ const sendTurn = async (input: {
     agentId: providerId,
     lastError: null,
     model: turn.model,
+    runtimeMode: turn.runtimeMode,
     status: "active",
     summary: message.slice(0, 120),
     thinkingLevel: turn.thinkingLevel,
@@ -894,6 +905,7 @@ const runProviderTurn = async (input: {
       model: input.turn.model ?? undefined,
       provider: input.turn.providerId as AgentProviderId,
       sessionId: input.thread.sessionId ?? input.thread.id,
+      runtimeMode: input.turn.runtimeMode ?? input.thread.runtimeMode ?? undefined,
       threadId: input.thread.id,
     } satisfies ChatTurnPayload,
     requestId: input.turn.id,
@@ -1285,8 +1297,6 @@ const updateTurn = async (
 const hiddenProviderItemTypes = new Set([
   "agentMessage",
   "agent_message",
-  "commandExecution",
-  "command_execution",
   "contextCompaction",
   "context_compaction",
   "fileChange",
@@ -1301,6 +1311,9 @@ const hiddenProviderItemTypes = new Set([
 
 const providerItemTitle = (itemType: string | undefined): string => {
   switch (itemType) {
+    case "commandExecution":
+    case "command_execution":
+      return "Command";
     case "collabAgentToolCall":
     case "collab_agent_tool_call":
       return "Sub-agent";
@@ -1324,9 +1337,33 @@ const providerItemTitle = (itemType: string | undefined): string => {
   }
 };
 
+const commandFromUnknown = (value: unknown): string | undefined => {
+  if (typeof value === "string" && value.trim().length > 0) return value;
+  if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
+    return value.join(" ");
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const command = commandFromUnknown(entry);
+      if (command !== undefined) return command;
+    }
+  }
+  if (isRecord(value)) {
+    return (
+      commandFromUnknown(value.command) ??
+      commandFromUnknown(value.argv) ??
+      commandFromUnknown(value.args)
+    );
+  }
+  return undefined;
+};
+
 const providerItemDetail = (item: unknown, itemType: string | undefined): string | undefined => {
   if (!isRecord(item)) return undefined;
   switch (itemType) {
+    case "commandExecution":
+    case "command_execution":
+      return commandFromUnknown(item.command ?? item.commandActions);
     case "dynamicToolCall":
     case "dynamic_tool_call":
     case "mcpToolCall":
@@ -1352,12 +1389,21 @@ const activityFromItemLifecycle = (
   }
 
   const timestamp = event.at.toISOString();
+  const command =
+    event.itemType === "commandExecution" || event.itemType === "command_execution"
+      ? providerItemDetail(event.item, event.itemType)
+      : undefined;
+  const activityId =
+    command === undefined
+      ? `activity-provider-item_${event.itemId}`
+      : `activity-command_${event.itemId}`;
   return {
     createdAt: timestamp,
     detail: providerItemDetail(event.item, event.itemType),
-    id: `activity-provider-item_${event.itemId}`,
+    id: activityId,
     kind: "tool",
     payload: {
+      ...(command === undefined ? {} : { command }),
       itemId: event.itemId,
       itemType: event.itemType,
     },
@@ -1725,12 +1771,19 @@ const threadSnapshot = async (store: AgentChatStoreShape, threadId: string) => {
   const questions = (await store.listQuestions?.(threadId)) ?? [];
   const turns = (await store.listTurns?.(threadId)) ?? [];
   const events = (await store.listEventsAfter?.(threadId, 0)) ?? [];
+  const timelineSequences = timelineSequencesFromEvents(events);
 
   return {
-    activities: activities.map(activityForProtocol),
+    activities: activities.map((activity) =>
+      activityForProtocol(activity, timelineSequences.activities.get(activity.id)),
+    ),
     lastSequence: events.at(-1)?.sequence ?? 0,
-    messages: messages.map(messageForProtocol),
-    questions: questions.map(questionForProtocol),
+    messages: messages.map((message) =>
+      messageForProtocol(message, timelineSequences.messages.get(message.id)),
+    ),
+    questions: questions.map((question) =>
+      questionForProtocol(question, timelineSequences.questions.get(question.id)),
+    ),
     thread: threadForProtocol(thread),
     turns: turns.map(turnForProtocol),
   };
@@ -1750,6 +1803,57 @@ const appendEvent = (
   event: Omit<AgentChatEventRecord, "sequence">,
 ): Promise<AgentChatEventRecord | undefined> =>
   store?.appendEvent === undefined ? Promise.resolve(undefined) : store.appendEvent(event);
+
+type TimelineSequenceMaps = {
+  readonly activities: Map<string, number>;
+  readonly messages: Map<string, number>;
+  readonly questions: Map<string, number>;
+};
+
+const setFirstSequence = (map: Map<string, number>, id: string | undefined, sequence: number) => {
+  if (id !== undefined && !map.has(id)) map.set(id, sequence);
+};
+
+const protocolObjectId = (value: unknown): string | undefined =>
+  isRecord(value) ? stringValue(value.id) : undefined;
+
+const timelineSequencesFromEvents = (
+  events: readonly AgentChatEventRecord[],
+): TimelineSequenceMaps => {
+  const activities = new Map<string, number>();
+  const messages = new Map<string, number>();
+  const questions = new Map<string, number>();
+
+  for (const event of events) {
+    const payload = event.payload;
+    if (!isRecord(payload)) continue;
+
+    switch (event.type) {
+      case "message.created":
+      case "message.completed":
+        setFirstSequence(messages, protocolObjectId(payload.message), event.sequence);
+        break;
+      case "activity.upserted":
+        setFirstSequence(activities, protocolObjectId(payload.activity), event.sequence);
+        break;
+      case "approval.requested": {
+        const request = isRecord(payload.request) ? payload.request : undefined;
+        const requestId = stringValue(request?.requestId);
+        setFirstSequence(
+          activities,
+          requestId === undefined ? undefined : `activity-approval_${requestId}`,
+          event.sequence,
+        );
+        break;
+      }
+      case "question.created":
+        setFirstSequence(questions, protocolObjectId(payload.question), event.sequence);
+        break;
+    }
+  }
+
+  return { activities, messages, questions };
+};
 
 const safeSend = (connection: ChatConnection, message: ServerMessage): Promise<void> =>
   connection.send(message).catch(() => {
@@ -1779,6 +1883,14 @@ const bearerTokenFromHeaders = (
 
 const providerFromUnknown = (value: unknown): AgentProviderId | undefined =>
   typeof value === "string" && isAgentProviderId(value) ? value : undefined;
+
+const runtimeModeFromUnknown = (value: unknown): AgentRuntimeMode | undefined =>
+  value === "read-only" || value === "workspace-write" || value === "full-access"
+    ? value
+    : undefined;
+
+const runtimeModeOrNull = (value: unknown): AgentRuntimeMode | null =>
+  runtimeModeFromUnknown(value) ?? null;
 
 const stringValue = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim().length > 0 ? value : undefined;
@@ -1864,6 +1976,7 @@ const threadForProtocol = (thread: AgentChatThreadRecord): Readonly<Record<strin
   lastError: thread.lastError ?? null,
   model: thread.model ?? null,
   providerId: thread.agentId ?? null,
+  runtimeMode: thread.runtimeMode ?? null,
   sessionId: thread.sessionId ?? null,
   status: thread.status,
   summary: thread.summary,
@@ -1874,6 +1987,7 @@ const threadForProtocol = (thread: AgentChatThreadRecord): Readonly<Record<strin
 
 const messageForProtocol = (
   message: AgentChatMessageRecord,
+  timelineSequence?: number,
 ): Readonly<Record<string, unknown>> => ({
   createdAt: message.createdAt,
   id: message.id,
@@ -1881,6 +1995,7 @@ const messageForProtocol = (
   sequence: message.sequence,
   streaming: message.streaming ?? false,
   text: message.body,
+  timelineSequence: timelineSequence ?? null,
   turnId: message.turnId ?? null,
   updatedAt: message.updatedAt ?? message.createdAt,
 });
@@ -1894,6 +2009,7 @@ const turnForProtocol = (turn: AgentChatTurnRecord): Readonly<Record<string, unk
   lastError: turn.lastError ?? null,
   model: turn.model ?? null,
   providerId: turn.providerId,
+  runtimeMode: turn.runtimeMode ?? null,
   status: turn.status,
   thinkingLevel: turn.thinkingLevel ?? null,
   threadId: turn.threadId,
@@ -1902,12 +2018,14 @@ const turnForProtocol = (turn: AgentChatTurnRecord): Readonly<Record<string, unk
 
 const activityForProtocol = (
   activity: AgentChatActivityRecord,
+  timelineSequence?: number,
 ): Readonly<Record<string, unknown>> => ({
   createdAt: activity.createdAt,
   detail: activity.detail ?? null,
   id: activity.id,
   kind: activity.kind,
   payload: activity.payload ?? null,
+  timelineSequence: timelineSequence ?? null,
   status: activity.status ?? null,
   title: activity.title,
   turnId: activity.turnId ?? null,
@@ -1916,12 +2034,14 @@ const activityForProtocol = (
 
 const questionForProtocol = (
   question: AgentChatQuestionRecord,
+  timelineSequence?: number,
 ): Readonly<Record<string, unknown>> => ({
   answeredAt: question.answeredAt ?? null,
   createdAt: question.createdAt,
   id: question.id,
   prompt: question.prompt,
   questions: question.questions,
+  timelineSequence: timelineSequence ?? null,
   status: question.status,
   turnId: question.turnId,
   updatedAt: question.updatedAt ?? question.createdAt,
@@ -1975,13 +2095,20 @@ const activityFromArtifact = (
 ): AgentChatActivityRecord => {
   if (artifact.type === "tool") {
     const artifactItemId = itemIdFromMetadata(artifact.metadata);
+    const command =
+      artifact.name === "command_execution" ? commandFromUnknown(artifact.input) : undefined;
     return {
       createdAt: event.at.toISOString(),
-      detail: formatToolDetail(artifact.output),
+      detail: command ?? formatToolDetail(artifact.output),
       id:
-        artifactItemId === undefined ? chatId("activity-tool") : `activity-tool_${artifactItemId}`,
+        artifactItemId === undefined
+          ? chatId(command === undefined ? "activity-tool" : "activity-command")
+          : command === undefined
+            ? `activity-tool_${artifactItemId}`
+            : `activity-command_${artifactItemId}`,
       kind: "tool",
       payload: {
+        ...(command === undefined ? {} : { command }),
         error: artifact.error,
         input: artifact.input,
         metadata: artifact.metadata,
@@ -1995,7 +2122,7 @@ const activityFromArtifact = (
             ? "completed"
             : "running",
       threadId: input.thread.id,
-      title: artifact.name,
+      title: command === undefined ? artifact.name : "Command",
       turnId: input.turn.id,
       updatedAt: event.at.toISOString(),
     };

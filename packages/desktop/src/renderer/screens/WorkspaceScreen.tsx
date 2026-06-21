@@ -80,6 +80,7 @@ import {
   writeStoredWorkspacePath,
   type WorkspaceLocation,
 } from "./workspace/workspaceRoute.ts";
+import { useMacTrackpadSwipeNavigation } from "./workspace/macTrackpadSwipeNavigation.ts";
 import type { AgentProviderId } from "../../shared/AgentProviders.ts";
 
 const defaultWorkspaceLocation: WorkspaceLocation = {
@@ -153,6 +154,7 @@ export const WorkspaceScreen = () => {
     ? applicationSettingsRouteSection
     : defaultApplicationSettingsSection;
   const routeHistoryRef = React.useRef<string[]>([]);
+  const forwardHistoryRef = React.useRef<string[]>([]);
   const skipNextRouteHistoryPush = React.useRef(false);
   const [setupStep, setSetupStep] = React.useState<InitialSetupStep>("profile");
   const [fullName, setFullName] = React.useState("");
@@ -441,6 +443,14 @@ export const WorkspaceScreen = () => {
       skipNextRouteHistoryPush.current = false;
     } else {
       const stack = routeHistoryRef.current;
+      const expectedForwardPath = forwardHistoryRef.current.at(-1);
+
+      if (expectedForwardPath === currentWorkspacePath) {
+        forwardHistoryRef.current.pop();
+      } else {
+        forwardHistoryRef.current = [];
+      }
+
       const existingIndex = stack.lastIndexOf(currentWorkspacePath);
 
       if (existingIndex >= 0) {
@@ -519,15 +529,17 @@ export const WorkspaceScreen = () => {
     if (!parentPath || parentPath === currentWorkspacePath) return;
 
     routeHistoryRef.current = [];
+    forwardHistoryRef.current = [];
     skipNextRouteHistoryPush.current = false;
     navigateWorkspace(parentPath, { replace: true });
   }, [currentWorkspacePath, navigateWorkspace, workspaceLocation]);
 
-  const navigateBack = React.useCallback(() => {
+  const navigateBackFromHistory = React.useCallback(() => {
     const stack = routeHistoryRef.current;
 
     if (stack.length > 1) {
-      stack.pop();
+      const currentPath = stack.pop();
+      if (currentPath !== undefined) forwardHistoryRef.current.push(currentPath);
       skipNextRouteHistoryPush.current = true;
       navigate(-1);
       return;
@@ -536,6 +548,18 @@ export const WorkspaceScreen = () => {
     navigateToParent();
   }, [navigate, navigateToParent]);
 
+  const navigateForwardFromHistory = React.useCallback(() => {
+    if (forwardHistoryRef.current.length === 0) return;
+
+    navigate(1);
+  }, [navigate]);
+
+  useMacTrackpadSwipeNavigation({
+    disabled: navigationShortcutsDisabled,
+    onNavigateBack: navigateBackFromHistory,
+    onNavigateForward: navigateForwardFromHistory,
+  });
+
   useShortcutAction(
     React.useMemo(
       () => ({
@@ -543,9 +567,9 @@ export const WorkspaceScreen = () => {
         disabled: navigationShortcutsDisabled,
         id: "navigation.goBack",
         label: "Go back",
-        run: navigateBack,
+        run: navigateBackFromHistory,
       }),
-      [navigateBack, navigationShortcutsDisabled],
+      [navigateBackFromHistory, navigationShortcutsDisabled],
     ),
   );
 
@@ -1000,9 +1024,11 @@ export const WorkspaceScreen = () => {
             <AppShellHeader title={activePageTitle} actions={pageHeaderActions} />
             <AppShellMain
               className={
-                isIssueDetailPage || isRepositoryHistoryPage
-                  ? "relative bg-background p-0"
-                  : "relative bg-background/70 p-3"
+                isIssueDetailPage
+                  ? "relative overflow-hidden bg-background p-0"
+                  : isRepositoryHistoryPage
+                    ? "relative bg-background p-0"
+                    : "relative bg-background/70 p-3"
               }
             >
               {isApplicationSettingsPage && appConfigQuery.data ? (

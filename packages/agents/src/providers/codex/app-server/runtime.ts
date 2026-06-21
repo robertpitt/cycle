@@ -1194,16 +1194,15 @@ export async function* streamCodexAppServerTurn<TStructured = unknown>(
   });
 
   const abortListener = () => {
+    const error = normalizeCodexError(
+      abort.signal.reason ?? new Error("Codex turn cancellation requested."),
+    );
     queue.push({
       at: now(),
-      error: {
-        code: "cancelled",
-        message: "Codex turn cancellation requested.",
-        provider: codexProviderId,
-      },
+      error,
       sessionId,
       turnId,
-      type: "turn.cancelled",
+      type: error.code === "cancelled" ? "turn.cancelled" : "turn.failed",
     });
     queue.end();
   };

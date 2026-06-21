@@ -39,8 +39,10 @@ const codeFromProviderError = (value: unknown, message: string): AgentError["cod
     return "provider_error";
   }
   if (lower.includes("login") || lower.includes("auth")) return "authentication_error";
-  if (lower.includes("aborted") || lower.includes("abort")) return "cancelled";
   if (lower.includes("timed out") || lower.includes("timeout")) return "timeout";
+  if (lower.includes("aborted") || lower.includes("abort") || lower.includes("cancel")) {
+    return "cancelled";
+  }
   return "provider_error";
 };
 

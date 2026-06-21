@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { makeCodexAppServerClient, type CodexAppServerClient } from "@cycle/codex-app-server";
 import { Schema } from "effect";
-import { describe, it } from "vitest";
+import { describe, it, vi } from "vitest";
 import { makeCodexAgentService } from "../src/codex.ts";
 import { parseStructured } from "../src/providers/codex/structured.ts";
 import type { AgentEvent, AgentSessionBinding, AgentSessionStore } from "../src/types.ts";
@@ -537,6 +537,58 @@ describe("@cycle/agents codex app-server adapter", () => {
     const resolved = await pendingNext;
     assert.equal(resolved.value?.type, "approval.resolved");
     await nextEvent(iterator, "turn.completed");
+  });
+
+  it("reports adapter timeouts as timeout failures", async () => {
+    vi.useFakeTimers();
+    try {
+      const peer = makeMockPeer();
+      const service = makeCodexAgentService({
+        appServerClient: peer.client,
+        timeoutMs: 50,
+      });
+      const session = await service.createSession();
+      const iterator = service.stream(session.id, { input: "Keep working" })[Symbol.asyncIterator]();
+      const started = iterator.next();
+
+      await completeStartup(peer);
+      await startTurn(peer);
+      assert.equal((await started).value?.type, "turn.started");
+
+      const failedPromise = nextEvent(iterator, "turn.failed");
+      await vi.advanceTimersByTimeAsync(50);
+      const failed = await failedPromise;
+      assert.equal(failed.error.code, "timeout");
+      assert.equal(failed.error.message, "Codex turn timed out.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports explicit adapter aborts as cancellations", async () => {
+    const peer = makeMockPeer();
+    const service = makeCodexAgentService({
+      appServerClient: peer.client,
+      timeoutMs: 10_000,
+    });
+    const session = await service.createSession();
+    const controller = new AbortController();
+    const iterator = service
+      .stream(session.id, {
+        input: "Keep working",
+        signal: controller.signal,
+      })
+      [Symbol.asyncIterator]();
+    const started = iterator.next();
+
+    await completeStartup(peer);
+    await startTurn(peer);
+    assert.equal((await started).value?.type, "turn.started");
+
+    controller.abort(new Error("Codex turn cancellation requested."));
+    const cancelled = await nextEvent(iterator, "turn.cancelled");
+    assert.equal(cancelled.error.code, "cancelled");
+    assert.equal(cancelled.error.message, "Codex turn cancellation requested.");
   });
 
   it("roundtrips user-input requests through AgentService", async () => {

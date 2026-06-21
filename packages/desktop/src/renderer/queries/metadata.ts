@@ -1,13 +1,15 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import type {
   InitiativeProgress,
   IssueTemplatePage,
   IssueTemplateQuery,
+  LabelDefinitionDocument,
   LabelDefinitionPage,
   LabelDefinitionQuery,
   SavedViewDocument,
   SavedViewPage,
   SavedViewQuery,
+  UserProfileDocument,
   UserProfilePage,
   UserProfileQuery,
 } from "@cycle/contracts";
@@ -44,6 +46,9 @@ const initiativeProgressQueryKey = (
   repositoryId: string | undefined,
   initiativeId: string | undefined,
 ) => ["desktop", "api", "initiativeProgress", repositoryId, initiativeId] as const;
+
+const normalizeRepositoryIds = (repositoryIds: readonly string[] | undefined) =>
+  repositoryIds === undefined ? [] : [...new Set(repositoryIds)].sort();
 
 const listUsersForRepository = async (
   repositoryId: string,
@@ -134,6 +139,34 @@ export const useUserListQuery = (repositoryId: string | undefined, query: UserPr
     queryKey: userListQueryKey(repositoryId, query),
   });
 
+export const useUserListsByRepositoryQuery = (
+  repositoryIds: readonly string[] | undefined,
+  query: UserProfileQuery = {},
+) => {
+  const normalizedRepositoryIds = normalizeRepositoryIds(repositoryIds);
+
+  return useQueries({
+    combine: (results) => {
+      const data = new Map<string, readonly UserProfileDocument[]>();
+
+      for (const [index, repositoryId] of normalizedRepositoryIds.entries()) {
+        data.set(repositoryId, results[index]?.data?.entries ?? []);
+      }
+
+      return {
+        data,
+        error: results.find((result) => result.error)?.error ?? null,
+        isError: results.some((result) => result.isError),
+        isLoading: results.some((result) => result.isLoading),
+      };
+    },
+    queries: normalizedRepositoryIds.map((repositoryId) => ({
+      queryFn: () => listUsersForRepository(repositoryId, query),
+      queryKey: userListQueryKey(repositoryId, query),
+    })),
+  });
+};
+
 export const useLabelListQuery = (
   repositoryId: string | undefined,
   query: LabelDefinitionQuery = {},
@@ -149,6 +182,34 @@ export const useLabelListQuery = (
     },
     queryKey: labelListQueryKey(repositoryId, query),
   });
+
+export const useLabelListsByRepositoryQuery = (
+  repositoryIds: readonly string[] | undefined,
+  query: LabelDefinitionQuery = {},
+) => {
+  const normalizedRepositoryIds = normalizeRepositoryIds(repositoryIds);
+
+  return useQueries({
+    combine: (results) => {
+      const data = new Map<string, readonly LabelDefinitionDocument[]>();
+
+      for (const [index, repositoryId] of normalizedRepositoryIds.entries()) {
+        data.set(repositoryId, results[index]?.data?.entries ?? []);
+      }
+
+      return {
+        data,
+        error: results.find((result) => result.error)?.error ?? null,
+        isError: results.some((result) => result.isError),
+        isLoading: results.some((result) => result.isLoading),
+      };
+    },
+    queries: normalizedRepositoryIds.map((repositoryId) => ({
+      queryFn: () => listLabelsForRepository(repositoryId, query),
+      queryKey: labelListQueryKey(repositoryId, query),
+    })),
+  });
+};
 
 export const useSavedViewListQuery = (
   repositoryId: string | undefined,

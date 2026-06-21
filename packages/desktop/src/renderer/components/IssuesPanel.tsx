@@ -22,7 +22,11 @@ import { useCreateSavedViewMutation } from "../mutations/index.ts";
 import { useUpdateIssueMutation } from "../mutations/useUpdateIssueMutation.ts";
 import { labelColorClassName } from "../screens/workspace/createIssueOptions.tsx";
 import { useIssueListInfiniteQuery } from "../queries/issues.ts";
-import { useLabelListQuery, useSavedViewListQuery, useUserListQuery } from "../queries/metadata.ts";
+import {
+  useLabelListsByRepositoryQuery,
+  useSavedViewListQuery,
+  useUserListsByRepositoryQuery,
+} from "../queries/metadata.ts";
 
 type IssuesPanelProps = {
   readonly loadingRepository?: boolean;
@@ -88,6 +92,9 @@ const groupingOptions: readonly IssueMenuOption[] = [
 const statusOrder = ["in-progress", "todo", "backlog", "done", "canceled"] as const;
 const priorityOrder = ["none", "urgent", "high", "medium", "low"] as const;
 const allIssuesViewValue = "__all_issues__";
+const emptyUsers: readonly UserProfileDocument[] = [];
+const emptyLabelMap = new Map<string, LabelDefinitionDocument>();
+const emptyUserMap = new Map<string, UserProfileDocument>();
 
 const normalizeValue = (value: unknown, fallback = "none"): string => {
   if (value === null || value === undefined) return fallback;
@@ -419,6 +426,47 @@ const assigneeDefinitions = ({
   ];
 };
 
+const assigneeOptionsForIssue = ({
+  issue,
+  profile,
+  users,
+}: {
+  readonly issue: TicketDocument;
+  readonly profile?: ProfileConfig;
+  readonly users: readonly UserProfileDocument[];
+}): readonly IssueMenuOption[] => {
+  const assignees = new Map<string, string>();
+  const profileName = profile?.displayName.trim();
+  const issueAssignee = issue.frontmatter.assignee?.trim();
+
+  for (const user of users) {
+    assignees.set(user.id, user.displayName);
+  }
+
+  if (issueAssignee) {
+    assignees.set(issueAssignee, assignees.get(issueAssignee) ?? issueAssignee);
+  }
+
+  if (assignees.size === 0 && profileName) {
+    assignees.set(profileName, profileName);
+  }
+
+  return [
+    {
+      icon: <IssueAssigneeMark />,
+      id: "none",
+      label: "No assignee",
+    },
+    ...[...assignees.entries()]
+      .sort((a, b) => a[1].localeCompare(b[1]))
+      .map(([id, name]) => ({
+        icon: <IssueAssigneeMark name={name} size="md" />,
+        id,
+        label: name,
+      })),
+  ];
+};
+
 const labelDefinitions = ({
   counts,
   labels,
@@ -572,11 +620,16 @@ export const IssuesPanel = ({
   const [collapsedGroupIds, setCollapsedGroupIds] = React.useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  const globalIssueList = repositoryIds !== undefined && repositoryIds.length > 0;
+  const metadataRepositoryIds = React.useMemo(
+    () => (globalIssueList ? repositoryIds : repositoryId === undefined ? [] : [repositoryId]),
+    [globalIssueList, repositoryId, repositoryIds],
+  );
   const savedViewsQuery = useSavedViewListQuery(repositoryId);
-  const labelsQuery = useLabelListQuery(repositoryId, {
+  const labelsQuery = useLabelListsByRepositoryQuery(metadataRepositoryIds, {
     archived: false,
   });
-  const usersQuery = useUserListQuery(repositoryId, {
+  const usersQuery = useUserListsByRepositoryQuery(metadataRepositoryIds, {
     disabled: false,
   });
   const createSavedView = useCreateSavedViewMutation({
@@ -611,15 +664,49 @@ export const IssuesPanel = ({
   const issueCount = issuesQuery.data
     ? `${issues.length}${issuesQuery.hasNextPage ? "+" : ""}`
     : undefined;
-  const labels = labelsQuery.data?.entries ?? [];
-  const users = usersQuery.data?.entries ?? [];
-  const labelMap = React.useMemo(() => new Map(labels.map((label) => [label.id, label])), [labels]);
-  const userMap = React.useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
+  const metadataLoading =
+    metadataRepositoryIds.length > 0 && (labelsQuery.isLoading || usersQuery.isLoading);
+  const metadataError = labelsQuery.error ?? usersQuery.error;
+  const labelsByRepositoryId = labelsQuery.data;
+  const usersByRepositoryId = usersQuery.data;
+  const labels = React.useMemo(
+    () => Array.from(labelsByRepositoryId.values()).flat(),
+    [labelsByRepositoryId],
+  );
+  const users = React.useMemo(
+    () => Array.from(usersByRepositoryId.values()).flat(),
+    [usersByRepositoryId],
+  );
+  const labelMapByRepositoryId = React.useMemo(
+    () =>
+      new Map(
+        Array.from(labelsByRepositoryId.entries()).map(
+          ([metadataRepositoryId, repositoryLabels]) =>
+            [
+              metadataRepositoryId,
+              new Map(repositoryLabels.map((label) => [label.id, label] as const)),
+            ] as const,
+        ),
+      ),
+    [labelsByRepositoryId],
+  );
+  const userMapByRepositoryId = React.useMemo(
+    () =>
+      new Map(
+        Array.from(usersByRepositoryId.entries()).map(
+          ([metadataRepositoryId, repositoryUsers]) =>
+            [
+              metadataRepositoryId,
+              new Map(repositoryUsers.map((user) => [user.id, user] as const)),
+            ] as const,
+        ),
+      ),
+    [usersByRepositoryId],
+  );
   const repositoryMap = React.useMemo(
     () => new Map(repositories.map((repository) => [repository.id, repository] as const)),
     [repositories],
   );
-  const globalIssueList = repositoryIds !== undefined && repositoryIds.length > 0;
 
   React.useEffect(() => {
     const nextGrouping = groupingFromSavedView(activeSavedView);
@@ -669,10 +756,21 @@ export const IssuesPanel = ({
     () =>
       issues.map((issue) => {
         const ownerRepositoryId = repositoryIdForIssue(issue, repositoryId);
+        const ownerUsers =
+          ownerRepositoryId === undefined
+            ? emptyUsers
+            : (usersByRepositoryId.get(ownerRepositoryId) ?? emptyUsers);
 
         return issueRow({
-          assigneeOptions,
-          labelMap,
+          assigneeOptions: assigneeOptionsForIssue({
+            issue,
+            profile,
+            users: ownerUsers,
+          }),
+          labelMap:
+            ownerRepositoryId === undefined
+              ? emptyLabelMap
+              : (labelMapByRepositoryId.get(ownerRepositoryId) ?? emptyLabelMap),
           issue,
           priorityOptions,
           repositoryDisplayName:
@@ -682,19 +780,23 @@ export const IssuesPanel = ({
           repositoryId: ownerRepositoryId,
           showRepositoryMeta: globalIssueList,
           statusOptions,
-          userMap,
+          userMap:
+            ownerRepositoryId === undefined
+              ? emptyUserMap
+              : (userMapByRepositoryId.get(ownerRepositoryId) ?? emptyUserMap),
         });
       }),
     [
-      assigneeOptions,
       globalIssueList,
       issues,
-      labelMap,
+      labelMapByRepositoryId,
       priorityOptions,
+      profile,
       repositoryId,
       repositoryMap,
       statusOptions,
-      userMap,
+      userMapByRepositoryId,
+      usersByRepositoryId,
     ],
   );
   const issueById = React.useMemo(
@@ -888,9 +990,15 @@ export const IssuesPanel = ({
               ? "No issues yet."
               : "Choose a repository before creating issues."
         }
-        error={issuesQuery.error instanceof Error ? issuesQuery.error.message : undefined}
+        error={
+          issuesQuery.error instanceof Error
+            ? issuesQuery.error.message
+            : metadataError instanceof Error
+              ? metadataError.message
+              : undefined
+        }
         groups={groups}
-        loading={issuesQuery.isLoading || loadingRepository}
+        loading={issuesQuery.isLoading || metadataLoading || loadingRepository}
         onRowSelect={handleIssueSelect}
         rowMetaLimit={2}
         rows={rows}

@@ -8,6 +8,7 @@ import {
   AgentChatMessageRow,
   AgentChatProviderModelPicker,
   AgentChatQuestionCard,
+  AgentChatRuntimeModePicker,
   AgentChatThinkingSelector,
   AgentChatThreadListItem,
   AgentChatTurnStatusIndicator,
@@ -150,6 +151,7 @@ export const RowsAndControls: Story = {
             id: "thread-1",
             model: "gpt-5-codex",
             providerId: "codex",
+            runtimeMode: "workspace-write",
             status: "waiting",
             summary: "Question pending before editing the projection path.",
             title: "Debug duplicate pending orders",
@@ -157,7 +159,7 @@ export const RowsAndControls: Story = {
             updatedAt: "2026-06-16T09:42:00.000Z",
           }}
         />
-        <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+        <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
           <AgentChatProviderModelPicker
             model="gpt-5-codex"
             providerId="codex"
@@ -168,6 +170,7 @@ export const RowsAndControls: Story = {
             providers={providers}
             thinkingLevel="medium"
           />
+          <AgentChatRuntimeModePicker runtimeMode="workspace-write" />
         </div>
         <AgentChatTurnStatusIndicator status="running" />
         <AgentChatMessageRow

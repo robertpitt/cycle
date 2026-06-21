@@ -161,6 +161,9 @@ export const prepareChatTurn = (input: {
             },
           }),
       ...(input.payload.model === undefined ? {} : { model: { id: input.payload.model } }),
+      ...(input.payload.runtimeMode === undefined
+        ? {}
+        : { runtimeMode: input.payload.runtimeMode }),
       metadata: {
         requestId: input.requestId,
         threadId,

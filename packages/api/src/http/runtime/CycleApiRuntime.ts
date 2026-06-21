@@ -1,5 +1,10 @@
 import { type RepositoryInput } from "@cycle/contracts";
-import type { AgentProviderId, AgentProviderProfile, AgentSessionStore } from "@cycle/agents/types";
+import type {
+  AgentProviderId,
+  AgentProviderProfile,
+  AgentRuntimeMode,
+  AgentSessionStore,
+} from "@cycle/agents/types";
 import { type AgentServiceRegistryShape } from "@cycle/agents/service";
 import { type UseCaseRunnerShape } from "@cycle/usecases";
 import { Context } from "effect";
@@ -152,6 +157,7 @@ export type AgentChatThreadRecord = {
   readonly id: string;
   readonly lastError?: string | null;
   readonly model?: string | null;
+  readonly runtimeMode?: AgentRuntimeMode | null;
   readonly sessionId?: string;
   readonly status: "active" | "archived" | "draft" | "error" | "waiting";
   readonly summary: string;
@@ -174,6 +180,7 @@ export type AgentChatTurnRecord = {
   readonly metadata?: Readonly<Record<string, unknown>>;
   readonly model?: string | null;
   readonly providerId: string;
+  readonly runtimeMode?: AgentRuntimeMode | null;
   readonly status: "cancelled" | "completed" | "failed" | "queued" | "running" | "waiting_for_user";
   readonly thinkingLevel?: string | null;
   readonly threadId: string;

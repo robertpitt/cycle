@@ -1,4 +1,4 @@
-import type { AgentProviderId, AgentTurnRequest } from "@cycle/agents";
+import type { AgentProviderId, AgentRuntimeMode, AgentTurnRequest } from "@cycle/agents";
 
 export type ChatMessagePayload = {
   readonly content: string;
@@ -20,6 +20,7 @@ export type ChatTurnPayload = {
   readonly model?: string;
   readonly provider?: AgentProviderId;
   readonly repositories?: readonly ChatRepositoryPayload[];
+  readonly runtimeMode?: AgentRuntimeMode;
   readonly sessionId?: string;
   readonly stream?: {
     readonly heartbeatMs?: number;

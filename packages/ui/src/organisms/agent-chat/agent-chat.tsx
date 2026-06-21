@@ -28,6 +28,7 @@ import {
   AgentChatProviderModelPicker,
   AgentChatProviderSummary,
   AgentChatQuestionCard,
+  AgentChatRuntimeModePicker,
   AgentChatThinkingSelector,
   AgentChatThreadListItem,
   AgentChatTurnStatusIndicator,
@@ -39,6 +40,7 @@ import {
   type AgentChatProviderProfile,
   type AgentChatQuestionAnswer,
   type AgentChatQuestionDraft,
+  type AgentChatRuntimeMode,
   type AgentChatThreadDetail,
   type AgentChatThreadListEntry,
   type AgentChatTimelineEntry,
@@ -50,6 +52,7 @@ export type AgentChatQuestionDraftState = Record<string, AgentChatQuestionDraft>
 export type AgentChatTurnSettings = {
   readonly model?: string | null;
   readonly providerId?: string | null;
+  readonly runtimeMode?: AgentChatRuntimeMode | null;
   readonly thinkingLevel?: string | null;
 };
 
@@ -90,6 +93,7 @@ export type AgentChatComposerProps = {
   readonly onMessageSend?: (text: string, settings: AgentChatTurnSettings) => void;
   readonly onModelChange?: (model: string | null) => void;
   readonly onProviderChange?: (providerId: string | null) => void;
+  readonly onRuntimeModeChange?: (runtimeMode: AgentChatRuntimeMode | null) => void;
   readonly onTagQueryChange?: (query: string) => void;
   readonly onTagSelect?: (suggestion: MarkdownEditorTagSuggestion) => void;
   readonly onThinkingLevelChange?: (thinkingLevel: string | null) => void;
@@ -99,6 +103,7 @@ export type AgentChatComposerProps = {
   readonly placeholder?: string;
   readonly providerId?: string | null;
   readonly providers: readonly AgentChatProviderProfile[];
+  readonly runtimeMode?: AgentChatRuntimeMode | null;
   readonly tagSuggestions?: readonly MarkdownEditorTagSuggestion[];
   readonly thinkingLevel?: string | null;
   readonly turnStatus?: AgentChatTurnStatus | null;
@@ -126,6 +131,7 @@ export type AgentChatConversationProps = {
   ) => void;
   readonly onTagQueryChange?: (query: string) => void;
   readonly onTagSelect?: (suggestion: MarkdownEditorTagSuggestion) => void;
+  readonly onRuntimeModeChange?: (runtimeMode: AgentChatRuntimeMode | null) => void;
   readonly onThinkingLevelChange?: (thinkingLevel: string | null) => void;
   readonly providerId?: string | null;
   readonly providers: readonly AgentChatProviderProfile[];
@@ -133,6 +139,7 @@ export type AgentChatConversationProps = {
   readonly relativeBase?: Date | string;
   readonly selectedThread?: AgentChatThreadDetail | null;
   readonly tagSuggestions?: readonly MarkdownEditorTagSuggestion[];
+  readonly runtimeMode?: AgentChatRuntimeMode | null;
   readonly thinkingLevel?: string | null;
 };
 
@@ -401,6 +408,7 @@ export const AgentChatComposer = ({
   onMessageSend,
   onModelChange,
   onProviderChange,
+  onRuntimeModeChange,
   onTagQueryChange,
   onTagSelect,
   onThinkingLevelChange,
@@ -410,6 +418,7 @@ export const AgentChatComposer = ({
   placeholder = "Ask the agent to inspect code, explain behavior, or make a change...",
   providerId,
   providers,
+  runtimeMode,
   tagSuggestions,
   thinkingLevel,
   turnStatus,
@@ -442,6 +451,7 @@ export const AgentChatComposer = ({
     onMessageSend?.(trimmed, {
       model,
       providerId,
+      runtimeMode,
       thinkingLevel,
     });
 
@@ -512,6 +522,11 @@ export const AgentChatComposer = ({
               providerId={providerId}
               providers={providers}
             />
+            <AgentChatRuntimeModePicker
+              disabled={disabled || Boolean(active)}
+              onRuntimeModeChange={onRuntimeModeChange}
+              runtimeMode={runtimeMode}
+            />
             <AgentChatThinkingSelector
               disabled={disabled || Boolean(active)}
               onThinkingLevelChange={onThinkingLevelChange}
@@ -576,6 +591,7 @@ export const AgentChatConversation = ({
   onProviderChange,
   onQuestionAnswer,
   onQuestionDraftChange,
+  onRuntimeModeChange,
   onTagQueryChange,
   onTagSelect,
   onThinkingLevelChange,
@@ -583,6 +599,7 @@ export const AgentChatConversation = ({
   providers,
   questionDrafts,
   relativeBase,
+  runtimeMode,
   selectedThread,
   tagSuggestions,
   thinkingLevel,
@@ -595,6 +612,8 @@ export const AgentChatConversation = ({
     explicit: model,
     threadValue: selectedThread?.model,
   });
+  const selectedRuntimeMode =
+    runtimeMode ?? selectedThread?.runtimeMode ?? ("read-only" satisfies AgentChatRuntimeMode);
   const selectedThinkingLevel = resolveSelection({
     explicit: thinkingLevel,
     threadValue: selectedThread?.thinkingLevel,
@@ -644,6 +663,7 @@ export const AgentChatConversation = ({
               model={selectedModel}
               providerId={selectedProviderId}
               providers={providers}
+              runtimeMode={selectedRuntimeMode}
               thinkingLevel={selectedThinkingLevel}
             />
           </div>
@@ -675,6 +695,7 @@ export const AgentChatConversation = ({
         onMessageSend={onMessageSend}
         onModelChange={onModelChange}
         onProviderChange={onProviderChange}
+        onRuntimeModeChange={onRuntimeModeChange}
         onTagQueryChange={onTagQueryChange}
         onTagSelect={onTagSelect}
         onValueChange={onComposerValueChange}
@@ -683,6 +704,7 @@ export const AgentChatConversation = ({
         pendingQuestionCount={questionsPending}
         providerId={selectedProviderId}
         providers={providers}
+        runtimeMode={selectedRuntimeMode}
         tagSuggestions={tagSuggestions}
         thinkingLevel={selectedThinkingLevel}
         turnStatus={selectedThread.turnStatus}
@@ -709,6 +731,7 @@ export const AgentChatShell = ({
   onProviderChange,
   onQuestionAnswer,
   onQuestionDraftChange,
+  onRuntimeModeChange,
   onTagQueryChange,
   onTagSelect,
   onThinkingLevelChange,
@@ -718,6 +741,7 @@ export const AgentChatShell = ({
   providers,
   questionDrafts,
   relativeBase,
+  runtimeMode,
   selectedThread,
   selectedThreadId,
   tagSuggestions,
@@ -756,6 +780,7 @@ export const AgentChatShell = ({
         onProviderChange={onProviderChange}
         onQuestionAnswer={onQuestionAnswer}
         onQuestionDraftChange={onQuestionDraftChange}
+        onRuntimeModeChange={onRuntimeModeChange}
         onTagQueryChange={onTagQueryChange}
         onTagSelect={onTagSelect}
         onThinkingLevelChange={onThinkingLevelChange}
@@ -763,6 +788,7 @@ export const AgentChatShell = ({
         providers={providers}
         questionDrafts={questionDrafts}
         relativeBase={relativeBase}
+        runtimeMode={runtimeMode}
         selectedThread={selectedThread}
         tagSuggestions={tagSuggestions}
         thinkingLevel={thinkingLevel}

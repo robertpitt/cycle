@@ -333,7 +333,7 @@ Default Codex thread options:
 - Optional `workingDirectory`
 - Optional `model`
 
-Default timeout is `120_000` milliseconds.
+Default timeout is `600_000` milliseconds.
 
 ## Artifact and Event Normalization
 

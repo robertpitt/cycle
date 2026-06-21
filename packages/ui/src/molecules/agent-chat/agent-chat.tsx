@@ -15,6 +15,7 @@ import {
   MessageSquare,
   Radio,
   RefreshCw,
+  ShieldCheck,
   Sparkles,
   Terminal,
   Trash2,
@@ -53,6 +54,8 @@ export type AgentChatTurnStatus =
 
 export type AgentChatProviderAvailability = "available" | "unavailable" | "unsupported";
 
+export type AgentChatRuntimeMode = "read-only" | "workspace-write" | "full-access";
+
 export type AgentChatModelOption = {
   readonly description?: string | null;
   readonly disabled?: boolean;
@@ -86,6 +89,7 @@ export type AgentChatThreadListEntry = {
   readonly lastError?: string | null;
   readonly model?: string | null;
   readonly providerId?: string | null;
+  readonly runtimeMode?: AgentChatRuntimeMode | null;
   readonly status: AgentChatThreadStatus;
   readonly summary?: string | null;
   readonly thinkingLevel?: string | null;
@@ -126,6 +130,7 @@ export type AgentChatActivity = {
   readonly id: string;
   readonly kind: AgentChatActivityKind;
   readonly payload?: AgentChatActivityPayload | null;
+  readonly sequence?: number;
   readonly status?: AgentChatActivityStatus | null;
   readonly title: string;
   readonly turnId?: string | null;
@@ -175,6 +180,7 @@ export type AgentChatQuestion = {
   readonly id: string;
   readonly prompt: string;
   readonly questions: readonly AgentChatQuestionItem[];
+  readonly sequence?: number;
   readonly status: AgentChatQuestionStatus;
   readonly turnId: string;
   readonly updatedAt?: string | null;
@@ -321,6 +327,27 @@ const providerAvailabilityLabel = (availability: AgentChatProviderAvailability =
   return "Unavailable";
 };
 
+const runtimeModeItems: readonly SelectItem[] = [
+  {
+    label: "Read only",
+    value: "read-only",
+  },
+  {
+    label: "Workspace write",
+    value: "workspace-write",
+  },
+  {
+    label: "Full access",
+    value: "full-access",
+  },
+];
+
+const runtimeModeLabel = (runtimeMode?: AgentChatRuntimeMode | null): string => {
+  if (runtimeMode === "workspace-write") return "Workspace write";
+  if (runtimeMode === "full-access") return "Full access";
+  return "Read only";
+};
+
 const formatPayloadValue = (value: unknown): string | undefined => {
   if (value === null || value === undefined) return undefined;
   if (typeof value === "string") return value;
@@ -395,7 +422,22 @@ export const agentChatApprovalRequestFromActivity = (
 export const isAgentChatApprovalActivity = (activity: AgentChatActivity): boolean =>
   agentChatApprovalRequestFromActivity(activity) !== undefined;
 
-const hiddenActivityPayloadKeys = new Set(["delta", "item", "itemId", "itemType", "streamKind"]);
+const hiddenActivityPayloadKeys = new Set([
+  "command",
+  "delta",
+  "diff",
+  "input",
+  "item",
+  "itemId",
+  "itemType",
+  "metadata",
+  "name",
+  "output",
+  "patch",
+  "requestId",
+  "response",
+  "streamKind",
+]);
 
 const compactActivityGenericTitles = new Set(["MCP tool", "Provider activity", "Tool call"]);
 
@@ -408,11 +450,11 @@ const payloadString = (
 };
 
 const activityNotificationLabel = (activity: AgentChatActivity): string => {
-  const payloadName = payloadString(activity.payload, "name");
-  if (payloadName) return payloadName;
-
   const payloadCommand = payloadString(activity.payload, "command");
   if (payloadCommand) return payloadCommand;
+
+  const payloadName = payloadString(activity.payload, "name");
+  if (payloadName && payloadName !== "command_execution") return payloadName;
 
   const payloadTool = payloadString(activity.payload, "tool");
   if (payloadTool) {
@@ -844,12 +886,14 @@ const activityLogSummary = (activities: readonly AgentChatActivity[]): string =>
   return `${activities.length} event${activities.length === 1 ? "" : "s"}`;
 };
 
-const activityLogDetail = (activity: AgentChatActivity): string | undefined => {
-  if (activity.detail && activity.detail.trim().length > 0) return activity.detail;
-  const command = payloadString(activity.payload, "command");
-  if (command) return command;
-  const tool = payloadString(activity.payload, "tool");
-  if (tool) return tool;
+const activityDisplayTitle = (activity: AgentChatActivity): string =>
+  activityNotificationLabel(activity);
+
+const activityDisplayDetail = (activity: AgentChatActivity): string | undefined => {
+  const title = activityDisplayTitle(activity);
+  if (activity.detail && activity.detail.trim().length > 0 && activity.detail !== title) {
+    return activity.detail;
+  }
   return undefined;
 };
 
@@ -858,11 +902,19 @@ export const AgentChatActivityStrip = ({
   className,
   maxVisible = 6,
 }: AgentChatActivityStripProps) => {
-  if (activities.length === 0) return null;
-
   const latestActivity = activities.at(-1);
   const visibleActivities = activities.slice(-maxVisible);
   const hiddenCount = Math.max(activities.length - visibleActivities.length, 0);
+  const active = activities.some(
+    (activity) => activity.status === "running" || activity.status === "pending",
+  );
+  const [open, setOpen] = React.useState(active);
+
+  React.useEffect(() => {
+    setOpen(active);
+  }, [active, latestActivity?.id]);
+
+  if (activities.length === 0) return null;
 
   return (
     <details
@@ -870,6 +922,8 @@ export const AgentChatActivityStrip = ({
         "group/log border-b border-border/60 py-1.5 text-sm text-muted-foreground",
         className,
       )}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      open={open}
     >
       <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md px-1.5 py-1 outline-none hover:bg-subtle focus-visible:ring-1 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
         <span className="grid size-5 shrink-0 place-items-center text-accent">
@@ -901,7 +955,8 @@ export const AgentChatActivityStrip = ({
         <div className="divide-y divide-border/60">
           {visibleActivities.map((activity) => {
             const Icon = activityKindIcon[activity.kind];
-            const detail = activityLogDetail(activity);
+            const title = activityDisplayTitle(activity);
+            const detail = activityDisplayDetail(activity);
             const entries = activityPayloadEntries(activity);
 
             return (
@@ -929,7 +984,7 @@ export const AgentChatActivityStrip = ({
                   <div className="flex min-w-0 items-center gap-2">
                     <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
                     <Text as="span" className="min-w-0" truncate variant="control">
-                      {activity.title}
+                      {title}
                     </Text>
                   </div>
                   {detail ? (
@@ -1182,24 +1237,36 @@ export const AgentChatApprovalCard = ({
             </div>
           ) : null}
 
-          <div className="flex flex-wrap gap-2">
-            {cwd ? (
+          {cwd ? (
+            <div className="flex flex-wrap gap-2">
               <span className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md border border-border bg-subtle px-2 py-1 text-xs text-muted-foreground">
                 <span className="shrink-0 font-medium text-foreground">cwd</span>
                 <span className="min-w-0 truncate">{cwd}</span>
               </span>
-            ) : null}
-            {request.defaultDecision ? (
-              <span className="inline-flex items-center gap-1 rounded-md border border-border bg-subtle px-2 py-1 text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">default</span>
-                {request.defaultDecision}
+            </div>
+          ) : null}
+          <details className="group/details text-xs text-muted-foreground">
+            <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded px-1 py-0.5 outline-none hover:bg-subtle focus-visible:ring-1 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+              Details
+              <ChevronDown
+                aria-hidden
+                className="size-3 transition-transform group-open/details:rotate-180"
+                strokeWidth={1.8}
+              />
+            </summary>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {request.defaultDecision ? (
+                <span className="inline-flex items-center gap-1 rounded-md border border-border bg-subtle px-2 py-1 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">default</span>
+                  {approvalDecisionLabel(request.defaultDecision)}
+                </span>
+              ) : null}
+              <span className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md border border-border bg-subtle px-2 py-1 text-xs text-muted-foreground">
+                <span className="shrink-0 font-medium text-foreground">requestId</span>
+                <span className="min-w-0 truncate">{request.requestId}</span>
               </span>
-            ) : null}
-            <span className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md border border-border bg-subtle px-2 py-1 text-xs text-muted-foreground">
-              <span className="shrink-0 font-medium text-foreground">requestId</span>
-              <span className="min-w-0 truncate">{request.requestId}</span>
-            </span>
-          </div>
+            </div>
+          </details>
         </div>
 
         {pending ? (
@@ -1285,6 +1352,8 @@ export const AgentChatActivityRow = ({
 
   const Icon = activityKindIcon[activity.kind];
   const tone = activity.status ? activityStatusTone[activity.status] : "neutral";
+  const title = activityDisplayTitle(activity);
+  const detail = activityDisplayDetail(activity);
   const payloadEntries = Object.entries(activity.payload ?? {})
     .filter(([key]) => !hiddenActivityPayloadKeys.has(key))
     .map(([key, value]) => [key, formatPayloadValue(value)] as const)
@@ -1308,15 +1377,15 @@ export const AgentChatActivityRow = ({
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <Text as="span" className="min-w-0" truncate variant="panelTitle">
-                {activity.title}
+                {title}
               </Text>
               <Badge appearance="outline" tone={tone}>
                 {activity.status ? activityStatusLabel[activity.status] : activity.kind}
               </Badge>
             </div>
-            {activity.detail ? (
+            {detail ? (
               <Text as="p" className="mt-1" tone="muted" variant="bodyCompact" wrap="break">
-                {activity.detail}
+                {detail}
               </Text>
             ) : null}
           </div>
@@ -1328,17 +1397,27 @@ export const AgentChatActivityRow = ({
           />
         </div>
         {payloadEntries.length > 0 ? (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {payloadEntries.map(([key, value]) => (
-              <span
-                className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md border border-border bg-subtle px-2 py-1 text-xs text-muted-foreground"
-                key={key}
-              >
-                <span className="font-medium text-foreground">{key}</span>
-                <span className="min-w-0 truncate">{value}</span>
-              </span>
-            ))}
-          </div>
+          <details className="group/details mt-3 text-xs text-muted-foreground">
+            <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded px-1 py-0.5 outline-none hover:bg-subtle focus-visible:ring-1 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+              Details
+              <ChevronDown
+                aria-hidden
+                className="size-3 transition-transform group-open/details:rotate-180"
+                strokeWidth={1.8}
+              />
+            </summary>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {payloadEntries.map(([key, value]) => (
+                <span
+                  className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md border border-border bg-subtle px-2 py-1 text-xs text-muted-foreground"
+                  key={key}
+                >
+                  <span className="font-medium text-foreground">{key}</span>
+                  <span className="min-w-0 truncate">{value}</span>
+                </span>
+              ))}
+            </div>
+          </details>
         ) : null}
       </div>
     </div>
@@ -1402,6 +1481,38 @@ export type AgentChatThinkingSelectorProps = {
   readonly providers: readonly AgentChatProviderProfile[];
   readonly thinkingLevel?: string | null;
 };
+
+export type AgentChatRuntimeModePickerProps = {
+  readonly className?: string;
+  readonly disabled?: boolean;
+  readonly onRuntimeModeChange?: (runtimeMode: AgentChatRuntimeMode | null) => void;
+  readonly runtimeMode?: AgentChatRuntimeMode | null;
+};
+
+export const AgentChatRuntimeModePicker = ({
+  className,
+  disabled = false,
+  onRuntimeModeChange,
+  runtimeMode,
+}: AgentChatRuntimeModePickerProps) => (
+  <AgentChatInlineSetting label="Permissions">
+    <Select
+      aria-label="Permission mode"
+      className={cn(compactSelectClassName, className)}
+      disabled={disabled}
+      items={runtimeModeItems}
+      onValueChange={(value) =>
+        onRuntimeModeChange?.(
+          value === "read-only" || value === "workspace-write" || value === "full-access"
+            ? value
+            : null,
+        )
+      }
+      placeholder="Permissions"
+      value={runtimeMode ?? "read-only"}
+    />
+  </AgentChatInlineSetting>
+);
 
 export const AgentChatThinkingSelector = ({
   className,
@@ -1629,6 +1740,7 @@ export type AgentChatProviderSummaryProps = {
   readonly model?: string | null;
   readonly providerId?: string | null;
   readonly providers: readonly AgentChatProviderProfile[];
+  readonly runtimeMode?: AgentChatRuntimeMode | null;
   readonly thinkingLevel?: string | null;
 };
 
@@ -1637,6 +1749,7 @@ export const AgentChatProviderSummary = ({
   model,
   providerId,
   providers,
+  runtimeMode,
   thinkingLevel,
 }: AgentChatProviderSummaryProps) => {
   const provider = providers.find((item) => item.id === providerId);
@@ -1648,6 +1761,12 @@ export const AgentChatProviderSummary = ({
         {provider?.label ?? providerId ?? "No provider"}
       </Badge>
       {model ? <Badge appearance="outline">{model}</Badge> : null}
+      <Badge appearance="outline">
+        <span className="inline-flex items-center gap-1">
+          <ShieldCheck aria-hidden className="size-3" />
+          {runtimeModeLabel(runtimeMode)}
+        </span>
+      </Badge>
       {thinkingLevel ? (
         <Badge appearance="outline">
           <span className="inline-flex items-center gap-1">

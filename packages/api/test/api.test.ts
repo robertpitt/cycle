@@ -158,9 +158,12 @@ const authed = (body?: unknown): RequestInit => ({
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const arrayValue = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : []);
+
 type ChatTestMessage = {
   readonly commandId?: string;
   readonly payload?: unknown;
+  readonly sequence?: number;
   readonly threadId?: string;
   readonly type?: string;
 };
@@ -1087,6 +1090,37 @@ describe("@cycle/api", () => {
         };
         yield {
           at: timestamp,
+          item: {
+            command: "pnpm --filter @cycle/ui typecheck",
+            id: "item_command",
+            type: "commandExecution",
+          },
+          itemId: "item_command",
+          itemType: "commandExecution",
+          sessionId,
+          turnId: "turn_ws_provider",
+          type: "item.started",
+        };
+        yield {
+          artifact: {
+            input: {
+              command: "pnpm --filter @cycle/ui typecheck",
+            },
+            metadata: {
+              itemId: "item_command",
+            },
+            name: "command_execution",
+            output: "No type errors.",
+            status: "completed",
+            type: "tool",
+          },
+          at: timestamp,
+          sessionId,
+          turnId: "turn_ws_provider",
+          type: "artifact",
+        };
+        yield {
+          at: timestamp,
           item: { id: "item_user", type: "userMessage" },
           itemId: "item_user",
           itemType: "userMessage",
@@ -1111,6 +1145,40 @@ describe("@cycle/api", () => {
           sessionId,
           turnId: "turn_ws_provider",
           type: "item.completed",
+        };
+        yield {
+          at: timestamp,
+          request: {
+            createdAt: timestamp.toISOString(),
+            prompt: "Choose how much command output to show.",
+            questions: [
+              {
+                header: "Output",
+                id: "output",
+                multiSelect: false,
+                options: [
+                  {
+                    description: "Keep the activity group compact unless opened.",
+                    label: "Compact",
+                    value: "compact",
+                  },
+                  {
+                    description: "Show all captured command output inline.",
+                    label: "Verbose",
+                    value: "verbose",
+                  },
+                ],
+                question: "How much command output should the chat show?",
+                type: "single_select",
+              },
+            ],
+            requestId: "question_output_mode",
+            sessionId,
+            turnId: "turn_ws_provider",
+          },
+          sessionId,
+          turnId: "turn_ws_provider",
+          type: "user-input.requested",
         };
         yield {
           at: timestamp,
@@ -1151,6 +1219,7 @@ describe("@cycle/api", () => {
     try {
       const createCommandId = client.send("thread.create", {
         providerId: "codex",
+        runtimeMode: "workspace-write",
         thinkingLevel: "high",
       });
       const createAck = await client.waitFor(
@@ -1160,18 +1229,28 @@ describe("@cycle/api", () => {
       assert.equal(isRecord(createdThread), true);
       const threadId = isRecord(createdThread) ? String(createdThread.id) : "";
       assert.match(threadId, /^thread_/u);
+      assert.equal(
+        isRecord(createdThread) ? createdThread.runtimeMode : undefined,
+        "workspace-write",
+      );
 
       client.send("thread.subscribe", { threadId });
       await client.waitFor(
         (message) => message.type === "thread.snapshot" && message.threadId === threadId,
       );
 
-      client.send("turn.send", {
+      const turnCommandId = client.send("turn.send", {
         message: "Stream a reply",
         providerId: "codex",
+        runtimeMode: "workspace-write",
         thinkingLevel: "high",
         threadId,
       });
+      const turnAck = await client.waitFor(
+        (message) => message.type === "command.ack" && message.commandId === turnCommandId,
+      );
+      const ackTurn = commandPayloadResult(turnAck).turn;
+      assert.equal(isRecord(ackTurn) ? ackTurn.runtimeMode : undefined, "workspace-write");
 
       await client.waitFor(
         (message) =>
@@ -1196,6 +1275,23 @@ describe("@cycle/api", () => {
           isRecord(message.payload.message) &&
           message.payload.message.text === "Streaming response",
       );
+      const commandActivityEvent = await client.waitFor(
+        (message) =>
+          message.type === "activity.upserted" &&
+          message.threadId === threadId &&
+          isRecord(message.payload) &&
+          isRecord(message.payload.activity) &&
+          message.payload.activity.id === "activity-command_item_command" &&
+          message.payload.activity.status === "completed",
+      );
+      const questionEvent = await client.waitFor(
+        (message) =>
+          message.type === "question.created" &&
+          message.threadId === threadId &&
+          isRecord(message.payload) &&
+          isRecord(message.payload.question) &&
+          message.payload.question.id === "question_output_mode",
+      );
       await client.waitFor(
         (message) => message.type === "turn.completed" && message.threadId === threadId,
       );
@@ -1203,6 +1299,8 @@ describe("@cycle/api", () => {
       const persistedMessages = await agentChatStore.listMessages(threadId);
       const persistedActivities = (await agentChatStore.listActivities?.(threadId)) ?? [];
       const persistedEvents = (await agentChatStore.listEventsAfter?.(threadId, 0)) ?? [];
+      const persistedQuestions = (await agentChatStore.listQuestions?.(threadId)) ?? [];
+      const persistedTurns = (await agentChatStore.listTurns?.(threadId)) ?? [];
 
       assert.equal(persistedMessages.length, 2);
       assert.equal(persistedMessages[0]?.actor, "user");
@@ -1223,6 +1321,18 @@ describe("@cycle/api", () => {
         persistedActivities.some((activity) => activity.payload?.itemType === "agentMessage"),
         false,
       );
+      const commandActivity = persistedActivities.find(
+        (activity) => activity.id === "activity-command_item_command",
+      );
+      assert.equal(commandActivity?.title, "Command");
+      assert.equal(commandActivity?.detail, "pnpm --filter @cycle/ui typecheck");
+      assert.equal(commandActivity?.payload?.command, "pnpm --filter @cycle/ui typecheck");
+      const commandActivityFirstSequence = persistedEvents.find(
+        (event) =>
+          event.type === "activity.upserted" &&
+          isRecord(event.payload.activity) &&
+          event.payload.activity.id === "activity-command_item_command",
+      )?.sequence;
       const thinkingActivity = persistedActivities.find(
         (activity) => activity.id === "activity-thinking",
       );
@@ -1230,11 +1340,21 @@ describe("@cycle/api", () => {
       assert.equal(thinkingActivity?.status, "completed");
       assert.equal(thinkingActivity?.detail, undefined);
       assert.equal(thinkingActivity?.payload, undefined);
+      assert.equal(persistedQuestions[0]?.id, "question_output_mode");
+      assert.equal(persistedTurns[0]?.runtimeMode, "workspace-write");
+      assert.equal((await agentChatStore.getThread?.(threadId))?.runtimeMode, "workspace-write");
+      assert.equal(
+        typeof commandActivityEvent.sequence === "number" &&
+          typeof questionEvent.sequence === "number" &&
+          commandActivityEvent.sequence < questionEvent.sequence,
+        true,
+      );
       assert.equal(captured?.sessionId, threadId);
       assert.match(String(captured?.request.input), /Current user message/u);
       assert.match(captured?.request.instructions ?? "", /Cycle MCP: attached as agent tools/u);
       assert.equal((captured?.request.instructions ?? "").includes(handle.baseUrl), false);
       assert.equal(captured?.request.model, undefined);
+      assert.equal(captured?.request.runtimeMode, "workspace-write");
       assert.equal(captured?.request.metadata?.thinkingLevel, "high");
       assert.equal(captured?.request.signal instanceof AbortSignal, true);
       assert.equal(captured?.request.signal?.aborted, false);
@@ -1243,6 +1363,28 @@ describe("@cycle/api", () => {
         assert.equal(captured.request.mcp.url, `${handle.baseUrl}/mcp`);
         assert.equal(captured.request.mcp.headers?.authorization, `Bearer ${token}`);
       }
+      const snapshotCommandId = client.send("thread.subscribe", { threadId });
+      const resumedSnapshot = await client.waitFor(
+        (message) =>
+          message.type === "thread.snapshot" &&
+          message.threadId === threadId &&
+          message.commandId === snapshotCommandId,
+      );
+      const snapshotPayload = isRecord(resumedSnapshot.payload) ? resumedSnapshot.payload : {};
+      const snapshotActivities = arrayValue(snapshotPayload.activities).filter(isRecord);
+      const snapshotQuestions = arrayValue(snapshotPayload.questions).filter(isRecord);
+      const snapshotCommandActivity = snapshotActivities.find(
+        (activity) => activity.id === "activity-command_item_command",
+      );
+      const snapshotQuestion = snapshotQuestions.find(
+        (question) => question.id === "question_output_mode",
+      );
+      assert.equal(
+        isRecord(snapshotPayload.thread) ? snapshotPayload.thread.runtimeMode : undefined,
+        "workspace-write",
+      );
+      assert.equal(snapshotCommandActivity?.timelineSequence, commandActivityFirstSequence);
+      assert.equal(snapshotQuestion?.timelineSequence, questionEvent.sequence);
     } finally {
       client.close();
       await handle.close();
