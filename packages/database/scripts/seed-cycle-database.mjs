@@ -241,7 +241,6 @@ function verifyProjection(database, store, options) {
     const hydrateStartedAt = performance.now();
     const status = yield* database.openRepository({
       displayName: "Cycle local repository",
-      pollIntervalMs: false,
       repositoryId: options.repositoryId,
       store,
       worktreePath: options.repoRoot,

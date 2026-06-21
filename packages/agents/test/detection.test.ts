@@ -7,7 +7,6 @@ import { afterEach, describe, it } from "vitest";
 import {
   defaultAgentCapabilities,
   detectAgentProviders,
-  makeUnsupportedAgentService,
   resolveExecutable,
   supportedAgentProviders,
 } from "../src/index.ts";
@@ -95,11 +94,11 @@ describe("@cycle/agents provider detection", () => {
     const userData = await makeTempDir();
     const bin = join(userData, "bin");
     await mkdir(bin);
-    const claude = join(bin, "claude.CMD");
-    await writeFile(claude, "@echo off\r\nexit /b 0\r\n", "utf8");
+    const codex = join(bin, "codex.CMD");
+    await writeFile(codex, "@echo off\r\nexit /b 0\r\n", "utf8");
 
     const resolved = await Effect.runPromise(
-      resolveExecutable("claude", {
+      resolveExecutable("codex", {
         env: {
           PATH: bin,
           PATHEXT: ".CMD;.EXE",
@@ -110,7 +109,7 @@ describe("@cycle/agents provider detection", () => {
     );
 
     assert.equal(resolved.available, true);
-    assert.equal(resolved.executablePath, claude);
+    assert.equal(resolved.executablePath, codex);
   });
 });
 
@@ -123,23 +122,5 @@ describe("@cycle/agents runtime contracts", () => {
     assert.equal(capabilities.structuredOutput, true);
     assert.equal(capabilities.supports.mcp, true);
     assert.equal(capabilities.supportedJobTypes.includes("implement_issue"), true);
-  });
-
-  it("normalizes unsupported execution through AgentService", async () => {
-    const service = makeUnsupportedAgentService("codex");
-    const session = await service.createSession({ title: "Test" });
-    const result = await service.run(session.id, { input: "hello" });
-    const events: unknown[] = [];
-
-    for await (const event of service.stream(session.id, { input: "hello" })) {
-      events.push(event);
-    }
-
-    assert.equal(result.status, "failed");
-    assert.equal(result.error?.code, "unsupported_option");
-    assert.deepEqual(
-      events.map((event) => (event as { readonly type: string }).type),
-      ["turn.started", "turn.failed"],
-    );
   });
 });

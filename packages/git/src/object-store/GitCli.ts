@@ -145,6 +145,16 @@ export const layer = Layer.effect(
             result.status === 0 ? bytesToString(result.stdout).trim() || null : null,
           ),
         ),
+      rootCommits: (store, start) =>
+        git(spawner, store.gitDir, store.cwd, ["rev-list", "--max-parents=0", start]).pipe(
+          Effect.map((result) =>
+            bytesToString(result.stdout)
+              .split("\n")
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .sort(),
+          ),
+        ),
       readTree: (store, id) =>
         git(spawner, store.gitDir, store.cwd, ["ls-tree", "-z", id]).pipe(
           Effect.flatMap((result) => parseTree(bytesToString(result.stdout))),

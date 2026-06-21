@@ -23,7 +23,7 @@ packages/agents/
     providers/
       catalog.ts              Provider definitions, profiles, capabilities lookup
       shared.ts               Shared job type groups
-      codex/                  Codex implementation using @openai/codex-sdk
+      codex/                  Codex implementation using Codex app-server
       claude/                 Claude Code definition and capability metadata
       opencode/               OpenCode definition and capability metadata
     services/
@@ -135,19 +135,15 @@ This gives API/UI layers a consistent service shape even when a provider is only
 
 ### 6. Codex Adapter Layer
 
-`src/providers/codex` is the only executable provider implementation in this package. It adapts Cycle's `AgentService` contract to `@openai/codex-sdk`.
+`src/providers/codex` is the only executable provider implementation in this package. It adapts Cycle's `AgentService` contract to the Codex app-server protocol.
 
 Main files:
 
 - `service.ts`: constructs the service, owns in-memory sessions and active turn controllers, persists session bindings, and exposes `AgentService` methods.
-- `client.ts`: converts Cycle requests into Codex client, thread, turn, environment, MCP, prompt, cwd, sandbox, model, schema, timeout, and abort options.
-- `runTurn.ts`: non-streaming turn execution through `thread.run`.
-- `streamTurn.ts`: streaming turn execution through `thread.runStreamed`.
-- `events.ts`: converts Codex usage and thread items into Cycle usage, artifacts, and progress messages.
-- `streamState.ts`: tracks streamed items and computes text deltas/final text.
+- `app-server/runtime.ts`: owns Codex app-server client lifecycle, thread/turn calls, event conversion, streaming state, and structured response parsing.
 - `session.ts`: converts between `AgentSessionBinding` and in-memory Codex sessions, including native thread IDs.
 - `errors.ts`: normalizes provider errors into `AgentError`.
-- `runtime.ts`: shared runtime shape passed into run/stream helpers.
+- `runtime.ts`: shared runtime shape for Codex service configuration.
 - `types.ts`: Codex-specific options and SDK-like test interfaces.
 
 `CodexAgentServiceOptions` is the adapter configuration boundary. It supports dependency injection for tests, custom Codex options, cwd fallback, environment variables, executable path override, sandbox mode, session store, and timeout.
@@ -284,14 +280,14 @@ sequenceDiagram
   Service-->>Caller: turn.completed with AgentTurnResult
 ```
 
-Streaming state is accumulated by `makeCodexStreamState`:
+Streaming state is accumulated by the app-server runtime:
 
 - Agent message items produce incremental `text.delta` events.
 - Tool, command, file-change, reasoning, todo-list, web-search, and error items become artifacts and/or progress events.
 - Final text is reconstructed from ordered agent message items.
 - The terminal `turn.completed` event carries the same normalized shape as `run`.
 
-If the SDK stream ends without an explicit terminal event, `streamCodexTurn` still emits `turn.completed` using the accumulated text and artifacts.
+If the app-server stream ends without an explicit terminal event, the runtime still emits `turn.completed` using the accumulated text and artifacts.
 
 ### Cancellation Flow
 

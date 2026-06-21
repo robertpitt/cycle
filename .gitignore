@@ -2,5 +2,7 @@ node_modules/
 dist/
 out/
 storybook-static/
+vendor/
+packages/codex-app-server/src/_generated/**/*.json
 .DS_Store
 *.log

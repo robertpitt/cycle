@@ -295,7 +295,6 @@ export type RepositoryInput = {
   readonly displayName?: string;
   readonly gitDir?: string;
   readonly metadata?: RepositoryMetadata;
-  readonly pollIntervalMs?: false | number;
   readonly repositoryId: string;
   readonly store: import("@cycle/git-db").Store.StoreServiceShape;
   readonly syncOnOpen?: boolean;

@@ -39,9 +39,7 @@ type ChatPanelProps = {
 type PendingCommand = (message: ChatProtocolMessage) => void;
 
 const defaultModelsByProvider: Record<AgentProviderId, readonly string[]> = {
-  claude: [],
   codex: [],
-  opencode: [],
 };
 
 const thinkingLevels = [

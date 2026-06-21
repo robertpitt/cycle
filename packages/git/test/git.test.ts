@@ -101,7 +101,12 @@ const conformanceBackends = [
   },
 ] as const;
 
-const writeSnapshot = (service: GitService, repo: string, message: string, parent?: string) =>
+const writeSnapshot = (
+  service: GitService,
+  repo: string,
+  message: string,
+  parent?: string | ReadonlyArray<string>,
+) =>
   Effect.gen(function* () {
     const store = { cwd: repo, gitDir: path.join(repo, ".git") };
     const blob = yield* service.writeBlob(store, encoder.encode(`${message}\n`));
@@ -119,7 +124,7 @@ const writeSnapshot = (service: GitService, repo: string, message: string, paren
         name: "Cycle",
       },
       message,
-      parents: parent === undefined ? [] : [parent],
+      parents: parent === undefined ? [] : Array.isArray(parent) ? parent : [parent],
       tree,
     });
 
@@ -141,6 +146,11 @@ const runObjectStoreConformance = (
     const ref = `refs/cycle-test/${backendName.toLowerCase()}`;
     const first = yield* writeSnapshot(service, repo, `${backendName} create`);
     const second = yield* writeSnapshot(service, repo, `${backendName} update`, first.commit);
+    const unrelated = yield* writeSnapshot(service, repo, `${backendName} unrelated`);
+    const merge = yield* writeSnapshot(service, repo, `${backendName} merge`, [
+      second.commit,
+      unrelated.commit,
+    ]);
 
     assert.strictEqual(
       bytesToString(yield* service.readBlob(first.store, first.blob)),
@@ -167,6 +177,11 @@ const runObjectStoreConformance = (
     assert.strictEqual(
       yield* service.mergeBase(first.store, first.commit, second.commit),
       first.commit,
+    );
+    assert.deepStrictEqual(yield* service.rootCommits(first.store, second.commit), [first.commit]);
+    assert.deepStrictEqual(
+      yield* service.rootCommits(first.store, merge.commit),
+      [first.commit, unrelated.commit].sort(),
     );
 
     yield* service.updateRef(first.store, {

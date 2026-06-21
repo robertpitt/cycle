@@ -84,6 +84,16 @@ export const layer = Layer.effect(
         ),
       readRef: (_store, name) =>
         TxRef.get(state).pipe(Effect.map((current) => current.refs.get(name) ?? null)),
+      rootCommits: (_store, start) =>
+        TxRef.get(state).pipe(
+          Effect.flatMap((current) => {
+            const roots = rootCommitIds(current, start);
+
+            return roots === null
+              ? Effect.fail(gitAdapterError("in-memory rootCommits", `Commit not found: ${start}`))
+              : Effect.succeed(roots);
+          }),
+        ),
       readTree: (_store, id) =>
         TxRef.get(state).pipe(
           Effect.flatMap((current) => {
@@ -278,4 +288,34 @@ const collectAncestors = (state: InMemoryState, start: ObjectId): Set<ObjectId> 
   }
 
   return output;
+};
+
+const rootCommitIds = (state: InMemoryState, start: ObjectId): ReadonlyArray<ObjectId> | null => {
+  const startObject = state.objects.get(start);
+
+  if (startObject?.kind !== "commit") return null;
+
+  const roots = new Set<ObjectId>();
+  const seen = new Set<ObjectId>();
+  const stack = [start];
+
+  while (stack.length > 0) {
+    const current = stack.shift();
+
+    if (current === undefined || seen.has(current)) continue;
+
+    const object = state.objects.get(current);
+
+    if (object?.kind !== "commit") return null;
+
+    seen.add(current);
+
+    if (object.commit.parents.length === 0) {
+      roots.add(current);
+    } else {
+      stack.push(...object.commit.parents);
+    }
+  }
+
+  return [...roots].sort();
 };

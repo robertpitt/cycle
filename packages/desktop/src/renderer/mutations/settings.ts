@@ -20,14 +20,7 @@ export const useUpdateProfileMutation = ({ appConfig }: SettingsMutationOptions 
 
   return useMutation({
     mutationFn: async (input: ProfileUpdateInput): Promise<ProfileConfig> => {
-      const bridge = getDesktopBridge();
-
-      try {
-        return await cycleApiClient.updateProfile(input);
-      } catch (error) {
-        if (bridge) return bridge.updateProfile(input);
-        throw error;
-      }
+      return cycleApiClient.updateProfile(input);
     },
     onSuccess: (profile) => {
       queryClient.setQueryData<AppConfigState>(appConfigQueryKey, (current) => {
@@ -50,14 +43,7 @@ export const useSetThemePreferenceMutation = (_options: SettingsMutationOptions 
         throw new TypeError("preference must be light, dark, or system.");
       }
 
-      const bridge = getDesktopBridge();
-
-      try {
-        return await cycleApiClient.setThemePreference(preference);
-      } catch (error) {
-        if (bridge) return bridge.setThemePreference(preference);
-        throw error;
-      }
+      return cycleApiClient.setThemePreference(preference);
     },
     onSuccess: (next) => {
       queryClient.setQueryData(appConfigQueryKey, next);

@@ -89,11 +89,9 @@ describe("@cycle/ui architecture", () => {
     expect(rootIndex).toContain('export * from "./atoms/index.ts";');
     expect(rootIndex).toContain('export * from "./molecules/index.ts";');
     expect(rootIndex).toContain('export * from "./organisms/index.ts";');
-    expect(rootIndex).toContain('export * from "./pages/index.ts";');
-    expect(rootIndex).toContain('export * from "./templates/index.ts";');
   });
 
-  it("maintains Storybook coverage for public components and reusable pages", async () => {
+  it("maintains Storybook coverage for public components", async () => {
     const missingStories: Array<string> = [];
 
     for (const group of atomicGroups) {
@@ -104,14 +102,6 @@ describe("@cycle/ui architecture", () => {
         if (!stories.some((file) => file.endsWith(".stories.tsx"))) {
           missingStories.push(relative(srcRoot, directory));
         }
-      }
-    }
-
-    const pageDirectories = await readComponentDirectories(join(srcRoot, "pages"));
-    for (const directory of pageDirectories) {
-      const stories = await collectFiles(directory);
-      if (!stories.some((file) => file.endsWith(".stories.tsx"))) {
-        missingStories.push(relative(srcRoot, directory));
       }
     }
 

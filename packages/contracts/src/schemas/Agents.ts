@@ -6,7 +6,7 @@ export type JsonValue = typeof JsonValue.Type;
 export const JsonObject = Schema.Record(Schema.String, JsonValue);
 export type JsonObject = typeof JsonObject.Type;
 
-export const AgentProviderId = Schema.Literals(["codex", "claude", "opencode"]);
+export const AgentProviderId = Schema.Literal("codex");
 export type AgentProviderId = typeof AgentProviderId.Type;
 
 export const AgentProvider = AgentProviderId;

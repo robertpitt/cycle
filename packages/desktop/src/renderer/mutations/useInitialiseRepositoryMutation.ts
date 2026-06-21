@@ -1,8 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { defaultAppConfig, type AppConfigState } from "../../shared/AppConfig.ts";
+import {
+  defaultAppConfig,
+  type AppConfigState,
+  type RepositoryRecord,
+} from "../../shared/AppConfig.ts";
 import type { InitializeRepositoryPathInput } from "../../shared/LocalWorkspace.ts";
-import { getDesktopBridge } from "../lib/desktopBridge.ts";
-import { makeFallbackRepository } from "../lib/repositories.ts";
 import { appConfigQueryKey } from "../queries/appConfig.ts";
 
 type UseInitialiseRepositoryMutationOptions = {
@@ -19,22 +21,14 @@ export const useInitialiseRepositoryMutation = ({
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: InitializeRepositoryPathInput) => {
-      const bridge = getDesktopBridge();
-      if (bridge) return bridge.initializeRepositoryPath(input);
-      return makeFallbackRepository(input.path);
+    mutationFn: async (_input: InitializeRepositoryPathInput): Promise<RepositoryRecord> => {
+      throw new Error("Repository initialisation is not available through the Cycle API yet.");
     },
     onMutate: () => {
       onErrorMessage(undefined);
     },
-    onSuccess: async (repository) => {
+    onSuccess: (repository) => {
       onInitialised();
-
-      const bridge = getDesktopBridge();
-      if (bridge) {
-        queryClient.setQueryData(appConfigQueryKey, await bridge.getAppConfig());
-        return;
-      }
 
       const current = appConfig ?? defaultAppConfig();
       queryClient.setQueryData(appConfigQueryKey, {

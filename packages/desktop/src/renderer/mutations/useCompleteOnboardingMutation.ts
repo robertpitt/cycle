@@ -2,7 +2,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { defaultAppConfig, type AppConfigState } from "../../shared/AppConfig.ts";
 import type { AgentProviderId } from "../../shared/AgentProviders.ts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
-import { getDesktopBridge } from "../lib/desktopBridge.ts";
 import { appConfigQueryKey } from "../queries/appConfig.ts";
 
 type UseCompleteOnboardingMutationOptions = {
@@ -32,13 +31,7 @@ export const useCompleteOnboardingMutation = ({
         themePreference: current.theme.preference,
       } as const;
 
-      const bridge = getDesktopBridge();
-      try {
-        return await cycleApiClient.completeOnboarding(input);
-      } catch (error) {
-        if (bridge) return bridge.completeOnboarding(input);
-        throw error;
-      }
+      return cycleApiClient.completeOnboarding(input);
     },
     onSuccess: (next) => {
       queryClient.setQueryData(appConfigQueryKey, next);

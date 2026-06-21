@@ -412,7 +412,6 @@ export const DesktopBootstrapLive = Layer.effect(
           displayName: repository.displayName,
           gitDir: metadata.gitDir,
           metadata,
-          pollIntervalMs: false,
           repositoryId: repository.id,
           store,
           syncOnOpen: false,

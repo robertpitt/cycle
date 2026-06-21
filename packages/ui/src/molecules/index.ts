@@ -4,7 +4,6 @@ export * from "./card/index.ts";
 export * from "./chip-select/index.ts";
 export * from "./command-field/index.ts";
 export * from "./dialog/index.ts";
-export * from "./diff-viewer/index.ts";
 export * from "./editable-text/index.ts";
 export * from "./field/index.ts";
 export * from "./issue-group-header/index.ts";

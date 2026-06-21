@@ -69,7 +69,6 @@ function importTickets(options) {
     const status = yield* database.openRepository({
       displayName: options.displayName,
       gitDir: options.gitDir,
-      pollIntervalMs: false,
       repositoryId: options.repositoryId,
       store,
       worktreePath: options.repoRoot,

@@ -197,7 +197,6 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
           displayName: repository.displayName,
           gitDir: metadata.gitDir,
           metadata,
-          pollIntervalMs: false,
           repositoryId: repository.id,
           store,
           syncOnOpen: request.syncOnOpen ?? false,

@@ -257,6 +257,7 @@ export const RepositoryPreferencesPayload = strictSchema(
 export const RepositoryRecordOutput = Schema.Struct({
   addedAt: Schema.String,
   displayName: Schema.String,
+  gitDbRootCommitId: Schema.optional(Schema.String),
   id: Schema.String,
   lastOpenedAt: Schema.optional(Schema.String),
   path: Schema.String,
@@ -597,7 +598,7 @@ export const ChatTurnPayload = strictSchema(
     message: Schema.String,
     messages: Schema.optional(Schema.Array(ChatMessagePayload)),
     model: Schema.optional(Schema.String),
-    provider: Schema.optional(Schema.Literals(["codex", "claude", "opencode"])),
+    provider: Schema.optional(AgentProviderId),
     repositories: Schema.optional(Schema.Array(ChatRepositoryPayload)),
     sessionId: Schema.optional(Schema.String),
     stream: Schema.optional(ChatStreamOptionsPayload),

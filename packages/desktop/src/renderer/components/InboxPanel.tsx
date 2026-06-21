@@ -4,7 +4,11 @@ import { InboxList, type InboxListEntry } from "@cycle/ui/organisms";
 import * as React from "react";
 import type { ProfileConfig, RepositoryRecord } from "../../shared/AppConfig.ts";
 import { useInboxMutation } from "../mutations/index.ts";
-import { useInboxListQuery, useInboxSummaryQuery } from "../queries/index.ts";
+import {
+  inboxListEntriesFromPages,
+  useInboxListInfiniteQuery,
+  useInboxSummaryQuery,
+} from "../queries/index.ts";
 
 type InboxPanelProps = {
   readonly onIssueSelect?: (selection: {
@@ -19,19 +23,22 @@ export const InboxPanel = ({ onIssueSelect, profile, repositories }: InboxPanelP
   const [repositoryFilter, setRepositoryFilter] = React.useState<string | "all">("all");
   const [reasonFilter, setReasonFilter] = React.useState<InboxReason | "all">("all");
   const [statusFilter, setStatusFilter] = React.useState<InboxStatus | "all">("unread");
+  const [selectedItemIds, setSelectedItemIds] = React.useState<readonly string[]>([]);
   const repositoryIds = React.useMemo(
     () => repositories.map((repository) => repository.id),
     [repositories],
   );
-  const filteredRepositoryIds =
-    repositoryFilter === "all"
-      ? repositoryIds
-      : repositoryIds.filter((id) => id === repositoryFilter);
+  const filteredRepositoryIds = React.useMemo(
+    () =>
+      repositoryFilter === "all"
+        ? repositoryIds
+        : repositoryIds.filter((id) => id === repositoryFilter),
+    [repositoryFilter, repositoryIds],
+  );
   const query = React.useMemo(
     () =>
       profile?.email
         ? {
-            limit: 100,
             reason: reasonFilter === "all" ? undefined : reasonFilter,
             repositoryIds: filteredRepositoryIds,
             status: statusFilter,
@@ -52,25 +59,29 @@ export const InboxPanel = ({ onIssueSelect, profile, repositories }: InboxPanelP
         : undefined,
     [profile?.email, repositoryIds],
   );
-  const inboxQuery = useInboxListQuery(query);
+  const inboxQuery = useInboxListInfiniteQuery(query);
   const inboxSummaryQuery = useInboxSummaryQuery(summaryQuery);
   const markRead = useInboxMutation({ kind: "markRead" });
   const archive = useInboxMutation({ kind: "archive" });
-  const entries: readonly InboxListEntry[] =
-    inboxQuery.data?.entries.map((entry) => ({
-      actor: entry.actor,
-      bodyExcerpt: entry.bodyExcerpt,
-      createdAt: entry.createdAt,
-      itemId: entry.itemId,
-      reason: entry.reason,
-      recordId: entry.recordId,
-      repositoryId: entry.repositoryId,
-      sourceState: entry.sourceState,
-      status: entry.status,
-      ticketId: entry.ticketId,
-      title: entry.title,
-    })) ?? [];
+  const inboxEntries = inboxListEntriesFromPages(inboxQuery.data);
+  const entries: readonly InboxListEntry[] = inboxEntries.map((entry) => ({
+    actor: entry.actor,
+    bodyExcerpt: entry.bodyExcerpt,
+    createdAt: entry.createdAt,
+    itemId: entry.itemId,
+    reason: entry.reason,
+    recordId: entry.recordId,
+    repositoryId: entry.repositoryId,
+    sourceState: entry.sourceState,
+    status: entry.status,
+    ticketId: entry.ticketId,
+    title: entry.title,
+  }));
   const repositorySummaries = inboxSummaryQuery.data?.repositories ?? [];
+
+  React.useEffect(() => {
+    setSelectedItemIds([]);
+  }, [reasonFilter, repositoryFilter, statusFilter]);
 
   if (!profile?.email) {
     return (
@@ -81,29 +92,37 @@ export const InboxPanel = ({ onIssueSelect, profile, repositories }: InboxPanelP
   return (
     <InboxList
       className="h-full overflow-auto rounded-lg border border-border shadow-card"
-      count={countLabel(inboxSummaryQuery.data?.unreadCount, inboxQuery.data?.entries.length)}
+      count={countLabel(inboxSummaryQuery.data?.unreadCount, inboxEntries.length)}
       entries={entries}
+      hasMore={inboxQuery.hasNextPage}
       loading={inboxQuery.isLoading || inboxSummaryQuery.isLoading}
-      onArchiveSelected={(itemIds) =>
+      loadingMore={inboxQuery.isFetchingNextPage}
+      onArchiveSelected={(itemIds) => {
         archive.mutate({
           itemIds,
           userId: profile.email,
-        })
-      }
+        });
+        setSelectedItemIds([]);
+      }}
       onEntrySelect={(entry) =>
         onIssueSelect?.({
           issueId: entry.ticketId,
           repositoryId: entry.repositoryId,
         })
       }
-      onMarkSelectedRead={(itemIds) =>
+      onLoadMore={() => {
+        void inboxQuery.fetchNextPage();
+      }}
+      onMarkSelectedRead={(itemIds) => {
         markRead.mutate({
           itemIds,
           userId: profile.email,
-        })
-      }
+        });
+        setSelectedItemIds([]);
+      }}
       onReasonFilterChange={setReasonFilter}
       onRepositoryFilterChange={setRepositoryFilter}
+      onSelectionChange={setSelectedItemIds}
       onStatusFilterChange={setStatusFilter}
       reasonFilter={reasonFilter}
       repositories={repositories.map((repository) => {
@@ -119,6 +138,7 @@ export const InboxPanel = ({ onIssueSelect, profile, repositories }: InboxPanelP
         };
       })}
       repositoryFilter={repositoryFilter}
+      selectedItemIds={selectedItemIds}
       statusFilter={statusFilter}
       title="Inbox"
     />

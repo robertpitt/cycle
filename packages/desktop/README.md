@@ -212,7 +212,7 @@ Current routes:
 - `*` renders `NotFoundScreen`
 - route errors render `RouteErrorScreen`
 
-`WorkspaceScreen` currently delegates to `WorkspaceAppShellPage` from `@cycle/ui/pages`.
+`WorkspaceScreen` composes `@cycle/ui` atoms, molecules, and organisms with desktop renderer state.
 
 ## Configuration
 

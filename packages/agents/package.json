@@ -9,9 +9,7 @@
     "./detection": "./src/detection.ts",
     "./executables": "./src/executables.ts",
     "./providers": "./src/providers.ts",
-    "./providers/claude": "./src/providers/claude/index.ts",
     "./providers/codex": "./src/providers/codex/index.ts",
-    "./providers/opencode": "./src/providers/opencode/index.ts",
     "./service": "./src/service.ts",
     "./types": "./src/types.ts"
   },
@@ -23,7 +21,6 @@
     "@cycle/codex-app-server": "workspace:*",
     "@cycle/contracts": "workspace:*",
     "@effect/platform-node": "4.0.0-beta.78",
-    "@openai/codex-sdk": "0.140.0",
     "effect": "4.0.0-beta.78"
   },
   "devDependencies": {

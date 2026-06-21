@@ -1,14 +1,33 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { defaultAppConfig, type AppConfigState } from "../../shared/AppConfig.ts";
-import type { SelectRepositoryFolderResult } from "../../shared/LocalWorkspace.ts";
+import {
+  defaultAppConfig,
+  type AppConfigState,
+  type RepositoryRecord,
+} from "../../shared/AppConfig.ts";
+import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 import { makeFallbackRepository } from "../lib/repositories.ts";
 import { appConfigQueryKey } from "../queries/appConfig.ts";
 
-type RepositoryInitialiseRequest = Extract<
-  SelectRepositoryFolderResult,
-  { readonly status: "not-git" }
->;
+type RepositoryInitialiseRequest = {
+  readonly message?: string;
+  readonly path: string;
+};
+
+type AddRepositoryResult =
+  | {
+      readonly status: "cancelled";
+    }
+  | {
+      readonly appConfig?: AppConfigState;
+      readonly repository: RepositoryRecord;
+      readonly status: "added";
+    }
+  | {
+      readonly message: string;
+      readonly path: string;
+      readonly status: "not-git";
+    };
 
 type UseAddRepositoryMutationOptions = {
   readonly appConfig?: AppConfigState;
@@ -26,10 +45,34 @@ export const useAddRepositoryMutation = ({
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (): Promise<SelectRepositoryFolderResult> => {
+    mutationFn: async (): Promise<AddRepositoryResult> => {
       const bridge = getDesktopBridge();
 
-      if (bridge) return bridge.selectRepositoryFolder();
+      if (bridge) {
+        const selection = await bridge.selectRepositoryFolder();
+        if (selection.status === "cancelled") return { status: "cancelled" };
+
+        const opened = await cycleApiClient.openRepositoryPath({ path: selection.path });
+        const nextConfig = await cycleApiClient.getAppConfig();
+        const repository =
+          nextConfig.localWorkspace.repositories.find(
+            (candidate) => candidate.id === opened.repositoryId,
+          ) ??
+          nextConfig.localWorkspace.repositories.find(
+            (candidate) => candidate.path === selection.path,
+          );
+
+        if (repository === undefined) {
+          throw new Error("Repository was opened but was not found in app config.");
+        }
+
+        return {
+          appConfig: nextConfig,
+          repository,
+          status: "added",
+        };
+      }
+
       return {
         repository: makeFallbackRepository("/Users/robertpitt/Projects/cycle"),
         status: "added",
@@ -39,7 +82,7 @@ export const useAddRepositoryMutation = ({
       onImportError(undefined);
       onInitialiseError(undefined);
     },
-    onSuccess: async (result) => {
+    onSuccess: (result) => {
       if (result.status === "cancelled") return;
 
       if (result.status === "not-git") {
@@ -47,9 +90,8 @@ export const useAddRepositoryMutation = ({
         return;
       }
 
-      const bridge = getDesktopBridge();
-      if (bridge) {
-        queryClient.setQueryData(appConfigQueryKey, await bridge.getAppConfig());
+      if (result.appConfig !== undefined) {
+        queryClient.setQueryData(appConfigQueryKey, result.appConfig);
         return;
       }
 

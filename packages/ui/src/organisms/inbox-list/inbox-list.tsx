@@ -3,12 +3,14 @@ import {
   Archive,
   AtSign,
   CheckCheck,
+  ChevronDown,
   Inbox,
   MessageCircle,
   UserRoundCheck,
 } from "lucide-react";
 import * as React from "react";
 import { Badge } from "../../atoms/badge/index.ts";
+import { Button } from "../../atoms/button/index.ts";
 import { Checkbox } from "../../atoms/checkbox/index.ts";
 import { DateTime } from "../../atoms/date-time/index.ts";
 import { IconButton } from "../../atoms/icon-button/index.ts";
@@ -47,9 +49,12 @@ export type InboxListRepository = {
 export type InboxListProps = Omit<React.HTMLAttributes<HTMLDivElement>, "title"> & {
   readonly count?: React.ReactNode;
   readonly entries: readonly InboxListEntry[];
+  readonly hasMore?: boolean;
   readonly loading?: boolean;
+  readonly loadingMore?: boolean;
   readonly onArchiveSelected?: (itemIds: readonly string[]) => void;
   readonly onEntrySelect?: (entry: InboxListEntry) => void;
+  readonly onLoadMore?: () => void;
   readonly onReasonFilterChange?: (reason: InboxListReason | "all") => void;
   readonly onRepositoryFilterChange?: (repositoryId: string | "all") => void;
   readonly onSelectionChange?: (itemIds: readonly string[]) => void;
@@ -107,9 +112,12 @@ export const InboxList = React.forwardRef<HTMLDivElement, InboxListProps>(functi
     className,
     count,
     entries,
+    hasMore = false,
     loading = false,
+    loadingMore = false,
     onArchiveSelected,
     onEntrySelect,
+    onLoadMore,
     onMarkSelectedRead,
     onReasonFilterChange,
     onRepositoryFilterChange,
@@ -281,6 +289,21 @@ export const InboxList = React.forwardRef<HTMLDivElement, InboxListProps>(functi
               />
             ))
           )}
+          {!loading && hasMore ? (
+            <div className="flex min-h-14 items-center justify-center border-t border-border bg-surface px-5 py-3">
+              <Button
+                disabled={loadingMore || onLoadMore === undefined}
+                loading={loadingMore}
+                loadingLabel="Loading more inbox items"
+                onClick={onLoadMore}
+                rightIcon={<ChevronDown aria-hidden className="size-4" />}
+                size="sm"
+                variant="outline"
+              >
+                {loadingMore ? "Loading more" : "Load more"}
+              </Button>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

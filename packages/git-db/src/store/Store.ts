@@ -216,6 +216,9 @@ type StoreGit = {
   readonly readBlob: (id: ObjectId) => Effect.Effect<Uint8Array, GitAdapterError>;
   readonly readCommit: (id: ObjectId) => Effect.Effect<CommitObject, GitAdapterError>;
   readonly readRef: (name: string) => Effect.Effect<ObjectId | null, GitAdapterError>;
+  readonly rootCommits: (
+    start: ObjectId,
+  ) => Effect.Effect<ReadonlyArray<ObjectId>, GitAdapterError>;
   readonly readTree: (id: ObjectId) => Effect.Effect<ReadonlyArray<TreeEntry>, GitAdapterError>;
   readonly updateRef: (input: UpdateRefInput) => Effect.Effect<void, GitAdapterError>;
   readonly writeBlob: (bytes: Uint8Array) => Effect.Effect<ObjectId, GitAdapterError>;
@@ -280,6 +283,8 @@ const bindGitAdapter = (git: GitService, config: Store): StoreGit => ({
   readCommit: (id) => gitDbOperation("commit.read", config, git.readCommit(config, id), { id }),
   readRef: (name) =>
     gitDbOperation("pointer.read", config, git.readRef(config, name), { ref: name }),
+  rootCommits: (start) =>
+    gitDbOperation("commit.roots", config, git.rootCommits(config, start), { start }),
   readTree: (id) => gitDbOperation("tree.read", config, git.readTree(config, id), { id }),
   updateRef: (input) =>
     gitDbOperation("pointer.update", config, git.updateRef(config, input), { ref: input.ref }),
@@ -401,7 +406,7 @@ const makeStore = (runtime: StoreRuntime): StoreServiceShape => {
 
         if (snapshotId === null) return null;
 
-        const rootCommitId = yield* rootCommitForSnapshot(store, pointerName, snapshotId);
+        const rootCommitId = yield* rootCommitForSnapshot(runtime, pointerName, snapshotId);
 
         return repositoryIdentity(ref, rootCommitId, "local");
       }),
@@ -574,15 +579,13 @@ const repositoryIdentity = (
 };
 
 const rootCommitForSnapshot = (
-  store: StoreServiceShape,
+  runtime: StoreRuntime,
   pointer: string,
   snapshotId: string,
 ): Effect.Effect<string, GitDbError> =>
   Effect.gen(function* () {
-    const snapshots = yield* store.history(snapshotId);
-    const roots = snapshots
-      .filter((snapshot) => snapshot.parents.length === 0)
-      .map((snapshot) => snapshot.id.toLowerCase())
+    const roots = (yield* runtime.adapter.rootCommits(snapshotId))
+      .map((root) => root.toLowerCase())
       .sort();
 
     if (roots.length === 1) return roots[0]!;
@@ -656,14 +659,14 @@ const ensureRepositoryIdentity = (
         );
 
       if (fetched !== null) {
-        const remoteRoot = yield* rootCommitForSnapshot(store, pointer, fetched);
+        const remoteRoot = yield* rootCommitForSnapshot(runtime, pointer, fetched);
 
         if (localBefore === null) {
           yield* movePointerRef(runtime, localRef, fetched, null, pointer);
           return repositoryIdentity(localRef, remoteRoot, "remote");
         }
 
-        const localRoot = yield* rootCommitForSnapshot(store, pointer, localBefore);
+        const localRoot = yield* rootCommitForSnapshot(runtime, pointer, localBefore);
 
         if (localRoot !== remoteRoot) {
           return yield* Effect.fail(
@@ -681,7 +684,7 @@ const ensureRepositoryIdentity = (
     }
 
     if (localBefore !== null) {
-      const localRoot = yield* rootCommitForSnapshot(store, pointer, localBefore);
+      const localRoot = yield* rootCommitForSnapshot(runtime, pointer, localBefore);
       return repositoryIdentity(localRef, localRoot, "local");
     }
 
@@ -727,7 +730,7 @@ const ensureRepositoryIdentity = (
     }
 
     yield* movePointerRef(runtime, localRef, remoteAfter, created.id, pointer);
-    const remoteRoot = yield* rootCommitForSnapshot(store, pointer, remoteAfter);
+    const remoteRoot = yield* rootCommitForSnapshot(runtime, pointer, remoteAfter);
 
     return repositoryIdentity(localRef, remoteRoot, "adopted-remote");
   });

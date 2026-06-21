@@ -14,8 +14,6 @@ network calls, query clients, mutations, and routing hooks belong in consuming a
 - Put low-level controls in `src/atoms`.
 - Put small composed controls and compact data surfaces in `src/molecules`.
 - Put product regions, dialogs, sidebars, lists, toolbars, and shells in `src/organisms`.
-- Put full-screen examples and prototype compositions in `src/pages`.
-- Use `src/templates` only for reusable layout skeletons that are not product-specific.
 - Do not add a `src/components` re-export surface. The root `src/index.ts` is the single broad
   import point, and the atomic-design folders are the canonical implementation and direct import
   locations.

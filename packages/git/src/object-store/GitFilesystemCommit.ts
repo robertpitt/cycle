@@ -117,6 +117,34 @@ export const mergeBase = (
     return null;
   });
 
+export const rootCommits = (
+  runtime: FilesystemRuntime,
+  gitDir: string,
+  start: ObjectId,
+): Effect.Effect<ReadonlyArray<ObjectId>, GitAdapterError> =>
+  Effect.gen(function* () {
+    const roots = new Set<ObjectId>();
+    const seen = new Set<ObjectId>();
+    const queue = [start];
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+
+      if (current === undefined || seen.has(current)) continue;
+
+      seen.add(current);
+      const summary = yield* readCommitSummary(runtime, gitDir, current);
+
+      if (summary.parents.length === 0) {
+        roots.add(summary.id);
+      } else {
+        queue.push(...summary.parents);
+      }
+    }
+
+    return [...roots].sort();
+  });
+
 const collectAncestors = (
   runtime: FilesystemRuntime,
   gitDir: string,

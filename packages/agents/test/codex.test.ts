@@ -3,7 +3,7 @@ import { makeCodexAppServerClient, type CodexAppServerClient } from "@cycle/code
 import { Schema } from "effect";
 import { describe, it } from "vitest";
 import { makeCodexAgentService } from "../src/codex.ts";
-import { parseStructured } from "../src/providers/codex/client.ts";
+import { parseStructured } from "../src/providers/codex/structured.ts";
 import type { AgentEvent, AgentSessionBinding, AgentSessionStore } from "../src/types.ts";
 
 class Pushable<T> implements AsyncIterable<T> {
@@ -491,6 +491,54 @@ describe("@cycle/agents codex app-server adapter", () => {
     await nextEvent(iterator, "turn.completed");
   });
 
+  it("does not time out while a command approval is pending", async () => {
+    const peer = makeMockPeer();
+    const service = makeCodexAgentService({
+      appServerClient: peer.client,
+      timeoutMs: 50,
+    });
+    const session = await service.createSession();
+    const iterator = service.stream(session.id, { input: "Run a command" })[Symbol.asyncIterator]();
+    const started = iterator.next();
+
+    await completeStartup(peer);
+    await startTurn(peer);
+    assert.equal((await started).value?.type, "turn.started");
+    const approvalResponse = peer.serverRequest("item/commandExecution/requestApproval", {
+      command: "pnpm test",
+      itemId: "command_1",
+      threadId: "native_thread",
+      turnId: "native_turn",
+    });
+    const requested = await nextEvent(iterator, "approval.requested");
+    const pendingNext = iterator.next();
+    const pendingResult = await Promise.race([
+      pendingNext.then((result) => ({ result, type: "event" as const })),
+      wait(100).then(() => ({ type: "still-pending" as const })),
+    ]);
+
+    assert.equal(pendingResult.type, "still-pending");
+
+    const result = await service.respondToApproval(
+      session.id,
+      requested.request.requestId,
+      "accept",
+    );
+    assert.equal(result.status, "accepted");
+    peer.notify("turn/completed", {
+      threadId: "native_thread",
+      turn: {
+        id: "native_turn",
+        status: "completed",
+      },
+    });
+
+    assert.deepEqual((await approvalResponse).result, { decision: "accept" });
+    const resolved = await pendingNext;
+    assert.equal(resolved.value?.type, "approval.resolved");
+    await nextEvent(iterator, "turn.completed");
+  });
+
   it("roundtrips user-input requests through AgentService", async () => {
     const peer = makeMockPeer();
     const service = makeCodexAgentService({ appServerClient: peer.client });
@@ -547,6 +595,9 @@ const collect = async <T>(iterable: AsyncIterable<T>): Promise<T[]> => {
   for await (const value of iterable) values.push(value);
   return values;
 };
+
+const wait = (milliseconds: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 const nextEvent = async <TType extends AgentEvent["type"]>(
   iterator: AsyncIterator<AgentEvent>,

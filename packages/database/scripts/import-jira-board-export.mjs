@@ -265,7 +265,6 @@ function syncProjection(store, options) {
     yield* database.openRepository({
       displayName: options.displayName,
       gitDir: options.gitDir,
-      pollIntervalMs: false,
       repositoryId: options.repositoryId,
       syncOnOpen: false,
       store,

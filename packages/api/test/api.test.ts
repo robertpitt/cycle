@@ -538,9 +538,8 @@ describe("@cycle/api", () => {
       assert.match(createIssueSpec, /"additionalProperties":false/);
       const createIssueOperation = (issuesPath as Readonly<Record<string, unknown>>).post;
       assert.equal(isRecord(createIssueOperation), true);
-      const createIssueResponses = (
-        createIssueOperation as Readonly<Record<string, unknown>>
-      ).responses;
+      const createIssueResponses = (createIssueOperation as Readonly<Record<string, unknown>>)
+        .responses;
       assert.equal(isRecord(createIssueResponses), true);
       for (const status of ["400", "401", "403", "404", "409", "422", "500", "503", "504"]) {
         assert.ok((createIssueResponses as Readonly<Record<string, unknown>>)[status]);
@@ -724,7 +723,20 @@ describe("@cycle/api", () => {
         staticToken: token,
       },
       localWorkspace: {
-        repositories: [],
+        repositories: [
+          {
+            addedAt: "2026-06-12T00:00:00.000Z",
+            displayName: "Cycle",
+            gitDbRootCommitId: "root-commit",
+            id: "cycle",
+            path: "/tmp/cycle",
+            preferences: {
+              autoSync: true,
+              commitStyle: "descriptive",
+              sidebarExpanded: true,
+            },
+          },
+        ],
       },
       onboarding: {
         completed: true,
@@ -757,10 +769,19 @@ describe("@cycle/api", () => {
     try {
       const before = await api.fetch(new Request("http://cycle.test/v1/app-config", authed()));
       const beforeBody = (await before.json()) as {
-        data?: { profile?: { email?: string } };
+        data?: {
+          localWorkspace?: {
+            repositories?: ReadonlyArray<{ gitDbRootCommitId?: string }>;
+          };
+          profile?: { email?: string };
+        };
       };
       assert.equal(before.status, 200);
       assert.equal(beforeBody.data?.profile?.email, "desktop@example.com");
+      assert.equal(
+        beforeBody.data?.localWorkspace?.repositories?.[0]?.gitDbRootCommitId,
+        "root-commit",
+      );
 
       const updated = await api.fetch(
         new Request("http://cycle.test/v1/profile", {
@@ -921,20 +942,6 @@ describe("@cycle/api", () => {
         provider: "codex",
         status: "available",
       },
-      {
-        capabilities: defaultAgentCapabilities("claude"),
-        checkedAt: "2026-06-16T00:00:00.000Z",
-        configuration: {
-          execution: "local",
-          unsupported: true,
-        },
-        displayName: "Claude Code",
-        executableName: "claude",
-        message: "Claude Code execution is not supported yet.",
-        models: [],
-        provider: "claude",
-        status: "unsupported",
-      },
     ];
     const { api } = makeTestApi({
       agentProviderProfiles: async () => providerProfiles,
@@ -956,8 +963,7 @@ describe("@cycle/api", () => {
       assert.equal(response.status, 200);
       assert.equal(body.data?.providers?.[0]?.provider, "codex");
       assert.equal(body.data?.providers?.[0]?.status, "available");
-      assert.equal(body.data?.providers?.[1]?.provider, "claude");
-      assert.equal(body.data?.providers?.[1]?.status, "unsupported");
+      assert.equal(body.data?.providers?.length, 1);
     } finally {
       await api.dispose();
     }
@@ -993,7 +999,10 @@ describe("@cycle/api", () => {
       );
 
       assert.equal(isRecord(error.payload), true);
-      assert.match(String(isRecord(error.payload) ? error.payload.message : ""), /invalid message/u);
+      assert.match(
+        String(isRecord(error.payload) ? error.payload.message : ""),
+        /invalid message/u,
+      );
       assert.deepEqual(await agentChatStore.listThreads(), []);
     } finally {
       client.close();

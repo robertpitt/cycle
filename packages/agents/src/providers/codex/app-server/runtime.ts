@@ -8,7 +8,6 @@ import {
   type ThreadItem,
   type ToolRequestUserInputParams,
 } from "@cycle/codex-app-server";
-import { Schema } from "effect";
 import type {
   AgentApprovalDecision,
   AgentApprovalRequest,
@@ -37,18 +36,12 @@ import {
 import { normalizeCodexError } from "../errors.ts";
 import type { CodexTurnRuntime } from "../runtime.ts";
 import type { StoredCodexSession } from "../types.ts";
+import { parseStructured } from "../structured.ts";
 import {
   defaultRuntimeMode,
   runtimeModeFromUnknown,
   runtimeModeToCodexThreadConfig,
 } from "./modes.ts";
-
-const StrictDecodeOptions = { onExcessProperty: "error" } as const;
-
-const decodeStructuredValue = <TStructured>(
-  schema: Schema.Codec<TStructured>,
-  value: unknown,
-): TStructured => Schema.decodeUnknownSync(schema, StrictDecodeOptions)(value) as TStructured;
 
 type QueueTake<T> = {
   readonly reject: (error: unknown) => void;
@@ -117,6 +110,7 @@ type CurrentTurn = {
   readonly queue: AsyncEventQueue<AgentEvent>;
   readonly request: AgentTurnRequest;
   readonly sessionId: string;
+  readonly suspendTimeout: () => () => void;
   text: string;
   readonly turnId: string;
   nativeTurnId?: string;
@@ -315,21 +309,52 @@ const timeoutSignal = (
   readonly cleanup: () => void;
   readonly controller: AbortController;
   readonly signal: AbortSignal;
+  readonly suspend: () => () => void;
 } => {
   const controller = new AbortController();
-  const onAbort = () => controller.abort(signal?.reason);
-  const timeout = setTimeout(() => controller.abort(new Error("Codex turn timed out.")), timeoutMs);
+  let cleanupFinished = false;
+  let suspended = 0;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+
+  const clearTimer = () => {
+    if (timeout === undefined) return;
+    clearTimeout(timeout);
+    timeout = undefined;
+  };
+  const startTimer = () => {
+    if (cleanupFinished || suspended > 0 || controller.signal.aborted || timeout !== undefined) {
+      return;
+    }
+    timeout = setTimeout(() => controller.abort(new Error("Codex turn timed out.")), timeoutMs);
+  };
+  const onAbort = () => {
+    clearTimer();
+    controller.abort(signal?.reason);
+  };
 
   if (signal?.aborted) controller.abort(signal.reason);
   signal?.addEventListener("abort", onAbort, { once: true });
+  startTimer();
 
   return {
     cleanup: () => {
-      clearTimeout(timeout);
+      cleanupFinished = true;
+      clearTimer();
       signal?.removeEventListener("abort", onAbort);
     },
     controller,
     signal: controller.signal,
+    suspend: () => {
+      suspended += 1;
+      clearTimer();
+      let resumed = false;
+      return () => {
+        if (resumed) return;
+        resumed = true;
+        suspended = Math.max(0, suspended - 1);
+        startTimer();
+      };
+    },
   };
 };
 
@@ -359,23 +384,6 @@ const normalizeUsage = (usage: unknown): AgentUsage | undefined => {
 
 const numberField = (value: Readonly<Record<string, unknown>>, key: string): number | undefined =>
   typeof value[key] === "number" ? value[key] : undefined;
-
-const parseStructured = <TStructured>(
-  request: AgentTurnRequest<TStructured>,
-  text: string,
-): TStructured | undefined => {
-  if (request.responseFormat?.type !== "json_schema") return undefined;
-
-  if (request.responseFormat.effectSchema !== undefined) {
-    const parsed =
-      request.responseFormat.parse === undefined
-        ? (JSON.parse(text) as unknown)
-        : request.responseFormat.parse(text);
-    return decodeStructuredValue(request.responseFormat.effectSchema, parsed);
-  }
-
-  return request.responseFormat.parse(text);
-};
 
 const approvalDecisionToCodexCommandDecision = (
   decision: AgentApprovalDecision,
@@ -588,8 +596,8 @@ const completedResult = <TStructured>(
   usage: AgentUsage | undefined,
   raw: unknown,
 ): AgentTurnResult<TStructured> => {
-  const structured = parseStructured(
-    current.request as AgentTurnRequest<TStructured>,
+  const structured = parseStructured<TStructured>(
+    (current.request as AgentTurnRequest<TStructured>).responseFormat,
     current.text,
   );
   return {
@@ -901,6 +909,7 @@ const registerHandlers = (
       }
       const requestId = newCodexId("approval");
       const request = approvalRequestFromCommand(active.sessionId, requestId, payload);
+      const resumeTimeout = active.suspendTimeout();
       const decision = await new Promise<AgentApprovalDecision>((resolve) => {
         runtime.pendingApprovals.set(`${active.sessionId}:${requestId}`, {
           decision: resolve,
@@ -913,7 +922,7 @@ const registerHandlers = (
           turnId: active.turnId,
           type: "approval.requested",
         });
-      });
+      }).finally(resumeTimeout);
       runtime.resolvedInteractions.add(`${active.sessionId}:${requestId}`);
       runtime.pendingApprovals.delete(`${active.sessionId}:${requestId}`);
       active.queue.push({
@@ -939,6 +948,7 @@ const registerHandlers = (
     }
     const requestId = newCodexId("approval");
     const request = approvalRequestFromFileChange(active.sessionId, requestId, payload);
+    const resumeTimeout = active.suspendTimeout();
     const decision = await new Promise<AgentApprovalDecision>((resolve) => {
       runtime.pendingApprovals.set(`${active.sessionId}:${requestId}`, {
         decision: resolve,
@@ -951,7 +961,7 @@ const registerHandlers = (
         turnId: active.turnId,
         type: "approval.requested",
       });
-    });
+    }).finally(resumeTimeout);
     runtime.resolvedInteractions.add(`${active.sessionId}:${requestId}`);
     runtime.pendingApprovals.delete(`${active.sessionId}:${requestId}`);
     active.queue.push({
@@ -976,6 +986,7 @@ const registerHandlers = (
     }
     const requestId = newCodexId("user-input");
     const request = userInputRequestFromPayload(active.sessionId, requestId, payload);
+    const resumeTimeout = active.suspendTimeout();
     const answers = await new Promise<readonly AgentUserInputAnswer[]>((resolve) => {
       runtime.pendingUserInputs.set(`${active.sessionId}:${requestId}`, {
         answers: resolve,
@@ -988,7 +999,7 @@ const registerHandlers = (
         turnId: active.turnId,
         type: "user-input.requested",
       });
-    });
+    }).finally(resumeTimeout);
     runtime.resolvedInteractions.add(`${active.sessionId}:${requestId}`);
     runtime.pendingUserInputs.delete(`${active.sessionId}:${requestId}`);
     active.queue.push({
@@ -1161,6 +1172,7 @@ export async function* streamCodexAppServerTurn<TStructured = unknown>(
     queue,
     request,
     sessionId,
+    suspendTimeout: abort.suspend,
     text: "",
     turnId,
   };

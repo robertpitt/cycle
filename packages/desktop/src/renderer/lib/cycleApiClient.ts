@@ -1,4 +1,5 @@
 import {
+  AgentProvidersOutput as AgentProvidersOutputSchema,
   ApiErrorEnvelope as ApiErrorEnvelopeSchema,
   AutocompleteOutput as AutocompleteOutputSchema,
   CollectionEnvelopeOf,
@@ -28,6 +29,7 @@ import {
   type RepositoryRecord as AppRepositoryRecord,
   type ThemePreference,
 } from "../../shared/AppConfig.ts";
+import type { DetectedAgentProvider } from "../../shared/AgentProviders.ts";
 import type { UpdateRepositoryPreferencesInput } from "../../shared/LocalWorkspace.ts";
 import type { CompleteOnboardingInput, ProfileUpdateInput } from "../../shared/Profile.ts";
 import { getDesktopBridge } from "./desktopBridge.ts";
@@ -75,9 +77,16 @@ type CollectionEnvelope<Entry> = {
     readonly nextCursor: string | null;
   };
 };
+type ApiAgentProviderProfile = (typeof AgentProvidersOutputSchema.Type)["providers"][number];
 
 export type AutocompleteEntityType = ApiAutocompleteEntityType;
 export type AutocompleteResult = ApiAutocompleteResult;
+
+export type OpenRepositoryPathInput = {
+  readonly displayName?: string;
+  readonly path: string;
+  readonly syncOnOpen?: boolean;
+};
 
 const API_URL_STORAGE_KEY = "cycle.api.baseUrl";
 const API_TOKEN_STORAGE_KEY = "cycle.api.token";
@@ -118,11 +127,6 @@ const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
 const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/u, "");
 
 const isRelativeBaseUrl = (value: string): boolean => value.startsWith("/");
-
-const apiBaseUrlFromConfig = (config: {
-  readonly host: "127.0.0.1" | "localhost";
-  readonly port: number | "auto";
-}): string => `http://${config.host}:${config.port === "auto" ? DEFAULT_API_PORT : config.port}`;
 
 const readSearchOverrides = (): Partial<ApiDiscovery> => {
   if (typeof window === "undefined") return {};
@@ -186,14 +190,6 @@ const discoverApi = async (): Promise<ApiDiscovery> => {
       };
     } catch (error) {
       console.warn("Unable to read desktop API runtime connection.", error);
-    }
-
-    const config = await bridge.getAppConfig();
-    if (config.api.enabled) {
-      return {
-        baseUrl: apiBaseUrlFromConfig(config.api),
-        token: config.api.staticToken,
-      };
     }
   }
 
@@ -689,9 +685,7 @@ export const decodeRepositoryIssueCursor = (
     const cursors = parsed[REPOSITORY_ISSUE_CURSOR_KEY];
 
     return Object.fromEntries(
-      Object.entries(cursors).filter(
-        (entry): entry is [string, string] => entry[1].length > 0,
-      ),
+      Object.entries(cursors).filter((entry): entry is [string, string] => entry[1].length > 0),
     );
   } catch {
     return undefined;
@@ -727,6 +721,18 @@ const addIssueRecord = async (repositoryId: string, input: QueryInput): Promise<
   );
 };
 
+const detectedAgentProviderFromProfile = (
+  profile: ApiAgentProviderProfile,
+): DetectedAgentProvider => ({
+  capabilities: profile.capabilities,
+  detectedAt: profile.checkedAt,
+  executable: profile.executableName,
+  ...(profile.executablePath === undefined ? {} : { executablePath: profile.executablePath }),
+  id: profile.provider,
+  name: profile.displayName,
+  status: profile.status === "available" ? "available" : "missing",
+});
+
 export const cycleApiClient = {
   autocomplete: async (input: {
     readonly limit?: number;
@@ -750,6 +756,14 @@ export const cycleApiClient = {
 
   getAppConfig: (): Promise<AppConfigState> =>
     resource("GET", "/v1/app-config", AppConfigStateSchema),
+
+  listAgentProviders: async (): Promise<ReadonlyArray<DetectedAgentProvider>> => {
+    const response = await resource("GET", "/v1/agents/providers", AgentProvidersOutputSchema);
+    return response.providers.map(detectedAgentProviderFromProfile);
+  },
+
+  openRepositoryPath: (input: OpenRepositoryPathInput): Promise<RepositoryStatus> =>
+    resource("POST", "/v1/repositories", ContractSchemas.RepositoryStatusOutput, input),
 
   setThemePreference: (preference: ThemePreference): Promise<AppConfigState> =>
     resource("PATCH", "/v1/theme", AppConfigStateSchema, { preference }),

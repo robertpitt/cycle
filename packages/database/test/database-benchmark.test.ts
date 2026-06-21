@@ -48,7 +48,6 @@ describe("@cycle/database benchmark", () => {
         const opened = yield* timed(timings, "open repository + initial hydrate", () =>
           database.openRepository({
             displayName: "Cycle benchmark repository",
-            pollIntervalMs: false,
             repositoryId: "cycle-local",
             store,
             worktreePath: REPO_ROOT,

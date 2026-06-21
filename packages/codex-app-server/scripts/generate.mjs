@@ -25,7 +25,7 @@ const hasFlag = (name) => args.includes(name);
 const codex = readArgValue("--codex", process.env.CODEX_BIN ?? "codex");
 const out = resolve(packageRoot, readArgValue("--out", "src/_generated"));
 const generateTs = !hasFlag("--skip-ts");
-const generateJsonSchema = !hasFlag("--skip-json-schema");
+const generateJsonSchema = hasFlag("--json-schema") || hasFlag("--generate-json-schema");
 
 mkdirSync(out, { recursive: true });
 
@@ -98,7 +98,7 @@ if (generateJsonSchema) {
   commands.push(["app-server", "generate-json-schema", "--out", out]);
 }
 if (commands.length === 0) {
-  console.log("Nothing to generate; both --skip-ts and --skip-json-schema were provided.");
+  console.log("Nothing to generate; --skip-ts was provided without --json-schema.");
   process.exit(0);
 }
 

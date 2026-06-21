@@ -2,53 +2,27 @@ import { dialog, ipcMain, type IpcMainInvokeEvent, type OpenDialogOptions } from
 import { Effect, FileSystem, Schema } from "effect";
 import {
   ApiConnection,
-  completeOnboardingChannel,
   clearCacheChannel,
-  detectAgentProvidersChannel,
   getApiConnectionChannel,
-  getAppConfigChannel,
   getBackendLogPathChannel,
   getBootstrapStatusChannel,
   getThemeStateChannel,
-  initializeRepositoryPathChannel,
-  listRepositoriesChannel,
   OpenExternalRequest,
   openExternalChannel,
-  RemoveRepositoryRequest,
-  removeRepositoryChannel,
+  SelectRepositoryFolderResultSchema,
   selectRepositoryFolderChannel,
-  SetThemePreferenceRequest,
-  setThemePreferenceChannel,
   themeStateChangedChannel,
-  updateRepositoryPreferencesChannel,
-  updateProfileChannel,
-  upsertRepositoryPathChannel,
-  type ElectronThemeState,
 } from "../ipc/index.ts";
+import type { ApiConnection as ApiConnectionValue } from "../ipc/Channels.ts";
 import { DesktopRuntime, type DesktopRuntimeService } from "../platform/DesktopRuntime.ts";
 import { electronSecurityError, type ElectronError } from "../platform/ElectronError.ts";
 import { ElectronShell } from "../platform/ElectronShell.ts";
-import { ElectronThemeState as ElectronThemeStateSchema } from "../platform/ElectronTheme.ts";
 import {
-  AppConfigError,
-  AppConfigState,
-  DEFAULT_API_PORT,
-  ProfileConfig,
-  RepositoryRecord,
-  type ApiConfig,
-} from "../shared/AppConfig.ts";
-import { AgentProviderDetector } from "@cycle/agents/detection";
-import { DetectedAgentProvider } from "../shared/AgentProviders.ts";
+  ElectronThemeState as ElectronThemeStateSchema,
+  type ElectronThemeState,
+} from "../platform/ElectronTheme.ts";
+import { DEFAULT_API_PORT, type ApiConfig } from "../shared/AppConfig.ts";
 import { BootstrapStatus, DesktopBootstrap } from "../shared/Bootstrap.ts";
-import {
-  InitializeRepositoryPathInput,
-  LocalWorkspace,
-  SelectRepositoryFolderResult,
-  type LocalWorkspaceService,
-  UpdateRepositoryPreferencesInput,
-  UpsertRepositoryPathInput,
-} from "../shared/LocalWorkspace.ts";
-import { CompleteOnboardingInput, ProfileUpdateInput } from "../shared/Profile.ts";
 import { desktopApiRuntimeDiscoveryPath } from "./DesktopApi.ts";
 import { parseRuntimeBaseUrlFromDiscoveryText } from "./DesktopApiRuntimeDiscovery.ts";
 import { currentDesktopWindow } from "./DesktopWindowLive.ts";
@@ -175,69 +149,6 @@ const decodeIpcOutput = <S extends Schema.Top>(
       ),
   });
 
-const decodeProfileUpdateInput = (
-  value: unknown,
-): Effect.Effect<ProfileUpdateInput, ElectronError> =>
-  decodeSchema(
-    ProfileUpdateInput,
-    "ipc.profile",
-    "Expected profile update input from renderer.",
-  )(value);
-
-const decodeCompleteOnboardingInput = (
-  value: unknown,
-): Effect.Effect<CompleteOnboardingInput, ElectronError> =>
-  decodeSchema(
-    CompleteOnboardingInput,
-    "ipc.profile",
-    "Expected onboarding completion input from renderer.",
-  )(value);
-
-const decodeSetThemePreferenceRequest = (
-  value: unknown,
-): Effect.Effect<SetThemePreferenceRequest, ElectronError> =>
-  decodeSchema(
-    SetThemePreferenceRequest,
-    "ipc.theme",
-    "Expected theme preference input from renderer.",
-  )(value);
-
-const decodeUpsertRepositoryPathInput = (
-  value: unknown,
-): Effect.Effect<UpsertRepositoryPathInput, ElectronError> =>
-  decodeSchema(
-    UpsertRepositoryPathInput,
-    "ipc.localWorkspace",
-    "Expected repository path input from renderer.",
-  )(value);
-
-const decodeInitializeRepositoryPathInput = (
-  value: unknown,
-): Effect.Effect<InitializeRepositoryPathInput, ElectronError> =>
-  decodeSchema(
-    InitializeRepositoryPathInput,
-    "ipc.localWorkspace",
-    "Expected repository path input from renderer.",
-  )(value);
-
-const decodeRemoveRepositoryRequest = (
-  value: unknown,
-): Effect.Effect<RemoveRepositoryRequest, ElectronError> =>
-  decodeSchema(
-    RemoveRepositoryRequest,
-    "ipc.localWorkspace",
-    "Expected repository removal input from renderer.",
-  )(value);
-
-const decodeUpdateRepositoryPreferencesInput = (
-  value: unknown,
-): Effect.Effect<UpdateRepositoryPreferencesInput, ElectronError> =>
-  decodeSchema(
-    UpdateRepositoryPreferencesInput,
-    "ipc.localWorkspace",
-    "Expected repository preferences input from renderer.",
-  )(value);
-
 const decodeEmptyRequest = (value: unknown): Effect.Effect<void, ElectronError> =>
   value === undefined
     ? Effect.void
@@ -258,9 +169,10 @@ const readDesktopApiRuntimeBaseUrl = (): Effect.Effect<
     );
   }).pipe(Effect.catch(() => Effect.succeed(undefined)));
 
-const selectRepositoryFolder = (
-  localWorkspace: LocalWorkspaceService,
-): Effect.Effect<SelectRepositoryFolderResult, ElectronError | AppConfigError> =>
+const selectRepositoryFolder = (): Effect.Effect<
+  { readonly path: string; readonly status: "selected" } | { readonly status: "cancelled" },
+  ElectronError
+> =>
   Effect.gen(function* () {
     const result = yield* Effect.tryPromise({
       try: async () => {
@@ -291,23 +203,10 @@ const selectRepositoryFolder = (
       };
     }
 
-    return yield* localWorkspace.upsertRepositoryPath({ path: selectedPath }).pipe(
-      Effect.map((repository) => ({
-        repository,
-        status: "added" as const,
-      })),
-      Effect.catch((error: AppConfigError) => {
-        if (error.operation === "LocalWorkspace.git") {
-          return Effect.succeed({
-            message: error.message,
-            path: selectedPath,
-            status: "not-git" as const,
-          });
-        }
-
-        return Effect.fail(error);
-      }),
-    );
+    return {
+      path: selectedPath,
+      status: "selected" as const,
+    };
   });
 
 const registerIpcHandler = <A, B>(
@@ -361,18 +260,9 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
   const preferences = yield* ElectronPreferences;
   const bootstrap = yield* DesktopBootstrap;
   const logger = yield* DesktopLogger;
-  const localWorkspace = yield* LocalWorkspace;
-  const agentProviderDetector = yield* AgentProviderDetector;
 
   yield* registerIpcHandler(runtime, openExternalChannel, decodeOpenExternalRequest, (request) =>
     shell.openExternal(request.targetUrl),
-  );
-  yield* registerIpcHandler(
-    runtime,
-    getAppConfigChannel,
-    decodeEmptyRequest,
-    () => preferences.read(),
-    AppConfigState,
   );
   yield* registerIpcHandler(
     runtime,
@@ -394,7 +284,7 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
         return {
           baseUrl: runtimeBaseUrl ?? apiBaseUrlFromConfig(config.api),
           token: config.api.staticToken,
-        } satisfies ApiConnection;
+        } satisfies ApiConnectionValue;
       }),
     ApiConnection,
   );
@@ -419,89 +309,14 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
     () => bootstrap.status(),
     BootstrapStatus,
   );
-  yield* registerIpcHandler(
-    runtime,
-    updateProfileChannel,
-    decodeProfileUpdateInput,
-    (request) => preferences.updateProfile(request),
-    ProfileConfig,
-  );
-  yield* registerIpcHandler(
-    runtime,
-    completeOnboardingChannel,
-    decodeCompleteOnboardingInput,
-    (request) =>
-      Effect.gen(function* () {
-        const next = yield* preferences.completeOnboarding(request);
-        const state = yield* preferences.themeState;
-        yield* broadcastThemeState(state);
-        return next;
-      }),
-    AppConfigState,
-  );
-  yield* registerIpcHandler(
-    runtime,
-    setThemePreferenceChannel,
-    decodeSetThemePreferenceRequest,
-    (request) =>
-      Effect.gen(function* () {
-        const next = yield* preferences.setThemePreference(request.preference);
-        const state = yield* preferences.themeState;
-        yield* broadcastThemeState(state);
-        return next;
-      }),
-    AppConfigState,
-  );
   yield* registerIpcHandler(runtime, clearCacheChannel, decodeEmptyRequest, () =>
     preferences.clearCache(),
   );
   yield* registerIpcHandler(
     runtime,
-    listRepositoriesChannel,
-    decodeEmptyRequest,
-    () => localWorkspace.listRepositories(),
-    Schema.Array(RepositoryRecord),
-  );
-  yield* registerIpcHandler(
-    runtime,
     selectRepositoryFolderChannel,
     decodeEmptyRequest,
-    () => selectRepositoryFolder(localWorkspace),
-    SelectRepositoryFolderResult,
-  );
-  yield* registerIpcHandler(
-    runtime,
-    upsertRepositoryPathChannel,
-    decodeUpsertRepositoryPathInput,
-    (request) => localWorkspace.upsertRepositoryPath(request),
-    RepositoryRecord,
-  );
-  yield* registerIpcHandler(
-    runtime,
-    initializeRepositoryPathChannel,
-    decodeInitializeRepositoryPathInput,
-    (request) => localWorkspace.initializeRepositoryPath(request),
-    RepositoryRecord,
-  );
-  yield* registerIpcHandler(
-    runtime,
-    removeRepositoryChannel,
-    decodeRemoveRepositoryRequest,
-    (request) => localWorkspace.removeRepository(request.id),
-    Schema.Array(RepositoryRecord),
-  );
-  yield* registerIpcHandler(
-    runtime,
-    updateRepositoryPreferencesChannel,
-    decodeUpdateRepositoryPreferencesInput,
-    (request) => preferences.updateRepositoryPreferences(request),
-    Schema.NullOr(RepositoryRecord),
-  );
-  yield* registerIpcHandler(
-    runtime,
-    detectAgentProvidersChannel,
-    decodeEmptyRequest,
-    () => agentProviderDetector.detect(),
-    Schema.Array(DetectedAgentProvider),
+    selectRepositoryFolder,
+    SelectRepositoryFolderResultSchema,
   );
 });

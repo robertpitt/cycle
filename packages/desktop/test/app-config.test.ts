@@ -187,7 +187,7 @@ describe("desktop app config", () => {
         const completed = yield* profile.completeOnboarding({
           displayName: "Robert",
           email: "robert@example.com",
-          enabledAgentProviderIds: ["codex", "opencode"],
+          enabledAgentProviderIds: ["codex"],
           themePreference: "dark",
         });
         return { completed, updated };
@@ -204,14 +204,6 @@ describe("desktop app config", () => {
       {
         enabled: true,
         id: "codex",
-      },
-      {
-        enabled: false,
-        id: "claude",
-      },
-      {
-        enabled: true,
-        id: "opencode",
       },
     ]);
     assert.equal(result.completed.theme.preference, "dark");

@@ -12,6 +12,7 @@ import {
   isAncestor,
   mergeBase,
   parseCommitSummary,
+  rootCommits,
   writeFilesystemCommit,
 } from "./GitFilesystemCommit.ts";
 import { readObject, readObjectUncached, writeObject } from "./GitFilesystemObject.ts";
@@ -152,6 +153,7 @@ export const layer = Layer.effect(
           Effect.flatMap((object) => parseCommit(id, bytesToString(object.payload))),
         ),
       readRef: (store, name) => readRef(runtime, store.gitDir, name),
+      rootCommits: (store, start) => rootCommits(runtime, store.gitDir, start),
       readTree: (store, id) =>
         readObject(runtime, store.gitDir, id, "tree").pipe(
           Effect.flatMap((object) => readFilesystemTree(object.payload)),

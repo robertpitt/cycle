@@ -1,6 +1,5 @@
 import { Context, Effect, Layer } from "effect";
 import type { AgentProviderId, AgentService } from "../types.ts";
-import { makeUnsupportedAgentService } from "./UnsupportedAgentService.ts";
 
 export type AgentServiceRegistryShape = {
   readonly serviceFor: (provider: AgentProviderId) => Effect.Effect<AgentService>;
@@ -18,32 +17,20 @@ export class AgentServiceRegistry extends Context.Service<
 
 export const makeAgentServiceRegistry = (
   entries: readonly AgentServiceEntry[],
-  fallback?: (provider: AgentProviderId) => AgentService,
 ): AgentServiceRegistryShape => {
   const services = new Map(entries.map((entry) => [entry.provider, entry.service]));
 
   return {
-    serviceFor: (provider) =>
-      Effect.succeed(
-        services.get(provider) ?? fallback?.(provider) ?? makeUnsupportedAgentService(provider),
-      ),
+    serviceFor: (provider) => {
+      const service = services.get(provider);
+      return service === undefined
+        ? Effect.die(new Error(`Agent provider '${provider}' is not registered.`))
+        : Effect.succeed(service);
+    },
   };
 };
 
-export const AgentServiceRegistryLive = (
-  entries: readonly AgentServiceEntry[],
-  fallback?: (provider: AgentProviderId) => AgentService,
-) =>
-  Layer.succeed(
-    AgentServiceRegistry,
-    AgentServiceRegistry.of(makeAgentServiceRegistry(entries, fallback)),
-  );
+export const AgentServiceRegistryLive = (entries: readonly AgentServiceEntry[]) =>
+  Layer.succeed(AgentServiceRegistry, AgentServiceRegistry.of(makeAgentServiceRegistry(entries)));
 
 export const AgentServiceRegistryTest = AgentServiceRegistryLive;
-
-export const UnsupportedAgentServiceRegistryLive = Layer.succeed(
-  AgentServiceRegistry,
-  AgentServiceRegistry.of({
-    serviceFor: (provider) => Effect.succeed(makeUnsupportedAgentService(provider)),
-  }),
-);

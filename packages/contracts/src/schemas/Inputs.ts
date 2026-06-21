@@ -106,7 +106,6 @@ export const RepositoryOpenInput = Schema.Struct({
   displayName: Schema.optional(Schema.String),
   gitDir: Schema.optional(Schema.String),
   metadata: Schema.optional(Schema.Unknown),
-  pollIntervalMs: Schema.optional(Schema.Union([Schema.Literal(false), NonNegativeInteger])),
   repositoryId: Schema.String,
   store: Schema.Unknown,
   syncOnOpen: Schema.optional(Schema.Boolean),

@@ -1,5 +1,5 @@
 import { Event as GitDbEvent, type Store as GitDbStore, type SyncResult } from "@cycle/git-db";
-import { Cause, Context, Effect, Fiber, Layer, Queue } from "effect";
+import { Context, Effect, Layer } from "effect";
 import {
   CURRENT_SCHEMA_VERSION,
   defaultIssueBody,
@@ -93,7 +93,6 @@ type RepositoryRuntime = {
   readonly cycleMetadata?: CycleRepositoryMetadata;
   readonly displayName: string;
   readonly gitDir?: string;
-  readonly poller?: DatabaseBackgroundSchedule;
   readonly repositoryId: string;
   readonly store: GitDbStore.StoreServiceShape;
   readonly worktreePath?: string;
@@ -244,40 +243,8 @@ type GitDbIdentity = {
 };
 
 export type DatabaseServiceOptions = {
-  readonly backgroundRunner?: DatabaseBackgroundRunner;
   readonly projectionPath?: string;
 };
-
-type DatabaseBackgroundRunner = {
-  readonly run: (label: string, effect: Effect.Effect<void, unknown>) => void;
-  readonly schedule: (
-    label: string,
-    intervalMs: number,
-    effect: Effect.Effect<void, unknown>,
-  ) => DatabaseBackgroundSchedule;
-};
-
-type DatabaseBackgroundTask = {
-  readonly effect: Effect.Effect<void, unknown>;
-  readonly label: string;
-};
-
-type DatabaseBackgroundSchedule = {
-  readonly cancel: () => void;
-};
-
-type DatabaseBackgroundScheduleMessage =
-  | {
-      readonly _tag: "cancel";
-      readonly id: string;
-    }
-  | {
-      readonly _tag: "start";
-      readonly effect: Effect.Effect<void, unknown>;
-      readonly id: string;
-      readonly intervalMs: number;
-      readonly label: string;
-    };
 
 type MaterializationTrace = (
   message: string,
@@ -545,88 +512,11 @@ const isRemotePushRejection = (error: unknown): boolean => {
   );
 };
 
-const makeDatabaseBackgroundRunner = Effect.gen(function* () {
-  const queue = yield* Queue.unbounded<DatabaseBackgroundTask>();
-  const scheduleQueue = yield* Queue.unbounded<DatabaseBackgroundScheduleMessage>();
-  const scheduled = new Map<string, Fiber.Fiber<void, never>>();
-  let scheduleCounter = 0;
-
-  yield* Queue.take(queue).pipe(
-    Effect.flatMap((task) =>
-      task.effect.pipe(
-        Effect.catchCause((cause) =>
-          Effect.logError("database background task failed").pipe(
-            Effect.annotateLogs({
-              cause: Cause.pretty(cause),
-              label: task.label,
-              scope: "database",
-              service: "database",
-            }),
-          ),
-        ),
-      ),
-    ),
-    Effect.forever,
-    Effect.forkScoped,
-  );
-  yield* Queue.take(scheduleQueue).pipe(
-    Effect.flatMap((message) =>
-      Effect.gen(function* () {
-        const current = scheduled.get(message.id);
-
-        if (current !== undefined) {
-          scheduled.delete(message.id);
-          yield* Fiber.interrupt(current);
-        }
-
-        if (message._tag === "cancel") return;
-
-        const fiber = yield* Effect.sleep(message.intervalMs).pipe(
-          Effect.andThen(Queue.offer(queue, { effect: message.effect, label: message.label })),
-          Effect.forever,
-          Effect.forkScoped,
-        );
-
-        scheduled.set(message.id, fiber);
-      }),
-    ),
-    Effect.forever,
-    Effect.forkScoped,
-  );
-
-  return {
-    run: (label: string, effect: Effect.Effect<void, unknown>) => {
-      Queue.offerUnsafe(queue, { effect, label });
-    },
-    schedule: (label: string, intervalMs: number, effect: Effect.Effect<void, unknown>) => {
-      const id = `${label}.${++scheduleCounter}`;
-
-      Queue.offerUnsafe(scheduleQueue, {
-        _tag: "start",
-        effect,
-        id,
-        intervalMs,
-        label,
-      });
-
-      return {
-        cancel: () => {
-          Queue.offerUnsafe(scheduleQueue, {
-            _tag: "cancel",
-            id,
-          });
-        },
-      };
-    },
-  };
-});
-
 export const makeDatabaseService = (
   identity: DatabaseIdentityShape,
   ids: DatabaseIdGeneratorShape,
   options: DatabaseServiceOptions = {},
 ): DatabaseServiceShape => {
-  const backgroundRunner = options.backgroundRunner;
   const projection = new Projection(options.projectionPath);
   const repositories = new Map<string, RepositoryRuntime>();
   let closed = false;
@@ -2591,9 +2481,6 @@ export const makeDatabaseService = (
       Effect.sync(() => {
         if (closed) return;
         closed = true;
-        for (const repository of repositories.values()) {
-          repository.poller?.cancel();
-        }
         repositories.clear();
         projection.close();
       }),
@@ -2632,27 +2519,14 @@ export const makeDatabaseService = (
     markInboxUnread,
     openRepository: (input) =>
       Effect.gen(function* () {
-        const existing = repositories.get(input.repositoryId);
-
-        existing?.poller?.cancel();
         yield* sqlite("register repository", () => projection.registerRepository(input));
 
         const cycleMetadata = undefined;
-
-        const poller =
-          input.pollIntervalMs === false || backgroundRunner === undefined
-            ? undefined
-            : backgroundRunner.schedule(
-                `database.pollRepository.${input.repositoryId}`,
-                input.pollIntervalMs ?? 1000,
-                syncRepository(input.repositoryId).pipe(Effect.asVoid),
-              );
 
         repositories.set(input.repositoryId, {
           cycleMetadata,
           displayName: input.displayName ?? input.repositoryId,
           gitDir: input.gitDir,
-          poller,
           repositoryId: input.repositoryId,
           store: input.store,
           worktreePath: input.worktreePath,
@@ -2727,10 +2601,9 @@ export const DatabaseLive = Layer.effect(
   Effect.gen(function* () {
     const identity = yield* DatabaseIdentity;
     const ids = yield* DatabaseIdGenerator;
-    const backgroundRunner = yield* makeDatabaseBackgroundRunner;
 
     return yield* Effect.acquireRelease(
-      Effect.succeed(DatabaseService.of(makeDatabaseService(identity, ids, { backgroundRunner }))),
+      Effect.succeed(DatabaseService.of(makeDatabaseService(identity, ids))),
       (service) => service.close(),
     );
   }),
@@ -2742,17 +2615,9 @@ export const DatabaseLiveWithOptions = (options: DatabaseServiceOptions) =>
     Effect.gen(function* () {
       const identity = yield* DatabaseIdentity;
       const ids = yield* DatabaseIdGenerator;
-      const backgroundRunner = yield* makeDatabaseBackgroundRunner;
 
       return yield* Effect.acquireRelease(
-        Effect.succeed(
-          DatabaseService.of(
-            makeDatabaseService(identity, ids, {
-              ...options,
-              backgroundRunner: options.backgroundRunner ?? backgroundRunner,
-            }),
-          ),
-        ),
+        Effect.succeed(DatabaseService.of(makeDatabaseService(identity, ids, options))),
         (service) => service.close(),
       );
     }),

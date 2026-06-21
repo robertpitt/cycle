@@ -1,12 +1,11 @@
 # @cycle/ui
 
 Cycle UI is the shared React design system for Cycle product surfaces. It contains low-level
-controls, composed data-display components, workspace layouts, and full-page prototypes used by the
-desktop renderer and Storybook.
+controls, composed data-display components, and workspace layouts used by the desktop renderer and
+Storybook.
 
 The package is source-first inside this monorepo: exports point at `src/**/*.ts(x)` files and are
-consumed through `@cycle/ui` for the full public surface or family paths such as `@cycle/ui/atoms`
-and `@cycle/ui/pages`.
+consumed through `@cycle/ui` for the full public surface or family paths such as `@cycle/ui/atoms`.
 
 ## Contents
 
@@ -30,7 +29,7 @@ Use `@cycle/ui` for UI that should remain consistent across Cycle applications:
 - reusable controls such as buttons, inputs, selects, switches, badges, and avatars
 - form composition through `Field`
 - issue and workspace rows, lists, toolbars, sidebars, and shells
-- workspace onboarding and app-shell pages used as product prototypes
+- workspace onboarding and app-shell regions used by product screens
 - theme tokens, shared contracts, and utility helpers
 
 Do not place app runtime logic, persistence, Electron APIs, network calls, or package-specific state
@@ -85,14 +84,13 @@ export const App = () => (
 Use `@cycle/ui` as the single broad import point when a consumer wants the full public surface:
 
 ```tsx
-import { Button, Input, Select, WorkspaceAppShellPage, cn } from "@cycle/ui";
+import { Button, Input, Select, cn } from "@cycle/ui";
 ```
 
 Use the narrowest family import path when a consumer wants a smaller import surface:
 
 ```tsx
 import { Button, Input, Select } from "@cycle/ui/atoms";
-import { WorkspaceAppShellPage } from "@cycle/ui/pages";
 import { cn } from "@cycle/ui/utils";
 ```
 
@@ -111,8 +109,6 @@ src/
   atoms/        Low-level styled controls and primitives.
   molecules/    Composed controls and compact data surfaces.
   organisms/    Product-level regions such as lists, toolbars, and shells.
-  pages/        Full-screen workspace and issue pages for app composition/prototypes.
-  templates/    Reusable layout templates.
   theme/        ThemeProvider and theme mode contracts.
   lib/          Shared class, style, and API-contract helpers.
   stories/      Cross-component Storybook examples.
@@ -125,8 +121,6 @@ The public export map in `package.json` exposes these groups:
 - `@cycle/ui/atoms` and `@cycle/ui/atoms/*`
 - `@cycle/ui/molecules` and `@cycle/ui/molecules/*`
 - `@cycle/ui/organisms` and `@cycle/ui/organisms/*`
-- `@cycle/ui/pages` and `@cycle/ui/pages/*`
-- `@cycle/ui/templates` and `@cycle/ui/templates/*`
 - `@cycle/ui/theme`
 - `@cycle/ui/utils`
 - `@cycle/ui/styles.css`
@@ -150,7 +144,7 @@ component.
 
 ```tsx
 <ThemeProvider mode="dark">
-  <WorkspaceAppShellPage />
+  <WorkspaceShell />
 </ThemeProvider>
 ```
 
@@ -195,7 +189,6 @@ Molecules:
 - `Card`
 - `ChipSelect`
 - `CommandField`
-- `DiffViewer`
 - `Dialog`
 - `Field`
 - `IssueGroupHeader`
@@ -221,12 +214,6 @@ Organisms:
 - `IssuesToolbar`
 - `RepositoryInitialiseDialog`
 - `WorkspaceShell`
-
-Pages and workspace kits:
-
-- issue list/page examples
-- workspace welcome, sign-in, create/import, join, verify-device, settings, and shell pages
-- `WorkspaceAppShellPage`, used by the desktop renderer's default route
 
 ## Storybook
 

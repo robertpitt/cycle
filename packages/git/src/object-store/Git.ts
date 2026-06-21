@@ -53,6 +53,10 @@ export type GitService = {
     store: GitStore,
     name: string,
   ) => Effect.Effect<ObjectId | null, GitAdapterError>;
+  readonly rootCommits: (
+    store: GitStore,
+    start: ObjectId,
+  ) => Effect.Effect<ReadonlyArray<ObjectId>, GitAdapterError>;
   readonly readTree: (
     store: GitStore,
     id: ObjectId,
