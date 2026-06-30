@@ -1,0 +1,1 @@
+{"op":"record.add","value":{"createdAt":"2026-06-30T23:33:29.855Z","createdBy":{"email":"robert.pitt@foodhub.com","name":"Robert PItt","type":"human"},"createdDate":"2026-06-30","id":"UKN-CYYTR_status-change_rec_36f51f4a3aae4bbab2a91726ea3b81fa","issueId":"UKN-CYYTR","payload":{"from":"backlog","to":"canceled"},"recordType":"status-change","schemaVersion":1}}
