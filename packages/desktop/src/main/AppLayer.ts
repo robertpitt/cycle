@@ -1,4 +1,3 @@
-import { UseCaseRunnerLive } from "@cycle/usecases";
 import { ExecutableResolverLive } from "@cycle/agents/executables";
 import { GitRepository, WorktreeServiceLive } from "@cycle/git";
 import { defaultLayer as CycleLoggingLive } from "@cycle/logging";
@@ -65,11 +64,8 @@ const DesktopDatabaseServiceLive = DesktopDatabaseLive.pipe(
   Layer.provide(Layer.mergeAll(ProfileServiceLive, ElectronAppServiceLive)),
 );
 
-const UseCaseRunnerServiceLive = UseCaseRunnerLive.pipe(Layer.provide(DesktopDatabaseServiceLive));
-
 const DatabaseConsumerDependenciesLive = Layer.mergeAll(
   DesktopDatabaseServiceLive,
-  UseCaseRunnerServiceLive,
   DesktopLoggerServiceLive,
   DesktopRuntimeLive,
   ElectronPreferencesServiceLive,
@@ -95,7 +91,7 @@ const DesktopServicesLive = Layer.mergeAll(
   GitRepositoryServiceLive,
   WorktreeServiceServiceLive,
   LocalWorkspaceServiceLive,
-  UseCaseRunnerServiceLive,
+  DesktopDatabaseServiceLive,
   ExecutableResolverLive,
   AgentProviderDetectorLive,
   DatabaseConsumersLive,

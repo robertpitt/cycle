@@ -1,7 +1,11 @@
 import type { DatabaseFailure } from "@cycle/database";
-import type { UseCaseFailure, UseCaseFailureTag, UseCaseName } from "./contracts/index.ts";
+import type {
+  UseCaseFailure,
+  UseCaseFailureTag,
+  UseCaseName,
+} from "@cycle/contracts/contracts";
 
-export type { UseCaseFailure, UseCaseFailureTag } from "./contracts/index.ts";
+export type { UseCaseFailure, UseCaseFailureTag } from "@cycle/contracts/contracts";
 
 type FailureInput = {
   readonly code?: string;
@@ -58,26 +62,6 @@ export const policyViolationFailure = (input: {
   useCaseFailure({
     ...input,
     tag: "PolicyViolationFailure",
-  });
-
-export const unsupportedAliasFailure = (alias: string, requestId: string): UseCaseFailure =>
-  useCaseFailure({
-    code: "UNSUPPORTED_ALIAS",
-    details: { alias },
-    message: `Unsupported usecase alias: ${alias}`,
-    requestId,
-    tag: "UnsupportedAliasFailure",
-    useCase: alias,
-  });
-
-export const unknownUseCaseFailure = (name: string, requestId: string): UseCaseFailure =>
-  useCaseFailure({
-    code: "UNKNOWN_USECASE",
-    details: { name },
-    message: `Unknown usecase: ${name}`,
-    requestId,
-    tag: "UnknownUseCaseFailure",
-    useCase: name,
   });
 
 export const mapDatabaseFailure = (

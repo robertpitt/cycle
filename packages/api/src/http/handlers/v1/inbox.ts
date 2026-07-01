@@ -1,12 +1,14 @@
 import {
   ContractSchemas,
+  type InboxQuery,
+} from "@cycle/contracts";
+import {
   InboxArchive,
   InboxList,
   InboxMarkRead,
   InboxMarkUnread,
   InboxSummaryGet,
-  type InboxQuery,
-} from "@cycle/contracts";
+} from "@cycle/usecases";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {
@@ -27,7 +29,7 @@ export const withInboxHandlers = (handlers: any) =>
         const url = urlFromRequest(request);
         const input = yield* decodeInboxQuery(url.searchParams, requestId);
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
-        const result = yield* runUseCase(InboxList(input, meta(requestId)));
+        const result = yield* runUseCase(InboxList, input, meta(requestId));
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
         return resourceResponse(requestId, 200, result);
@@ -39,7 +41,7 @@ export const withInboxHandlers = (handlers: any) =>
         const url = urlFromRequest(request);
         const input = yield* decodeInboxQuery(url.searchParams, requestId);
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
-        const result = yield* runUseCase(InboxSummaryGet(input, meta(requestId)));
+        const result = yield* runUseCase(InboxSummaryGet, input, meta(requestId));
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
         return resourceResponse(requestId, 200, result);
@@ -48,7 +50,7 @@ export const withInboxHandlers = (handlers: any) =>
     .handle("markInboxRead", ({ payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
-        const result = yield* runUseCase(InboxMarkRead(payload, meta(requestId)));
+        const result = yield* runUseCase(InboxMarkRead, payload, meta(requestId));
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
         return resourceResponse(requestId, 200, result);
@@ -57,7 +59,7 @@ export const withInboxHandlers = (handlers: any) =>
     .handle("markInboxUnread", ({ payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
-        const result = yield* runUseCase(InboxMarkUnread(payload, meta(requestId)));
+        const result = yield* runUseCase(InboxMarkUnread, payload, meta(requestId));
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
         return resourceResponse(requestId, 200, result);
@@ -66,7 +68,7 @@ export const withInboxHandlers = (handlers: any) =>
     .handle("archiveInbox", ({ payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
-        const result = yield* runUseCase(InboxArchive(payload, meta(requestId)));
+        const result = yield* runUseCase(InboxArchive, payload, meta(requestId));
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
         return resourceResponse(requestId, 200, result);

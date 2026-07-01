@@ -1,12 +1,17 @@
 import {
+  type RepositoryInput,
+  type UseCaseInput,
+  type UseCaseMeta,
+  type UseCaseName,
+  type UseCaseFailure,
+} from "@cycle/contracts";
+import { logInfo, logWarning } from "@cycle/logging";
+import {
   AutomationEvaluateIssues,
   AutomationEvaluateQuery,
   AutomationEvaluateRepository,
-  type CycleUseCase,
-  type RepositoryInput,
-  type UseCaseMeta,
-} from "@cycle/contracts";
-import { logInfo, logWarning } from "@cycle/logging";
+  type UseCaseDefinition,
+} from "@cycle/usecases";
 import { Crypto, Effect, Result, Schema } from "effect";
 import { Headers, HttpServerResponse } from "effect/unstable/http";
 import { CycleApiRuntime, type CycleApiRuntimeShape } from "../runtime/CycleApiRuntime.ts";
@@ -17,13 +22,37 @@ import { collectionResponse, errorResponse, errorResponseFromUseCaseFailure } fr
 
 const StrictDecodeOptions = { onExcessProperty: "error" } as const;
 
-export const runUseCase = (useCase: CycleUseCase): Effect.Effect<unknown, never, CycleApiRuntime> =>
+type UseCaseInvocation = {
+  readonly definition: UseCaseDefinition<any, any>;
+  readonly input: unknown;
+  readonly meta?: UseCaseMeta;
+};
+
+export const useCaseInvocation = <Name extends UseCaseName>(
+  definition: UseCaseDefinition<Name, any>,
+  input: UseCaseInput<Name>,
+  meta?: UseCaseMeta,
+): UseCaseInvocation => ({
+  definition,
+  input,
+  ...(meta === undefined ? {} : { meta }),
+});
+
+export const runUseCase = <Name extends UseCaseName>(
+  definition: UseCaseDefinition<Name, any>,
+  input: UseCaseInput<Name>,
+  useCaseMeta?: UseCaseMeta,
+): Effect.Effect<unknown, never, CycleApiRuntime> =>
   Effect.gen(function* () {
     const runtime = yield* CycleApiRuntime;
-    const result = yield* Effect.result(runtime.runner.run(useCase));
+    const result = yield* Effect.result(
+      definition.run(input, useCaseMeta).pipe(
+        Effect.provide(runtime.useCaseLayer),
+      ) as Effect.Effect<unknown, UseCaseFailure>,
+    );
     const fields = {
-      requestId: useCase.meta?.requestId ?? null,
-      useCase: useCase.name,
+      requestId: useCaseMeta?.requestId ?? null,
+      useCase: definition.name,
     };
 
     if (Result.isFailure(result)) {
@@ -34,19 +63,55 @@ export const runUseCase = (useCase: CycleUseCase): Effect.Effect<unknown, never,
       return errorResponseFromUseCaseFailure(result.failure);
     }
 
+    yield* notifyUseCaseSuccess(runtime, definition, input, useCaseMeta, result.success);
     yield* logInfo("api", "api usecase request completed", fields);
     return result.success;
   });
 
+const notifyUseCaseSuccess = <Name extends UseCaseName>(
+  runtime: CycleApiRuntimeShape,
+  definition: UseCaseDefinition<Name, any>,
+  input: UseCaseInput<Name>,
+  useCaseMeta: UseCaseMeta | undefined,
+  value: unknown,
+): Effect.Effect<void, never> => {
+  if (runtime.onUseCaseSuccess === undefined) return Effect.void;
+
+  return Effect.tryPromise({
+    try: () =>
+      Promise.resolve(
+        runtime.onUseCaseSuccess?.({
+          input,
+          meta: useCaseMeta,
+          name: definition.name,
+          sideEffect: definition.sideEffect,
+          value: value as never,
+        }),
+      ),
+    catch: (error) => error,
+  }).pipe(
+    Effect.catch((error) =>
+      logWarning("api", "api usecase success notification failed", {
+        error: error instanceof Error ? error.message : String(error),
+        requestId: useCaseMeta?.requestId ?? null,
+        useCase: definition.name,
+      }),
+    ),
+  );
+};
+
 export const pagedUseCaseResponse = (
   request: { readonly headers: Headers.Headers; readonly url: string },
-  useCase: CycleUseCase | ((requestId: string) => CycleUseCase),
+  useCase: UseCaseInvocation | ((requestId: string) => UseCaseInvocation),
 ): Effect.Effect<HttpServerResponse.HttpServerResponse, never, CycleApiRuntime | Crypto.Crypto> =>
   Effect.gen(function* () {
     const requestId = yield* requestIdFromHeaders(request.headers);
     const url = urlFromRequest(request);
+    const invocation = typeof useCase === "function" ? useCase(requestId) : useCase;
     const pageValue = yield* runUseCase(
-      typeof useCase === "function" ? useCase(requestId) : useCase,
+      invocation.definition,
+      invocation.input as never,
+      invocation.meta,
     );
     if (HttpServerResponse.isHttpServerResponse(pageValue)) return pageValue;
     const result = asPage(pageValue);
@@ -97,39 +162,36 @@ export const runAutomationUseCase = (
 
   if (payload.issueIds !== undefined) {
     return runUseCase(
-      AutomationEvaluateIssues(
-        {
-          issueIds: payload.issueIds,
-          repository,
-          severityThreshold: payload.severityThreshold,
-        },
-        meta(requestId),
-      ),
+      AutomationEvaluateIssues,
+      {
+        issueIds: payload.issueIds,
+        repository,
+        severityThreshold: payload.severityThreshold,
+      },
+      meta(requestId),
     );
   }
 
   if (payload.query !== undefined) {
     return runUseCase(
-      AutomationEvaluateQuery(
-        {
-          query: payload.query,
-          repository,
-          severityThreshold: payload.severityThreshold,
-        },
-        meta(requestId),
-      ),
+      AutomationEvaluateQuery,
+      {
+        query: payload.query,
+        repository,
+        severityThreshold: payload.severityThreshold,
+      },
+      meta(requestId),
     );
   }
 
   return runUseCase(
-    AutomationEvaluateRepository(
-      {
-        failOnWarnings: payload.failOnWarnings,
-        repository,
-        requireFresh: payload.requireFresh,
-      },
-      meta(requestId),
-    ),
+    AutomationEvaluateRepository,
+    {
+      failOnWarnings: payload.failOnWarnings,
+      repository,
+      requireFresh: payload.requireFresh,
+    },
+    meta(requestId),
   );
 };
 

@@ -1,9 +1,11 @@
 import {
+  contractFor,
+} from "@cycle/contracts";
+import {
   InitiativeCreate,
   InitiativeProgressGet,
   InitiativeUpdateAdd,
-  contractFor,
-} from "@cycle/contracts";
+} from "@cycle/usecases";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {
@@ -30,7 +32,7 @@ export const withInitiativeHandlers = (handlers: any) =>
           },
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
-        const result = yield* runUseCase(InitiativeCreate(input, meta(requestId)));
+        const result = yield* runUseCase(InitiativeCreate, input, meta(requestId));
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
         return resourceResponse(requestId, 201, result);
@@ -49,7 +51,7 @@ export const withInitiativeHandlers = (handlers: any) =>
           },
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
-        const result = yield* runUseCase(InitiativeProgressGet(input, meta(requestId)));
+        const result = yield* runUseCase(InitiativeProgressGet, input, meta(requestId));
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
         return resourceResponse(requestId, 200, result);
@@ -71,7 +73,7 @@ export const withInitiativeHandlers = (handlers: any) =>
           },
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
-        const result = yield* runUseCase(InitiativeUpdateAdd(input, meta(requestId)));
+        const result = yield* runUseCase(InitiativeUpdateAdd, input, meta(requestId));
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
         return resourceResponse(requestId, 201, result);

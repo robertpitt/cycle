@@ -1,10 +1,8 @@
 import {
-  IssueList,
-  IssueSearch,
-  RepositoryList,
   type RepositoryStatus,
   type TicketDocument,
 } from "@cycle/contracts";
+import { IssueList, IssueSearch, RepositoryList } from "@cycle/usecases";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {
@@ -48,7 +46,9 @@ export const withAutocompleteHandlers = (handlers: any) =>
       const requestedTypes = requestedAutocompleteTypes(input, requestId);
       if (HttpServerResponse.isHttpServerResponse(requestedTypes)) return requestedTypes;
       const repositories = (yield* runUseCase(
-        RepositoryList({}, meta(requestId)),
+        RepositoryList,
+        {},
+        meta(requestId),
       )) as ReadonlyArray<RepositoryStatus>;
       if (HttpServerResponse.isHttpServerResponse(repositories)) return repositories;
 
@@ -143,25 +143,23 @@ const ticketAutocompleteResults = (input: {
     const pageValue =
       input.query.length > 0
         ? yield* runUseCase(
-            IssueSearch(
-              scoped(scopeRepositoryId, {
-                limit: input.limit,
-                repositoryIds,
-                text: input.query,
-              }),
-              meta(input.requestId),
-            ),
+            IssueSearch,
+            scoped(scopeRepositoryId, {
+              limit: input.limit,
+              repositoryIds,
+              text: input.query,
+            }),
+            meta(input.requestId),
           )
         : yield* runUseCase(
-            IssueList(
-              scoped(scopeRepositoryId, {
-                limit: input.limit,
-                orderBy: "updatedAt",
-                orderDirection: "desc",
-                repositoryIds,
-              }),
-              meta(input.requestId),
-            ),
+            IssueList,
+            scoped(scopeRepositoryId, {
+              limit: input.limit,
+              orderBy: "updatedAt",
+              orderDirection: "desc",
+              repositoryIds,
+            }),
+            meta(input.requestId),
           );
     if (HttpServerResponse.isHttpServerResponse(pageValue)) return pageValue;
 

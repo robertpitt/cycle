@@ -1,4 +1,5 @@
-import { CommentAdd, ContractSchemas, RecordListForIssue, contractFor } from "@cycle/contracts";
+import { ContractSchemas, contractFor } from "@cycle/contracts";
+import { CommentAdd, RecordListForIssue } from "@cycle/usecases";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {
@@ -37,7 +38,9 @@ export const withCommentHandlers = (handlers: any) =>
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const pageValue = yield* runUseCase(
-          RecordListForIssue(scoped(params.repositoryId, input), meta(requestId)),
+          RecordListForIssue,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(pageValue)) return pageValue;
         const result = asPage(pageValue);
@@ -64,7 +67,7 @@ export const withCommentHandlers = (handlers: any) =>
           { code: "INVALID_COMMENT_PAYLOAD", message: "Invalid issue comment payload." },
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
-        const result = yield* runUseCase(CommentAdd(input, meta(requestId)));
+        const result = yield* runUseCase(CommentAdd, input, meta(requestId));
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
         yield* handleSuccessfulComment({
           body: input.input.body,

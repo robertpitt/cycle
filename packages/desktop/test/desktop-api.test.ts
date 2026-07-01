@@ -2,8 +2,8 @@ import { strict as assert } from "node:assert";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseService, type DatabaseServiceShape } from "@cycle/database";
 import { GitRepository, WorktreeService } from "@cycle/git";
-import { UseCaseRunner } from "@cycle/usecases";
 import { NodeServices } from "@effect/platform-node";
 import { Data, Effect, Layer } from "effect";
 import { afterEach, describe, it } from "vitest";
@@ -68,6 +68,15 @@ const makeConfig = (): AppConfigState => ({
     staticToken: "desktop-api-test-token",
   },
 });
+
+const databaseStub = (overrides: Partial<DatabaseServiceShape>): DatabaseServiceShape =>
+  new Proxy(overrides, {
+    get: (target, property) => {
+      if (property in target) return target[property as keyof DatabaseServiceShape];
+
+      return () => Effect.die(new Error(`Unexpected database call: ${String(property)}`));
+    },
+  }) as DatabaseServiceShape;
 
 const makeLayer = (config: AppConfigState) =>
   Layer.mergeAll(
@@ -194,10 +203,8 @@ const makeLayer = (config: AppConfigState) =>
       }),
     ),
     Layer.succeed(
-      UseCaseRunner,
-      UseCaseRunner.of({
-        run: () => Effect.die("not implemented"),
-      }),
+      DatabaseService,
+      DatabaseService.of(databaseStub({})),
     ),
   );
 

@@ -68,6 +68,13 @@ import {
 } from "../schemas/index.ts";
 import type { UseCaseContract, UseCaseMeta } from "./Types.ts";
 
+const NonEmptyTrimmedString = Schema.String.check(
+  Schema.makeFilter<string>(
+    (value) => value.trim().length > 0 || "a non-empty string",
+    { expected: "a non-empty string" },
+  ),
+);
+
 export const UseCaseFailureTag = Schema.Literals([
   "AutomationEvaluationFailure",
   "AuthorizationFailure",
@@ -471,7 +478,7 @@ export const UseCaseContracts = {
     idempotency: "not-supported",
     inputSchema: RepositoryScoped(
       Schema.Struct({
-        body: Schema.String,
+        body: NonEmptyTrimmedString,
         issueId: Schema.String,
       }),
     ),

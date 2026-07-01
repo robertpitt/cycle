@@ -1,4 +1,11 @@
-import { type RepositoryInput } from "@cycle/contracts";
+import type {
+  RepositoryInput,
+  UseCaseInput,
+  UseCaseMeta,
+  UseCaseName,
+  UseCaseSideEffect,
+  UseCaseSuccess,
+} from "@cycle/contracts";
 import type { AgentOrchestrationServiceShape } from "@cycle/agents/orchestration";
 import type {
   AgentProviderId,
@@ -8,8 +15,7 @@ import type {
 } from "@cycle/agents/types";
 import { type AgentServiceRegistryShape } from "@cycle/agents/service";
 import type { WorktreeServiceShape } from "@cycle/git/worktree";
-import { type UseCaseRunnerShape } from "@cycle/usecases";
-import { Context } from "effect";
+import { Context, Layer } from "effect";
 import type {
   AgentActiveTurnBeginInput,
   AgentActiveTurnBeginResult,
@@ -107,10 +113,11 @@ export type CycleApiOptions = {
   readonly localSettings?: LocalSettingsProviderShape;
   readonly mcp?: false | CycleApiMcpOptions;
   readonly now?: () => Date;
+  readonly onUseCaseSuccess?: (event: CycleApiUseCaseSuccessEvent) => Promise<void> | void;
   readonly repositoryOpenInput?: RepositoryOpenInputResolver;
-  readonly runner: UseCaseRunnerShape;
   readonly startedAt?: Date;
   readonly staticToken: string;
+  readonly useCaseLayer?: Layer.Layer<never, unknown, any>;
   readonly worktreeService?: WorktreeServiceShape;
   readonly worktreeStoragePath?: string;
 };
@@ -135,12 +142,21 @@ export type CycleApiRuntimeShape = {
   readonly mcpPath?: string;
   readonly mcpUrl?: string;
   readonly now: () => Date;
+  readonly onUseCaseSuccess?: (event: CycleApiUseCaseSuccessEvent) => Promise<void> | void;
   readonly repositoryOpenInput?: RepositoryOpenInputResolver;
-  readonly runner: UseCaseRunnerShape;
   readonly startedAt: string;
   readonly staticToken: string;
+  readonly useCaseLayer: Layer.Layer<never, unknown, any>;
   readonly worktreeService?: WorktreeServiceShape;
   readonly worktreeStoragePath?: string;
+};
+
+export type CycleApiUseCaseSuccessEvent<Name extends UseCaseName = UseCaseName> = {
+  readonly input: UseCaseInput<Name>;
+  readonly meta?: UseCaseMeta;
+  readonly name: Name;
+  readonly sideEffect: UseCaseSideEffect;
+  readonly value: UseCaseSuccess<Name>;
 };
 
 export type {

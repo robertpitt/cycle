@@ -1,4 +1,5 @@
-import { ContractSchemas, DraftCommit, DraftCreate, DraftUpdate } from "@cycle/contracts";
+import { ContractSchemas } from "@cycle/contracts";
+import { DraftCommit, DraftCreate, DraftUpdate } from "@cycle/usecases";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {
@@ -21,7 +22,9 @@ export const withDraftHandlers = (handlers: any) =>
         });
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          DraftCreate(scoped(params.repositoryId, input), meta(requestId)),
+          DraftCreate,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -47,7 +50,9 @@ export const withDraftHandlers = (handlers: any) =>
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          DraftUpdate(scoped(params.repositoryId, input), meta(requestId)),
+          DraftUpdate,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -58,7 +63,9 @@ export const withDraftHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const result = yield* runUseCase(
-          DraftCommit(scoped(params.repositoryId, params.draftId), meta(requestId)),
+          DraftCommit,
+          scoped(params.repositoryId, params.draftId),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 

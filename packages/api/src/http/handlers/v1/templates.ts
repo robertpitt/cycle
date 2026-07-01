@@ -1,11 +1,13 @@
 import {
   ContractSchemas,
+} from "@cycle/contracts";
+import {
   TemplateArchive,
   TemplateCreate,
   TemplateGet,
   TemplateList,
   TemplateUpdate,
-} from "@cycle/contracts";
+} from "@cycle/usecases";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {
@@ -18,6 +20,7 @@ import {
   runUseCase,
   scoped,
   templateQueryFrom,
+  useCaseInvocation,
   urlFromRequest,
 } from "../shared.ts";
 
@@ -25,7 +28,8 @@ export const withTemplateHandlers = (handlers: any) =>
   handlers
     .handle("listTemplates", ({ params, request }: any) =>
       pagedUseCaseResponse(request, (requestId) =>
-        TemplateList(
+        useCaseInvocation(
+          TemplateList,
           scoped(params.repositoryId, templateQueryFrom(urlFromRequest(request).searchParams)),
           meta(requestId),
         ),
@@ -45,7 +49,9 @@ export const withTemplateHandlers = (handlers: any) =>
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          TemplateCreate(scoped(params.repositoryId, input), meta(requestId)),
+          TemplateCreate,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -56,7 +62,9 @@ export const withTemplateHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const result = yield* runUseCase(
-          TemplateGet(scoped(params.repositoryId, { id: params.templateId }), meta(requestId)),
+          TemplateGet,
+          scoped(params.repositoryId, { id: params.templateId }),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -82,7 +90,9 @@ export const withTemplateHandlers = (handlers: any) =>
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          TemplateUpdate(scoped(params.repositoryId, input), meta(requestId)),
+          TemplateUpdate,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -93,7 +103,9 @@ export const withTemplateHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const result = yield* runUseCase(
-          TemplateArchive(scoped(params.repositoryId, { id: params.templateId }), meta(requestId)),
+          TemplateArchive,
+          scoped(params.repositoryId, { id: params.templateId }),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 

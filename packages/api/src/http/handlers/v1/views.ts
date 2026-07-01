@@ -1,11 +1,13 @@
 import {
   ContractSchemas,
+} from "@cycle/contracts";
+import {
   ViewCreate,
   ViewDelete,
   ViewGet,
   ViewList,
   ViewUpdate,
-} from "@cycle/contracts";
+} from "@cycle/usecases";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {
@@ -17,6 +19,7 @@ import {
   resourceResponse,
   runUseCase,
   scoped,
+  useCaseInvocation,
   urlFromRequest,
   viewQueryFrom,
 } from "../shared.ts";
@@ -25,7 +28,8 @@ export const withViewHandlers = (handlers: any) =>
   handlers
     .handle("listViews", ({ params, request }: any) =>
       pagedUseCaseResponse(request, (requestId) =>
-        ViewList(
+        useCaseInvocation(
+          ViewList,
           scoped(params.repositoryId, viewQueryFrom(urlFromRequest(request).searchParams)),
           meta(requestId),
         ),
@@ -45,7 +49,9 @@ export const withViewHandlers = (handlers: any) =>
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          ViewCreate(scoped(params.repositoryId, input), meta(requestId)),
+          ViewCreate,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -56,7 +62,9 @@ export const withViewHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const result = yield* runUseCase(
-          ViewGet(scoped(params.repositoryId, { id: params.viewId }), meta(requestId)),
+          ViewGet,
+          scoped(params.repositoryId, { id: params.viewId }),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -82,7 +90,9 @@ export const withViewHandlers = (handlers: any) =>
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          ViewUpdate(scoped(params.repositoryId, input), meta(requestId)),
+          ViewUpdate,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -93,7 +103,9 @@ export const withViewHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const result = yield* runUseCase(
-          ViewDelete(scoped(params.repositoryId, { id: params.viewId }), meta(requestId)),
+          ViewDelete,
+          scoped(params.repositoryId, { id: params.viewId }),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 

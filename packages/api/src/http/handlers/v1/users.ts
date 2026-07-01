@@ -1,4 +1,5 @@
-import { ContractSchemas, UserGet, UserList, UserUpsert } from "@cycle/contracts";
+import { ContractSchemas } from "@cycle/contracts";
+import { UserGet, UserList, UserUpsert } from "@cycle/usecases";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {
@@ -12,6 +13,7 @@ import {
   runUseCase,
   scoped,
   stringField,
+  useCaseInvocation,
   urlFromRequest,
   userQueryFrom,
 } from "../shared.ts";
@@ -20,7 +22,8 @@ export const withUserHandlers = (handlers: any) =>
   handlers
     .handle("listUsers", ({ params, request }: any) =>
       pagedUseCaseResponse(request, (requestId) =>
-        UserList(
+        useCaseInvocation(
+          UserList,
           scoped(params.repositoryId, userQueryFrom(urlFromRequest(request).searchParams)),
           meta(requestId),
         ),
@@ -30,7 +33,9 @@ export const withUserHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const result = yield* runUseCase(
-          UserGet(scoped(params.repositoryId, params.userId), meta(requestId)),
+          UserGet,
+          scoped(params.repositoryId, params.userId),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -57,7 +62,9 @@ export const withUserHandlers = (handlers: any) =>
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          UserUpsert(scoped(params.repositoryId, input), meta(requestId)),
+          UserUpsert,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 

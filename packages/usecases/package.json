@@ -4,9 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./contracts": "./src/contracts/index.ts",
-    "./schemas": "./src/schemas/index.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "test": "vitest run",

@@ -1,4 +1,7 @@
 import {
+  type RepositoryStatus,
+} from "@cycle/contracts";
+import {
   RepositoryHistoryList,
   RepositoryList,
   RepositoryMaterializationWarningsList,
@@ -6,8 +9,7 @@ import {
   RepositoryPush,
   RepositoryStatusGet,
   RepositorySync,
-  type RepositoryStatus,
-} from "@cycle/contracts";
+} from "@cycle/usecases";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import { CycleApiRuntime } from "../../runtime/CycleApiRuntime.ts";
@@ -32,7 +34,7 @@ export const withRepositoryHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const runtime = yield* CycleApiRuntime;
         const requestId = yield* requestIdFromHeaders(request.headers);
-        const repositories = yield* runUseCase(RepositoryList({}, meta(requestId)));
+        const repositories = yield* runUseCase(RepositoryList, {}, meta(requestId));
         if (HttpServerResponse.isHttpServerResponse(repositories)) return repositories;
 
         return resourceResponse(requestId, 200, {
@@ -48,7 +50,9 @@ export const withRepositoryHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const repositories = (yield* runUseCase(
-          RepositoryList({}, meta(requestId)),
+          RepositoryList,
+          {},
+          meta(requestId),
         )) as ReadonlyArray<RepositoryStatus>;
         if (HttpServerResponse.isHttpServerResponse(repositories)) return repositories;
         const url = urlFromRequest(request);
@@ -63,7 +67,7 @@ export const withRepositoryHandlers = (handlers: any) =>
         const requestId = yield* requestIdFromHeaders(request.headers);
         const input = yield* repositoryOpenInputFrom(runtime, payload, requestId);
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
-        const result = yield* runUseCase(RepositoryOpen(input, meta(requestId)));
+        const result = yield* runUseCase(RepositoryOpen, input, meta(requestId));
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
         return resourceResponse(requestId, 201, result);
@@ -73,7 +77,9 @@ export const withRepositoryHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const result = yield* runUseCase(
-          RepositoryStatusGet(scoped(params.repositoryId, {}), meta(requestId)),
+          RepositoryStatusGet,
+          scoped(params.repositoryId, {}),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -85,7 +91,9 @@ export const withRepositoryHandlers = (handlers: any) =>
         const requestId = yield* requestIdFromHeaders(request.headers);
         const url = urlFromRequest(request);
         const warnings = yield* runUseCase(
-          RepositoryMaterializationWarningsList(scoped(params.repositoryId, {}), meta(requestId)),
+          RepositoryMaterializationWarningsList,
+          scoped(params.repositoryId, {}),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(warnings)) return warnings;
 
@@ -98,10 +106,9 @@ export const withRepositoryHandlers = (handlers: any) =>
         const requestId = yield* requestIdFromHeaders(request.headers);
         const url = urlFromRequest(request);
         const pageValue = yield* runUseCase(
-          RepositoryHistoryList(
-            scoped(params.repositoryId, historyQueryFrom(url.searchParams)),
-            meta(requestId),
-          ),
+          RepositoryHistoryList,
+          scoped(params.repositoryId, historyQueryFrom(url.searchParams)),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(pageValue)) return pageValue;
         const result = asPage(pageValue);
@@ -119,7 +126,9 @@ export const withRepositoryHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const result = yield* runUseCase(
-          RepositorySync(scoped(params.repositoryId, {}), meta(requestId)),
+          RepositorySync,
+          scoped(params.repositoryId, {}),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -130,7 +139,9 @@ export const withRepositoryHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const result = yield* runUseCase(
-          RepositoryPush(scoped(params.repositoryId, {}), meta(requestId)),
+          RepositoryPush,
+          scoped(params.repositoryId, {}),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 

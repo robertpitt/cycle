@@ -1,16 +1,11 @@
-import {
-  CommentAdd,
-  IssueGet,
-  RepositoryList,
-  type RepositoryStatus,
-  type TicketDocument,
-} from "@cycle/contracts";
+import type { RepositoryStatus, TicketDocument } from "@cycle/contracts";
 import {
   isAgentProviderId,
   type AgentInput,
   type AgentProviderId,
   type AgentResponseFormat,
 } from "@cycle/agents";
+import { CommentAdd, IssueGet, RepositoryList } from "@cycle/usecases";
 import { agentRuntimeEventName, type AgentRuntimeEvent } from "@cycle/agents/runtime-events";
 import type {
   BranchAssociation as GitBranchAssociation,
@@ -31,6 +26,16 @@ import type { ChatTurnPayload } from "./chat/domain.ts";
 import { prepareChatTurn } from "./chat/prepare.ts";
 
 const activeAgentWorkJobs = new Set<string>();
+
+const runDefinition = <A, E, R>(
+  runtime: CycleApiRuntimeShape,
+  effect: Effect.Effect<A, E, R>,
+): Promise<Result.Result<A, unknown>> =>
+  Effect.runPromise(
+    Effect.result(
+      effect.pipe(Effect.provide(runtime.useCaseLayer)) as Effect.Effect<A, unknown, never>,
+    ),
+  );
 
 export const launchAgentWorkJob = (input: {
   readonly runtime: CycleApiRuntimeShape;
@@ -358,8 +363,9 @@ const resolveRepositoryPath = async (input: {
   readonly job: AgentJob;
   readonly requestId: string;
 }): Promise<string> => {
-  const repositoriesResult = await Effect.runPromise(
-    Effect.result(input.runtime.runner.run(RepositoryList({}, meta(input.requestId)))),
+  const repositoriesResult = await runDefinition(
+    input.runtime,
+    RepositoryList.run({}, meta(input.requestId)),
   );
   if (Result.isFailure(repositoriesResult)) {
     throw new Error("Unable to list repositories for Agent Work implementation.");
@@ -385,12 +391,9 @@ const resolveTicket = async (input: {
   readonly job: AgentJob;
   readonly requestId: string;
 }): Promise<TicketDocument | undefined> => {
-  const ticketResult = await Effect.runPromise(
-    Effect.result(
-      input.runtime.runner.run(
-        IssueGet(scoped(input.job.repositoryId, { id: input.job.ticketId }), meta(input.requestId)),
-      ),
-    ),
+  const ticketResult = await runDefinition(
+    input.runtime,
+    IssueGet.run(scoped(input.job.repositoryId, { id: input.job.ticketId }), meta(input.requestId)),
   );
   if (Result.isFailure(ticketResult)) return undefined;
   return typeof ticketResult.success === "object" && ticketResult.success !== null
@@ -1251,17 +1254,14 @@ const addCompletionComment = async (
   chat?: AgentWorkChatBridge,
 ): Promise<void> => {
   const commentRequestId = `${input.requestId}:agent-work-comment`;
-  const result = await Effect.runPromise(
-    Effect.result(
-      input.runtime.runner.run(
-        CommentAdd(
-          scoped(input.job.repositoryId, {
-            body,
-            issueId: input.job.ticketId,
-          }),
-          meta(commentRequestId),
-        ),
-      ),
+  const result = await runDefinition(
+    input.runtime,
+    CommentAdd.run(
+      scoped(input.job.repositoryId, {
+        body,
+        issueId: input.job.ticketId,
+      }),
+      meta(commentRequestId),
     ),
   );
 

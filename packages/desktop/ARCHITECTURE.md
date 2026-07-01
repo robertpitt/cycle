@@ -365,7 +365,7 @@ Effect scope is released.
 
 Renderer client: `src/renderer/lib/cycleApiClient.ts`
 
-Server side: `@cycle/api` -> `UseCaseRunnerLive` -> `DatabaseService`
+Server side: `@cycle/api` -> named `@cycle/usecases` definitions -> `DatabaseService`
 
 Flow:
 
@@ -497,7 +497,8 @@ repository.
 1. Renderer gathers metadata queries for labels, users, templates, and views.
 2. Create/update forms call HTTP API mutations through `cycleApiClient`.
 3. The local API validates repository scope through the route and bearer token.
-4. `@cycle/api` delegates to the use-case runner and database.
+4. `@cycle/api` runs the concrete usecase definition with the desktop-provided
+   database layer.
 5. Renderer invalidates affected React Query keys, usually issue detail, issue
    list root, records, history, and sometimes metadata.
 
@@ -625,7 +626,7 @@ Workspace package dependencies:
 | `@cycle/ui`        | Renderer visual components, theme provider, styles.                  |
 | `@cycle/api`       | Local HTTP API server used by renderer, CLI, MCP, and browser tests. |
 | `@cycle/contracts` | Ticket/domain types used by renderer queries and mutations.          |
-| `@cycle/usecases`  | Main-process use-case runner behind the local HTTP API.              |
+| `@cycle/usecases`  | Named usecase definitions run by the local HTTP API.                 |
 | `@cycle/database`  | Projection database, repository status, ticket operations.           |
 | `@cycle/git`       | Git repository validation, initialization, and metadata inspection.  |
 | `@cycle/git-db`    | GitDB local and transport stores, remote sync/push result types.     |

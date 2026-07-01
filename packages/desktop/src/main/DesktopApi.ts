@@ -1,23 +1,18 @@
 import { AgentWorkRuntimeV11, startCycleApiServer, type RepositoryOpenRequest } from "@cycle/api";
-import {
-  contractFor,
-  type CycleUseCase,
-  type RepositoryInput,
-  type RepositoryMetadata,
-} from "@cycle/contracts";
-import { cycleDatabasePath, cycleHomeDirectory } from "@cycle/database";
+import type { RepositoryInput, RepositoryMetadata } from "@cycle/contracts";
+import { DatabaseService, cycleDatabasePath, cycleHomeDirectory } from "@cycle/database";
 import { GitRepository, type GitRepositoryMetadata } from "@cycle/git";
 import { WorktreeService } from "@cycle/git/worktree";
 import { GitDb, Store as GitDbStore } from "@cycle/git-db";
 import { logError } from "@cycle/logging";
-import { UseCaseRunner, type UseCaseRunnerShape } from "@cycle/usecases";
+import { repositoryIdFromInput } from "@cycle/usecases";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect, FileSystem, Path, Schema } from "effect";
+import { Effect, FileSystem, Layer, Path, Schema } from "effect";
 import { DesktopApiError } from "../errors/index.ts";
 import { DesktopRuntime } from "../platform/DesktopRuntime.ts";
 import { AppConfig, AppConfigError, type RepositoryRecord } from "../shared/AppConfig.ts";
-import { DesktopBootstrap, type DesktopBootstrapService } from "../shared/Bootstrap.ts";
+import { DesktopBootstrap } from "../shared/Bootstrap.ts";
 import { LocalWorkspace } from "../shared/LocalWorkspace.ts";
 import { cycleCliConfigPathFromHome } from "./CycleDirectory.ts";
 import { makeDesktopAgentChatStore } from "./DesktopAgentChatStore.ts";
@@ -121,42 +116,14 @@ const repositoryById = (
 ): RepositoryRecord | undefined =>
   repositories.find((repository) => repository.id === repositoryId);
 
-const repositoryIdFromUseCase = (useCase: CycleUseCase): string | undefined => {
-  const input = useCase.input as unknown;
-  if (typeof input !== "object" || input === null || !("repository" in input)) return undefined;
-
-  const repository = (input as { readonly repository?: unknown }).repository;
-  if (typeof repository !== "object" || repository === null || !("id" in repository)) {
-    return undefined;
-  }
-
-  const id = (repository as { readonly id?: unknown }).id;
-  return typeof id === "string" && id.length > 0 ? id : undefined;
-};
-
-const runnerWithBackgroundPublish = (
-  runner: UseCaseRunnerShape,
-  bootstrap: DesktopBootstrapService,
-): UseCaseRunnerShape => ({
-  run: (useCase) => {
-    const effect = runner.run(useCase);
-    const contract = contractFor(useCase.name);
-    const repositoryId = repositoryIdFromUseCase(useCase as CycleUseCase);
-
-    if (contract.sideEffect !== "write" || repositoryId === undefined) return effect;
-
-    return effect.pipe(Effect.tap(() => bootstrap.notifyRepositoryChanged(repositoryId)));
-  },
-});
-
 export const startDesktopApi = Effect.fnUntraced(function* () {
   const appConfig = yield* AppConfig;
   const bootstrap = yield* DesktopBootstrap;
+  const database = yield* DatabaseService;
   const preferences = yield* ElectronPreferences;
   const gitRepository = yield* GitRepository;
   const worktreeService = yield* WorktreeService;
   const localWorkspace = yield* LocalWorkspace;
-  const runner = yield* UseCaseRunner;
   const runtime = yield* DesktopRuntime;
   const config = yield* appConfig.read();
 
@@ -268,9 +235,18 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
             },
             port: config.api.port === "auto" ? undefined : config.api.port,
             repositoryOpenInput,
-            runner: runnerWithBackgroundPublish(runner, bootstrap),
+            onUseCaseSuccess: (event) => {
+              const repositoryId = repositoryIdFromInput(event.input);
+              if (event.sideEffect !== "write" || repositoryId === undefined) return;
+
+              return runtime.runPromise(
+                "api.repositoryChanged",
+                bootstrap.notifyRepositoryChanged(repositoryId),
+              ) as Promise<void>;
+            },
             runtimeFile: desktopApiRuntimeDiscoveryPath(),
             staticToken: config.api.staticToken,
+            useCaseLayer: Layer.succeed(DatabaseService, DatabaseService.of(database)),
             worktreeService,
             worktreeStoragePath: join(cycleHomeDirectory(), "agent-worktrees"),
           });

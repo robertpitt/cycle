@@ -1,4 +1,5 @@
-import { ContractSchemas, LabelArchive, LabelList, LabelUpsert } from "@cycle/contracts";
+import { ContractSchemas } from "@cycle/contracts";
+import { LabelArchive, LabelList, LabelUpsert } from "@cycle/usecases";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {
@@ -11,6 +12,7 @@ import {
   resourceResponse,
   runUseCase,
   scoped,
+  useCaseInvocation,
   urlFromRequest,
 } from "../shared.ts";
 
@@ -18,7 +20,8 @@ export const withLabelHandlers = (handlers: any) =>
   handlers
     .handle("listLabels", ({ params, request }: any) =>
       pagedUseCaseResponse(request, (requestId) =>
-        LabelList(
+        useCaseInvocation(
+          LabelList,
           scoped(params.repositoryId, labelQueryFrom(urlFromRequest(request).searchParams)),
           meta(requestId),
         ),
@@ -41,7 +44,9 @@ export const withLabelHandlers = (handlers: any) =>
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          LabelUpsert(scoped(params.repositoryId, input), meta(requestId)),
+          LabelUpsert,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -52,7 +57,9 @@ export const withLabelHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const result = yield* runUseCase(
-          LabelArchive(scoped(params.repositoryId, { id: params.labelId }), meta(requestId)),
+          LabelArchive,
+          scoped(params.repositoryId, { id: params.labelId }),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 

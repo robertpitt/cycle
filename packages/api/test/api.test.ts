@@ -1,9 +1,9 @@
 import { strict as assert } from "node:assert";
 import { defaultAgentCapabilities } from "@cycle/agents/providers";
 import type { AgentProviderProfile, AgentService, AgentTurnRequest } from "@cycle/agents/types";
-import { type CycleUseCase, type TicketDocument } from "@cycle/contracts";
+import { DatabaseService, type DatabaseServiceShape } from "@cycle/database";
+import { type TicketDocument } from "@cycle/contracts";
 import type { BranchAssociation, WorktreeRecord, WorktreeServiceShape } from "@cycle/git/worktree";
-import { type UseCaseRunnerShape } from "@cycle/usecases";
 import { Effect, Layer, Tracer } from "effect";
 import { NodeServices } from "@effect/platform-node";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
@@ -76,122 +76,155 @@ const failingAgentStream = (message: string): AsyncIterable<never> => ({
   }),
 });
 
+const databaseStub = (overrides: Partial<DatabaseServiceShape>): DatabaseServiceShape =>
+  new Proxy(overrides, {
+    get: (target, property) => {
+      if (property in target) return target[property as keyof DatabaseServiceShape];
+
+      return () => Effect.die(new Error(`Unexpected database call: ${String(property)}`));
+    },
+  }) as DatabaseServiceShape;
+
+const unexpectedDatabaseLayer = Layer.succeed(DatabaseService, DatabaseService.of(databaseStub({})));
+
+const issueCreateDatabaseLayer = (calls: Array<string>) =>
+  Layer.succeed(
+    DatabaseService,
+    DatabaseService.of(
+      databaseStub({
+        createTicket: (_repositoryId, input) =>
+          Effect.sync(() => {
+            calls.push("IssueCreate");
+            return makeIssue("ISSUE-1", input.title, input.body ?? "");
+          }),
+      }),
+    ),
+  );
+
 const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) => {
   const calls: Array<string> = [];
   const issues: Array<TicketDocument> = [];
   const comments: Array<unknown> = [];
-  const runner: UseCaseRunnerShape = {
-    run: (useCase: CycleUseCase) =>
-      Effect.suspend(() => {
-        calls.push(useCase.name);
-
-        switch (useCase.name) {
-          case "RepositoryList":
-            return Effect.succeed([makeRepositoryStatus()] as never);
-          case "RepositoryOpen":
-          case "RepositoryStatusGet":
-          case "RepositorySync":
-            return Effect.succeed(makeRepositoryStatus() as never);
-          case "RepositoryMaterializationWarningsList":
-            return Effect.succeed([] as never);
-          case "RepositoryHistoryList":
-            return Effect.succeed({ entries: [] } as never);
-          case "IssueCreate": {
-            const input = (useCase.input as any).input as {
-              readonly body?: string;
-              readonly title: string;
-            };
-            const issue = makeIssue("ISSUE-1", input.title, input.body ?? "");
-            issues.push(issue);
-            return Effect.succeed(issue as never);
-          }
-          case "IssueGet":
-            return Effect.succeed(
-              (issues.find((issue) => issue.id === (useCase.input as any).input.id) ??
-                null) as never,
-            );
-          case "IssueList":
-            return Effect.succeed({
-              entries: issues,
-            } as never);
-          case "IssueSearch":
-            return Effect.succeed({
-              entries: issues.map((issue) => ({
-                matchedFields: ["title"],
-                ticket: issue,
-              })),
-            } as never);
-          case "IssueUpdate": {
-            const input = (useCase.input as any).input as {
-              readonly id: string;
-              readonly patch: {
-                readonly body?: string;
-                readonly frontmatter?: Readonly<Record<string, unknown>>;
-              };
-            };
-            const index = issues.findIndex((issue) => issue.id === input.id);
-            if (index < 0) return Effect.succeed(null as never);
-            const current = issues[index] as TicketDocument;
-            const updated = {
-              ...current,
-              ...(input.patch.body === undefined ? undefined : { body: input.patch.body }),
-              frontmatter: {
-                ...current.frontmatter,
-                ...input.patch.frontmatter,
-              },
-              type:
-                typeof input.patch.frontmatter?.type === "string"
-                  ? input.patch.frontmatter.type
-                  : current.type,
-            } as TicketDocument;
-            issues[index] = updated;
-            return Effect.succeed(updated as never);
-          }
-          case "IssueTransition": {
-            const input = (useCase.input as any).input as {
-              readonly id: string;
-              readonly status: string;
-            };
-            const index = issues.findIndex((issue) => issue.id === input.id);
-            if (index < 0) return Effect.succeed(null as never);
-            const current = issues[index] as TicketDocument;
-            const updated = {
-              ...current,
-              frontmatter: {
-                ...current.frontmatter,
-                status: input.status,
-              },
-              status: input.status,
-            } as TicketDocument;
-            issues[index] = updated;
-            return Effect.succeed(updated as never);
-          }
-          case "CommentAdd": {
-            const input = (useCase.input as any).input as {
-              readonly body: string;
-              readonly issueId: string;
-            };
-            const comment = {
-              createdAt: "2026-06-12T00:00:00.000Z",
-              id: "COMMENT-1",
-              issueId: input.issueId,
-              payload: { body: input.body },
-              recordType: "comment",
-            };
-            comments.push(comment);
-            return Effect.succeed(comment as never);
-          }
-          default:
-            return Effect.die(new Error(`Unexpected usecase: ${useCase.name}`));
-        }
+  const database = databaseStub({
+    addComment: (_repositoryId, issueId, input) =>
+      Effect.sync(() => {
+        calls.push("CommentAdd");
+        const comment = {
+          createdAt: "2026-06-12T00:00:00.000Z",
+          createdBy: {
+            name: "Test",
+            type: "agent" as const,
+          },
+          createdDate: "2026-06-12",
+          id: "COMMENT-1",
+          issueId,
+          payload: { body: input.body },
+          recordType: "comment",
+          schemaVersion: 1 as const,
+        };
+        comments.push(comment);
+        return comment;
       }),
-  };
+    createTicket: (_repositoryId, input) =>
+      Effect.sync(() => {
+        calls.push("IssueCreate");
+        const issue = makeIssue("ISSUE-1", input.title, input.body ?? "");
+        issues.push(issue);
+        return issue;
+      }),
+    getTicket: (_repositoryId, ticketId) =>
+      Effect.sync(() => {
+        calls.push("IssueGet");
+        return issues.find((issue) => issue.id === ticketId) ?? null;
+      }),
+    listRepositories: () =>
+      Effect.sync(() => {
+        calls.push("RepositoryList");
+        return [makeRepositoryStatus()];
+      }),
+    listTickets: () =>
+      Effect.sync(() => {
+        calls.push("IssueList");
+        return { entries: issues };
+      }),
+    materializationWarnings: () =>
+      Effect.sync(() => {
+        calls.push("RepositoryMaterializationWarningsList");
+        return [];
+      }),
+    openRepository: () =>
+      Effect.sync(() => {
+        calls.push("RepositoryOpen");
+        return makeRepositoryStatus();
+      }),
+    repositoryHistory: () =>
+      Effect.sync(() => {
+        calls.push("RepositoryHistoryList");
+        return { entries: [] };
+      }),
+    repositoryStatus: () =>
+      Effect.sync(() => {
+        calls.push("RepositoryStatusGet");
+        return makeRepositoryStatus();
+      }),
+    searchTickets: () =>
+      Effect.sync(() => {
+        calls.push("IssueSearch");
+        return {
+          entries: issues.map((issue) => ({
+            matchedFields: ["title" as const],
+            ticket: issue,
+          })),
+        };
+      }),
+    syncRepository: () =>
+      Effect.sync(() => {
+        calls.push("RepositorySync");
+        return makeRepositoryStatus();
+      }),
+    transitionTicket: (_repositoryId, ticketId, input) =>
+      Effect.sync(() => {
+        calls.push("IssueTransition");
+        const index = issues.findIndex((issue) => issue.id === ticketId);
+        if (index < 0) throw new Error(`Missing issue: ${ticketId}`);
+        const current = issues[index] as TicketDocument;
+        const updated = {
+          ...current,
+          frontmatter: {
+            ...current.frontmatter,
+            status: input.status,
+          },
+          status: input.status,
+        } as TicketDocument;
+        issues[index] = updated;
+        return updated;
+      }),
+    updateTicket: (_repositoryId, ticketId, patch) =>
+      Effect.sync(() => {
+        calls.push("IssueUpdate");
+        const index = issues.findIndex((issue) => issue.id === ticketId);
+        if (index < 0) throw new Error(`Missing issue: ${ticketId}`);
+        const current = issues[index] as TicketDocument;
+        const updated = {
+          ...current,
+          ...(patch.body === undefined ? undefined : { body: patch.body }),
+          frontmatter: {
+            ...current.frontmatter,
+            ...patch.frontmatter,
+          },
+          type:
+            typeof patch.frontmatter?.type === "string" ? patch.frontmatter.type : current.type,
+        } as TicketDocument;
+        issues[index] = updated;
+        return updated;
+      }),
+  });
 
   return {
     api: makeCycleApi({
       ...options,
-      runner,
       staticToken: token,
+      useCaseLayer: Layer.succeed(DatabaseService, DatabaseService.of(database)),
     }),
     calls,
     comments,
@@ -1642,14 +1675,21 @@ describe("@cycle/api", () => {
 
   it("normalizes framework schema failures through the listening server", async () => {
     const calls: Array<string> = [];
-    const runner: UseCaseRunnerShape = {
-      run: (useCase: CycleUseCase) =>
-        Effect.suspend(() => {
-          calls.push(useCase.name);
-          return Effect.succeed(makeIssue("ISSUE-1", "Should not dispatch", "") as never);
-        }),
-    };
-    const handle = await startCycleApiServer({ runner, staticToken: token });
+    const handle = await startCycleApiServer({
+      staticToken: token,
+      useCaseLayer: Layer.succeed(
+        DatabaseService,
+        DatabaseService.of(
+          databaseStub({
+            createTicket: (_repositoryId, input) =>
+              Effect.sync(() => {
+                calls.push("IssueCreate");
+                return makeIssue("ISSUE-1", input.title, input.body ?? "");
+              }),
+          }),
+        ),
+      ),
+    });
 
     try {
       const response = await fetch(`${handle.baseUrl}/v1/repositories/${repository.id}/issues`, {
@@ -1853,10 +1893,7 @@ describe("@cycle/api", () => {
       mcp: {
         enabled: true,
       },
-      runner: {
-        run: (useCase: CycleUseCase) =>
-          Effect.die(new Error(`Unexpected usecase: ${useCase.name}`)),
-      },
+      useCaseLayer: unexpectedDatabaseLayer,
       staticToken: token,
     });
 
@@ -2038,10 +2075,7 @@ describe("@cycle/api", () => {
       agentServices: {
         serviceFor: () => Effect.succeed(fakeAgent),
       },
-      runner: {
-        run: (useCase: CycleUseCase) =>
-          Effect.die(new Error(`Unexpected usecase: ${useCase.name}`)),
-      },
+      useCaseLayer: unexpectedDatabaseLayer,
       staticToken: token,
     });
     const client = await connectChatSocket(handle.baseUrl);
@@ -2071,10 +2105,7 @@ describe("@cycle/api", () => {
     const agentChatStore = makeInMemoryAgentChatStore();
     const handle = await startCycleApiServer({
       agentChatStore,
-      runner: {
-        run: (useCase: CycleUseCase) =>
-          Effect.die(new Error(`Unexpected usecase: ${useCase.name}`)),
-      },
+      useCaseLayer: unexpectedDatabaseLayer,
       staticToken: token,
     });
     const client = await connectChatSocket(handle.baseUrl);
@@ -2303,10 +2334,7 @@ describe("@cycle/api", () => {
         enabled: true,
         path: "/mcp",
       },
-      runner: {
-        run: (useCase: CycleUseCase) =>
-          Effect.die(new Error(`Unexpected usecase: ${useCase.name}`)),
-      },
+      useCaseLayer: unexpectedDatabaseLayer,
       staticToken: token,
     });
     const client = await connectChatSocket(handle.baseUrl);
@@ -2638,10 +2666,7 @@ describe("@cycle/api", () => {
       agentServices: {
         serviceFor: () => Effect.succeed(fakeAgent),
       },
-      runner: {
-        run: (useCase: CycleUseCase) =>
-          Effect.die(new Error(`Unexpected usecase: ${useCase.name}`)),
-      },
+      useCaseLayer: unexpectedDatabaseLayer,
       staticToken: token,
     });
     const client = await connectChatSocket(handle.baseUrl);
@@ -2710,11 +2735,8 @@ describe("@cycle/api", () => {
     const agentChatStore = makeInMemoryAgentChatStore();
     const handle = await startCycleApiServer({
       agentChatStore,
-      runner: {
-        run: (useCase: CycleUseCase) =>
-          Effect.die(new Error(`Unexpected usecase: ${useCase.name}`)),
-      },
       staticToken: token,
+      useCaseLayer: unexpectedDatabaseLayer,
     });
     const client = await connectChatSocket(handle.baseUrl);
 
@@ -2811,15 +2833,11 @@ describe("@cycle/api", () => {
   it("creates an HTTP root span for issue creation requests", async () => {
     const { spans, tracer } = makeCapturingTracer();
     const calls: Array<string> = [];
-    const runner: UseCaseRunnerShape = {
-      run: (useCase: CycleUseCase) =>
-        Effect.suspend(() => {
-          calls.push(useCase.name);
-          return Effect.succeed(makeIssue("ISSUE-1", "Traced issue", "") as never);
-        }).pipe(Effect.withSpan(`api.usecase.${useCase.name}`)),
-    };
     const appLayer = (
-      makeCycleApiLayer({ runner, staticToken: token }) as Layer.Layer<never, unknown, any>
+      makeCycleApiLayer({
+        staticToken: token,
+        useCaseLayer: issueCreateDatabaseLayer(calls),
+      }) as Layer.Layer<never, unknown, any>
     ).pipe(
       Layer.provide([HttpServer.layerServices, NodeServices.layer]),
       Layer.provide(Layer.succeed(Tracer.Tracer, tracer)),
@@ -2868,13 +2886,6 @@ describe("@cycle/api", () => {
   it("creates request spans through the listening server runtime", async () => {
     const { spans, tracer } = makeCapturingTracer();
     const calls: Array<string> = [];
-    const runner: UseCaseRunnerShape = {
-      run: (useCase: CycleUseCase) =>
-        Effect.suspend(() => {
-          calls.push(useCase.name);
-          return Effect.succeed(makeIssue("ISSUE-1", "Server traced issue", "") as never);
-        }).pipe(Effect.withSpan(`api.usecase.${useCase.name}`)),
-    };
     const handle = await Effect.runPromise(
       startCycleApiServerEffect({
         host: "127.0.0.1",
@@ -2882,8 +2893,8 @@ describe("@cycle/api", () => {
           console: false,
           file: { enabled: false },
         },
-        runner,
         staticToken: token,
+        useCaseLayer: issueCreateDatabaseLayer(calls),
       }).pipe(Effect.provide([NodeServices.layer, Layer.succeed(Tracer.Tracer, tracer)])),
     );
 
@@ -2950,7 +2961,7 @@ describe("@cycle/api", () => {
 
       assert.equal(response.status, 200);
       assert.equal(body.data?.status, "in-progress");
-      assert.deepEqual(calls, ["IssueCreate", "IssueTransition"]);
+      assert.deepEqual(calls, ["IssueCreate", "IssueGet", "IssueTransition"]);
     } finally {
       await api.dispose();
     }

@@ -1,26 +1,26 @@
-# @cycle/usecases Specification
+# @cycle/usecases Effect-Native Definition Specification
 
 Status: Draft implementation specification
 
-Version: 0.1.0
+Version: 0.2.0
 
 Package: `@cycle/usecases`
 
 ## 1. Purpose
 
-`@cycle/usecases` is the controller and domain workflow package for Cycle. It provides the single
-Effect-first entrypoint for application, API, CLI, MCP, and CI callers to execute Cycle workflows
-without duplicating business logic in transport or UI layers.
+`@cycle/usecases` defines the application workflow boundary for Cycle as a set of named,
+schema-backed, runnable Effect v4 usecase definitions. The package exists to let API, CLI, MCP,
+desktop, CI, and test callers execute the same domain workflows without carrying transport-specific
+validation, orchestration, dependency wiring, or policy code.
 
-The package sits above `@cycle/database`. `@cycle/database` owns durable storage, projection,
-materialization, and low-level persistence invariants. `@cycle/usecases` owns user-facing workflow
-contracts, domain policy, command orchestration, validation beyond storage shape, and adapter-neutral
-success and failure semantics.
+The primary design goal for v0.2 is to reduce custom runner code by leaning into Effect v4 primitives:
+`Schema` for validation and normalization, `Context.Service` and `Layer` for dependencies, `Scope`
+for scoped resources, and `Effect` for interruption, timeout, logging, tracing, and typed failures.
 
 ## 2. Normative Language
 
-The key words `MUST`, `MUST NOT`, `REQUIRED`, `SHOULD`, `SHOULD NOT`, and `MAY` in this document
-are to be interpreted as described in RFC 2119 and RFC 8174 when, and only when, they appear in all
+The key words `MUST`, `MUST NOT`, `REQUIRED`, `SHOULD`, `SHOULD NOT`, and `MAY` in this document are
+to be interpreted as described in RFC 2119 and RFC 8174 when, and only when, they appear in all
 capitals.
 
 `Implementation-defined` means an implementation may choose the behavior, but it MUST document that
@@ -28,56 +28,49 @@ choice and expose enough information for callers and conformance tests to reason
 
 ## 3. Problem Statement
 
-Cycle currently has transport and application code that can call `@cycle/database` directly. That
-forces storage-facing services to contain workflow policy such as status transition rules, commit
-message policy, human approval gates, relation rules, and domain-specific command behavior. As more
-entrypoints are added, such as an HTTP API, desktop app, CLI automation, MCP tools, and CI checks,
-duplicating or bypassing those rules would make Cycle harder to reason about and easier to break.
+The v0.1 architecture centralizes usecase execution in a broad runner that manually decodes inputs,
+validates metadata, dispatches through a large switch, extracts repository and ticket identifiers by
+object inspection, normalizes selected outputs, maps failures, and emits observability data. This
+duplicates responsibilities that Effect v4 and the contract schemas can already carry.
 
-Cycle needs a stable controller layer where every caller runs the same command contracts through the
-same Effect runtime model. The result should let transports stay thin, keep storage lean, and make
-workflow behavior testable without requiring Electron, an API server, or a CLI process.
+That design makes each new usecase pay a high orchestration tax. It also hides the real workflow
+logic inside a central dispatcher instead of colocating each usecase definition with its schema,
+metadata, and handler. Cycle needs a usecase layer where the common execution pipeline is generated
+once, while each usecase declares only its schema contract and domain handler.
 
 ## 4. Goals
 
-`@cycle/usecases` MUST:
+`@cycle/usecases` v0.2 MUST:
 
-1. Become the sole domain workflow API used by `@cycle/api`, CLI/CI entrypoints, desktop backend
-   code, MCP tools, and other adapter layers.
-2. Expose an Effect v4-first API whose core operation is `run(useCase)`.
-3. Maintain the canonical operation contracts for Cycle workflows, including input schemas, success
-   schemas, failure schemas, and operation metadata.
-4. Build on the domain document and query types exported by `@cycle/database` instead of redefining
-   repository, ticket, record, view, label, user, template, initiative, history, and search models.
-5. Move user-facing workflow policy out of `@cycle/database` and into `@cycle/usecases`.
-6. Cover repository open, close, status, sync, push, warnings, history, ticket, draft, record,
-   comment, relation, user, label, saved view, template, initiative, search, and automation
-   evaluation workflows.
-7. Provide adapter-neutral contracts that HTTP, IPC, CLI, MCP, and CI layers can derive from or map
-   to without reimplementing validation or policy.
-8. Return typed, serializable, redacted failures that adapters can map to transport-specific error
-   responses or process exit codes.
-9. Provide deterministic test layers and fakes so usecase behavior can be validated without a real
-   Git remote, Electron app, or network service.
-10. Preserve local-first behavior by delegating durable state to repository-scoped GitDB data through
-    `@cycle/database`.
+1. Expose named runnable usecase definitions as the primary public API, for example
+   `IssueCreate.run(input, meta?)`.
+2. Remove the central public `UseCaseRunner.run(useCase)` model from the target architecture.
+3. Define every usecase through one shared `defineUseCase()` helper.
+4. Decode every input and success value through the usecase's Effect `Schema`.
+5. Move state-independent validation and normalization into schemas.
+6. Move state-dependent workflow rules into Effect services such as `WorkflowPolicy`.
+7. Let handlers yield required dependencies directly from the Effect environment.
+8. Keep repository scope explicit in usecase input data.
+9. Return typed schema-backed failures that can be serialized and redacted at adapter boundaries.
+10. Reduce custom orchestration code structurally by deleting central dispatch, duplicated
+    validation, repeated output normalization, and generic object crawling.
 
 ## 5. Non-Goals
 
-`@cycle/usecases` v0.1 MUST NOT:
+`@cycle/usecases` v0.2 MUST NOT:
 
-1. Implement a transport protocol, HTTP server, Electron IPC handler, CLI parser, MCP server, or CI
-   runner binary.
-2. Own durable repository storage, SQLite projection schema, Git object storage, GitDB ref layout, or
-   materialization logic.
-3. Provide agent planning, issue splitting, implementation execution, review-agent, worktree, or
-   provider orchestration workflows.
-4. Execute arbitrary shell commands or manage long-running agent processes.
-5. Replace `@cycle/database` domain types with a second incompatible type system.
-6. Require network access for local reads, writes, search, history, or automation evaluation.
-7. Require legacy transport method names to be the canonical internal operation names.
-8. Hide post-commit consistency failures by returning success before required projected rows are
-   visible.
+1. Expose a dynamic string-name usecase API.
+2. Expose or preserve legacy aliases such as `ticket.issue.create`.
+3. Require adapters to construct `{ name, input, meta }` command envelopes for normal operation.
+4. Own durable storage, GitDB ref layout, SQLite projection schema, or repository materialization.
+5. Implement HTTP, IPC, CLI, MCP, Electron, or CI transport code.
+6. Execute arbitrary shell commands or own agent process orchestration.
+7. Recreate a second domain document model incompatible with `@cycle/database`.
+8. Reimplement Effect runtime behavior with package-local timeout, scope, logging, or dependency
+   containers.
+
+Adapters MAY keep temporary alias or string-dispatch migration code outside `@cycle/usecases`, but
+that code is not part of this package's target contract.
 
 ## 6. System Overview
 
@@ -93,802 +86,397 @@ Level 2: @cycle/database
   repository registry, GitDB-backed persistence, SQLite projection, read model, materialization
 
 Level 3: @cycle/usecases
-  command contracts, workflow policy, validation, orchestration, automation evaluation
+  runnable usecase definitions, schema contracts, workflow policy, orchestration helpers
 
 Level 4: adapters and applications
-  desktop backend, renderer HTTP client, REST API, CLI, MCP, CI, test harnesses
+  desktop backend, renderer client, API, CLI, MCP, CI, tests
 ```
 
-Adapters MUST call `@cycle/usecases` for domain workflows. They MUST NOT call `@cycle/database`
-directly for user-facing Cycle operations except during composition, migration shims, or narrowly
-documented test setup.
+Adapters MUST call concrete exports from `@cycle/usecases` for user-facing Cycle workflows. They MUST
+NOT call `@cycle/database` directly for domain workflows except during test setup, migrations, or
+documented infrastructure composition.
 
 ### 6.2 Main Components
 
-`@cycle/usecases` has these responsibility boundaries:
-
-- Contract registry: declares all public usecase names, categories, input schemas, success schemas,
-  failure schemas, compatibility aliases, idempotency posture, and side-effect metadata.
-- Usecase runner: validates inputs, resolves the handler, supplies request context, runs the handler
-  as an Effect, maps failures, and emits observability events.
-- Workflow policy service: owns ticket state rules, human approval gates, relation constraints,
-  protected-section checks, commit message policy, default workflow semantics, and repository
-  workflow configuration evaluation.
-- Persistence gateway: wraps the subset of `@cycle/database` needed by usecases and provides a
-  stable boundary for tests and future database API simplification.
-- Repository orchestration service: opens repositories, synchronizes projections, pushes Cycle refs,
-  exposes repository status, and serializes repository-scoped side effects.
-- Automation evaluator: provides deterministic machine-readable checks for CLI and CI callers.
-- Compatibility mapper: maps legacy method names or transport-specific route names to canonical
-  usecase contracts without making those aliases the core model.
-- Observability surface: emits structured logs, metrics, and trace annotations for usecase
-  executions.
+- Usecase definition: a value exported by name, such as `IssueCreate`, containing metadata, schemas,
+  and a generated `run(input, meta?)` method.
+- `defineUseCase()`: the only helper that builds the shared execution pipeline.
+- Schema module: owns input, metadata, success, and failure schemas for boundary validation.
+- Workflow policy services: own state-dependent rules such as transition policy, relation policy,
+  protected-section policy, and automation policy.
+- Effect services and layers: provide database, policy, clock, ID generation, telemetry, and scoped
+  repository capabilities.
+- Adapter code: imports concrete usecases and provides the required layers.
 
 ### 6.3 External Dependencies
 
 Core runtime dependencies are:
 
-- `effect` for `Effect`, `Context.Service`, `Layer`, `Schema`, scoped resources, concurrency,
-  interruption, logging, clocks, and tests.
-- `@cycle/database` for domain document/query types and persistence/projection access.
-- `@cycle/git-db` types where repository sync or push results are surfaced.
-- Caller-provided identity, clock, ID generation, repository registry, and remote-sync capabilities
-  through Effect services or gateway implementations.
+- `effect` for `Effect`, `Schema`, `Context.Service`, `Layer`, `Scope`, logging, tracing, clocks,
+  interruption, timeout, and tests.
+- `@cycle/database` for durable state, projection access, repository operations, and persisted
+  domain document types.
+- `@cycle/contracts` for reusable domain schemas and transport-neutral data contracts where useful.
 
-`@cycle/usecases` SHOULD avoid direct dependencies on Electron, React, HTTP frameworks, Node process
-arguments, or transport-specific serialization libraries.
+`@cycle/usecases` SHOULD avoid direct dependencies on Electron, React, HTTP frameworks, process
+arguments, terminal I/O, or adapter-specific serialization libraries.
 
-## 7. Core Domain Model
+## 7. Public API Contract
 
-### 7.1 Domain Type Source
+### 7.1 Named Usecase Definitions
 
-`@cycle/database` remains the source for persisted domain document and query types, including:
+Each public usecase MUST be exported as a named definition with a generated `run` method:
 
-- `TicketDocument`
-- `TicketDraftDocument`
-- `LinkedRecord`
-- `RepositoryStatus`
-- `MaterializationWarning`
-- `TicketQuery`
-- `SearchTicketsQuery`
-- `HistoryPage`
-- `TicketRevisionDiff`
-- `UserProfileDocument`
-- `LabelDefinitionDocument`
-- `SavedViewDocument`
-- `IssueTemplateDocument`
-- `InitiativeProgress`
+```ts
+import { IssueCreate } from "@cycle/usecases"
 
-`@cycle/usecases` MAY re-export these types for adapter ergonomics, but it MUST NOT fork their
-meaning or introduce conflicting document shapes.
+const ticket = yield* IssueCreate.run(
+  {
+    repository: { id: "cycle-local" },
+    input: {
+      title: "Document the usecase layer",
+      type: "task"
+    }
+  },
+  {
+    requestId: "req-1",
+    source: "cli"
+  }
+)
+```
 
-### 7.2 Usecase
+The primary `run` signature MUST be:
 
-A Usecase is an immutable command object that can be interpreted by the usecase runner.
+```ts
+run(input, meta?)
+```
 
-Required fields:
+`input` MUST be decoded with the usecase input schema. `meta` MUST be decoded with the shared
+metadata schema. The returned value MUST be an `Effect` whose success type is the decoded success
+schema type and whose failure type is a usecase failure union.
 
-- `name`: canonical stable usecase name.
-- `input`: payload decoded by the contract's input schema.
-- `meta`: optional request metadata.
+### 7.2 Dynamic Dispatch
 
-Usecase metadata SHOULD include:
+`@cycle/usecases` MUST NOT expose a public `runUseCase(name, input, meta?)`,
+`UseCaseRunner.run(useCase)`, alias registry, or string-name dispatcher in the v0.2 target
+architecture.
+
+Adapters that receive external string operations MUST map those strings to concrete usecase imports
+outside `@cycle/usecases`.
+
+### 7.3 Definition Shape
+
+Every usecase MUST be declared through `defineUseCase()` or a package-local helper built directly on
+it.
+
+```ts
+export const IssueCreate = defineUseCase({
+  name: "IssueCreate",
+  input: RepositoryScoped(CreateIssueInput),
+  success: TicketDocumentOutput,
+  sideEffect: "write",
+  repositoryScope: "single",
+  handler: (input, ctx) =>
+    Effect.gen(function* () {
+      const db = yield* DatabaseService
+      const policy = yield* WorkflowPolicy
+
+      yield* policy.validateIssueCreate(input, ctx)
+
+      return yield* db.createTicket(input.repository.id, input.input)
+    })
+})
+```
+
+The definition MUST include:
+
+- `name`: stable canonical export and trace name.
+- `input`: Effect `Schema` for decoded runtime input.
+- `success`: Effect `Schema` for decoded runtime success output.
+- `sideEffect`: `read`, `write`, `sync`, `push`, or `evaluate`.
+- `repositoryScope`: `none`, `single`, or `multi`.
+- `handler`: Effect handler for domain behavior.
+
+The definition MAY include a description, category, idempotency posture, and documentation metadata.
+It MUST NOT include compatibility aliases.
+
+## 8. Core Domain Model
+
+### 8.1 Domain Type Source
+
+`@cycle/database` remains the source of durable persisted document and query semantics, including
+ticket documents, drafts, records, labels, users, saved views, templates, repository status,
+materialization warnings, history, diffs, and search pages.
+
+`@cycle/usecases` MAY re-export domain types for caller ergonomics, but it MUST NOT fork their
+meaning or introduce incompatible document shapes.
+
+### 8.2 Repository Scope
+
+Repository-scoped usecases MUST keep the repository reference in input data:
+
+```ts
+{
+  repository: { id: string },
+  input: ...
+}
+```
+
+The repository reference identifies the target repository. Effect layers provide the services that
+open, resolve, read, write, sync, or push repository state. A handler MUST NOT infer the selected
+repository from global mutable state when the usecase input declares a repository reference.
+
+### 8.3 Metadata
+
+Usecase metadata MUST be schema-backed. The shared metadata schema SHOULD include:
 
 - `requestId`
 - `actor`
-- `source`: `desktop`, `api`, `cli`, `mcp`, `ci`, `test`, or an extension value
+- `source`
 - `idempotencyKey`
 - `dryRun`
 - `deadline`
 - `traceContext`
 
-The exact TypeScript representation is implementation-defined, but the public API MUST allow
-callers to construct a typed usecase value and pass it to `run(useCase)`.
+The `defineUseCase()` pipeline MUST decode metadata before handler execution and make decoded
+metadata available to handlers through a typed usecase context.
 
-### 7.3 Usecase Contract
+## 9. Validation and Schemas
 
-Each usecase contract MUST define:
+Schemas are the source of truth for state-independent validation.
 
-- canonical `name`
-- human-readable `description`
-- `category`
-- input `Schema`
-- success `Schema`
-- failure `Schema`
-- handler success type
-- side-effect classification: `read`, `write`, `sync`, `push`, or `evaluate`
-- repository scope: `none`, `single`, or `multi`
-- idempotency posture: `required`, `supported`, `not-supported`, or `read-only`
-- compatibility aliases, if any
+The implementation MUST encode these concerns in schemas rather than runner or handler conditionals
+when they do not require current repository state:
 
-Contract schemas are the source of truth for transport validation. HTTP, IPC, CLI, MCP, and CI
-adapters MUST derive their request validation from these contracts or prove equivalent validation in
-tests.
+- required fields
+- unknown/excess input fields
+- canonical ticket type IDs
+- positive integer limits
+- non-empty trimmed text where the command requires meaningful text
+- enum values
+- output normalization that is independent of current state
+- serializable failure shapes
 
-### 7.4 Usecase Context
+Usecase input and success decoding MUST use strict excess-property behavior unless a schema
+explicitly declares extension fields.
 
-The runner MUST provide handlers with a request context containing:
+State-dependent validation MUST NOT be placed in schemas when it requires repository state, current
+documents, actor authorization against state, or workflow configuration. Those rules belong in
+Effect services.
 
-- usecase name
-- request ID
-- source
-- actor
-- current time provider
-- deadline or cancellation signal
-- dry-run flag
-- optional idempotency key
-- logger or telemetry scope
+## 10. Dependency and Layer Contract
 
-Handlers MUST NOT read global mutable process state directly when the same value can be provided by
-the Effect environment.
-
-### 7.5 Automation Evaluation
-
-An automation evaluation is a machine-readable report suitable for CLI and CI callers.
-
-Required fields:
-
-- `status`: `pass`, `warn`, or `fail`
-- `repositoryId`
-- `checkedAt`
-- `checkedUseCase`
-- `summary`
-- `violations`
-- `warnings`
-- `checkedTicketIds`
-
-Each violation MUST include:
-
-- stable `code`
-- `severity`: `warning`, `error`, or `fatal`
-- human-readable `message`
-- optional `ticketId`
-- optional `field`
-- optional remediation text
-
-Automation reports MUST be deterministic for the same repository snapshot, query, workflow
-configuration, and clock.
-
-## 8. Public API Contract
-
-### 8.1 Runner Shape
-
-The package MUST expose one primary Effect service for executing usecases.
-
-The exact TypeScript names are implementation-defined, but the shape MUST be equivalent to:
+Handlers MUST yield dependencies directly from the Effect environment:
 
 ```ts
-type UseCaseRunner = {
-  readonly run: <UseCase extends CycleUseCase>(
-    useCase: UseCase,
-  ) => Effect.Effect<UseCaseSuccess<UseCase>, UseCaseFailure, UseCaseEnvironment<UseCase>>;
-};
+const db = yield* DatabaseService
+const policy = yield* WorkflowPolicy
+const clock = yield* Clock.Clock
 ```
 
-The package SHOULD also expose typed constructors for usecase values so adapters do not manually
-assemble raw objects.
+Application entrypoints MUST provide the required services with Effect layers. Test code MUST be able
+to provide deterministic layers without a real Git remote, Electron app, API server, or network
+service.
 
-Example shape:
+Required service categories are:
+
+- database and repository persistence services
+- workflow policy services
+- clock/time services
+- ID generation services where IDs are not supplied by storage
+- telemetry/logging/tracing services where custom behavior is needed
+- scoped repository resources where a workflow opens or locks resources
+
+`@cycle/usecases` MUST NOT pass a large dependency object through every handler when the same
+dependency can be yielded from the Effect environment.
+
+## 11. Runtime Workflow
+
+### 11.1 `defineUseCase()` Algorithm
+
+`defineUseCase()` MUST generate a `run(input, meta?)` method equivalent to:
+
+```text
+run(input, meta):
+  decode metadata with UseCaseMeta schema
+  decode input with definition.input schema
+  derive usecase context from definition metadata and decoded metadata
+  annotate logs and spans with requestId, source, usecase, sideEffect, repositoryId when available
+  apply deadline or timeout with Effect primitives when metadata declares one
+  call definition.handler(decodedInput, context)
+  map known storage, policy, schema, timeout, and interruption failures to usecase failures
+  decode handler success with definition.success schema
+  return decoded success or typed usecase failure
+```
+
+This pipeline MUST be implemented once. Individual usecases MUST NOT duplicate input decoding,
+success decoding, deadline handling, span/log setup, or generic failure mapping.
+
+### 11.2 Handler Rules
+
+A handler MUST contain only domain-specific workflow behavior:
+
+- yielding required services
+- reading current state when a policy requires it
+- invoking workflow policy services
+- invoking persistence operations
+- composing usecase-specific results
+
+A handler MUST NOT:
+
+- decode its own top-level input
+- decode its own top-level success value
+- inspect unknown objects to find repository or ticket IDs
+- implement schema-equivalent validation
+- implement generic timeout, tracing, or logging setup
+- map database failures through custom ad hoc branches unless the usecase has a specific failure
+  category such as push failure
+
+### 11.3 Scoped Resources and Concurrency
+
+Usecases that open, lock, sync, push, or otherwise manage resources SHOULD use Effect `Scope`,
+scoped services, or scoped database APIs. Repository-scoped writes, syncs, and pushes MUST be
+serialized per repository by either `@cycle/usecases`, `@cycle/database`, or a documented lower layer.
+
+If serialization is delegated to `@cycle/database`, the usecase spec MUST still require that policy
+validation and mutation are not separated by an unprotected conflicting write window.
+
+## 12. Workflow Policy Services
+
+`WorkflowPolicy` and related services own state-dependent policy. The default policy surface SHOULD
+cover:
+
+- issue transition rules
+- human approval gates
+- planning readiness rules
+- protected section checks
+- relation add/remove rules
+- draft commit rules
+- automation evaluation rules
+
+Policy methods MUST return typed failures rather than storage failures when a command violates a
+workflow rule.
+
+Policy services MAY be split by domain when that keeps handlers smaller, for example
+`IssueWorkflowPolicy`, `RelationPolicy`, and `AutomationPolicy`. Splitting policy services is
+implementation-defined, but handlers MUST still yield them from the Effect environment.
+
+## 13. Failure Model
+
+Usecase failures MUST be schema-backed tagged errors using Effect v4 error classes or an equivalent
+schema-backed tagged representation.
+
+The failure model MUST include typed categories for:
+
+- invalid input
+- policy violation
+- not found
+- authorization failure
+- conflict
+- repository not open or unavailable
+- storage failure
+- consistency failure
+- sync failure
+- push failure
+- timeout
+- interruption
+- unexpected defect or invalid success output
+
+Failures crossing adapter boundaries MUST be serializable and redacted. Failure serialization MUST
+not expose secrets, stack traces, raw causes, credentials, tokens, private keys, or unredacted
+provider responses.
+
+The `defineUseCase()` pipeline MUST map schema decode failures to invalid input failures and success
+decode failures to unexpected defect failures.
+
+## 14. Adapter Contract
+
+Adapters MUST import concrete named usecases:
 
 ```ts
-const useCase = IssueCreate({
-  repository: { id: "cycle-local" },
-  input: { title: "Document usecase layer" },
-});
-
-const ticket = yield * UseCaseRunner.run(useCase);
+import { IssueCreate, RepositoryStatusGet } from "@cycle/usecases"
 ```
 
-The runner MUST return Effects. Promise-returning helpers MAY be provided only as adapter utilities
-and MUST be implemented by running the core Effect API.
+Adapters MUST provide Effect layers that satisfy the services required by the invoked usecases.
 
-### 8.2 Canonical Usecase Names
+Adapters are responsible for:
 
-Canonical names SHOULD use stable semantic names rather than legacy transport method strings. The
-following usecase contracts MUST exist for v0.1:
+- transport parsing
+- route, command, or tool selection
+- mapping any external legacy names to concrete imports during migration
+- process exit codes, HTTP status codes, IPC status, or MCP response wrapping
+- presenting serialized failures to users
 
-Repository:
-
-- `RepositoryOpen`
-- `RepositoryClose`
-- `RepositoryList`
-- `RepositoryStatusGet`
-- `RepositoryMaterializationWarningsList`
-- `RepositorySync`
-- `RepositoryPush`
-- `RepositoryHistoryList`
-
-Issues and search:
-
-- `IssueCreate`
-- `IssueGet`
-- `IssueList`
-- `IssueSearch`
-- `IssueUpdate`
-- `IssueTransition`
-- `IssueArchive`
-- `IssueRestore`
-- `IssueDelete`
-- `IssueHistoryList`
-- `IssueRevisionGet`
-- `IssueDiff`
-- `IssueRelationAdd`
-- `IssueRelationRemove`
-
-Drafts:
-
-- `DraftCreate`
-- `DraftUpdate`
-- `DraftCommit`
-
-Records and comments:
-
-- `CommentAdd`
-- `RecordAdd`
-- `RecordListForIssue`
-
-Initiatives:
-
-- `InitiativeCreate`
-- `InitiativeProgressGet`
-- `InitiativeUpdateAdd`
-
-Labels:
-
-- `LabelList`
-- `LabelUpsert`
-- `LabelArchive`
-
-Users:
-
-- `UserGet`
-- `UserList`
-- `UserUpsert`
-
-Saved views:
-
-- `ViewCreate`
-- `ViewGet`
-- `ViewList`
-- `ViewUpdate`
-- `ViewDelete`
-
-Templates:
-
-- `TemplateCreate`
-- `TemplateGet`
-- `TemplateList`
-- `TemplateUpdate`
-- `TemplateArchive`
-
-Automation and CI:
-
-- `AutomationEvaluateRepository`
-- `AutomationEvaluateIssues`
-- `AutomationEvaluateQuery`
-
-### 8.3 Compatibility Aliases
-
-Legacy method names MAY be supported as aliases by adapters or by a compatibility mapper. The
-canonical usecase contract names MUST remain independent from transport names such as
-`ticket.issue.create` or `repository.sync`.
-
-Each compatibility alias MUST map to exactly one canonical usecase. If an alias needs different
-behavior from the canonical usecase, the implementation MUST define a new canonical usecase rather
-than hiding behavior in the adapter.
-
-### 8.4 Contract Versioning
-
-Each usecase contract MUST include a version. Backward-compatible additions MAY increment a minor
-contract version. Breaking changes MUST either:
-
-- introduce a new contract name;
-- keep a compatibility alias for old callers; or
-- document a migration that updates every adapter and test fixture in the same release.
-
-Unknown input fields SHOULD be rejected by default for externally reachable adapters. Internal test
-constructors MAY allow extension fields only when the contract declares them.
-
-## 9. Workflow Policy Contract
-
-### 9.1 Ownership
-
-`@cycle/usecases` owns user-facing workflow policy. After the migration is complete,
-`@cycle/database` MUST NOT be the authoritative owner of:
-
-- allowed ticket status transitions;
-- final human approval gates;
-- protected issue section rules;
-- relation validation beyond storage shape;
-- comment and record user-visibility rules;
-- commit message policy for domain commands;
-- draft commit workflow policy;
-- repository sync and push orchestration policy;
-- automation and CI evaluation rules.
-
-`@cycle/database` MAY retain low-level validation required to protect storage integrity, including
-safe identifier segments, parseable document shapes, missing repository errors, materialization
-warnings, projection consistency, and redaction safeguards.
-
-### 9.2 Default Issue States
-
-The default workflow MUST preserve these semantic states:
-
-- `backlog`
-- `todo`
-- `ready`
-- `in-progress`
-- `needs-review`
-- `in-review`
-- `done`
-
-Repositories MAY customize display names and add states through workflow configuration, but the
-default semantic states MUST remain available for core workflows and tests.
-
-### 9.3 Status Transition Rules
-
-`IssueTransition` MUST validate transitions through the workflow policy service before any storage
-write occurs.
-
-The default policy MUST enforce:
-
-- transitioning to `done` requires an actor with `type: "human"` unless a future explicit workflow
-  override is configured;
-- transitioning to `ready` requires either accepted planning content or
-  `planningNotRequired: true`;
-- transitioning away from `done` requires a human actor;
-- every successful status transition writes a linked status-change record;
-- no transition may silently drop existing labels, relations, frontmatter extension fields, or body
-  content;
-- rejected transitions return a typed policy failure rather than a storage failure.
-
-The exact default transition graph is implementation-defined, but it MUST be exported as data and
-covered by tests.
-
-### 9.4 Issue Update Rules
-
-`IssueUpdate` MUST validate:
-
-- required frontmatter remains present;
-- unknown frontmatter fields are preserved;
-- protected planning sections are not changed while the issue is in an active implementation state;
-- obvious secret-bearing keys are rejected unless a future secure-secret extension is configured;
-- the update produces a human-readable commit message.
-
-Protected section detection MUST be deterministic. The default protected sections SHOULD be:
-
-- Acceptance Criteria
-- Implementation Plan
-- Risks
-- Test Plan
-
-### 9.5 Draft Rules
-
-Draft usecases MUST preserve the draft boundary:
-
-- `DraftCreate` creates a durable draft without adding it to the committed-ticket read model.
-- `DraftUpdate` updates only the draft document.
-- `DraftCommit` validates the draft, writes the committed ticket and required linked records in one
-  transaction, marks the draft committed, synchronizes the repository projection, and returns only
-  after the ticket is visible through reads.
-
-### 9.6 Relation Rules
-
-Issue relation usecases MUST:
-
-- reject self-relations;
-- reject duplicate identical relations;
-- preserve existing unrelated relations;
-- normalize inverse relation behavior consistently;
-- return the updated issue document only after the projected read model is consistent.
-
-Whether inverse records are physically stored on both issues or derived at read time is
-implementation-defined, but the behavior MUST be documented and tested.
-
-### 9.7 Repository Sync and Push Rules
-
-`RepositorySync` MUST explicitly synchronize Cycle data for a repository without assuming normal
-branch `git pull`.
-
-`RepositoryPush` MUST explicitly push Cycle refs for a repository without assuming normal branch
-`git push`.
-
-Repository push is externally visible. It MUST require an explicit usecase invocation or an explicit
-workflow configuration that enables auto-push after successful writes. If auto-push is enabled, the
-write usecase MUST surface push failures without rolling back the already committed local Cycle
-transaction.
-
-Repositories without remotes MUST remain usable locally. Sync and push usecases MUST return typed
-failures or unavailable statuses rather than blocking local ticket workflows.
-
-## 10. Automation and CI Contract
-
-### 10.1 Scope
-
-`@cycle/usecases` MUST provide automation evaluation usecases that can be called by a CLI or CI
-adapter. The package MUST NOT parse command-line flags, print terminal output, upload artifacts, or
-choose process exit codes.
-
-### 10.2 Evaluation Inputs
-
-Automation evaluation inputs MUST support:
-
-- repository reference;
-- optional ticket query;
-- optional explicit ticket IDs;
-- optional workflow rule selection;
-- optional severity threshold;
-- optional snapshot or active-generation constraint.
-
-### 10.3 Evaluation Behavior
-
-Automation evaluation MUST be read-only unless a future contract explicitly marks an evaluation as
-mutating. It MUST evaluate the active projected repository state and return an
-`AutomationEvaluation` report.
-
-Default evaluations SHOULD include checks for:
-
-- issues in active states with missing required plan sections;
-- issues marked `ready` without accepted planning content or `planningNotRequired`;
-- issues in `done` without a human approval marker;
-- materialization warnings that affect queried issues;
-- stale or failed repository sync status when the caller requires a fresh snapshot.
-
-CI adapters MAY map `fail` reports to non-zero process exit codes, but that mapping belongs outside
-`@cycle/usecases`.
-
-## 11. Runtime Workflows
-
-### 11.1 General Run Algorithm
-
-```text
-run(usecase):
-  resolve contract by canonical name or compatibility alias
-  create request context
-  decode input with contract input schema
-  reject invalid or unknown fields according to contract policy
-  emit usecase.start
-  if usecase is repository-scoped:
-    validate repository reference
-  if usecase mutates state:
-    acquire repository-scoped workflow lock
-  load workflow configuration required by the usecase
-  read current domain state through persistence gateway
-  validate workflow policy
-  if dryRun:
-    return planned result without committing
-  execute storage and sync operations through gateway
-  verify postconditions required by the contract
-  emit usecase.complete
-  return success value decoded by contract success schema
-on typed failure:
-  emit usecase.failure
-  return tagged UseCaseFailure
-on interruption:
-  release locks and resources
-  return or propagate interruption according to Effect semantics
-```
-
-### 11.2 Write Usecase Algorithm
-
-```text
-write_usecase(repository_id, command):
-  acquire repository workflow lock
-  status_before = repository status
-  current = read required documents
-  validate command schema
-  validate workflow policy against current state
-  commit domain mutation through persistence gateway
-  sync repository projection to committed snapshot
-  verify affected documents or records are query-visible
-  if auto-push enabled:
-    push Cycle refs and attach push result or push warning
-  return domain result
-```
-
-Write usecases MUST return success only after the write has committed locally and the required read
-model postconditions are satisfied.
-
-### 11.3 Repository Open Algorithm
-
-`RepositoryOpen` MUST:
-
-1. Validate repository identity and path metadata supplied by the caller or repository registry.
-2. Open or register the repository through the persistence gateway.
-3. Perform initial sync when requested.
-4. Return repository status.
-
-Repository initialization prompts and folder selection belong to adapters or desktop services, not
-to `@cycle/usecases`.
-
-### 11.4 Search and History Workflows
-
-Search, list, history, revision, and diff usecases are read workflows. They MUST:
-
-- validate repository scope;
-- pass query constraints through the persistence gateway;
-- preserve opaque pagination cursors;
-- avoid mutating repository state;
-- return typed not-found or stale-cursor failures where applicable.
-
-## 12. Concurrency, Idempotency, and Cancellation
-
-Repository-scoped write, sync, and push usecases MUST be serialized per repository. The package MAY
-delegate storage serialization to `@cycle/database`, but workflow policy validation and commit must
-still be protected from conflicting concurrent mutations.
-
-Read usecases MAY run concurrently with writes. They MUST observe complete projected snapshots and
-MUST NOT observe partial post-write synchronization.
-
-Write usecases SHOULD support idempotency keys. When a usecase declares idempotency support and a
-caller supplies an idempotency key, duplicate submissions with the same key, actor, repository, and
-input SHOULD return the original result or a deterministic duplicate-submission failure. Persistence
-of idempotency records across process restart is implementation-defined.
-
-Usecases MUST honor Effect interruption. If a usecase is interrupted before committing, it MUST not
-commit a partial domain mutation. If interruption occurs after a local commit but before sync, the
-runner MUST surface or record enough context for a later sync to reconcile the repository.
-
-## 13. Integration Contracts
-
-### 13.1 Persistence Gateway
-
-The persistence gateway MUST expose the storage operations needed by usecase handlers while hiding
-transport and UI concerns. It MAY be implemented with the current `DatabaseService` during
-migration, but the target boundary SHOULD distinguish:
-
-- read-model queries;
-- primitive repository lifecycle operations;
-- primitive durable writes;
-- explicit sync and push operations;
-- post-write consistency checks.
-
-The gateway MUST map `@cycle/database` failures into `UseCaseFailure` values without losing
-repository ID, snapshot ID, object ID, retryability, or operator-action context when available.
-
-### 13.2 Adapter Contract
-
-Adapters MUST:
-
-- decode external requests using usecase contracts;
-- construct canonical usecase values;
-- call `UseCaseRunner.run`;
-- map success and failure values to transport responses;
-- avoid embedding workflow policy.
-
-Adapters MAY expose different route names, method names, or command names. Those names MUST map to
-canonical usecases.
-
-### 13.3 Adapter Compatibility
-
-The former desktop bridge method set has been retired. Adapters that still accept compatibility names
-such as `ticket.issue.create` SHOULD map those names to canonical usecases or REST routes without
-embedding workflow logic.
-
-### 13.4 CLI and CI Compatibility
-
-A CLI package SHOULD call automation and normal domain usecases through the same runner. CLI output
-format, argument parsing, shell exit codes, and CI annotations are adapter responsibilities.
-
-The usecase package MUST provide enough structured data for a CLI/CI adapter to produce:
-
-- JSON reports;
-- human-readable summaries;
-- stable non-zero exit behavior for failed evaluations;
-- links or IDs for affected tickets.
-
-## 14. Failure Model
-
-### 14.1 Failure Categories
-
-`@cycle/usecases` MUST expose tagged failures for:
-
-- invalid input;
-- unknown usecase;
-- unsupported compatibility alias;
-- repository not open;
-- repository unavailable;
-- not found;
-- stale cursor or stale snapshot;
-- policy violation;
-- authorization or approval violation;
-- storage failure;
-- sync failure;
-- push failure;
-- consistency failure after local commit;
-- conflict or concurrent modification;
-- automation evaluation failure;
-- timeout;
-- interruption when represented as a value;
-- unexpected defect redacted for adapter responses.
-
-### 14.2 Failure Shape
-
-Each failure MUST include:
-
-- `_tag`
-- `message`
-- `useCase`
-- `requestId`
-- `retryable`
-- optional `repositoryId`
-- optional `ticketId`
-- optional `field`
-- optional `code`
-- optional redacted `details`
-
-Failures MUST be serializable without losing their tag or code. Failures MUST NOT include full ticket
-bodies, comment bodies, secret values, credentials, raw environment variables, or access tokens.
-
-### 14.3 Error Mapping
-
-Lower-level database failures MUST be mapped as follows:
-
-- validation failures caused by usecase input become `InvalidInputFailure`;
-- workflow or policy failures become `PolicyViolationFailure`;
-- repository missing failures become `RepositoryNotOpenFailure` or `NotFoundFailure`;
-- materialization failures become `SyncFailure` or `StorageFailure`;
-- post-write visibility failures become `ConsistencyFailure`;
-- GitDB remote push failures become `PushFailure`;
-- unknown lower-level failures become `StorageFailure` with redacted cause details.
+Adapters MUST NOT reimplement usecase input validation, success validation, workflow policy, or
+storage failure normalization.
 
 ## 15. Observability
 
-The package MUST emit structured logs for:
+Every `run()` invocation SHOULD emit one parent span named from the usecase definition and source
+metadata. The shared pipeline SHOULD annotate logs and spans with:
 
-- usecase start;
-- usecase success;
-- usecase failure;
-- policy rejection;
-- repository sync and push orchestration;
-- post-write consistency checks;
-- automation evaluation summaries.
+- `service`
+- `useCase`
+- `requestId`
+- `source`
+- `sideEffect`
+- `repositoryId` when the decoded input declares one
+- `actorType` when metadata declares one
+- completion result and duration
 
-Every log event SHOULD include:
-
-- `scope: "usecases"`
-- usecase name;
-- request ID;
-- source;
-- repository ID when applicable;
-- ticket ID or object ID when applicable;
-- actor type;
-- duration in milliseconds on completion;
-- outcome.
-
-The package SHOULD expose metrics or counters for:
-
-- usecase executions by name and outcome;
-- policy violations by code;
-- write durations;
-- sync durations;
-- push durations;
-- automation evaluation pass/warn/fail counts;
-- post-write consistency failures.
+Handlers MAY add child spans only for meaningful domain work, such as policy evaluation, repository
+sync, push, or multi-step automation evaluation. The implementation SHOULD avoid tracing every
+schema decode or trivial helper call as a separate span.
 
 ## 16. Security and Safety
 
-External adapter inputs are untrusted until decoded by usecase contract schemas. Usecase handlers
-MUST NOT trust transport-layer validation alone.
+External adapter input is untrusted until decoded by the concrete usecase's input schema.
 
-The package MUST redact secrets from logs, failures, telemetry, and automation reports. It MUST reject
-obvious secret-bearing payload keys such as `token`, `secret`, `password`, `apiKey`, `privateKey`,
-and close variants unless a future secure-secret extension defines safe handling.
+The package MUST reject undeclared input fields by default unless a schema explicitly declares an
+extension surface. Extension fields MUST be preserved only where the domain contract says producers
+own that data.
 
-`RepositoryPush` is externally visible and MUST be represented as an explicit push side effect in
-contract metadata. Adapters SHOULD surface that side effect to users or automation logs.
+Secret-bearing keys and diagnostics MUST be redacted in serialized failures and logs. The default
+redaction policy MUST cover keys matching common token, secret, password, credential, API key, and
+private key names.
 
-The package MUST NOT execute shell commands directly for agent workflows. Any future command
-execution must be specified in a separate agent/worktree specification.
+`@cycle/usecases` MUST NOT execute shell commands directly. Any future command execution or agent
+workflow belongs to a separately specified package or service.
 
-## 17. Migration Requirements
-
-The migration from direct database calls to usecases SHOULD proceed in these phases:
-
-1. Introduce `packages/usecases` with contracts, runner, failures, and a persistence gateway backed
-   by the current `DatabaseService`.
-2. Expose `@cycle/api` routes that construct and run canonical usecases.
-3. Migrate desktop renderer workflows to call the local REST API.
-4. Move workflow policy out of `@cycle/database` into usecase handlers and policy services.
-5. Slim `@cycle/database` toward storage, projection, primitive writes, and read-model queries.
-6. Add CLI/CI adapters that call the same usecase runner.
-
-During migration, temporary direct calls to `@cycle/database` MUST be documented with an owner and
-removal target. New user-facing workflow code MUST be added to `@cycle/usecases`, not to adapters or
-storage services.
-
-## 18. Reference Algorithms
-
-### 18.1 Issue Transition
-
-```text
-IssueTransition(repository, issue_id, status, reason):
-  ticket = read issue
-  if ticket is missing:
-    fail NotFound
-  workflow = load workflow policy
-  actor = current actor
-  decision = workflow.canTransition(ticket.status, status, actor, ticket)
-  if decision is rejected:
-    fail PolicyViolation(decision.code, decision.message)
-  updated = apply frontmatter status and updatedAt
-  record = status-change linked record
-  commit updated issue and record with standard message
-  sync repository projection
-  verify issue status is visible
-  return updated issue
-```
-
-### 18.2 Automation Evaluate Query
-
-```text
-AutomationEvaluateQuery(repository, query, rules):
-  status = read repository status
-  page through matching issues
-  warnings = materialization warnings for repository
-  for each issue:
-    evaluate selected rules against issue and warnings
-  summarize violations by severity
-  if fatal or error violations meet threshold:
-    report status fail
-  else if warnings exist:
-    report status warn
-  else:
-    report status pass
-  return report
-```
-
-### 18.3 Alias Dispatch
-
-```text
-handle_alias(method, payload):
-  alias = aliasRegistry[method]
-  if alias is missing:
-    return unknown method failure
-  usecase = alias.construct(payload)
-  result = UseCaseRunner.run(usecase)
-  return map result to transport response
-```
-
-## 19. Test and Validation Matrix
+## 17. Test and Validation Matrix
 
 Conformance tests MUST cover:
 
-1. Every contract decodes valid input and rejects invalid input with `InvalidInputFailure`.
-2. Every contract success value conforms to its success schema.
-3. Unknown usecase names and unsupported aliases return typed failures.
-4. Adapters can map compatibility names to canonical usecase names without custom workflow logic.
-5. `IssueCreate` writes through the persistence gateway, syncs, and returns a visible ticket.
-6. `IssueUpdate` preserves unknown frontmatter fields.
-7. `IssueUpdate` rejects protected-section changes during active implementation state.
-8. `IssueTransition` writes a status-change record.
-9. `IssueTransition` rejects `done` when the actor is not human.
-10. `DraftCommit` commits a draft and returns only after the issue is query-visible.
-11. Relation usecases reject self-relations and duplicates.
-12. Repository open, sync, push, status, warning, and history usecases map gateway failures to typed
-    failures.
-13. Search and history usecases preserve pagination behavior from the read model.
-14. User, label, saved view, template, and initiative usecases route through canonical contracts.
-15. Automation evaluations return deterministic pass, warn, and fail reports for fixed snapshots.
-16. Usecase logs include name, request ID, source, outcome, and repository ID where applicable.
-17. Failures and logs redact full bodies and secret-bearing fields.
-18. Repository-scoped write usecases are serialized under concurrent execution.
-19. Effect interruption before commit does not create partial domain writes.
-20. Post-commit sync failure returns `ConsistencyFailure` with committed snapshot context.
+- `defineUseCase()` input decoding, metadata decoding, handler execution, success decoding, timeout,
+  failure mapping, and span/log annotations.
+- Schema-level validation for canonical ticket type IDs and non-empty meaningful text commands such
+  as comment creation.
+- Representative read usecase with provided database layer.
+- Representative write usecase with provided database and policy layers.
+- Policy failure returning a policy violation failure.
+- Storage failure returning a storage failure.
+- Success schema violation returning an unexpected defect failure.
+- Failure serialization and redaction.
+- Adapter compile or integration checks proving adapters import concrete usecases rather than
+  `UseCaseRunner.run`.
 
-## 20. Implementation Checklist
+Tests SHOULD prefer deterministic Effect layers over real remotes, real network services, or
+Electron runtime setup.
 
-An implementation is complete when:
+## 18. Migration Checklist
 
-1. `packages/usecases` builds as an Effect package in the Cycle workspace.
-2. The package exports usecase constructors, contract registry, runner service, failures, live layer,
-   and test layer.
-3. Canonical contracts cover all Cycle issue workflows plus automation evaluation usecases.
-4. `@cycle/api` delegates workflow handling to `@cycle/usecases`.
-5. API, CLI, MCP, and CI entrypoints can call the same runner without importing `@cycle/database`
-   workflow methods.
-6. Workflow policy tests live with `@cycle/usecases`.
-7. `@cycle/database` is documented as storage/projection/read-model infrastructure rather than the
-   controller layer.
-8. The migration removes or documents every direct adapter-to-database workflow call.
-9. The validation matrix passes in deterministic tests.
+Implementers SHOULD migrate in this order:
+
+1. Add schema-backed metadata and failure classes.
+2. Add `defineUseCase()` and contract tests for its generated pipeline.
+3. Convert one read usecase and one write usecase to named runnable definitions.
+4. Move schema-equivalent validation out of the runner and into schemas.
+5. Move state-dependent validation into workflow policy services.
+6. Convert the remaining usecases to named runnable definitions.
+7. Update API, CLI, MCP, desktop, CI, and tests to import concrete usecases.
+8. Delete legacy aliases and dynamic runner exports from `@cycle/usecases`.
+9. Remove central switch dispatch, object-crawling helpers, repeated normalization helpers, and
+   per-usecase runner plumbing.
+
+The migration is complete only when `@cycle/usecases` has no public dynamic runner API and no
+package-owned alias registry.

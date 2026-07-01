@@ -1,6 +1,7 @@
 import { mcpBearerTokenEnvVar } from "@cycle/agents";
 import { makeAgentOrchestrationService } from "@cycle/agents/orchestration";
 import { makeDefaultAgentServiceRegistry } from "@cycle/agents/service";
+import { UseCaseServicesLive } from "@cycle/usecases";
 import { NodeServices } from "@effect/platform-node";
 import { Layer } from "effect";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http";
@@ -84,6 +85,7 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
   const mcpPath = hostedMcpPath(options.mcp);
   const mcpUrl =
     baseUrl === undefined || mcpPath === undefined ? undefined : joinBaseUrlPath(baseUrl, mcpPath);
+  const useCaseLayer = Layer.mergeAll(UseCaseServicesLive, options.useCaseLayer ?? Layer.empty);
   const agentServiceEnv = agentServiceEnvFromMcp(options.mcp, options.staticToken);
   const activeAgentTurns = makeAgentActiveTurnDirectory();
   const agentServices =
@@ -124,12 +126,15 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
     ...(mcpPath === undefined ? {} : { mcpPath }),
     ...(mcpUrl === undefined ? {} : { mcpUrl }),
     now: options.now ?? (() => new Date()),
+    ...(options.onUseCaseSuccess === undefined
+      ? {}
+      : { onUseCaseSuccess: options.onUseCaseSuccess }),
     ...(options.repositoryOpenInput === undefined
       ? {}
       : { repositoryOpenInput: options.repositoryOpenInput }),
-    runner: options.runner,
     startedAt: (options.startedAt ?? new Date()).toISOString(),
     staticToken: options.staticToken,
+    useCaseLayer,
     ...(options.worktreeService === undefined ? {} : { worktreeService: options.worktreeService }),
     ...(options.worktreeStoragePath === undefined
       ? {}

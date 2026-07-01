@@ -1,5 +1,7 @@
 import {
   ContractSchemas,
+} from "@cycle/contracts";
+import {
   IssueArchive,
   IssueCreate,
   IssueDiff,
@@ -15,7 +17,7 @@ import {
   IssueUpdate,
   RecordAdd,
   RecordListForIssue,
-} from "@cycle/contracts";
+} from "@cycle/usecases";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {
@@ -35,6 +37,7 @@ import {
   runUseCase,
   scoped,
   stringField,
+  useCaseInvocation,
   urlFromRequest,
 } from "../shared.ts";
 import {
@@ -59,7 +62,9 @@ export const withIssueHandlers = (handlers: any) =>
         if (HttpServerResponse.isHttpServerResponse(query)) return query;
         const useCase = (() => {
           if (typeof query.text !== "string" || query.text.length === 0) {
-            return Effect.succeed(IssueList(scoped(params.repositoryId, query), meta(requestId)));
+            return Effect.succeed(
+              useCaseInvocation(IssueList, scoped(params.repositoryId, query), meta(requestId)),
+            );
           }
 
           return decodeHttpValue(
@@ -76,13 +81,21 @@ export const withIssueHandlers = (handlers: any) =>
             Effect.map((input) =>
               HttpServerResponse.isHttpServerResponse(input)
                 ? input
-                : IssueSearch(scoped(params.repositoryId, input), meta(requestId)),
+                : useCaseInvocation(
+                    IssueSearch,
+                    scoped(params.repositoryId, input),
+                    meta(requestId),
+                  ),
             ),
           );
         })();
         const resolvedUseCase = yield* useCase;
         if (HttpServerResponse.isHttpServerResponse(resolvedUseCase)) return resolvedUseCase;
-        const pageValue = yield* runUseCase(resolvedUseCase);
+        const pageValue = yield* runUseCase(
+          resolvedUseCase.definition,
+          resolvedUseCase.input as never,
+          resolvedUseCase.meta,
+        );
         if (HttpServerResponse.isHttpServerResponse(pageValue)) return pageValue;
         const result = asPage(pageValue);
 
@@ -104,7 +117,9 @@ export const withIssueHandlers = (handlers: any) =>
         });
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          IssueCreate(scoped(params.repositoryId, input), meta(requestId)),
+          IssueCreate,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
         yield* emitTicketEvent({
@@ -122,7 +137,9 @@ export const withIssueHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const result = yield* runUseCase(
-          IssueGet(scoped(params.repositoryId, { id: params.issueId }), meta(requestId)),
+          IssueGet,
+          scoped(params.repositoryId, { id: params.issueId }),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -145,7 +162,9 @@ export const withIssueHandlers = (handlers: any) =>
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          IssueUpdate(scoped(params.repositoryId, input), meta(requestId)),
+          IssueUpdate,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
         yield* emitTicketEvent({
@@ -186,7 +205,9 @@ export const withIssueHandlers = (handlers: any) =>
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          IssueTransition(scoped(params.repositoryId, input), meta(requestId)),
+          IssueTransition,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
         yield* emitTicketEvent({
@@ -224,7 +245,9 @@ export const withIssueHandlers = (handlers: any) =>
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          IssueArchive(scoped(params.repositoryId, input), meta(requestId)),
+          IssueArchive,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -245,7 +268,9 @@ export const withIssueHandlers = (handlers: any) =>
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          IssueRestore(scoped(params.repositoryId, input), meta(requestId)),
+          IssueRestore,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -267,7 +292,9 @@ export const withIssueHandlers = (handlers: any) =>
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const pageValue = yield* runUseCase(
-          IssueHistoryList(scoped(params.repositoryId, input), meta(requestId)),
+          IssueHistoryList,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(pageValue)) return pageValue;
         const result = asPage(pageValue);
@@ -295,7 +322,9 @@ export const withIssueHandlers = (handlers: any) =>
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          IssueRevisionGet(scoped(params.repositoryId, input), meta(requestId)),
+          IssueRevisionGet,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -326,7 +355,9 @@ export const withIssueHandlers = (handlers: any) =>
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          IssueDiff(scoped(params.repositoryId, input), meta(requestId)),
+          IssueDiff,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -347,7 +378,9 @@ export const withIssueHandlers = (handlers: any) =>
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          IssueRelationAdd(scoped(params.repositoryId, input), meta(requestId)),
+          IssueRelationAdd,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -368,7 +401,9 @@ export const withIssueHandlers = (handlers: any) =>
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          IssueRelationRemove(scoped(params.repositoryId, input), meta(requestId)),
+          IssueRelationRemove,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -390,7 +425,9 @@ export const withIssueHandlers = (handlers: any) =>
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const pageValue = yield* runUseCase(
-          RecordListForIssue(scoped(params.repositoryId, input), meta(requestId)),
+          RecordListForIssue,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(pageValue)) return pageValue;
         const result = asPage(pageValue);
@@ -421,7 +458,9 @@ export const withIssueHandlers = (handlers: any) =>
         );
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(
-          RecordAdd(scoped(params.repositoryId, input), meta(requestId)),
+          RecordAdd,
+          scoped(params.repositoryId, input),
+          meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
         if (input.recordType === "comment") {
