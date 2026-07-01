@@ -75,6 +75,7 @@ import {
   LabelParams,
   LabelPayload,
   LabelQueryParams,
+  InterfaceDensityPayload,
   ProfileResourceEnvelope,
   ProfileUpdatePayload,
   RepositoryCollectionQuery,
@@ -252,6 +253,10 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
       payload: ThemePreferencePayload,
       success: AppConfigResourceEnvelope,
     }),
+    HttpApiEndpoint.patch("setInterfaceDensity", "/v1/appearance/density", {
+      payload: InterfaceDensityPayload,
+      success: AppConfigResourceEnvelope,
+    }),
     HttpApiEndpoint.patch(
       "updateRepositoryPreferences",
       "/v1/repositories/:repositoryId/preferences",
@@ -261,6 +266,10 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
         success: RepositoryRecordNullableResourceEnvelope,
       },
     ),
+    HttpApiEndpoint.make("DELETE")("removeRepository", "/v1/repositories/:repositoryId", {
+      params: RepositoryParams,
+      success: AppConfigResourceEnvelope,
+    }),
   )
   .add(
     HttpApiEndpoint.get("listInbox", "/v1/inbox", {

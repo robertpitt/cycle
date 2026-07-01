@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -9,7 +9,7 @@ import {
   mergeGlobalAgentWorkSettings,
   mergeRepositoryAgentWorkSettings,
   type AgentWorkJob,
-} from "../src/agent-work/index.ts";
+} from "@cycle/usecases/agent-work";
 
 const makeRuntime = (now?: () => Date) => {
   const store = makeInMemoryAgentWorkStore();
@@ -200,6 +200,7 @@ describe("agent work runtime", () => {
     const global = mergeGlobalAgentWorkSettings(undefined);
     const repository = mergeRepositoryAgentWorkSettings("repo-1", undefined);
     const invalid = mergeGlobalAgentWorkSettings({ maxConcurrentJobs: 0 });
+    const unlimited = mergeGlobalAgentWorkSettings({ maxConcurrentJobs: null });
 
     expect(global).toMatchObject({
       ok: true,
@@ -222,6 +223,12 @@ describe("agent work runtime", () => {
       },
     });
     expect(invalid.ok).toBe(false);
+    expect(unlimited).toMatchObject({
+      ok: true,
+      value: {
+        maxConcurrentJobs: null,
+      },
+    });
   });
 
   it("keeps effect unstable workflow imports behind the agent-work boundary", () => {
@@ -233,6 +240,25 @@ describe("agent work runtime", () => {
 
     expect(outsideBoundary).toEqual([]);
   });
+
+  it("keeps the legacy api-owned Agent Work runtime deleted", () => {
+    const root = fileURLToPath(new URL("../../..", import.meta.url));
+    expect(existsSync(join(root, "packages/api/src/agentWork/runtime.ts"))).toBe(false);
+
+    const offenders = listTypescriptFiles(join(root, "packages"))
+      .filter((file) => !file.includes("/test/"))
+      .filter((file) => {
+        const source = readFileSync(file, "utf8");
+        return (
+          source.includes("agentWork/runtime") ||
+          source.includes("../agentWork") ||
+          source.includes("AgentWorkRuntimeV11") ||
+          source.includes("makeHttpInMemoryAgentWorkRuntime")
+        );
+      });
+
+    expect(offenders).toEqual([]);
+  });
 });
 
 const listTypescriptFiles = (root: string): readonly string[] => {
@@ -243,6 +269,7 @@ const listTypescriptFiles = (root: string): readonly string[] => {
     const path = join(root, entry);
     const stats = statSync(path);
     if (stats.isDirectory()) {
+      if (["node_modules", "out", "storybook-static"].includes(entry)) continue;
       files.push(...listTypescriptFiles(path));
     } else if (path.endsWith(".ts")) {
       files.push(path);

@@ -124,11 +124,12 @@ describe("renderer cycle API client", () => {
       defaultMentionAuthorityMode: "implementation-worktree",
       defaultProviderId: "codex",
       enabledProviders: ["codex"],
-      maxConcurrentJobs: 1,
+      maxConcurrentJobs: null,
       paused: false,
     });
 
     assert.equal(settings.defaultMentionAuthorityMode, "ticket-context");
+    assert.equal(settings.maxConcurrentJobs, null);
   });
 
   it("sends empty JSON payloads for agent job control posts", async () => {

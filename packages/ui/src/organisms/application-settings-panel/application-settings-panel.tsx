@@ -12,22 +12,16 @@ export type ApplicationSettingsProfile = {
   readonly email: string;
 };
 
-export type ApplicationSettingsSection =
-  | "appearance"
-  | "configuration"
-  | "connectors"
-  | "general"
-  | "keyboard-shortcuts"
-  | "mcp-servers"
-  | "personalisation"
-  | "profile"
-  | "skills";
+export type ApplicationSettingsSection = "general" | "profile";
 
 export type ApplicationSettingsPanelProps = {
   readonly cacheCleared?: boolean;
   readonly cacheError?: React.ReactNode;
   readonly cacheLoading?: boolean;
+  readonly densityItems: readonly SelectItem[];
+  readonly densityPreference: string;
   readonly onCacheClear: () => void;
+  readonly onDensityPreferenceChange: (value: string) => void;
   readonly onProfileSave: (profile: ApplicationSettingsProfile) => void;
   readonly onThemePreferenceChange: (value: string) => void;
   readonly profile: ApplicationSettingsProfile;
@@ -43,22 +37,14 @@ const isValidEmail = (email: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.t
 const isValidProfile = (displayName: string, email: string): boolean =>
   displayName.trim().length > 1 && isValidEmail(email);
 
-const PlaceholderSection = ({ description }: { readonly description: string }) => (
-  <section className="rounded-lg border border-border bg-surface p-5 shadow-card">
-    <Text as="h2" variant="sectionTitle">
-      No options yet
-    </Text>
-    <Text as="p" className="mt-1" tone="muted" variant="bodyCompact">
-      {description}
-    </Text>
-  </section>
-);
-
 export const ApplicationSettingsPanel = ({
   cacheCleared = false,
   cacheError,
   cacheLoading = false,
+  densityItems,
+  densityPreference,
   onCacheClear,
+  onDensityPreferenceChange,
   onProfileSave,
   onThemePreferenceChange,
   profile,
@@ -86,41 +72,13 @@ export const ApplicationSettingsPanel = ({
   };
 
   const sectionCopy = {
-    appearance: {
-      description: "Choose how Cycle follows native light, dark, or system appearance.",
-      title: "Appearance",
-    },
-    configuration: {
-      description: "Application-level configuration for the local desktop workspace.",
-      title: "Configuration",
-    },
-    connectors: {
-      description: "External connector settings for linked services.",
-      title: "Connectors",
-    },
     general: {
       description: "Baseline application behavior and local maintenance.",
       title: "General",
     },
-    "keyboard-shortcuts": {
-      description: "Keyboard command preferences for faster navigation.",
-      title: "Keyboard Shortcuts",
-    },
-    "mcp-servers": {
-      description: "MCP server configuration for local and remote tool providers.",
-      title: "MCP Servers",
-    },
-    personalisation: {
-      description: "Personal defaults for how Cycle adapts to your workflow.",
-      title: "Personalisation",
-    },
     profile: {
       description: "Your identity for Cycle records and repository activity.",
       title: "Profile",
-    },
-    skills: {
-      description: "Skill settings for extending Cycle with focused workflows.",
-      title: "Skills",
     },
   } satisfies Record<
     ApplicationSettingsSection,
@@ -132,34 +90,73 @@ export const ApplicationSettingsPanel = ({
     switch (section) {
       case "general":
         return (
-          <section className="rounded-lg border border-border bg-surface px-5 shadow-card">
-            <h2 className="sr-only">General</h2>
-            <SettingRow
-              control={
-                <Button
-                  leftIcon={
-                    cacheCleared ? (
-                      <Check aria-hidden className="size-4" />
-                    ) : (
-                      <RotateCcw aria-hidden className="size-4" />
-                    )
-                  }
-                  loading={cacheLoading}
-                  loadingLabel="Clearing cache"
-                  onClick={onCacheClear}
-                  size="sm"
-                  variant="outline"
-                >
-                  {cacheCleared ? "Cleared" : "Clear"}
-                </Button>
-              }
-              description="Clears Electron renderer cache without touching repositories or local data."
-              title="Cache"
-            />
-            {cacheError ? (
-              <FieldDescription className="pb-4 text-destructive">{cacheError}</FieldDescription>
-            ) : null}
-          </section>
+          <>
+            <section className="rounded-lg border border-border bg-surface px-5 shadow-card">
+              <Text as="h2" className="px-0 pt-5" variant="sectionTitle">
+                General
+              </Text>
+              <SettingRow
+                control={
+                  <Button
+                    leftIcon={
+                      cacheCleared ? (
+                        <Check aria-hidden className="size-4" />
+                      ) : (
+                        <RotateCcw aria-hidden className="size-4" />
+                      )
+                    }
+                    loading={cacheLoading}
+                    loadingLabel="Clearing cache"
+                    onClick={onCacheClear}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {cacheCleared ? "Cleared" : "Clear"}
+                  </Button>
+                }
+                description="Clears Electron renderer cache without touching repositories or local data."
+                title="Clear renderer cache"
+              />
+              {cacheError ? (
+                <FieldDescription className="pb-4 text-destructive">{cacheError}</FieldDescription>
+              ) : null}
+            </section>
+            <section className="rounded-lg border border-border bg-surface px-5 shadow-card">
+              <Text as="h2" className="px-0 pt-5" variant="sectionTitle">
+                Appearance
+              </Text>
+              <SettingRow
+                control={
+                  <Select
+                    aria-label="Interface theme"
+                    className="w-40"
+                    items={themeItems}
+                    onValueChange={(value) => {
+                      if (value !== null) onThemePreferenceChange(value);
+                    }}
+                    value={themePreference}
+                  />
+                }
+                description="Uses Electron native light, dark, or system appearance."
+                title="Interface theme"
+              />
+              <SettingRow
+                control={
+                  <Select
+                    aria-label="Interface density"
+                    className="w-40"
+                    items={densityItems}
+                    onValueChange={(value) => {
+                      if (value !== null) onDensityPreferenceChange(value);
+                    }}
+                    value={densityPreference}
+                  />
+                }
+                description="Compact is optimized for developer workflows with denser lists."
+                title="Density"
+              />
+            </section>
+          </>
         );
       case "profile":
         return (
@@ -215,39 +212,6 @@ export const ApplicationSettingsPanel = ({
             ) : null}
           </form>
         );
-      case "appearance":
-        return (
-          <section className="rounded-lg border border-border bg-surface px-5 shadow-card">
-            <h2 className="sr-only">Appearance</h2>
-            <SettingRow
-              control={
-                <Select
-                  aria-label="Interface theme"
-                  className="w-40"
-                  items={themeItems}
-                  onValueChange={(value) => {
-                    if (value !== null) onThemePreferenceChange(value);
-                  }}
-                  value={themePreference}
-                />
-              }
-              description="Uses Electron native light, dark, or system appearance."
-              title="Interface theme"
-            />
-          </section>
-        );
-      case "configuration":
-        return <PlaceholderSection description="No configuration options are available yet." />;
-      case "personalisation":
-        return <PlaceholderSection description="No personalisation options are available yet." />;
-      case "keyboard-shortcuts":
-        return <PlaceholderSection description="No keyboard shortcut options are available yet." />;
-      case "connectors":
-        return <PlaceholderSection description="No connector options are available yet." />;
-      case "mcp-servers":
-        return <PlaceholderSection description="No MCP server options are available yet." />;
-      case "skills":
-        return <PlaceholderSection description="No skill options are available yet." />;
     }
   };
 

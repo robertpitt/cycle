@@ -88,10 +88,19 @@ const makeLayer = (config: AppConfigState) =>
         getThemePreference: () => Effect.succeed(config.theme.preference),
         read: () => Effect.succeed(config),
         replace: (next) => Effect.succeed(next),
+        setInterfaceDensity: (density) =>
+          Effect.succeed({
+            ...config,
+            theme: {
+              ...config.theme,
+              density,
+            },
+          }),
         setThemePreference: (preference) =>
           Effect.succeed({
             ...config,
             theme: {
+              ...config.theme,
               preference,
             },
           }),
@@ -134,10 +143,20 @@ const makeLayer = (config: AppConfigState) =>
         clearCache: () => Effect.void,
         completeOnboarding: () => Effect.succeed(config),
         read: () => Effect.succeed(config),
+        removeRepository: () => Effect.succeed(config),
+        setInterfaceDensity: (density) =>
+          Effect.succeed({
+            ...config,
+            theme: {
+              ...config.theme,
+              density,
+            },
+          }),
         setThemePreference: (preference) =>
           Effect.succeed({
             ...config,
             theme: {
+              ...config.theme,
               preference,
             },
           }),
@@ -202,10 +221,7 @@ const makeLayer = (config: AppConfigState) =>
         retainWorktree: () => Effect.die("not implemented"),
       }),
     ),
-    Layer.succeed(
-      DatabaseService,
-      DatabaseService.of(databaseStub({})),
-    ),
+    Layer.succeed(DatabaseService, DatabaseService.of(databaseStub({}))),
   );
 
 describe("desktop API startup", () => {

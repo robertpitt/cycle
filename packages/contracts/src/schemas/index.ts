@@ -1,3 +1,4 @@
+export * from "./AgentWork.ts";
 export * from "./Agents.ts";
 export * from "./RepositoryRef.ts";
 export * from "./TicketTypes.ts";

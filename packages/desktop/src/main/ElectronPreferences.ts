@@ -10,6 +10,7 @@ import {
   AppConfig,
   type AppConfigError,
   type AppConfigState,
+  type InterfaceDensity,
   type ProfileConfig,
   type RepositoryRecord,
   type ThemePreference,
@@ -27,6 +28,10 @@ export type ElectronPreferencesService = {
     input: CompleteOnboardingInput,
   ) => Effect.Effect<AppConfigState, AppConfigError | ElectronError>;
   readonly read: () => Effect.Effect<AppConfigState, AppConfigError>;
+  readonly removeRepository: (id: string) => Effect.Effect<AppConfigState, AppConfigError>;
+  readonly setInterfaceDensity: (
+    density: InterfaceDensity,
+  ) => Effect.Effect<AppConfigState, AppConfigError>;
   readonly setThemePreference: (
     preference: ThemePreference,
   ) => Effect.Effect<AppConfigState, AppConfigError | ElectronError>;
@@ -81,6 +86,9 @@ export class ElectronPreferences extends Context.Service<
             .completeOnboarding(input)
             .pipe(Effect.tap(() => electronTheme.setSource(input.themePreference))),
         read: () => appConfig.read(),
+        removeRepository: (id) =>
+          localWorkspace.removeRepository(id).pipe(Effect.flatMap(() => appConfig.read())),
+        setInterfaceDensity: (density) => appConfig.setInterfaceDensity(density),
         setThemePreference: (preference) =>
           appConfig
             .setThemePreference(preference)

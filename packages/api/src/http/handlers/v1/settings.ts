@@ -4,6 +4,7 @@ import { CycleApiRuntime, type LocalSettingsProviderShape } from "../../runtime/
 import {
   AppConfigOutput,
   CompleteOnboardingPayload,
+  InterfaceDensityPayload,
   ProfileOutput,
   ProfileUpdatePayload,
   RepositoryPreferencesPayload,
@@ -77,6 +78,23 @@ export const withSettingsHandlers = (handlers: any) =>
         );
       }),
     )
+    .handle("setInterfaceDensity", ({ payload, request }: any) =>
+      Effect.gen(function* () {
+        const requestId = yield* requestIdFromHeaders(request.headers);
+        const input = yield* decodeHttpValue(InterfaceDensityPayload, payload, requestId, {
+          code: "INVALID_LOCAL_SETTINGS_INPUT",
+          message: "Invalid interface density payload.",
+        });
+        if (HttpServerResponse.isHttpServerResponse(input)) return input;
+
+        return yield* runLocalSettings(
+          requestId,
+          "setInterfaceDensity",
+          AppConfigOutput,
+          (settings) => settings.setInterfaceDensity?.(input.density),
+        );
+      }),
+    )
     .handle("updateRepositoryPreferences", ({ params, payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
@@ -101,6 +119,15 @@ export const withSettingsHandlers = (handlers: any) =>
           "updateRepositoryPreferences",
           RepositoryRecordNullableOutput,
           (settings) => settings.updateRepositoryPreferences?.(input),
+        );
+      }),
+    )
+    .handle("removeRepository", ({ params, request }: any) =>
+      Effect.gen(function* () {
+        const requestId = yield* requestIdFromHeaders(request.headers);
+
+        return yield* runLocalSettings(requestId, "removeRepository", AppConfigOutput, (settings) =>
+          settings.removeRepository?.(params.repositoryId),
         );
       }),
     );

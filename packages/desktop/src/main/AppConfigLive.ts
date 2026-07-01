@@ -18,11 +18,13 @@ import {
   parseAppConfig,
   type ApiConfig as ApiConfigType,
   type AgentProvidersConfig as AgentProvidersConfigType,
+  type InterfaceDensity,
   type LocalWorkspaceConfig as LocalWorkspaceConfigType,
   type OnboardingConfig as OnboardingConfigType,
   type ProfileConfig as ProfileConfigType,
   type RepositoryRecord as RepositoryRecordType,
   type ThemeConfig as ThemeConfigType,
+  type ThemePreference,
 } from "../shared/AppConfig.ts";
 import { cycleAppConfigFileName, cycleAppConfigPath } from "./CycleDirectory.ts";
 
@@ -279,6 +281,19 @@ const salvageLocalWorkspace = (
     ),
   );
 
+const salvageTheme = (value: unknown, fallback: ThemeConfigType): ThemeConfigType => {
+  if (!isRecord(value)) return fallback;
+
+  const preference: ThemePreference =
+    value.preference === "light" || value.preference === "dark" || value.preference === "system"
+      ? value.preference
+      : fallback.preference;
+  const density: InterfaceDensity =
+    value.density === "compact" || value.density === "spacious" ? value.density : fallback.density;
+
+  return { density, preference };
+};
+
 const salvageAppConfig = (raw: unknown): Effect.Effect<AppConfigState, AppConfigError> =>
   Effect.gen(function* () {
     const defaults = defaultAppConfig();
@@ -297,7 +312,7 @@ const salvageAppConfig = (raw: unknown): Effect.Effect<AppConfigState, AppConfig
       Effect.catch(() => Effect.succeed(defaultApiConfig() as ApiConfigType)),
     );
     const theme = yield* parseSection(ThemeConfig, raw.theme).pipe(
-      Effect.catch(() => Effect.succeed(defaults.theme as ThemeConfigType)),
+      Effect.catch(() => Effect.succeed(salvageTheme(raw.theme, defaults.theme))),
     );
     const localWorkspace = yield* salvageLocalWorkspace(
       raw.localWorkspace,
@@ -424,7 +439,16 @@ export const AppConfigLive = Layer.effect(
         update((current) => ({
           ...current,
           theme: {
+            ...current.theme,
             preference,
+          },
+        })),
+      setInterfaceDensity: (density) =>
+        update((current) => ({
+          ...current,
+          theme: {
+            ...current.theme,
+            density,
           },
         })),
       update,

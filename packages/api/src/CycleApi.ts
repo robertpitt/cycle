@@ -10,7 +10,6 @@ import {
   makeAgentActiveTurnDirectory,
   type AgentActiveTurnDirectoryShape,
 } from "./agents/services/AgentActiveTurnDirectory.ts";
-import { makeHttpInMemoryAgentWorkRuntime } from "./agent-work/httpAdapter.ts";
 import { listLocalAgentProviderProfiles } from "./agents/services/AgentProviderProfiles.ts";
 import { CycleHttpApi, makeOpenApiDocument } from "./api.ts";
 import { CycleAuthorizationLive } from "./http/handlers/Authorization.ts";
@@ -106,17 +105,7 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
     agentProviderProfiles: options.agentProviderProfiles ?? listLocalAgentProviderProfiles,
     agentServices,
     ...(options.agentChatStore === undefined ? {} : { agentChatStore: options.agentChatStore }),
-    agentWork:
-      options.agentWork ??
-      makeHttpInMemoryAgentWorkRuntime(
-        options.worktreeService === undefined
-          ? {}
-          : {
-              executionPolicy: {
-                supportedAuthorityModes: ["ticket-context", "implementation-worktree"],
-              },
-            },
-      ),
+    agentWork: options.agentWork,
     ...(options.agentSessionStore === undefined
       ? {}
       : { agentSessionStore: options.agentSessionStore }),

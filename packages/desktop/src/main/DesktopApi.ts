@@ -1,4 +1,8 @@
-import { AgentWorkRuntimeV11, startCycleApiServer, type RepositoryOpenRequest } from "@cycle/api";
+import { startCycleApiServer, type RepositoryOpenRequest } from "@cycle/api";
+import {
+  makeHttpAgentWorkRuntimeFromStore,
+  makeNodeSqliteAgentWorkStore,
+} from "@cycle/usecases/agent-work";
 import type { RepositoryInput, RepositoryMetadata } from "@cycle/contracts";
 import { DatabaseService, cycleDatabasePath, cycleHomeDirectory } from "@cycle/database";
 import { GitRepository, type GitRepositoryMetadata } from "@cycle/git";
@@ -177,9 +181,8 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
       try: async () => {
         const agentChatStore = makeDesktopAgentChatStore(cycleDatabasePath());
         const agentSessionStore = makeDesktopAgentSessionStore(cycleDatabasePath());
-        const agentWorkStore =
-          AgentWorkRuntimeV11.makeNodeSqliteAgentWorkStore(cycleDatabasePath());
-        const agentWork = AgentWorkRuntimeV11.makeHttpAgentWorkRuntimeFromStore(agentWorkStore, {
+        const agentWorkStore = makeNodeSqliteAgentWorkStore(cycleDatabasePath());
+        const agentWork = makeHttpAgentWorkRuntimeFromStore(agentWorkStore, {
           executionPolicy: {
             supportedAuthorityModes: ["ticket-context", "implementation-worktree"],
           },
@@ -203,6 +206,16 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
                   }),
                 ),
               read: () => runtime.runPromise("api.localSettings.read", preferences.read()),
+              removeRepository: (repositoryId) =>
+                runtime.runPromise(
+                  "api.localSettings.removeRepository",
+                  preferences.removeRepository(repositoryId),
+                ),
+              setInterfaceDensity: (density) =>
+                runtime.runPromise(
+                  "api.localSettings.setInterfaceDensity",
+                  preferences.setInterfaceDensity(density),
+                ),
               setThemePreference: (preference) =>
                 runtime.runPromise(
                   "api.localSettings.setThemePreference",

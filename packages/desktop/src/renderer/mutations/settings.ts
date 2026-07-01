@@ -1,8 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   defaultAppConfig,
+  isInterfaceDensity,
   isThemePreference,
   type AppConfigState,
+  type InterfaceDensity,
   type ProfileConfig,
   type ThemePreference,
 } from "../../shared/AppConfig.ts";
@@ -44,6 +46,23 @@ export const useSetThemePreferenceMutation = (_options: SettingsMutationOptions 
       }
 
       return cycleApiClient.setThemePreference(preference);
+    },
+    onSuccess: (next) => {
+      queryClient.setQueryData(appConfigQueryKey, next);
+    },
+  });
+};
+
+export const useSetInterfaceDensityMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (density: InterfaceDensity): Promise<AppConfigState> => {
+      if (!isInterfaceDensity(density)) {
+        throw new TypeError("density must be compact or spacious.");
+      }
+
+      return cycleApiClient.setInterfaceDensity(density);
     },
     onSuccess: (next) => {
       queryClient.setQueryData(appConfigQueryKey, next);

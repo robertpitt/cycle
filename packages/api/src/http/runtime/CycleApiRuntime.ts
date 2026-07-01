@@ -21,7 +21,7 @@ import type {
   AgentActiveTurnBeginResult,
   AgentActiveTurnDirectoryShape,
 } from "../../agents/services/AgentActiveTurnDirectory.ts";
-import type { AgentWorkRuntimeShape } from "../../agentWork/runtime.ts";
+import type { AgentWorkService } from "@cycle/usecases/agent-work";
 
 export type ApiConfig = {
   readonly enabled: boolean;
@@ -36,6 +36,7 @@ export type LocalSettingsProfileUpdateInput = {
 };
 
 export type LocalSettingsThemePreference = "light" | "dark" | "system";
+export type LocalSettingsInterfaceDensity = "compact" | "spacious";
 export type LocalSettingsRepositoryCommitStyle = "descriptive" | "compact";
 export type LocalSettingsRepositoryPreferences = {
   readonly autoSync?: boolean;
@@ -58,6 +59,8 @@ export type LocalSettingsRepositoryPreferencesInput = {
 export type LocalSettingsProviderShape = {
   readonly completeOnboarding?: (input: LocalSettingsOnboardingInput) => Promise<unknown>;
   readonly read: () => Promise<unknown>;
+  readonly removeRepository?: (repositoryId: string) => Promise<unknown>;
+  readonly setInterfaceDensity?: (density: LocalSettingsInterfaceDensity) => Promise<unknown>;
   readonly setThemePreference?: (preference: LocalSettingsThemePreference) => Promise<unknown>;
   readonly updateProfile?: (input: LocalSettingsProfileUpdateInput) => Promise<unknown>;
   readonly updateRepositoryPreferences?: (
@@ -105,7 +108,7 @@ export type CycleApiOptions = {
   readonly agentServices?: AgentServiceRegistryShape;
   readonly agentOrchestration?: AgentOrchestrationServiceShape;
   readonly agentChatStore?: AgentChatStoreShape;
-  readonly agentWork?: AgentWorkRuntimeShape;
+  readonly agentWork: AgentWorkService;
   readonly agentProviderProfiles?: () => Promise<readonly AgentProviderProfile[]>;
   readonly agentSessionStore?: AgentSessionStore;
   readonly apiVersion?: string;
@@ -132,7 +135,7 @@ export type CycleApiRuntimeShape = {
   readonly agentServices: AgentServiceRegistryShape;
   readonly agentOrchestration: AgentOrchestrationServiceShape;
   readonly agentChatStore?: AgentChatStoreShape;
-  readonly agentWork: AgentWorkRuntimeShape;
+  readonly agentWork: AgentWorkService;
   readonly agentProviderProfiles: () => Promise<readonly AgentProviderProfile[]>;
   readonly agentSessionStore?: AgentSessionStore;
   readonly activeAgentTurns: AgentActiveTurnDirectoryShape;

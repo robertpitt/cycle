@@ -25,6 +25,7 @@ import {
   ProfileConfig as ProfileConfigSchema,
   RepositoryRecord as AppRepositoryRecordSchema,
   type AppConfigState,
+  type InterfaceDensity,
   type ProfileConfig,
   type RepositoryRecord as AppRepositoryRecord,
   type ThemePreference,
@@ -908,8 +909,28 @@ export const cycleApiClient = {
   openRepositoryPath: (input: OpenRepositoryPathInput): Promise<RepositoryStatus> =>
     resource("POST", "/v1/repositories", ContractSchemas.RepositoryStatusOutput, input),
 
+  pushRepository: (repositoryId: string): Promise<RepositoryStatus> =>
+    resource(
+      "POST",
+      `${repositoryPath(repositoryId)}/push`,
+      ContractSchemas.RepositoryStatusOutput,
+    ),
+
+  removeRepository: (repositoryId: string): Promise<AppConfigState> =>
+    resource("DELETE", repositoryPath(repositoryId), AppConfigStateSchema),
+
   setThemePreference: (preference: ThemePreference): Promise<AppConfigState> =>
     resource("PATCH", "/v1/theme", AppConfigStateSchema, { preference }),
+
+  setInterfaceDensity: (density: InterfaceDensity): Promise<AppConfigState> =>
+    resource("PATCH", "/v1/appearance/density", AppConfigStateSchema, { density }),
+
+  syncRepository: (repositoryId: string): Promise<RepositoryStatus> =>
+    resource(
+      "POST",
+      `${repositoryPath(repositoryId)}/sync`,
+      ContractSchemas.RepositoryStatusOutput,
+    ),
 
   updateProfile: (input: ProfileUpdateInput): Promise<ProfileConfig> =>
     resource("PATCH", "/v1/profile", ProfileConfigSchema, input),

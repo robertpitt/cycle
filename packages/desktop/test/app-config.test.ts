@@ -221,10 +221,12 @@ describe("desktop app config", () => {
       Effect.gen(function* () {
         const appConfig = yield* AppConfig;
         yield* appConfig.setThemePreference("light");
+        yield* appConfig.setInterfaceDensity("spacious");
       }),
     );
 
     assert.equal((await readPersistedConfig(userData)).theme.preference, "light");
+    assert.equal((await readPersistedConfig(userData)).theme.density, "spacious");
 
     await writeFile(
       configPath(userData),
@@ -246,6 +248,34 @@ describe("desktop app config", () => {
     );
 
     assert.equal(recovered.theme.preference, "system");
+    assert.equal(recovered.theme.density, "compact");
+  });
+
+  it("migrates theme density to compact when missing", async () => {
+    const userData = await makeTempDir();
+
+    await mkdir(configDirectory(userData), { recursive: true });
+    await writeFile(
+      configPath(userData),
+      JSON.stringify({
+        ...defaultAppConfig(),
+        theme: {
+          preference: "dark",
+        },
+      }),
+      "utf8",
+    );
+
+    const recovered = await runConfig(
+      userData,
+      Effect.gen(function* () {
+        const appConfig = yield* AppConfig;
+        return yield* appConfig.read();
+      }),
+    );
+
+    assert.equal(recovered.theme.preference, "dark");
+    assert.equal(recovered.theme.density, "compact");
   });
 
   it("persists repository add, dedupe, mark opened, and removal", async () => {

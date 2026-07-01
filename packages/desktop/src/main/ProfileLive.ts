@@ -67,6 +67,7 @@ export const ProfileLive = Layer.effect(
             },
             profile,
             theme: {
+              ...current.theme,
               preference: input.themePreference,
             },
           }));

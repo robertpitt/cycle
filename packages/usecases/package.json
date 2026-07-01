@@ -4,13 +4,15 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./agent-work": "./src/agent-work/index.ts"
   },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@cycle/agents": "workspace:*",
     "@cycle/contracts": "workspace:*",
     "@cycle/database": "workspace:*",
     "@cycle/git-db": "workspace:*",

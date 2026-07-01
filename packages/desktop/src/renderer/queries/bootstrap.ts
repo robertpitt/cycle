@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { BootstrapStatus } from "../../shared/Bootstrap.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 
-const bootstrapStatusQueryKey = ["desktop", "bootstrapStatus"] as const;
+export const bootstrapStatusQueryKey = ["desktop", "bootstrapStatus"] as const;
 
 const readyBootstrapStatus = (): BootstrapStatus => ({
   blocking: false,

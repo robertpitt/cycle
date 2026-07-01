@@ -1,31 +1,36 @@
 import type { AgentProviderId } from "@cycle/agents/types";
 import type {
-  AgentActivity,
-  AgentBranchAssociationInput,
-  AgentDelegate,
-  AgentDelegateJob,
-  AgentJob,
-  AgentJobActivityInput,
-  AgentJobCreateInput,
-  AgentJobFailureInput,
-  AgentJobLog,
-  AgentJobLogEntry,
-  AgentSettings,
+  AgentWorkActivity as AgentActivity,
+  AgentWorkBranchAssociationInput as AgentBranchAssociationInput,
+  AgentWorkDelegate as AgentDelegate,
+  AgentWorkDelegateInput as AgentDelegateInput,
+  AgentWorkDelegateJob as AgentDelegateJob,
+  AgentWorkDelegateJobInput as AgentDelegateJobInput,
+  AgentWorkJob as AgentJob,
+  AgentWorkJobActivityInput as AgentJobActivityInput,
+  AgentWorkJobCreateInput as AgentJobCreateInput,
+  AgentWorkJobFailureInput as AgentJobFailureInput,
+  AgentWorkJobListQuery as AgentJobListQuery,
+  AgentWorkJobLog as AgentJobLog,
+  AgentWorkJobLogEntry as AgentJobLogEntry,
+  AgentWorkJobWaitingInput as AgentJobWaitingInput,
+  AgentWorkSettings as AgentSettings,
+  AgentWorkSettingsPatch as AgentSettingsPatch,
   AgentWorktreeInput,
   AgentWorkEventInput,
-  AgentWorkRuntimeShape,
-  RepositoryAgentSettings,
-} from "../agentWork/runtime.ts";
-import { mentionLogicalJobKey, parseStructuredAgentMentions } from "../agentWork/runtime.ts";
+  AgentWorkActivityQuery as AgentActivityQuery,
+  RepositoryAgentWorkSettings as RepositoryAgentSettings,
+  RepositoryAgentWorkSettingsPatch as RepositoryAgentSettingsPatch,
+} from "@cycle/contracts/schemas";
 import {
   logicalJobKeyFor,
   makeAgentWorkRuntime,
   type AgentWorkRuntime,
   type AgentWorkRuntimeOptions,
 } from "./runtime.ts";
-import { makeInMemoryAgentWorkStore, type AgentWorkRuntimeStore } from "./store.ts";
+import type { AgentWorkRuntimeStore } from "./store.ts";
 import type {
-  AgentWorkDelegate,
+  AgentWorkDelegate as LocalAgentWorkDelegate,
   AgentWorkError,
   AgentWorkJob,
   AgentWorkJsonObject,
@@ -34,7 +39,73 @@ import type {
   LocalAgentWorkEventType,
 } from "./types.ts";
 
-export const makeHttpAgentWorkRuntime = (runtime: AgentWorkRuntime): AgentWorkRuntimeShape => ({
+export type AgentWorkService = {
+  readonly getSettings: () => Promise<AgentSettings>;
+  readonly patchSettings: (patch: AgentSettingsPatch) => Promise<AgentSettings>;
+  readonly getRepositorySettings: (repositoryId: string) => Promise<RepositoryAgentSettings>;
+  readonly patchRepositorySettings: (
+    repositoryId: string,
+    patch: RepositoryAgentSettingsPatch,
+  ) => Promise<RepositoryAgentSettings>;
+  readonly getDelegate: (repositoryId: string, ticketId: string) => Promise<AgentDelegate | null>;
+  readonly putDelegate: (
+    repositoryId: string,
+    ticketId: string,
+    input: AgentDelegateInput,
+  ) => Promise<AgentDelegate>;
+  readonly createDelegateJob: (
+    repositoryId: string,
+    ticketId: string,
+    input: AgentDelegateJobInput,
+  ) => Promise<AgentDelegateJob>;
+  readonly deleteDelegate: (repositoryId: string, ticketId: string) => Promise<boolean>;
+  readonly createJob: (input: AgentJobCreateInput) => Promise<AgentJob>;
+  readonly listJobs: (query?: AgentJobListQuery) => Promise<readonly AgentJob[]>;
+  readonly getJob: (jobId: string) => Promise<AgentJob | null>;
+  readonly getJobLog: (jobId: string) => Promise<AgentJobLog | null>;
+  readonly recordJobActivity: (activity: AgentJobActivityInput) => Promise<void>;
+  readonly completeJob: (
+    jobId: string,
+    input?: {
+      readonly message?: string;
+      readonly payload?: AgentWorkJsonObject;
+      readonly actor?: string;
+    },
+  ) => Promise<AgentJob | null>;
+  readonly failJob: (jobId: string, failure: AgentJobFailureInput) => Promise<AgentJob | null>;
+  readonly markJobWaitingForInput: (
+    jobId: string,
+    input: AgentJobWaitingInput,
+  ) => Promise<AgentJob | null>;
+  readonly resumeJob: (jobId: string, requestedBy?: string) => Promise<AgentJob | null>;
+  readonly cancelJob: (
+    jobId: string,
+    reason?: string,
+    requestedBy?: string,
+  ) => Promise<AgentJob | null>;
+  readonly attachWorktree: (worktree: AgentWorktreeInput) => Promise<AgentJob | null>;
+  readonly attachBranchAssociation: (
+    association: AgentBranchAssociationInput,
+  ) => Promise<AgentJob | null>;
+  readonly listActivity: (query?: AgentActivityQuery) => Promise<readonly AgentActivity[]>;
+  readonly emit: (event: AgentWorkEventInput) => Promise<AgentActivity>;
+  readonly evaluateAssignmentPickup: (input: {
+    readonly repositoryId: string;
+    readonly ticketId: string;
+    readonly ticketStatus?: string;
+    readonly requestedBy?: string;
+  }) => Promise<AgentJob | null>;
+  readonly handleSuccessfulComment: (input: {
+    readonly repositoryId: string;
+    readonly ticketId: string;
+    readonly commentId: string;
+    readonly body: string;
+    readonly actor?: unknown;
+    readonly source?: string;
+  }) => Promise<readonly AgentJob[]>;
+};
+
+export const makeHttpAgentWorkRuntime = (runtime: AgentWorkRuntime): AgentWorkService => ({
   attachBranchAssociation: async (input: AgentBranchAssociationInput) => {
     const job = await runtime.attachBranchAssociation({
       branchAssociationId: input.branchAssociationId,
@@ -374,11 +445,11 @@ const upsertDelegate = async (
     readonly notes?: string | null;
     readonly providerId?: string;
   },
-): Promise<AgentWorkDelegate> => {
+): Promise<LocalAgentWorkDelegate> => {
   const current = await runtime.store.getDelegate(repositoryId, ticketId);
   const settings = await runtime.getGlobalSettings();
   const now = new Date().toISOString();
-  const delegate: AgentWorkDelegate = {
+  const delegate: LocalAgentWorkDelegate = {
     agentId: input.agentId,
     assignedBy: input.assignedBy ?? "local-user",
     assignmentVersion: (current?.assignmentVersion ?? 0) + 1,
@@ -398,15 +469,11 @@ const upsertDelegate = async (
 export const makeHttpAgentWorkRuntimeFromStore = (
   store: AgentWorkRuntimeStore,
   options: Omit<AgentWorkRuntimeOptions, "store"> = {},
-): AgentWorkRuntimeShape => {
+): AgentWorkService => {
   const runtime = makeAgentWorkRuntime({ ...options, store });
   void runtime.reconcileStaleJobs();
   return makeHttpAgentWorkRuntime(runtime);
 };
-
-export const makeHttpInMemoryAgentWorkRuntime = (
-  options: Omit<AgentWorkRuntimeOptions, "store"> = {},
-): AgentWorkRuntimeShape => makeHttpAgentWorkRuntimeFromStore(makeInMemoryAgentWorkStore(), options);
 
 const toStartJobInput = (input: AgentJobCreateInput) => ({
   agentId: input.agentId,
@@ -497,7 +564,7 @@ const toHttpJob = (job: AgentWorkJob): AgentJob => ({
   worktreeId: job.worktreeId ?? null,
 });
 
-const toHttpDelegate = (delegate: AgentWorkDelegate): AgentDelegate => ({
+const toHttpDelegate = (delegate: LocalAgentWorkDelegate): AgentDelegate => ({
   agentId: delegate.agentId,
   assignedBy: delegate.assignedBy,
   assignmentVersion: delegate.assignmentVersion,
@@ -518,7 +585,7 @@ const toHttpSettings = (settings: {
   readonly defaultModel?: string;
   readonly defaultProviderId: string;
   readonly enabledProviders: readonly string[];
-  readonly maxConcurrentJobs: number;
+  readonly maxConcurrentJobs: number | null;
   readonly paused: boolean;
   readonly perAgentOverrides: AgentSettings["perAgentOverrides"];
 }): AgentSettings => ({
@@ -535,7 +602,7 @@ const toHttpSettings = (settings: {
 
 const toHttpRepositorySettings = (settings: {
   readonly agentWorkDisabled: boolean;
-  readonly maxConcurrentJobs: number;
+  readonly maxConcurrentJobs: number | null;
   readonly model?: string;
   readonly paused: boolean;
   readonly perAgentOverrides: RepositoryAgentSettings["perAgentOverrides"];
@@ -623,6 +690,23 @@ const actorName = (actor: unknown): string => {
   }
   return "api";
 };
+
+export const parseStructuredAgentMentions = (body: string): readonly string[] => {
+  const ids = new Set<string>();
+  const pattern = /\bcycle-agent:([A-Za-z0-9][A-Za-z0-9._-]{0,127})\b/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(body)) !== null) {
+    ids.add(match[1]!);
+  }
+  return [...ids];
+};
+
+export const mentionLogicalJobKey = (input: {
+  readonly repositoryId: string;
+  readonly ticketId: string;
+  readonly commentId: string;
+  readonly agentId: string;
+}): string => `mention:${input.repositoryId}:${input.ticketId}:${input.commentId}:${input.agentId}`;
 
 const toJsonObject = (value: unknown): AgentWorkJsonObject =>
   value !== null && typeof value === "object" && !Array.isArray(value)

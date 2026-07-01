@@ -12,7 +12,6 @@ import {
 import { SettingRow } from "@cycle/ui/molecules";
 import type { DetectedAgentProvider } from "../../shared/AgentProviders.ts";
 import {
-  agentAuthorityModeItems,
   canonicalTicketTypes,
   defaultAgentSettings,
   type AgentSettings,
@@ -81,7 +80,7 @@ const InlineError = ({ children }: { readonly children: React.ReactNode }) => (
   </p>
 );
 
-const SaveableNumber = ({
+const SaveableConcurrency = ({
   disabled,
   label,
   onSave,
@@ -89,34 +88,54 @@ const SaveableNumber = ({
 }: {
   readonly disabled?: boolean;
   readonly label: string;
-  readonly onSave: (value: number) => void;
-  readonly value: number;
+  readonly onSave: (value: number | null) => void;
+  readonly value: number | null;
 }) => {
-  const [draft, setDraft] = React.useState(String(value));
+  const [draft, setDraft] = React.useState(String(value ?? 1));
 
   React.useEffect(() => {
-    setDraft(String(value));
+    setDraft(String(value ?? 1));
   }, [value]);
 
+  const parsed = numberFromInput(draft, value ?? 1);
+
   return (
-    <div className="flex items-center gap-2">
-      <Input
-        aria-label={label}
-        className="w-20"
+    <div className="flex flex-wrap items-center gap-2">
+      <Select
+        aria-label={`${label} mode`}
+        className="w-32"
         disabled={disabled}
-        min={1}
-        onChange={(event) => setDraft(event.currentTarget.value)}
-        type="number"
-        value={draft}
+        items={[
+          { label: "Limited", value: "limited" },
+          { label: "Unlimited", value: "unlimited" },
+        ]}
+        onValueChange={(mode) => {
+          if (mode === "unlimited") onSave(null);
+          if (mode === "limited" && value === null) onSave(parsed);
+        }}
+        value={value === null ? "unlimited" : "limited"}
       />
-      <Button
-        disabled={disabled || numberFromInput(draft, value) === value}
-        onClick={() => onSave(numberFromInput(draft, value))}
-        size="sm"
-        variant="outline"
-      >
-        Save
-      </Button>
+      {value !== null ? (
+        <>
+          <Input
+            aria-label={label}
+            className="w-20"
+            disabled={disabled}
+            min={1}
+            onChange={(event) => setDraft(event.currentTarget.value)}
+            type="number"
+            value={draft}
+          />
+          <Button
+            disabled={disabled || parsed === value}
+            onClick={() => onSave(parsed)}
+            size="sm"
+            variant="outline"
+          >
+            Save
+          </Button>
+        </>
+      ) : null}
     </div>
   );
 };
@@ -165,6 +184,17 @@ const SaveableText = ({
   );
 };
 
+const capabilitySummary = (provider: DetectedAgentProvider): string => {
+  const supports = provider.capabilities?.supports;
+  if (!supports) return "No capabilities reported";
+
+  const enabled = Object.entries(supports)
+    .filter((entry) => entry[1] === true)
+    .map(([key]) => key);
+
+  return enabled.length === 0 ? "No capabilities reported" : enabled.join(", ");
+};
+
 export const ApplicationAgentSettingsPanel = ({
   providers,
 }: {
@@ -187,24 +217,24 @@ export const ApplicationAgentSettingsPanel = ({
       </header>
 
       <SectionShell
-        description="Pause applies to all repositories on this machine and survives restart."
-        title="Queue"
+        description="Applies to all repositories on this machine."
+        title="Global agent work"
       >
         <div className="rounded-lg border border-border px-5">
           <SettingRow
             control={
               <Switch
-                checked={settings.paused}
+                checked={!settings.paused}
                 disabled={disabled}
-                onCheckedChange={(checked) => patch({ paused: checked === true })}
+                onCheckedChange={(checked) => patch({ paused: checked !== true })}
               />
             }
             description="Prevents new starts; running jobs suspend at a safe checkpoint."
-            title={settings.paused ? "Globally paused" : "Globally running"}
+            title={settings.paused ? "Agent work disabled" : "Agent work enabled"}
           />
           <SettingRow
             control={
-              <SaveableNumber
+              <SaveableConcurrency
                 disabled={disabled}
                 label="Global max concurrent jobs"
                 onSave={(maxConcurrentJobs) => patch({ maxConcurrentJobs })}
@@ -218,8 +248,56 @@ export const ApplicationAgentSettingsPanel = ({
       </SectionShell>
 
       <SectionShell
+        description="Detected local harnesses and runtime enablement."
+        title="Harnesses"
+      >
+        <div className="grid gap-4">
+          {providers.map((provider) => {
+            const checked = settings.enabledProviders.includes(provider.id);
+            const nextProviders = checked
+              ? settings.enabledProviders.filter((id) => id !== provider.id)
+              : [...settings.enabledProviders, provider.id];
+            const disablesLastProvider =
+              checked && settings.enabledProviders.length <= 1 && !settings.paused;
+
+            return (
+              <label
+                className="grid gap-3 rounded-md border border-border p-4 text-sm sm:grid-cols-[minmax(0,1fr)_auto]"
+                key={provider.id}
+              >
+                <span className="min-w-0">
+                  <span className="flex flex-wrap items-center gap-2 font-medium text-foreground">
+                    {provider.name}
+                    <StatusIndicator
+                      label={provider.status}
+                      tone={provider.status === "available" ? "success" : "warning"}
+                    />
+                  </span>
+                  <span className="mt-1 block break-all text-muted-foreground">
+                    {provider.executable}
+                    {provider.executablePath ? ` at ${provider.executablePath}` : ""}
+                  </span>
+                  <span className="mt-1 block text-muted-foreground">
+                    Checked {provider.detectedAt}
+                  </span>
+                  <span className="mt-1 block text-muted-foreground">
+                    {capabilitySummary(provider)}
+                  </span>
+                </span>
+                <Checkbox
+                  checked={checked}
+                  disabled={disabled || provider.status !== "available" || disablesLastProvider}
+                  onCheckedChange={() => patch({ enabledProviders: nextProviders })}
+                />
+              </label>
+            );
+          })}
+        </div>
+      </SectionShell>
+
+      <SectionShell
         description="Provider and model defaults are inherited by repositories unless overridden."
-        title="Provider Defaults"
+        title="Provider defaults"
       >
         <div className="grid gap-4">
           <FieldPair label="Preferred provider">
@@ -241,79 +319,24 @@ export const ApplicationAgentSettingsPanel = ({
               value={settings.defaultModel}
             />
           </FieldPair>
-          <div className="grid gap-2">
-            <p className="text-sm font-medium text-foreground">Enabled providers</p>
-            {providers.map((provider) => {
-              const checked = settings.enabledProviders.includes(provider.id);
-              const nextProviders = checked
-                ? settings.enabledProviders.filter((id) => id !== provider.id)
-                : [...settings.enabledProviders, provider.id];
-              return (
-                <label
-                  className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm"
-                  key={provider.id}
-                >
-                  <span>
-                    {provider.name}
-                    <span className="ml-2 text-muted-foreground">{provider.status}</span>
-                  </span>
-                  <Checkbox
-                    checked={checked}
-                    disabled={disabled || provider.status !== "available"}
-                    onCheckedChange={() => patch({ enabledProviders: nextProviders })}
-                  />
-                </label>
-              );
-            })}
-          </div>
         </div>
       </SectionShell>
 
       <SectionShell
-        description="Mention jobs start read-only by default. Full access is intentionally explicit."
-        title="Authority"
+        description="Provider-specific controls appear here only when a harness reports editable configuration."
+        title="Harness-specific settings"
       >
-        <div className="rounded-lg border border-border px-5">
-          <SettingRow
-            control={
-              <Select
-                className="w-56"
-                disabled={disabled}
-                items={agentAuthorityModeItems}
-                onValueChange={(value) => {
-                  if (value) patch({ defaultMentionAuthorityMode: value as never });
-                }}
-                value={settings.defaultMentionAuthorityMode}
-              />
-            }
-            description="Only ticket-context jobs are executable until the worktree runner is wired."
-            title="Mention authority"
-          />
-          <SettingRow
-            control={
-              <Switch
-                checked={settings.allowDisposableWorktreeForMentions}
-                disabled
-                onCheckedChange={(checked) =>
-                  patch({ allowDisposableWorktreeForMentions: checked === true })
-                }
-              />
-            }
-            description="Reserved for temporary validation worktrees."
-            title="Disposable worktrees"
-          />
-          <SettingRow
-            control={
-              <Switch
-                checked={settings.allowFullAccessJobs}
-                disabled
-                onCheckedChange={(checked) => patch({ allowFullAccessJobs: checked === true })}
-              />
-            }
-            description="Reserved for implementation worktree jobs."
-            title="Full-access jobs"
-          />
-        </div>
+        <dl className="grid gap-3">
+          {providers.map((provider) => (
+            <div className="rounded-md border border-border p-3 text-sm" key={provider.id}>
+              <dt className="font-medium text-foreground">{provider.name}</dt>
+              <dd className="mt-1 text-muted-foreground">
+                Workspace: {provider.capabilities?.workspace ?? "unknown"} - Session:{" "}
+                {provider.capabilities?.sessionPersistence ?? "unknown"}
+              </dd>
+            </div>
+          ))}
+        </dl>
       </SectionShell>
 
       {settingsQuery.error ? (
@@ -391,7 +414,7 @@ export const RepositoryAgentWorkSettingsPanel = ({
         />
         <SettingRow
           control={
-            <SaveableNumber
+            <SaveableConcurrency
               disabled={disabled}
               label="Repository max concurrent jobs"
               onSave={(maxConcurrentJobs) => patch({ maxConcurrentJobs })}

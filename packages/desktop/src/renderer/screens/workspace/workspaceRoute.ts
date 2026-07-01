@@ -11,6 +11,7 @@ export type WorkspaceLocation =
       readonly page: "settings";
       readonly scope: "workspace";
       readonly settingsSection?: string;
+      readonly settingsRepositoryId?: string;
     }
   | {
       readonly issueId?: string;
@@ -41,6 +42,15 @@ const topLevelPages = new Set<WorkspaceTopLevelPage>([
   "views",
 ]);
 
+const settingsSections = new Set([
+  "advanced",
+  "agents",
+  "endpoints",
+  "general",
+  "profile",
+  "repositories",
+]);
+
 const encodeSegment = (value: string): string => encodeURIComponent(value);
 
 const decodeSegment = (value: string): string | undefined => {
@@ -65,6 +75,10 @@ const splitWorkspacePath = (path: string): readonly string[] => {
 export const toWorkspacePath = (location: WorkspaceLocation): string => {
   if (location.scope === "workspace") {
     if (location.page === "settings") {
+      if (location.settingsSection === "repositories" && location.settingsRepositoryId) {
+        return `/settings/repositories/${encodeSegment(location.settingsRepositoryId)}`;
+      }
+
       return location.settingsSection
         ? `/settings/${encodeSegment(location.settingsSection)}`
         : "/settings";
@@ -102,10 +116,21 @@ export const parseWorkspacePath = (path: string): WorkspaceLocation | undefined 
   if (segments.some((segment) => segment.length === 0)) return undefined;
 
   if (segments[0] === "settings" && (segments.length === 1 || segments.length === 2)) {
+    if (segments[1] !== undefined && !settingsSections.has(segments[1])) return undefined;
+
     return {
       page: "settings",
       scope: "workspace",
       ...(segments[1] ? { settingsSection: segments[1] } : {}),
+    };
+  }
+
+  if (segments[0] === "settings" && segments[1] === "repositories" && segments.length === 3) {
+    return {
+      page: "settings",
+      scope: "workspace",
+      settingsRepositoryId: segments[2],
+      settingsSection: "repositories",
     };
   }
 
@@ -161,7 +186,16 @@ export const parseWorkspacePath = (path: string): WorkspaceLocation | undefined 
     }
   }
 
-  if ((page === "history" || page === "settings") && segments.length === 3) {
+  if (page === "settings" && segments.length === 3) {
+    return {
+      page: "settings",
+      scope: "workspace",
+      settingsRepositoryId: repositoryId,
+      settingsSection: "repositories",
+    };
+  }
+
+  if (page === "history" && segments.length === 3) {
     return {
       page,
       repositoryId,
@@ -176,6 +210,10 @@ const isWorkspacePath = (path: string): boolean => parseWorkspacePath(path) !== 
 
 export const parentWorkspacePath = (location: WorkspaceLocation): string | undefined => {
   if (location.scope === "workspace") {
+    if (location.page === "settings" && location.settingsRepositoryId) {
+      return "/settings/repositories";
+    }
+
     return location.page === "inbox" ? undefined : "/inbox";
   }
 

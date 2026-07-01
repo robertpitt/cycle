@@ -20,11 +20,12 @@ import {
 import {
   makeHttpAgentWorkRuntimeFromStore,
   makeInMemoryAgentWorkStore,
-} from "../src/agent-work/index.ts";
+} from "@cycle/usecases/agent-work";
 import { prepareChatTurn } from "../src/http/handlers/v1/chat/prepare.ts";
 
 const repository = { id: "test-repository" };
 const token = "test-token";
+const makeTestAgentWork = () => makeHttpAgentWorkRuntimeFromStore(makeInMemoryAgentWorkStore());
 
 const makeRepositoryStatus = () => ({
   activeGeneration: 1,
@@ -85,7 +86,10 @@ const databaseStub = (overrides: Partial<DatabaseServiceShape>): DatabaseService
     },
   }) as DatabaseServiceShape;
 
-const unexpectedDatabaseLayer = Layer.succeed(DatabaseService, DatabaseService.of(databaseStub({})));
+const unexpectedDatabaseLayer = Layer.succeed(
+  DatabaseService,
+  DatabaseService.of(databaseStub({})),
+);
 
 const issueCreateDatabaseLayer = (calls: Array<string>) =>
   Layer.succeed(
@@ -105,6 +109,7 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
   const calls: Array<string> = [];
   const issues: Array<TicketDocument> = [];
   const comments: Array<unknown> = [];
+  const agentWork = options.agentWork ?? makeTestAgentWork();
   const database = databaseStub({
     addComment: (_repositoryId, issueId, input) =>
       Effect.sync(() => {
@@ -212,8 +217,7 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
             ...current.frontmatter,
             ...patch.frontmatter,
           },
-          type:
-            typeof patch.frontmatter?.type === "string" ? patch.frontmatter.type : current.type,
+          type: typeof patch.frontmatter?.type === "string" ? patch.frontmatter.type : current.type,
         } as TicketDocument;
         issues[index] = updated;
         return updated;
@@ -223,6 +227,7 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
   return {
     api: makeCycleApi({
       ...options,
+      agentWork,
       staticToken: token,
       useCaseLayer: Layer.succeed(DatabaseService, DatabaseService.of(database)),
     }),
@@ -890,11 +895,23 @@ describe("@cycle/api", () => {
         }),
       );
       const patchedBody = (await patched.json()) as {
-        data?: { maxConcurrentJobs?: number; paused?: boolean };
+        data?: { maxConcurrentJobs?: number | null; paused?: boolean };
       };
       assert.equal(patched.status, 200);
       assert.equal(patchedBody.data?.maxConcurrentJobs, 2);
       assert.equal(patchedBody.data?.paused, true);
+
+      const unlimited = await api.fetch(
+        new Request("http://cycle.test/v1/agent-settings", {
+          ...authed({ maxConcurrentJobs: null }),
+          method: "PATCH",
+        }),
+      );
+      const unlimitedBody = (await unlimited.json()) as {
+        data?: { maxConcurrentJobs?: number | null };
+      };
+      assert.equal(unlimited.status, 200);
+      assert.equal(unlimitedBody.data?.maxConcurrentJobs, null);
 
       const repositorySettings = await api.fetch(
         new Request(`http://cycle.test/v1/repositories/${repository.id}/agent-settings`, {
@@ -1676,6 +1693,7 @@ describe("@cycle/api", () => {
   it("normalizes framework schema failures through the listening server", async () => {
     const calls: Array<string> = [];
     const handle = await startCycleApiServer({
+      agentWork: makeTestAgentWork(),
       staticToken: token,
       useCaseLayer: Layer.succeed(
         DatabaseService,
@@ -1777,12 +1795,34 @@ describe("@cycle/api", () => {
       },
       schemaVersion: 3,
       theme: {
+        density: "compact",
         preference: "system",
       },
     };
     const { api } = makeTestApi({
       localSettings: {
         read: async () => appConfig,
+        removeRepository: async (repositoryId) => {
+          appConfig = {
+            ...appConfig,
+            localWorkspace: {
+              repositories: appConfig.localWorkspace.repositories.filter(
+                (repository) => repository.id !== repositoryId,
+              ),
+            },
+          };
+          return appConfig;
+        },
+        setInterfaceDensity: async (density) => {
+          appConfig = {
+            ...appConfig,
+            theme: {
+              ...appConfig.theme,
+              density,
+            },
+          };
+          return appConfig;
+        },
         updateProfile: async (input) => {
           appConfig = {
             ...appConfig,
@@ -1830,11 +1870,41 @@ describe("@cycle/api", () => {
         email: "web@example.com",
       });
 
+      const density = await api.fetch(
+        new Request("http://cycle.test/v1/appearance/density", {
+          ...authed({ density: "spacious" }),
+          method: "PATCH",
+        }),
+      );
+      const densityBody = (await density.json()) as {
+        data?: { theme?: { density?: string } };
+      };
+      assert.equal(density.status, 200);
+      assert.equal(densityBody.data?.theme?.density, "spacious");
+
+      const removed = await api.fetch(
+        new Request("http://cycle.test/v1/repositories/cycle", {
+          ...authed(),
+          method: "DELETE",
+        }),
+      );
+      const removedBody = (await removed.json()) as {
+        data?: { localWorkspace?: { repositories?: readonly unknown[] } };
+      };
+      assert.equal(removed.status, 200);
+      assert.equal(removedBody.data?.localWorkspace?.repositories?.length, 0);
+
       const after = await api.fetch(new Request("http://cycle.test/v1/app-config", authed()));
       const afterBody = (await after.json()) as {
-        data?: { profile?: { email?: string } };
+        data?: {
+          localWorkspace?: { repositories?: readonly unknown[] };
+          profile?: { email?: string };
+          theme?: { density?: string };
+        };
       };
       assert.equal(afterBody.data?.profile?.email, "web@example.com");
+      assert.equal(afterBody.data?.theme?.density, "spacious");
+      assert.equal(afterBody.data?.localWorkspace?.repositories?.length, 0);
     } finally {
       await api.dispose();
     }
@@ -1890,6 +1960,7 @@ describe("@cycle/api", () => {
 
   it("hosts MCP on the same server without applying MCP auth globally", async () => {
     const handle = await startCycleApiServer({
+      agentWork: makeTestAgentWork(),
       mcp: {
         enabled: true,
       },
@@ -2071,6 +2142,7 @@ describe("@cycle/api", () => {
     });
 
     const handle = await startCycleApiServer({
+      agentWork: makeTestAgentWork(),
       agentChatStore,
       agentServices: {
         serviceFor: () => Effect.succeed(fakeAgent),
@@ -2104,6 +2176,7 @@ describe("@cycle/api", () => {
   it("rejects invalid chat WebSocket command payloads at the schema boundary", async () => {
     const agentChatStore = makeInMemoryAgentChatStore();
     const handle = await startCycleApiServer({
+      agentWork: makeTestAgentWork(),
       agentChatStore,
       useCaseLayer: unexpectedDatabaseLayer,
       staticToken: token,
@@ -2326,6 +2399,7 @@ describe("@cycle/api", () => {
       },
     };
     const handle = await startCycleApiServer({
+      agentWork: makeTestAgentWork(),
       agentChatStore,
       agentServices: {
         serviceFor: () => Effect.succeed(fakeAgent),
@@ -2662,6 +2736,7 @@ describe("@cycle/api", () => {
       },
     };
     const handle = await startCycleApiServer({
+      agentWork: makeTestAgentWork(),
       agentChatStore,
       agentServices: {
         serviceFor: () => Effect.succeed(fakeAgent),
@@ -2734,6 +2809,7 @@ describe("@cycle/api", () => {
   it("deletes chat threads over the WebSocket endpoint", async () => {
     const agentChatStore = makeInMemoryAgentChatStore();
     const handle = await startCycleApiServer({
+      agentWork: makeTestAgentWork(),
       agentChatStore,
       staticToken: token,
       useCaseLayer: unexpectedDatabaseLayer,
@@ -2835,6 +2911,7 @@ describe("@cycle/api", () => {
     const calls: Array<string> = [];
     const appLayer = (
       makeCycleApiLayer({
+        agentWork: makeTestAgentWork(),
         staticToken: token,
         useCaseLayer: issueCreateDatabaseLayer(calls),
       }) as Layer.Layer<never, unknown, any>
@@ -2888,6 +2965,7 @@ describe("@cycle/api", () => {
     const calls: Array<string> = [];
     const handle = await Effect.runPromise(
       startCycleApiServerEffect({
+        agentWork: makeTestAgentWork(),
         host: "127.0.0.1",
         logging: {
           console: false,

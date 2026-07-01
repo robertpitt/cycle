@@ -7,3 +7,4 @@ export * from "./issueHistory.ts";
 export * from "./issues.ts";
 export * from "./metadata.ts";
 export * from "./repositories.ts";
+export * from "./settingsDiagnostics.ts";

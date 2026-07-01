@@ -3,7 +3,7 @@ import type { AgentWorkAuthorityMode } from "./types.ts";
 
 export type AgentWorkPerAgentOverride = {
   readonly enabled?: boolean;
-  readonly maxConcurrentJobs?: number;
+  readonly maxConcurrentJobs?: number | null;
   readonly providerId?: AgentProviderId;
   readonly model?: string;
   readonly defaultAuthorityMode?: AgentWorkAuthorityMode;
@@ -11,7 +11,7 @@ export type AgentWorkPerAgentOverride = {
 
 export type GlobalAgentWorkSettings = {
   readonly paused: boolean;
-  readonly maxConcurrentJobs: number;
+  readonly maxConcurrentJobs: number | null;
   readonly defaultProviderId: AgentProviderId;
   readonly defaultModel?: string;
   readonly enabledProviders: readonly AgentProviderId[];
@@ -24,7 +24,7 @@ export type GlobalAgentWorkSettings = {
 export type RepositoryAgentWorkSettings = {
   readonly repositoryId: string;
   readonly paused: boolean;
-  readonly maxConcurrentJobs: number;
+  readonly maxConcurrentJobs: number | null;
   readonly agentWorkDisabled: boolean;
   readonly providerId?: AgentProviderId;
   readonly model?: string;
@@ -115,13 +115,16 @@ export const validateRepositoryAgentWorkSettings = (
 };
 
 const validateSharedSettings = (settings: {
-  readonly maxConcurrentJobs: number;
+  readonly maxConcurrentJobs: number | null;
   readonly perAgentOverrides: Readonly<Record<string, AgentWorkPerAgentOverride>>;
 }): string[] => {
   const errors: string[] = [];
 
-  if (!Number.isInteger(settings.maxConcurrentJobs) || settings.maxConcurrentJobs < 1) {
-    errors.push("maxConcurrentJobs must be a positive integer");
+  if (
+    settings.maxConcurrentJobs !== null &&
+    (!Number.isInteger(settings.maxConcurrentJobs) || settings.maxConcurrentJobs < 1)
+  ) {
+    errors.push("maxConcurrentJobs must be a positive integer or null");
   }
 
   for (const [agentId, override] of Object.entries(settings.perAgentOverrides)) {
@@ -130,9 +133,12 @@ const validateSharedSettings = (settings: {
     }
     if (
       override.maxConcurrentJobs !== undefined &&
+      override.maxConcurrentJobs !== null &&
       (!Number.isInteger(override.maxConcurrentJobs) || override.maxConcurrentJobs < 1)
     ) {
-      errors.push(`perAgentOverrides.${agentId}.maxConcurrentJobs must be a positive integer`);
+      errors.push(
+        `perAgentOverrides.${agentId}.maxConcurrentJobs must be a positive integer or null`,
+      );
     }
     if (
       override.defaultAuthorityMode !== undefined &&

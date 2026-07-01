@@ -4,6 +4,7 @@ import {
   getApiConnectionChannel,
   getBackendLogPathChannel,
   getBootstrapStatusChannel,
+  getSettingsDiagnosticsChannel,
   getThemeStateChannel,
   openExternalChannel,
   selectRepositoryFolderChannel,
@@ -11,6 +12,7 @@ import {
   type ApiConnection,
   type CycleDesktopBridge,
   type SelectRepositoryFolderResult,
+  type SettingsDiagnostics,
 } from "../ipc/Channels.ts";
 import type { ElectronThemeState } from "../platform/ElectronTheme.ts";
 import type { BootstrapStatus } from "../shared/Bootstrap.ts";
@@ -81,6 +83,7 @@ const desktopBridge: CycleDesktopBridge = {
     apiConnectionFrom(await ipcRenderer.invoke(getApiConnectionChannel)),
   getBackendLogPath: async () => invoke<string>(getBackendLogPathChannel),
   getBootstrapStatus: async () => invoke<BootstrapStatus>(getBootstrapStatusChannel),
+  getSettingsDiagnostics: async () => invoke<SettingsDiagnostics>(getSettingsDiagnosticsChannel),
   getThemeState: async () => themeStateFrom(await ipcRenderer.invoke(getThemeStateChannel)),
   onThemeStateChanged: (listener) => {
     if (typeof listener !== "function") {

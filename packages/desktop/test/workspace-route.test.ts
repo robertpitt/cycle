@@ -56,9 +56,29 @@ describe("workspace route helpers", () => {
       toWorkspacePath({
         page: "settings",
         scope: "workspace",
-        settingsSection: "keyboard-shortcuts",
+        settingsSection: "endpoints",
       }),
-    ).toBe("/settings/keyboard-shortcuts");
+    ).toBe("/settings/endpoints");
+    expect(parseWorkspacePath("/settings/repositories/repo%3Aone")).toEqual({
+      page: "settings",
+      scope: "workspace",
+      settingsRepositoryId: "repo:one",
+      settingsSection: "repositories",
+    });
+    expect(
+      toWorkspacePath({
+        page: "settings",
+        scope: "workspace",
+        settingsRepositoryId: "repo:one",
+        settingsSection: "repositories",
+      }),
+    ).toBe("/settings/repositories/repo%3Aone");
+    expect(parseWorkspacePath("/repositories/repo%3Aone/settings")).toEqual({
+      page: "settings",
+      scope: "workspace",
+      settingsRepositoryId: "repo:one",
+      settingsSection: "repositories",
+    });
   });
 
   it("round-trips repository issue paths", () => {
@@ -99,6 +119,7 @@ describe("workspace route helpers", () => {
     expect(parseWorkspacePath("/repositories/repo-a/views/view-1/issues")).toBeUndefined();
     expect(parseWorkspacePath("/repositories/repo-a/issues/ticket/extra")).toBeUndefined();
     expect(parseWorkspacePath("/settings/profile/extra")).toBeUndefined();
+    expect(parseWorkspacePath("/settings/mcp-servers")).toBeUndefined();
     expect(parseWorkspacePath("/unknown")).toBeUndefined();
   });
 
@@ -137,24 +158,26 @@ describe("workspace route helpers", () => {
     ).toBe("/issues");
     expect(
       parentWorkspacePath({
-        page: "views",
+        page: "settings",
         scope: "workspace",
+        settingsRepositoryId: "repo-a",
+        settingsSection: "repositories",
       }),
-    ).toBe("/inbox");
+    ).toBe("/settings/repositories");
   });
 
   it("validates stored last workspace routes", () => {
     expect(readStoredWorkspacePath(storage("/repositories/repo-a/issues/ticket-1"))).toBe(
       "/repositories/repo-a/issues/ticket-1",
     );
-    expect(readStoredWorkspacePath(storage("/settings/mcp-servers"))).toBe("/settings/mcp-servers");
+    expect(readStoredWorkspacePath(storage("/settings/endpoints"))).toBe("/settings/endpoints");
     expect(readStoredWorkspacePath(storage("/not-workspace"))).toBeUndefined();
 
     const target = storage();
     writeStoredWorkspacePath(target, "/repositories/repo-a/history");
-    writeStoredWorkspacePath(target, "/settings/skills");
+    writeStoredWorkspacePath(target, "/settings/advanced");
     writeStoredWorkspacePath(target, "/bad");
-    expect(target.values.get(lastWorkspaceRouteStorageKey)).toBe("/settings/skills");
+    expect(target.values.get(lastWorkspaceRouteStorageKey)).toBe("/settings/advanced");
   });
 
   it("chooses invalid repository fallback paths", () => {

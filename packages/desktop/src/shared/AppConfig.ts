@@ -17,6 +17,12 @@ export type ThemePreference = typeof ThemePreference.Type;
 export const isThemePreference = (value: unknown): value is ThemePreference =>
   value === "light" || value === "dark" || value === "system";
 
+export const InterfaceDensity = Schema.Literals(["compact", "spacious"]);
+export type InterfaceDensity = typeof InterfaceDensity.Type;
+
+export const isInterfaceDensity = (value: unknown): value is InterfaceDensity =>
+  value === "compact" || value === "spacious";
+
 export const OnboardingConfig = Schema.Struct({
   completed: Schema.Boolean,
   completedAt: Schema.optional(Schema.String),
@@ -41,6 +47,7 @@ export const AgentProvidersConfig = Schema.Struct({
 export type AgentProvidersConfig = typeof AgentProvidersConfig.Type;
 
 export const ThemeConfig = Schema.Struct({
+  density: InterfaceDensity,
   preference: ThemePreference,
 });
 export type ThemeConfig = typeof ThemeConfig.Type;
@@ -123,6 +130,7 @@ export const defaultAppConfig = (): AppConfigState => ({
   },
   schemaVersion: CURRENT_APP_CONFIG_SCHEMA_VERSION,
   theme: {
+    density: "compact",
     preference: "system",
   },
 });
@@ -148,6 +156,9 @@ export type AppConfigService = {
   readonly replace: (next: AppConfigState) => Effect.Effect<AppConfigState, AppConfigError>;
   readonly setThemePreference: (
     preference: ThemePreference,
+  ) => Effect.Effect<AppConfigState, AppConfigError>;
+  readonly setInterfaceDensity: (
+    density: InterfaceDensity,
   ) => Effect.Effect<AppConfigState, AppConfigError>;
   readonly update: (
     mutator: (current: AppConfigState) => AppConfigState,

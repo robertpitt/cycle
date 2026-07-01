@@ -7,9 +7,17 @@ const themeItems = [
   { label: "Dark", value: "dark" },
 ];
 
+const densityItems = [
+  { label: "Compact", value: "compact" },
+  { label: "Spacious", value: "spacious" },
+];
+
 const meta = {
   args: {
+    densityItems,
+    densityPreference: "compact",
     onCacheClear: () => undefined,
+    onDensityPreferenceChange: () => undefined,
     onProfileSave: () => undefined,
     onThemePreferenceChange: () => undefined,
     profile: {

@@ -7,6 +7,7 @@ export * from "./InboxPanel.tsx";
 export * from "./IssuesPanel.tsx";
 export * from "./PageBodyPlaceholder.tsx";
 export * from "./RepositoryHistoryPanel.tsx";
+export * from "./RepositorySettingsIndexPanel.tsx";
 export * from "./RepositorySettingsPanel.tsx";
 export * from "./SetupScreen.tsx";
 export * from "./SettingsSidebar.tsx";

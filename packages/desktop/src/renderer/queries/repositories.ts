@@ -7,10 +7,10 @@ import type {
 } from "@cycle/contracts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 
-const repositoryStatusQueryKey = (repositoryId: string | undefined) =>
+export const repositoryStatusQueryKey = (repositoryId: string | undefined) =>
   ["desktop", "api", "repositoryStatus", repositoryId] as const;
 
-const materializationWarningsQueryKey = (repositoryId: string | undefined) =>
+export const materializationWarningsQueryKey = (repositoryId: string | undefined) =>
   ["desktop", "api", "materializationWarnings", repositoryId] as const;
 
 export const repositoryHistoryRepositoryQueryKey = (repositoryId: string | undefined) =>

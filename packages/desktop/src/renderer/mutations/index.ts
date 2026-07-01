@@ -1,5 +1,6 @@
 export * from "./agentWork.ts";
 export * from "./metadata.ts";
+export * from "./repositories.ts";
 export * from "./settings.ts";
 export * from "./useInboxMutation.ts";
 export * from "./useAddRepositoryMutation.ts";

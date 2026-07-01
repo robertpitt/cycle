@@ -784,12 +784,16 @@ export const makeAgentWorkRuntime = (options: AgentWorkRuntimeOptions): AgentWor
       return "unsupported-provider-capability";
     }
     if (!mcpAvailable) return "mcp-unavailable";
-    if ((await store.countConcurrency()) >= globalSettings.maxConcurrentJobs) {
+    if (
+      globalSettings.maxConcurrentJobs !== null &&
+      (await store.countConcurrency()) >= globalSettings.maxConcurrentJobs
+    ) {
       return "global-concurrency";
     }
     if (
+      repositorySettings.maxConcurrentJobs !== null &&
       (await store.countConcurrency({ repositoryId: job.repositoryId })) >=
-      repositorySettings.maxConcurrentJobs
+        repositorySettings.maxConcurrentJobs
     ) {
       return "repository-concurrency";
     }
@@ -798,6 +802,7 @@ export const makeAgentWorkRuntime = (options: AgentWorkRuntimeOptions): AgentWor
       globalSettings.perAgentOverrides[job.agentId]?.maxConcurrentJobs;
     if (
       agentMax !== undefined &&
+      agentMax !== null &&
       (await store.countConcurrency({ agentId: job.agentId })) >= agentMax
     ) {
       return "agent-concurrency";

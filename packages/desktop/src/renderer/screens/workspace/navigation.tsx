@@ -3,16 +3,11 @@ import {
   Bot,
   History,
   Inbox,
-  Keyboard,
   ListTodo,
   MessageSquare,
-  Monitor,
-  Plug,
   PanelsTopLeft,
   Server,
   Settings,
-  SlidersHorizontal,
-  Sparkles,
   SquareKanban,
   User,
   Wrench,
@@ -123,15 +118,11 @@ export const defaultApplicationSettingsSection = "general" satisfies Application
 
 const applicationSettingsSections = new Set<ApplicationSettingsSection>([
   "agents",
-  "appearance",
-  "configuration",
-  "connectors",
+  "advanced",
+  "endpoints",
   "general",
-  "keyboard-shortcuts",
-  "mcp-servers",
-  "personalisation",
   "profile",
-  "skills",
+  "repositories",
 ]);
 
 const applicationSettingsNavItemPrefix = "settings:application:";
@@ -159,7 +150,7 @@ export const applicationSettingsSectionFromNavItemId = (
 export const createRendererSettingsNavSections = () =>
   [
     {
-      id: "settings-personal",
+      id: "settings-user",
       items: [
         {
           icon: <Settings aria-hidden className="size-4" />,
@@ -171,54 +162,46 @@ export const createRendererSettingsNavSections = () =>
           id: settingsNavItemIdForApplicationSection("profile"),
           label: "Profile",
         },
-        {
-          icon: <Monitor aria-hidden className="size-4" />,
-          id: settingsNavItemIdForApplicationSection("appearance"),
-          label: "Appearance",
-        },
-        {
-          icon: <SlidersHorizontal aria-hidden className="size-4" />,
-          id: settingsNavItemIdForApplicationSection("configuration"),
-          label: "Configuration",
-        },
-        {
-          icon: <Sparkles aria-hidden className="size-4" />,
-          id: settingsNavItemIdForApplicationSection("personalisation"),
-          label: "Personalisation",
-        },
-        {
-          icon: <Keyboard aria-hidden className="size-4" />,
-          id: settingsNavItemIdForApplicationSection("keyboard-shortcuts"),
-          label: "Keyboard Shortcuts",
-        },
+      ],
+      title: "User",
+    },
+    {
+      id: "settings-automation",
+      items: [
         {
           icon: <Bot aria-hidden className="size-4" />,
           id: settingsNavItemIdForApplicationSection("agents"),
           label: "Agents",
         },
       ],
-      title: "Personal",
+      title: "Automation",
     },
     {
-      id: "settings-integrations",
+      id: "settings-workspace",
       items: [
         {
-          icon: <Plug aria-hidden className="size-4" />,
-          id: settingsNavItemIdForApplicationSection("connectors"),
-          label: "Connectors",
+          icon: <SquareKanban aria-hidden className="size-4" />,
+          id: settingsNavItemIdForApplicationSection("repositories"),
+          label: "Repositories",
         },
+      ],
+      title: "Workspace",
+    },
+    {
+      id: "settings-diagnostics",
+      items: [
         {
           icon: <Server aria-hidden className="size-4" />,
-          id: settingsNavItemIdForApplicationSection("mcp-servers"),
-          label: "MCP Servers",
+          id: settingsNavItemIdForApplicationSection("endpoints"),
+          label: "Endpoints",
         },
         {
           icon: <Wrench aria-hidden className="size-4" />,
-          id: settingsNavItemIdForApplicationSection("skills"),
-          label: "Skills",
+          id: settingsNavItemIdForApplicationSection("advanced"),
+          label: "Advanced",
         },
       ],
-      title: "Integrations",
+      title: "Diagnostics",
     },
   ] satisfies readonly AppShellNavSection[];
 

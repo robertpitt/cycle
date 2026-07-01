@@ -11,8 +11,8 @@ import type {
   BranchAssociation as GitBranchAssociation,
   WorktreeRecord as GitWorktreeRecord,
 } from "@cycle/git/worktree";
+import type { AgentWorkJob as AgentJob, JsonObject } from "@cycle/contracts/schemas";
 import { Effect, Result, Schema } from "effect";
-import type { AgentJob } from "../../../agentWork/runtime.ts";
 import type {
   AgentChatActivityRecord,
   AgentChatMessageRecord,
@@ -1394,7 +1394,7 @@ const stringFromMetadata = (
   return typeof value === "string" && value.length > 0 ? value : undefined;
 };
 
-const jsonObject = (value: unknown): Readonly<Record<string, unknown>> => {
+const jsonObject = (value: unknown): JsonObject => {
   try {
     const text = JSON.stringify(value, (_key, entry) => {
       if (entry instanceof Error) {
@@ -1407,14 +1407,14 @@ const jsonObject = (value: unknown): Readonly<Record<string, unknown>> => {
     });
     const parsed = JSON.parse(text) as unknown;
     return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-      ? (parsed as Readonly<Record<string, unknown>>)
+      ? (parsed as JsonObject)
       : {};
   } catch {
     return {};
   }
 };
 
-const runtimeEventPayload = (event: AgentRuntimeEvent): Readonly<Record<string, unknown>> =>
+const runtimeEventPayload = (event: AgentRuntimeEvent): JsonObject =>
   jsonObject({
     event,
     eventType: agentRuntimeEventName(event),

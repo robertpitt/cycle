@@ -81,7 +81,7 @@ export type AgentSettings = {
   readonly defaultModel?: string | null;
   readonly defaultProviderId: string;
   readonly enabledProviders: readonly string[];
-  readonly maxConcurrentJobs: number;
+  readonly maxConcurrentJobs: number | null;
   readonly paused: boolean;
   readonly perAgentOverrides?: Readonly<Record<string, unknown>>;
 };
@@ -93,7 +93,7 @@ export type RepositoryAgentSettings = {
   readonly errorCount?: number;
   readonly failedJobCount?: number;
   readonly health?: string;
-  readonly maxConcurrentJobs: number;
+  readonly maxConcurrentJobs: number | null;
   readonly model?: string | null;
   readonly paused: boolean;
   readonly providerId?: string | null;
@@ -271,6 +271,9 @@ const asNullableString = (value: unknown): string | null | undefined =>
 const asNumber = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined;
 
+const asConcurrencyLimit = (value: unknown): number | null | undefined =>
+  value === null ? null : asNumber(value);
+
 const asBoolean = (value: unknown): boolean | undefined =>
   typeof value === "boolean" ? value : undefined;
 
@@ -284,6 +287,7 @@ export const parseAgentSettings = (
   const record = asRecord(value);
   const defaults = defaultAgentSettings(providers);
   const authority = asString(record.defaultMentionAuthorityMode);
+  const maxConcurrentJobs = asConcurrencyLimit(record.maxConcurrentJobs);
 
   return {
     allowDisposableWorktreeForMentions:
@@ -297,7 +301,8 @@ export const parseAgentSettings = (
       asStringArray(record.enabledProviders).length > 0
         ? asStringArray(record.enabledProviders)
         : defaults.enabledProviders,
-    maxConcurrentJobs: asNumber(record.maxConcurrentJobs) ?? defaults.maxConcurrentJobs,
+    maxConcurrentJobs:
+      maxConcurrentJobs === undefined ? defaults.maxConcurrentJobs : maxConcurrentJobs,
     paused: asBoolean(record.paused) ?? defaults.paused,
     perAgentOverrides: asRecord(record.perAgentOverrides),
   };
@@ -308,13 +313,14 @@ export const parseRepositoryAgentSettings = (
   repositoryId: string,
 ): RepositoryAgentSettings => {
   const record = asRecord(value);
+  const maxConcurrentJobs = asConcurrencyLimit(record.maxConcurrentJobs);
 
   return {
     agentWorkDisabled: asBoolean(record.agentWorkDisabled) ?? false,
     errorCount: asNumber(record.errorCount),
     failedJobCount: asNumber(record.failedJobCount),
     health: asString(record.health),
-    maxConcurrentJobs: asNumber(record.maxConcurrentJobs) ?? 1,
+    maxConcurrentJobs: maxConcurrentJobs === undefined ? 1 : maxConcurrentJobs,
     model: asNullableString(record.model),
     paused: asBoolean(record.paused) ?? false,
     providerId: asNullableString(record.providerId),

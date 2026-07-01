@@ -3,6 +3,7 @@ export {
   getApiConnectionChannel,
   getBackendLogPathChannel,
   getBootstrapStatusChannel,
+  getSettingsDiagnosticsChannel,
   getThemeStateChannel,
   openExternalChannel,
   selectRepositoryFolderChannel,
@@ -12,6 +13,7 @@ export type {
   ApiConnection as ApiConnectionBridgeValue,
   CycleDesktopBridge,
   SelectRepositoryFolderResult as SelectRepositoryFolderBridgeResult,
+  SettingsDiagnostics as SettingsDiagnosticsBridgeValue,
 } from "./Channels.ts";
 
 import { Schema } from "effect";
@@ -21,6 +23,7 @@ import { ElectronThemeSource, ElectronThemeState } from "../platform/ElectronThe
 import type {
   ApiConnection as ApiConnectionValue,
   SelectRepositoryFolderResult as SelectRepositoryFolderResultValue,
+  SettingsDiagnostics as SettingsDiagnosticsValue,
 } from "./Channels.ts";
 
 export const ApiConnection: Schema.Schema<ApiConnectionValue> = Schema.Struct({
@@ -43,6 +46,42 @@ export const SelectRepositoryFolderResultSchema: Schema.Schema<SelectRepositoryF
       status: Schema.Literal("cancelled"),
     }),
   ]);
+
+export const SettingsDiagnostics: Schema.Schema<SettingsDiagnosticsValue> = Schema.Struct({
+  api: Schema.Struct({
+    auth: Schema.Literals(["configured", "missing", "unknown"]),
+    baseUrl: Schema.optional(Schema.String),
+    enabled: Schema.Boolean,
+    status: Schema.Literals(["available", "unavailable", "unknown"]),
+  }),
+  app: Schema.Struct({
+    electronVersion: Schema.optional(Schema.String),
+    nodeVersion: Schema.String,
+    schemaVersion: Schema.Number,
+  }),
+  mcp: Schema.Struct({
+    enabled: Schema.Boolean,
+    path: Schema.optional(Schema.String),
+    status: Schema.Literals(["available", "unavailable", "unknown"]),
+    url: Schema.optional(Schema.String),
+  }),
+  paths: Schema.Struct({
+    agentWorktrees: Schema.String,
+    appConfig: Schema.String,
+    cliConfig: Schema.String,
+    cycleHome: Schema.String,
+    database: Schema.String,
+    log: Schema.String,
+    runtimeDiscovery: Schema.String,
+  }),
+  runtimeFile: Schema.Struct({
+    path: Schema.String,
+    pid: Schema.optional(Schema.Number),
+    specUrl: Schema.optional(Schema.String),
+    startedAt: Schema.optional(Schema.String),
+    status: Schema.Literals(["present", "missing", "unreadable"]),
+  }),
+});
 
 const isSchema =
   <S extends Schema.Top>(schema: S) =>

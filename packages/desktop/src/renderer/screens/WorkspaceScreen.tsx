@@ -24,6 +24,7 @@ import {
   IssuesPanel,
   PageBodyPlaceholder,
   RepositoryHistoryPanel,
+  RepositorySettingsIndexPanel,
   RepositorySettingsPanel,
   SettingsSidebar,
   SetupScreen,
@@ -91,6 +92,12 @@ const defaultWorkspaceLocation: WorkspaceLocation = {
   scope: "workspace",
 };
 
+const defaultSettingsLocation: WorkspaceLocation = {
+  page: "settings",
+  scope: "workspace",
+  settingsSection: defaultApplicationSettingsSection,
+};
+
 const activeItemIdForWorkspaceLocation = (location: WorkspaceLocation): string => {
   if (location.scope === "workspace") {
     return location.page === "initiatives" ? "projects" : location.page;
@@ -127,7 +134,16 @@ const workspaceLocationForNavItemId = (itemId: string): WorkspaceLocation | unde
   const [scope, repositoryId, page] = itemId.split(":");
   if (scope !== "repository" || !repositoryId) return undefined;
 
-  if (page === "history" || page === "issues" || page === "settings" || page === "views") {
+  if (page === "settings") {
+    return {
+      page: "settings",
+      scope: "workspace",
+      settingsRepositoryId: repositoryId,
+      settingsSection: "repositories",
+    };
+  }
+
+  if (page === "history" || page === "issues" || page === "views") {
     return {
       page,
       repositoryId,
@@ -146,7 +162,11 @@ export const WorkspaceScreen = () => {
   const collapsed = false;
   const location = useLocation();
   const navigate = useNavigate();
-  const workspaceLocation = parseWorkspacePath(location.pathname) ?? defaultWorkspaceLocation;
+  const workspaceLocation =
+    parseWorkspacePath(location.pathname) ??
+    (location.pathname.startsWith("/settings")
+      ? defaultSettingsLocation
+      : defaultWorkspaceLocation);
   const currentWorkspacePath = toWorkspacePath(workspaceLocation);
   const activeItemId = activeItemIdForWorkspaceLocation(workspaceLocation);
   const applicationSettingsRouteSection =
@@ -156,6 +176,12 @@ export const WorkspaceScreen = () => {
   const applicationSettingsSection = isApplicationSettingsSection(applicationSettingsRouteSection)
     ? applicationSettingsRouteSection
     : defaultApplicationSettingsSection;
+  const settingsRepositoryId =
+    workspaceLocation.scope === "workspace" &&
+    workspaceLocation.page === "settings" &&
+    applicationSettingsSection === "repositories"
+      ? workspaceLocation.settingsRepositoryId
+      : undefined;
   const routeHistoryRef = React.useRef<string[]>([]);
   const forwardHistoryRef = React.useRef<string[]>([]);
   const skipNextRouteHistoryPush = React.useRef(false);
@@ -191,7 +217,9 @@ export const WorkspaceScreen = () => {
     [repositories],
   );
   const routeRepositoryId =
-    workspaceLocation.scope === "repository" ? workspaceLocation.repositoryId : undefined;
+    workspaceLocation.scope === "repository"
+      ? workspaceLocation.repositoryId
+      : settingsRepositoryId;
   const isGlobalIssuesPage =
     workspaceLocation.scope === "workspace" && workspaceLocation.page === "issues";
   const isChatPage = workspaceLocation.scope === "workspace" && workspaceLocation.page === "chat";
@@ -228,10 +256,16 @@ export const WorkspaceScreen = () => {
   const isIssueDetailPage = isWorkItemsPage && selectedIssueId !== undefined;
   const isRepositoryHistoryPage =
     workspaceLocation.scope === "repository" && workspaceLocation.page === "history";
-  const isRepositorySettingsPage =
-    workspaceLocation.scope === "repository" && workspaceLocation.page === "settings";
   const isApplicationSettingsPage =
     workspaceLocation.scope === "workspace" && workspaceLocation.page === "settings";
+  const isRepositorySettingsPage =
+    isApplicationSettingsPage &&
+    applicationSettingsSection === "repositories" &&
+    settingsRepositoryId !== undefined;
+  const isRepositorySettingsIndexPage =
+    isApplicationSettingsPage &&
+    applicationSettingsSection === "repositories" &&
+    settingsRepositoryId === undefined;
   const isSettingsPage = isApplicationSettingsPage;
   const activeSettingsItemId = isApplicationSettingsPage
     ? settingsNavItemIdForApplicationSection(applicationSettingsSection)
@@ -388,6 +422,14 @@ export const WorkspaceScreen = () => {
   }, [appConfigQuery.data?.profile]);
 
   React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.setAttribute(
+      "data-density",
+      appConfigQuery.data?.theme.density ?? "compact",
+    );
+  }, [appConfigQuery.data?.theme.density]);
+
+  React.useEffect(() => {
     const providers = agentProvidersQuery.data;
     if (!providers) return;
 
@@ -402,16 +444,43 @@ export const WorkspaceScreen = () => {
 
   React.useEffect(() => {
     if (!onboardingCompleted || appConfigQuery.isLoading) return;
-    if (workspaceLocation.scope !== "repository") return;
+    if (workspaceLocation.scope !== "repository" && settingsRepositoryId === undefined) return;
     if (activeRepository !== undefined) return;
 
-    navigateWorkspace(invalidRepositoryFallbackPath(repositories.length > 0), { replace: true });
+    navigateWorkspace(
+      settingsRepositoryId === undefined
+        ? invalidRepositoryFallbackPath(repositories.length > 0)
+        : "/settings/repositories",
+      { replace: true },
+    );
   }, [
     activeRepository,
     appConfigQuery.isLoading,
     navigateWorkspace,
     onboardingCompleted,
     repositories.length,
+    settingsRepositoryId,
+    workspaceLocation,
+  ]);
+
+  React.useEffect(() => {
+    if (
+      !onboardingCompleted ||
+      appConfigQuery.isLoading ||
+      workspaceLocation.scope !== "workspace" ||
+      workspaceLocation.page !== "settings" ||
+      location.pathname === currentWorkspacePath
+    ) {
+      return;
+    }
+
+    navigateWorkspace(currentWorkspacePath, { replace: true });
+  }, [
+    appConfigQuery.isLoading,
+    currentWorkspacePath,
+    location.pathname,
+    navigateWorkspace,
+    onboardingCompleted,
     workspaceLocation,
   ]);
 
@@ -750,8 +819,9 @@ export const WorkspaceScreen = () => {
           if (!activeRepository) return;
           navigateWorkspace({
             page: "settings",
-            repositoryId: activeRepository.id,
-            scope: "repository",
+            scope: "workspace",
+            settingsRepositoryId: activeRepository.id,
+            settingsSection: "repositories",
           });
         },
       }),
@@ -1043,10 +1113,45 @@ export const WorkspaceScreen = () => {
                     : "relative bg-background/70 p-3"
               }
             >
-              {isApplicationSettingsPage && appConfigQuery.data ? (
+              {isApplicationSettingsPage && appConfigQuery.data && isRepositorySettingsIndexPage ? (
+                <RepositorySettingsIndexPanel
+                  bootstrapStatus={bootstrapStatusQuery.data}
+                  onRepositorySelect={(repositoryId) =>
+                    navigateWorkspace({
+                      page: "settings",
+                      scope: "workspace",
+                      settingsRepositoryId: repositoryId,
+                      settingsSection: "repositories",
+                    })
+                  }
+                  repositories={repositories}
+                />
+              ) : isApplicationSettingsPage &&
+                appConfigQuery.data &&
+                isRepositorySettingsPage &&
+                activeRepository ? (
+                <RepositorySettingsPanel
+                  agentProviders={detectedAgentProviders}
+                  appConfig={appConfigQuery.data}
+                  bootstrapStatus={bootstrapStatusQuery.data}
+                  onRemoved={() =>
+                    navigateWorkspace(
+                      {
+                        page: "settings",
+                        scope: "workspace",
+                        settingsSection: "repositories",
+                      },
+                      { replace: true },
+                    )
+                  }
+                  repository={activeRepository}
+                  status={repositoryStatus}
+                />
+              ) : isApplicationSettingsPage && appConfigQuery.data ? (
                 <ApplicationSettingsPanel
                   agentProviders={detectedAgentProviders}
                   appConfig={appConfigQuery.data}
+                  bootstrapStatus={bootstrapStatusQuery.data}
                   section={applicationSettingsSection}
                 />
               ) : isChatPage ? (
@@ -1054,13 +1159,6 @@ export const WorkspaceScreen = () => {
                   agentProviders={detectedAgentProviders}
                   profile={appConfigQuery.data?.profile}
                   repositories={repositories}
-                />
-              ) : hasRepositories && isRepositorySettingsPage && activeRepository ? (
-                <RepositorySettingsPanel
-                  agentProviders={detectedAgentProviders}
-                  appConfig={appConfigQuery.data}
-                  repository={activeRepository}
-                  status={repositoryStatus}
                 />
               ) : hasRepositories && isInboxPage ? (
                 <InboxPanel

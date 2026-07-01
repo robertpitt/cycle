@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import type { JsonObject } from "@cycle/contracts/schemas";
 import { AgentWorkEventError } from "../../../errors/index.ts";
 import { CycleApiRuntime } from "../../runtime/CycleApiRuntime.ts";
 import { launchAgentWorkJob, launchAgentWorkJobs } from "./agentWorkRunner.ts";
@@ -19,7 +20,7 @@ export const emitTicketEvent = (input: {
           actor: input.actor,
           dedupeKey: `${input.eventType}:${input.repositoryId}:${input.ticketId ?? "none"}:${input.requestId}`,
           eventType: input.eventType,
-          payload: input.payload,
+          payload: jsonObject(input.payload),
           repositoryId: input.repositoryId,
           source: "api",
           ticketId: input.ticketId,
@@ -49,11 +50,11 @@ export const handleSuccessfulComment = (input: {
         runtime.agentWork.emit({
           dedupeKey: `ticket.comment_added:${input.repositoryId}:${input.ticketId}:${input.commentId}`,
           eventType: "ticket.comment_added",
-          payload: {
+          payload: jsonObject({
             comment: input.comment,
             commentId: input.commentId,
             requestId: input.requestId,
-          },
+          }),
           repositoryId: input.repositoryId,
           source: "api",
           ticketId: input.ticketId,
@@ -133,4 +134,15 @@ export const idFromResult = (value: unknown, fallback: string): string => {
     if (typeof candidate === "string" && candidate.length > 0) return candidate;
   }
   return fallback;
+};
+
+const jsonObject = (value: unknown): JsonObject => {
+  try {
+    const parsed = JSON.parse(JSON.stringify(value)) as unknown;
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as JsonObject)
+      : {};
+  } catch {
+    return {};
+  }
 };
