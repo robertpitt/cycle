@@ -2,6 +2,23 @@ import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { CycleAuthorization } from "../authorization.ts";
 import {
   AgentProvidersResourceEnvelope,
+  AgentActivityCollectionEnvelope,
+  AgentActivityQueryParams,
+  AgentDelegateChangedEnvelope,
+  AgentDelegateJobPayload,
+  AgentDelegateJobResourceEnvelope,
+  AgentDelegateParams,
+  AgentDelegatePutPayload,
+  AgentDelegateResourceEnvelope,
+  AgentJobCancelPayload,
+  AgentJobCollectionEnvelope,
+  AgentJobLogResourceEnvelope,
+  AgentJobParams,
+  AgentJobResourceEnvelope,
+  AgentJobResumePayload,
+  AgentJobsQueryParams,
+  AgentSettingsPatchPayload,
+  AgentSettingsResourceEnvelope,
   ApiStatusResourceEnvelope,
   AppConfigResourceEnvelope,
   AutocompleteQueryParams,
@@ -73,6 +90,8 @@ import {
   RepositoryStatusResourceEnvelope,
   RepositoryWarningCollectionEnvelope,
   RepositoryPreferencesPayload,
+  RepositoryAgentSettingsPatchPayload,
+  RepositoryAgentSettingsResourceEnvelope,
   RecordListQueryParams,
   TemplateCreatePayload,
   TemplateCreatedEnvelope,
@@ -131,6 +150,90 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
   .add(
     HttpApiEndpoint.get("listAgentProviders", "/v1/agents/providers", {
       success: AgentProvidersResourceEnvelope,
+    }),
+    HttpApiEndpoint.get("getAgentSettings", "/v1/agent-settings", {
+      success: AgentSettingsResourceEnvelope,
+    }),
+    HttpApiEndpoint.patch("patchAgentSettings", "/v1/agent-settings", {
+      payload: AgentSettingsPatchPayload,
+      success: AgentSettingsResourceEnvelope,
+    }),
+    HttpApiEndpoint.get(
+      "getRepositoryAgentSettings",
+      "/v1/repositories/:repositoryId/agent-settings",
+      {
+        params: RepositoryParams,
+        success: RepositoryAgentSettingsResourceEnvelope,
+      },
+    ),
+    HttpApiEndpoint.patch(
+      "patchRepositoryAgentSettings",
+      "/v1/repositories/:repositoryId/agent-settings",
+      {
+        params: RepositoryParams,
+        payload: RepositoryAgentSettingsPatchPayload,
+        success: RepositoryAgentSettingsResourceEnvelope,
+      },
+    ),
+    HttpApiEndpoint.get(
+      "getIssueAgentDelegate",
+      "/v1/repositories/:repositoryId/issues/:issueId/agent-delegate",
+      {
+        params: AgentDelegateParams,
+        success: AgentDelegateResourceEnvelope,
+      },
+    ),
+    HttpApiEndpoint.put(
+      "putIssueAgentDelegate",
+      "/v1/repositories/:repositoryId/issues/:issueId/agent-delegate",
+      {
+        params: AgentDelegateParams,
+        payload: AgentDelegatePutPayload,
+        success: AgentDelegateChangedEnvelope,
+      },
+    ),
+    HttpApiEndpoint.make("DELETE")(
+      "deleteIssueAgentDelegate",
+      "/v1/repositories/:repositoryId/issues/:issueId/agent-delegate",
+      {
+        params: AgentDelegateParams,
+        success: AgentDelegateResourceEnvelope,
+      },
+    ),
+    HttpApiEndpoint.post(
+      "createIssueAgentDelegateJob",
+      "/v1/repositories/:repositoryId/issues/:issueId/agent-delegate/jobs",
+      {
+        params: AgentDelegateParams,
+        payload: AgentDelegateJobPayload,
+        success: AgentDelegateJobResourceEnvelope,
+      },
+    ),
+    HttpApiEndpoint.get("listAgentJobs", "/v1/agent-jobs", {
+      query: AgentJobsQueryParams,
+      success: AgentJobCollectionEnvelope,
+    }),
+    HttpApiEndpoint.get("getAgentJob", "/v1/agent-jobs/:jobId", {
+      params: AgentJobParams,
+      success: AgentJobResourceEnvelope,
+    }),
+    HttpApiEndpoint.get("getAgentJobLog", "/v1/agent-jobs/:jobId/logs", {
+      params: AgentJobParams,
+      success: AgentJobLogResourceEnvelope,
+    }),
+    HttpApiEndpoint.post("resumeAgentJob", "/v1/agent-jobs/:jobId/resume", {
+      params: AgentJobParams,
+      payload: AgentJobResumePayload,
+      success: AgentJobResourceEnvelope,
+    }),
+    HttpApiEndpoint.post("cancelAgentJob", "/v1/agent-jobs/:jobId/cancel", {
+      params: AgentJobParams,
+      payload: AgentJobCancelPayload,
+      success: AgentJobResourceEnvelope,
+    }),
+    HttpApiEndpoint.get("listAgentActivity", "/v1/agent-activity", {
+      query: AgentActivityQueryParams,
+      success: AgentActivityCollectionEnvelope,
     }),
   )
   .add(

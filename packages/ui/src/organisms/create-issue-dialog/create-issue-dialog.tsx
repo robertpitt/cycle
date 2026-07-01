@@ -14,6 +14,7 @@ import {
   MoreHorizontal,
   Repeat2,
   Tag,
+  Ticket,
 } from "lucide-react";
 import * as React from "react";
 import { Avatar, AvatarFallback } from "../../atoms/avatar/index.ts";
@@ -48,7 +49,8 @@ export type CreateIssueDialogChipId =
   | "priority"
   | "project"
   | "status"
-  | "template";
+  | "template"
+  | "type";
 
 export type CreateIssueDialogStatus = "backlog" | "canceled" | "done" | "in-progress" | "todo";
 
@@ -104,6 +106,9 @@ export type CreateIssueDialogProps = React.HTMLAttributes<HTMLDivElement> & {
   readonly onTemplateChange?: (template: string | null) => void;
   readonly title?: string;
   readonly titlePlaceholder?: string;
+  readonly type?: string;
+  readonly typeSections?: readonly PropertyPickerSection[];
+  readonly onTypeChange?: (type: string) => void;
 };
 
 const IssueTeamMark = () => (
@@ -441,8 +446,11 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
       template = null,
       templateSections: templatePickerSections = templateSections,
       onTemplateChange,
+      onTypeChange,
       title,
       titlePlaceholder = "Issue title",
+      type,
+      typeSections: typePickerSections = [],
       ...props
     },
     ref,
@@ -549,6 +557,23 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
                         value={status}
                         widthClassName="w-[414px]"
                       />
+                      {typePickerSections.length > 0 ? (
+                        <PropertyPicker
+                          {...getControlledOpen(currentOpenChip, "type", setOpenChip)}
+                          formatValueLabel={formatNullableLabel("Type")}
+                          onValueChange={(value) => {
+                            const selectedType = getSingleValue(value);
+                            if (selectedType) onTypeChange?.(selectedType);
+                          }}
+                          placeholder="Type"
+                          searchPlaceholder="Choose type..."
+                          sections={typePickerSections}
+                          triggerActive={Boolean(type)}
+                          triggerIcon={<Ticket aria-hidden className="size-4" strokeWidth={1.9} />}
+                          value={type}
+                          widthClassName="w-[350px]"
+                        />
+                      ) : null}
                       <PropertyPicker
                         {...getControlledOpen(currentOpenChip, "priority", setOpenChip)}
                         formatValueLabel={formatNullableLabel("Priority")}

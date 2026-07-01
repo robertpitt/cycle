@@ -53,6 +53,12 @@ describe("Markdown editor utilities", () => {
     expect(roundTripMarkdown(markdown)).toBe(markdown);
   });
 
+  it("unwraps nested Cycle reference links from old tag insertion", () => {
+    expect(roundTripMarkdown("[[Codex](cycle-agent:codex)](cycle-agent:codex)")).toBe(
+      "[Codex](cycle-agent:codex)",
+    );
+  });
+
   it("preserves compatibility Markdown as source text", () => {
     const markdown = [
       "![alt text](image-url)",
@@ -122,6 +128,14 @@ describe("Markdown editor utilities", () => {
         label: "Codex",
       }),
     ).toBe("@Codex");
+    expect(
+      getMarkdownEditorTagSuggestionInsertLabel({
+        id: "codex",
+        insertLabel: "[Codex](cycle-agent:codex)",
+        kind: "agent",
+        label: "Codex",
+      }),
+    ).toBe("Codex");
     expect(
       getMarkdownEditorTagSuggestionInsertLabel({
         id: "cycle",

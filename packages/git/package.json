@@ -15,7 +15,10 @@
     "./object-store/GitPack": "./src/object-store/GitPack.ts",
     "./repository/GitRepository": "./src/repository/index.ts",
     "./repository/GitRepositoryLive": "./src/repository/GitRepositoryLive.ts",
-    "./schemas": "./src/schemas/index.ts"
+    "./schemas": "./src/schemas/index.ts",
+    "./worktree": "./src/worktree/index.ts",
+    "./worktree/WorktreeService": "./src/worktree/WorktreeService.ts",
+    "./worktree/WorktreeServiceLive": "./src/worktree/WorktreeServiceLive.ts"
   },
   "scripts": {
     "test": "vitest run",

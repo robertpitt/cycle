@@ -8,7 +8,6 @@ intent into plans and code, and the ticket system keeps the full story available
 comments, plans, reviews, agent execution records, and follow-up work belong inside the repository's
 own Git data, not in a disconnected SaaS database.
 
-
 <a href="http://www.youtube.com/watch?feature=player_embedded&amp;v=Vnjjc-kRUjQ" target="_blank">
  <img src="http://img.youtube.com/vi/Vnjjc-kRUjQ/maxresdefault.jpg" alt="Watch the video" width="100%" height="100%" border="0"/>
 </a>

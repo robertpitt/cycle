@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS agent_chat_threads (
   thinking_level TEXT,
   active_turn_id TEXT,
   last_error TEXT,
+  origin_json TEXT,
   archived_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL

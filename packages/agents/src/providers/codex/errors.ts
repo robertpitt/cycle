@@ -38,6 +38,7 @@ const codeFromProviderError = (value: unknown, message: string): AgentError["cod
   if (providerType === "invalid_request_error" || lower.includes("invalid_request_error")) {
     return "provider_error";
   }
+  if (lower.includes("mcp")) return "mcp_unavailable";
   if (lower.includes("login") || lower.includes("auth")) return "authentication_error";
   if (lower.includes("timed out") || lower.includes("timeout")) return "timeout";
   if (lower.includes("aborted") || lower.includes("abort") || lower.includes("cancel")) {

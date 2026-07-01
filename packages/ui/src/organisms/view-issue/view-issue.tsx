@@ -83,6 +83,7 @@ export type ViewIssueComment = {
 export type ViewIssueProps = Omit<React.HTMLAttributes<HTMLDivElement>, "title"> &
   MarkdownReferenceHandlers & {
     readonly activityEvents?: readonly ViewIssueActivityEvent[];
+    readonly agentWork?: React.ReactNode;
     readonly assignee?: IssueAuthor;
     readonly comments?: readonly ViewIssueComment[];
     readonly defaultDescription?: string;
@@ -99,6 +100,7 @@ export type ViewIssueProps = Omit<React.HTMLAttributes<HTMLDivElement>, "title">
     readonly onEditorCommandSelect?: (command: IssueEditorCommand) => void;
     readonly onEditorFormatSelect?: (action: IssueEditorFormatAction) => void;
     readonly onFilesSelect?: (files: FileList) => void;
+    readonly onAgentDelegate?: () => void;
     readonly onSubIssueCreate?: (draft: IssueSubIssueDraft) => void;
     readonly onTagQueryChange?: (query: string) => void;
     readonly onTagSelect?: (suggestion: IssueEditorTagSuggestion) => void;
@@ -186,7 +188,7 @@ const defaultProperties = ({
   },
 ];
 
-const ViewIssueActions = () => (
+const ViewIssueActions = ({ onAgentDelegate }: { readonly onAgentDelegate?: () => void }) => (
   <div className="flex items-center justify-end gap-2">
     <IconButton
       icon={<LinkIcon aria-hidden className="size-4" />}
@@ -211,9 +213,11 @@ const ViewIssueActions = () => (
     />
     <IconButton
       icon={<SendHorizontal aria-hidden className="size-4" />}
-      label="Send to agent"
+      disabled={!onAgentDelegate}
+      label="Delegate to agent"
+      onClick={onAgentDelegate}
       size="sm"
-      title="Send to agent"
+      title="Delegate to agent"
       variant="outline"
     />
     <Button
@@ -309,6 +313,7 @@ const activityAuthorKey = (author: IssueAuthor): string => {
 export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(function ViewIssue(
   {
     activityEvents = defaultActivityEvents,
+    agentWork,
     assignee,
     className,
     comments = [],
@@ -335,6 +340,7 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
     onEditorCommandSelect,
     onEditorFormatSelect,
     onFilesSelect,
+    onAgentDelegate,
     onIssueReferenceClick,
     onRepositoryReferenceClick,
     onSubIssueCreate,
@@ -620,7 +626,7 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
       </main>
 
       <aside className="sticky top-0 grid max-h-full min-h-0 content-start gap-3 self-start overflow-y-auto overscroll-contain pr-1 max-xl:hidden">
-        <ViewIssueActions />
+        <ViewIssueActions onAgentDelegate={onAgentDelegate} />
         <IssueSidebarSection
           className="overflow-visible"
           defaultOpen={propertiesDefaultOpen}
@@ -632,6 +638,11 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
             ))}
           </div>
         </IssueSidebarSection>
+        {agentWork ? (
+          <IssueSidebarSection defaultOpen title="Agent">
+            {agentWork}
+          </IssueSidebarSection>
+        ) : null}
         <IssueSidebarSection
           actions={
             <IconButton

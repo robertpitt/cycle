@@ -18,6 +18,12 @@ describe("DesktopAgentChatStore", () => {
       await store.upsertThread({
         createdAt: now,
         id: "thread-1",
+        origin: {
+          commentId: "comment-1",
+          issueId: "ROB-10001",
+          kind: "issue-comment",
+          repositoryId: "cycle",
+        },
         runtimeMode: "workspace-write",
         status: "draft",
         summary: "Persisted chat",
@@ -91,6 +97,12 @@ describe("DesktopAgentChatStore", () => {
 
       assert.deepEqual((await store.listMessages("thread-1"))[0]?.metadata, { source: "test" });
       assert.equal((await store.getThread?.("thread-1"))?.runtimeMode, "workspace-write");
+      assert.deepEqual((await store.getThread?.("thread-1"))?.origin, {
+        commentId: "comment-1",
+        issueId: "ROB-10001",
+        kind: "issue-comment",
+        repositoryId: "cycle",
+      });
       assert.deepEqual((await store.listTurns?.("thread-1"))?.[0]?.metadata, {
         thinkingLevel: "high",
       });

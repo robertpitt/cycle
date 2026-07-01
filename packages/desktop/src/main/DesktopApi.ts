@@ -1,12 +1,13 @@
-import { startCycleApiServer, type RepositoryOpenRequest } from "@cycle/api";
+import { AgentWorkRuntimeV11, startCycleApiServer, type RepositoryOpenRequest } from "@cycle/api";
 import {
   contractFor,
   type CycleUseCase,
   type RepositoryInput,
   type RepositoryMetadata,
 } from "@cycle/contracts";
-import { cycleDatabasePath } from "@cycle/database";
+import { cycleDatabasePath, cycleHomeDirectory } from "@cycle/database";
 import { GitRepository, type GitRepositoryMetadata } from "@cycle/git";
+import { WorktreeService } from "@cycle/git/worktree";
 import { GitDb, Store as GitDbStore } from "@cycle/git-db";
 import { logError } from "@cycle/logging";
 import { UseCaseRunner, type UseCaseRunnerShape } from "@cycle/usecases";
@@ -153,6 +154,7 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
   const bootstrap = yield* DesktopBootstrap;
   const preferences = yield* ElectronPreferences;
   const gitRepository = yield* GitRepository;
+  const worktreeService = yield* WorktreeService;
   const localWorkspace = yield* LocalWorkspace;
   const runner = yield* UseCaseRunner;
   const runtime = yield* DesktopRuntime;
@@ -210,11 +212,19 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
       try: async () => {
         const agentChatStore = makeDesktopAgentChatStore(cycleDatabasePath());
         const agentSessionStore = makeDesktopAgentSessionStore(cycleDatabasePath());
+        const agentWorkStore =
+          AgentWorkRuntimeV11.makeNodeSqliteAgentWorkStore(cycleDatabasePath());
+        const agentWork = AgentWorkRuntimeV11.makeHttpAgentWorkRuntimeFromStore(agentWorkStore, {
+          executionPolicy: {
+            supportedAuthorityModes: ["ticket-context", "implementation-worktree"],
+          },
+        });
 
         try {
           const handle = await startCycleApiServer({
             agentChatStore,
             agentSessionStore,
+            agentWork,
             host: config.api.host,
             localSettings: {
               completeOnboarding: (input) =>
@@ -263,10 +273,13 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
             runner: runnerWithBackgroundPublish(runner, bootstrap),
             runtimeFile: desktopApiRuntimeDiscoveryPath(),
             staticToken: config.api.staticToken,
+            worktreeService,
+            worktreeStoragePath: join(cycleHomeDirectory(), "agent-worktrees"),
           });
 
-          return { agentChatStore, agentSessionStore, handle };
+          return { agentChatStore, agentSessionStore, agentWorkStore, handle };
         } catch (error) {
+          await agentWorkStore.close?.();
           await agentChatStore.close?.();
           await agentSessionStore.close?.();
           throw error;
@@ -274,10 +287,11 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
       },
       catch: (cause) => cause,
     }),
-    ({ agentChatStore, agentSessionStore, handle }) =>
+    ({ agentChatStore, agentSessionStore, agentWorkStore, handle }) =>
       Effect.tryPromise({
         try: async () => {
           await handle.close();
+          await agentWorkStore.close?.();
           await agentChatStore.close?.();
           await agentSessionStore.close?.();
         },

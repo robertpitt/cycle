@@ -143,7 +143,7 @@ export const makeCodexAgentService = (options: CodexAgentServiceOptions = {}): A
       }
 
       activeTurn.controller.abort(new Error("Codex turn cancellation requested."));
-      await activeTurn.interrupt?.().catch(() => undefined);
+      void activeTurn.interrupt?.().catch(() => undefined);
       return { accepted: true, reason: "cancel_requested" };
     },
     capabilities: () => capabilities,

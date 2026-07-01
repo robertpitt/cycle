@@ -1,5 +1,6 @@
 import type { CreateIssueDialogPriority, CreateIssueDialogStatus } from "@cycle/ui/organisms";
 import * as React from "react";
+import { isCanonicalTicketType, type TicketTypeId } from "../../lib/agentWork.ts";
 
 export type CreateIssueFormValues = {
   readonly assignee: string | null;
@@ -14,7 +15,7 @@ export type CreateIssueFormValues = {
   readonly status: CreateIssueDialogStatus;
   readonly template: string | null;
   readonly title: string;
-  readonly type: string;
+  readonly type: TicketTypeId | "";
 };
 
 const initialCreateIssueFormValues = (): CreateIssueFormValues => ({
@@ -30,7 +31,7 @@ const initialCreateIssueFormValues = (): CreateIssueFormValues => ({
   status: "todo",
   template: null,
   title: "",
-  type: "issue",
+  type: "task",
 });
 
 export type CreateIssueFormDraft = {
@@ -38,7 +39,7 @@ export type CreateIssueFormDraft = {
   readonly dueDate?: string;
   readonly estimate?: number | string;
   readonly title: string;
-  readonly type?: string;
+  readonly type: TicketTypeId;
 };
 
 export const getCreateIssueFormDraft = (
@@ -46,7 +47,7 @@ export const getCreateIssueFormDraft = (
 ): CreateIssueFormDraft | undefined => {
   const title = values.title.trim();
 
-  if (title.length === 0) {
+  if (title.length === 0 || !isCanonicalTicketType(values.type)) {
     return undefined;
   }
 
@@ -91,7 +92,7 @@ export const useCreateIssueForm = () => {
 
   return {
     closeDialog,
-    createDisabled: values.title.trim().length === 0,
+    createDisabled: values.title.trim().length === 0 || !isCanonicalTicketType(values.type),
     open,
     openDialog,
     reset,
@@ -110,7 +111,10 @@ export const useCreateIssueForm = () => {
     setStatus: React.useCallback((status: CreateIssueDialogStatus) => update({ status }), [update]),
     setTemplate: React.useCallback((template: string | null) => update({ template }), [update]),
     setTitle: React.useCallback((title: string) => update({ title }), [update]),
-    setType: React.useCallback((type: string) => update({ type }), [update]),
+    setType: React.useCallback(
+      (type: string) => update({ type: isCanonicalTicketType(type) ? type : "" }),
+      [update],
+    ),
     values,
   };
 };

@@ -1,3 +1,5 @@
+import type { CanonicalTicketTypeId } from "./TicketType.ts";
+
 export type ActorType = "agent" | "human" | "import";
 
 export type Actor = {
@@ -352,7 +354,7 @@ export type CreateTicketInput = {
   readonly repository?: string;
   readonly status?: string;
   readonly title: string;
-  readonly type?: string;
+  readonly type: CanonicalTicketTypeId;
 };
 
 export type UpdateTicketPatch = {

@@ -27,10 +27,10 @@ import {
 } from "../domain.ts";
 import { Schema } from "effect";
 import { RepositoryRef } from "./RepositoryRef.ts";
+import { TicketTypeId, type TicketTypeId as TicketTypeIdValue } from "./TicketTypes.ts";
 
 const StringList = Schema.Array(Schema.String);
 const UnknownRecord = Schema.Record(Schema.String, Schema.Unknown);
-const NonNegativeInteger = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const PositiveInteger = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
 const EstimateValue = Schema.Union([Schema.Finite, Schema.String]);
 const NullableEstimateValue = Schema.NullOr(EstimateValue);
@@ -180,9 +180,11 @@ export const CreateIssueInput = Schema.Struct({
   repository: Schema.optional(Schema.String),
   status: Schema.optional(Schema.String),
   title: Schema.String,
-  type: Schema.optional(Schema.String),
+  type: TicketTypeId,
 });
-export type CreateIssueInput = CreateTicketInput;
+export type CreateIssueInput = Omit<CreateTicketInput, "type"> & {
+  readonly type: TicketTypeIdValue;
+};
 
 const IssueTemplateDefaultsInput = Schema.Struct({
   assignee: Schema.optional(Schema.NullOr(Schema.String)),
@@ -197,7 +199,7 @@ const IssueTemplateDefaultsInput = Schema.Struct({
   repository: Schema.optional(Schema.String),
   status: Schema.optional(Schema.String),
   title: Schema.optional(Schema.String),
-  type: Schema.optional(Schema.String),
+  type: Schema.optional(TicketTypeId),
 });
 
 export const UpdateIssueInput = Schema.Struct({
@@ -291,9 +293,10 @@ export const CreateDraftInput = Schema.Struct({
   source: Schema.optional(Schema.Unknown),
   status: Schema.optional(Schema.String),
   title: Schema.String,
-  type: Schema.optional(Schema.String),
+  type: TicketTypeId,
 });
-export type CreateDraftInput = CreateTicketInput & {
+export type CreateDraftInput = Omit<CreateTicketInput, "type"> & {
+  readonly type: TicketTypeIdValue;
   readonly source?: unknown;
 };
 

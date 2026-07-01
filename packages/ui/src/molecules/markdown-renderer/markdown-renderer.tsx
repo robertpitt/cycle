@@ -7,9 +7,12 @@ import ReactMarkdown, {
 import remarkGfm from "remark-gfm";
 import { cn } from "../../lib/cn.ts";
 import {
+  isSameCycleReference,
   linkCycleReferenceShorthand,
+  parseCycleReferenceMarkdownLink,
   parseCycleReferenceHref,
   type CycleReference,
+  unwrapNestedCycleReferenceMarkdownLinks,
 } from "../../lib/markdown-references.ts";
 import { typography } from "../../lib/styles.ts";
 
@@ -37,7 +40,8 @@ export type MarkdownReferenceHandlers = Pick<
 
 const safeProtocols = new Set(["http:", "https:", "mailto:"]);
 
-const normalizeMarkdown = (markdown: string): string => linkCycleReferenceShorthand(markdown);
+const normalizeMarkdown = (markdown: string): string =>
+  linkCycleReferenceShorthand(unwrapNestedCycleReferenceMarkdownLinks(markdown));
 
 const isSafeUrl = (href: string): boolean => {
   if (href.trim().length === 0) return false;
@@ -75,6 +79,20 @@ const handleCycleReferenceClick = (
   }
 };
 
+const cycleReferenceChildren = (
+  children: React.ReactNode,
+  reference: CycleReference,
+): React.ReactNode => {
+  const childArray = React.Children.toArray(children);
+  const text = childArray.length === 1 && typeof childArray[0] === "string" ? childArray[0] : null;
+  if (!text) return children;
+
+  const parsedLink = parseCycleReferenceMarkdownLink(text);
+  return parsedLink && isSameCycleReference(parsedLink.reference, reference)
+    ? parsedLink.label
+    : children;
+};
+
 const components = (
   handlers: MarkdownReferenceHandlers & Pick<MarkdownRendererProps, "onExternalLinkClick">,
 ): Components => ({
@@ -88,7 +106,7 @@ const components = (
           onClick={() => handleCycleReferenceClick(cycleReference, handlers)}
           type="button"
         >
-          {children}
+          {cycleReferenceChildren(children, cycleReference)}
         </button>
       );
     }

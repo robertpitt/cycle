@@ -13,8 +13,10 @@ import {
   Info,
   LoaderCircle,
   MessageSquare,
+  PencilLine,
   Radio,
   RefreshCw,
+  Search,
   ShieldCheck,
   Sparkles,
   Terminal,
@@ -88,6 +90,7 @@ export type AgentChatThreadListEntry = {
   readonly id: string;
   readonly lastError?: string | null;
   readonly model?: string | null;
+  readonly origin?: AgentChatThreadOrigin | null;
   readonly providerId?: string | null;
   readonly runtimeMode?: AgentChatRuntimeMode | null;
   readonly status: AgentChatThreadStatus;
@@ -96,6 +99,17 @@ export type AgentChatThreadListEntry = {
   readonly title: string;
   readonly unreadCount?: number;
   readonly updatedAt?: string | null;
+};
+
+export type AgentChatThreadOrigin = {
+  readonly agentId?: string | null;
+  readonly commentId?: string | null;
+  readonly issueId?: string | null;
+  readonly jobId?: string | null;
+  readonly kind: string;
+  readonly label?: string | null;
+  readonly repositoryId?: string | null;
+  readonly trigger?: string | null;
 };
 
 export type AgentChatMessageRole = "assistant" | "system" | "user";
@@ -247,6 +261,46 @@ const turnStatusTone = {
   running: "info",
   waiting_for_user: "warning",
 } satisfies Record<AgentChatTurnStatus, ComponentTone>;
+
+export const originLabel = (origin?: AgentChatThreadOrigin | null): string | null => {
+  if (!origin) return null;
+  if (origin.label) return origin.label;
+
+  switch (origin.kind) {
+    case "issue-comment":
+      return origin.issueId ? `Issue ${origin.issueId}` : "Issue comment";
+    case "agent-work":
+      return "Agent work";
+    default:
+      return origin.kind;
+  }
+};
+
+const originBadgeLabel = (origin?: AgentChatThreadOrigin | null): string | null => {
+  if (!origin) return null;
+
+  switch (origin.kind) {
+    case "issue-comment":
+      return "Issue comment";
+    case "agent-work":
+      return "Agent work";
+    default:
+      return origin.kind;
+  }
+};
+
+export const originDescription = (origin?: AgentChatThreadOrigin | null): string | null => {
+  if (!origin) return null;
+
+  const parts = [
+    origin.repositoryId ? `Repository ${origin.repositoryId}` : null,
+    origin.issueId ? `Issue ${origin.issueId}` : null,
+    origin.commentId ? `Comment ${origin.commentId}` : null,
+    origin.jobId ? `Job ${origin.jobId}` : null,
+  ].filter((part): part is string => part !== null);
+
+  return parts.length > 0 ? parts.join(" / ") : originLabel(origin);
+};
 
 const activityKindIcon = {
   error: AlertTriangle,
@@ -426,6 +480,8 @@ const hiddenActivityPayloadKeys = new Set([
   "command",
   "delta",
   "diff",
+  "event",
+  "eventType",
   "input",
   "item",
   "itemId",
@@ -440,6 +496,19 @@ const hiddenActivityPayloadKeys = new Set([
 ]);
 
 const compactActivityGenericTitles = new Set(["MCP tool", "Provider activity", "Tool call"]);
+const genericToolNames = new Set([
+  "command_execution",
+  "mcp_tool_call",
+  "tool",
+  "tool.completed",
+  "tool.started",
+]);
+
+const genericToolLabel = (name: string | undefined): string | undefined => {
+  if (name === "command_execution") return "Command";
+  if (name === "mcp_tool_call") return "MCP tool";
+  return undefined;
+};
 
 const payloadString = (
   payload: AgentChatActivityPayload | null | undefined,
@@ -449,18 +518,106 @@ const payloadString = (
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 };
 
-const activityNotificationLabel = (activity: AgentChatActivity): string => {
-  const payloadCommand = payloadString(activity.payload, "command");
-  if (payloadCommand) return payloadCommand;
+const commandFromUnknown = (value: unknown): string | undefined => {
+  if (typeof value === "string" && value.trim().length > 0) return value;
+  if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
+    return value.join(" ");
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const command = commandFromUnknown(entry);
+      if (command !== undefined) return command;
+    }
+  }
+  if (isRecord(value)) {
+    return (
+      commandFromUnknown(value.command) ??
+      commandFromUnknown(value.argv) ??
+      commandFromUnknown(value.args) ??
+      commandFromUnknown(value.commandActions)
+    );
+  }
+  return undefined;
+};
 
-  const payloadName = payloadString(activity.payload, "name");
-  if (payloadName && payloadName !== "command_execution") return payloadName;
+const compactUnknownValue = (value: unknown): string | undefined => {
+  const formatted = formatPayloadValue(value);
+  if (formatted !== undefined) return formatted;
+  if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? "" : "s"}`;
+  if (isRecord(value)) {
+    const serialized = JSON.stringify(value);
+    return serialized.length > 160 ? `${serialized.slice(0, 157)}...` : serialized;
+  }
+  return undefined;
+};
 
+const nestedActivityEvent = (
+  activity: AgentChatActivity,
+): Readonly<Record<string, unknown>> | undefined =>
+  isRecord(activity.payload?.event) ? activity.payload.event : undefined;
+
+const eventInput = (activity: AgentChatActivity): unknown => nestedActivityEvent(activity)?.input;
+
+const eventOutput = (activity: AgentChatActivity): unknown => nestedActivityEvent(activity)?.output;
+
+const eventToolName = (activity: AgentChatActivity): string | undefined =>
+  stringPayloadValue(nestedActivityEvent(activity)?.toolName);
+
+const toolLabelFromUnknown = (value: unknown): string | undefined => {
+  if (!isRecord(value)) return undefined;
+  const namespace =
+    stringPayloadValue(value.namespace) ??
+    stringPayloadValue(value.server) ??
+    stringPayloadValue(value.mcpServer);
+  const tool = stringPayloadValue(value.tool) ?? stringPayloadValue(value.name);
+  return (
+    [namespace, tool].filter((part): part is string => part !== undefined).join(".") || undefined
+  );
+};
+
+const activityCommandLabel = (activity: AgentChatActivity): string | undefined =>
+  payloadString(activity.payload, "command") ??
+  commandFromUnknown(eventInput(activity)) ??
+  commandFromUnknown(activity.payload?.input);
+
+const activityToolLabel = (activity: AgentChatActivity): string | undefined => {
   const payloadTool = payloadString(activity.payload, "tool");
   if (payloadTool) {
     const payloadNamespace = payloadString(activity.payload, "namespace");
     return [payloadNamespace, payloadTool].filter(Boolean).join(".");
   }
+
+  const inputTool =
+    toolLabelFromUnknown(eventInput(activity)) ?? toolLabelFromUnknown(activity.payload?.input);
+  if (inputTool !== undefined) return inputTool;
+
+  const name = eventToolName(activity) ?? payloadString(activity.payload, "name");
+  return name && !genericToolNames.has(name) ? name : undefined;
+};
+
+const activityOutputDetail = (activity: AgentChatActivity): string | undefined => {
+  const output = eventOutput(activity) ?? activity.payload?.output;
+  if (isRecord(output)) {
+    return (
+      stringPayloadValue(output.message) ??
+      stringPayloadValue(output.summary) ??
+      compactUnknownValue(output)
+    );
+  }
+  return compactUnknownValue(output);
+};
+
+const activityNotificationLabel = (activity: AgentChatActivity): string => {
+  const command = activityCommandLabel(activity);
+  if (command) return command;
+
+  const tool = activityToolLabel(activity);
+  if (tool) return tool;
+
+  const genericLabel = genericToolLabel(
+    eventToolName(activity) ?? payloadString(activity.payload, "name"),
+  );
+  if (genericLabel !== undefined) return genericLabel;
 
   if (activity.kind === "tool" && activity.detail && activity.detail.trim().length > 0) {
     return activity.detail;
@@ -674,95 +831,101 @@ export const AgentChatThreadListItem = ({
   relativeBase,
   selected = false,
   thread,
-}: AgentChatThreadListItemProps) => (
-  <div
-    className={cn(
-      "group grid w-full grid-cols-[minmax(0,1fr)_auto] border-b border-border transition-colors last:border-b-0",
-      "hover:bg-subtle/70 focus-within:bg-subtle/70",
-      selected && "bg-primary/6",
-      thread.status === "archived" && "text-muted-foreground",
-      className,
-    )}
-    data-state={selected ? "selected" : "idle"}
-  >
-    <button
-      aria-current={selected ? "page" : undefined}
+}: AgentChatThreadListItemProps) => {
+  const source = originBadgeLabel(thread.origin);
+
+  return (
+    <div
       className={cn(
-        "grid min-w-0 grid-cols-[32px_minmax(0,1fr)] gap-3 px-4 py-3 text-left",
-        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+        "group grid w-full grid-cols-[minmax(0,1fr)_auto] border-b border-border transition-colors last:border-b-0",
+        "hover:bg-subtle/70 focus-within:bg-subtle/70",
+        selected && "bg-primary/6",
+        thread.status === "archived" && "text-muted-foreground",
+        className,
       )}
-      onClick={() => onThreadSelect?.(thread.id)}
-      type="button"
+      data-state={selected ? "selected" : "idle"}
     >
-      <span
+      <button
+        aria-current={selected ? "page" : undefined}
         className={cn(
-          "mt-0.5 grid size-8 place-items-center rounded-md border border-border bg-subtle text-muted-foreground",
-          selected && "border-primary/35 bg-primary/12 text-primary",
-          thread.status === "error" && "border-destructive/30 bg-destructive/10 text-destructive",
-          thread.status === "waiting" && "border-warning/30 bg-warning/12 text-warning",
+          "grid min-w-0 grid-cols-[32px_minmax(0,1fr)] gap-3 px-4 py-3 text-left",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
         )}
+        onClick={() => onThreadSelect?.(thread.id)}
+        type="button"
       >
-        {thread.activeTurnId ? icon(LoaderCircle, "size-4 animate-spin") : icon(MessageSquare)}
-      </span>
-      <span className="min-w-0">
-        <span className="flex min-w-0 items-center gap-2">
-          <Text as="span" className="min-w-0 flex-1" truncate variant="panelTitle">
-            {thread.title}
-          </Text>
-          {thread.unreadCount ? (
-            <span className="grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
-              {thread.unreadCount}
-            </span>
-          ) : null}
+        <span
+          className={cn(
+            "mt-0.5 grid size-8 place-items-center rounded-md border border-border bg-subtle text-muted-foreground",
+            selected && "border-primary/35 bg-primary/12 text-primary",
+            thread.status === "error" && "border-destructive/30 bg-destructive/10 text-destructive",
+            thread.status === "waiting" && "border-warning/30 bg-warning/12 text-warning",
+          )}
+        >
+          {thread.activeTurnId ? icon(LoaderCircle, "size-4 animate-spin") : icon(MessageSquare)}
         </span>
-        {thread.summary ? (
-          <Text as="span" className="mt-1 block" tone="muted" truncate variant="meta">
-            {thread.summary}
-          </Text>
-        ) : null}
-        <span className="mt-2 flex min-w-0 items-center gap-2">
-          <Badge appearance="outline" tone={statusTone[thread.status]}>
-            {thread.status}
-          </Badge>
-          {thread.providerId ? (
-            <Text as="span" className="min-w-0" tone="muted" truncate variant="meta">
-              {thread.providerId}
-              {thread.model ? ` / ${thread.model}` : ""}
+        <span className="min-w-0">
+          <span className="flex min-w-0 items-center gap-2">
+            <Text as="span" className="min-w-0 flex-1" truncate variant="panelTitle">
+              {thread.title}
+            </Text>
+            {thread.unreadCount ? (
+              <span className="grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
+                {thread.unreadCount}
+              </span>
+            ) : null}
+          </span>
+          {thread.summary ? (
+            <Text as="span" className="mt-1 block" tone="muted" truncate variant="meta">
+              {thread.summary}
             </Text>
           ) : null}
-          <DateTime
-            className="ml-auto shrink-0 text-xs text-muted-foreground"
-            fallback=""
-            format="relative"
-            relativeBase={relativeBase}
-            value={thread.updatedAt}
-          />
+          <span className="mt-2 flex min-w-0 items-center gap-2">
+            <Badge appearance="outline" tone={statusTone[thread.status]}>
+              {thread.status}
+            </Badge>
+            {source ? <Badge appearance="outline">{source}</Badge> : null}
+            {thread.providerId ? (
+              <Text as="span" className="min-w-0" tone="muted" truncate variant="meta">
+                {thread.providerId}
+                {thread.model ? ` / ${thread.model}` : ""}
+              </Text>
+            ) : null}
+            <DateTime
+              className="ml-auto shrink-0 text-xs text-muted-foreground"
+              fallback=""
+              format="relative"
+              relativeBase={relativeBase}
+              value={thread.updatedAt}
+            />
+          </span>
+          {thread.lastError ? (
+            <Text as="span" className="mt-2 block" tone="danger" truncate variant="meta">
+              {thread.lastError}
+            </Text>
+          ) : null}
         </span>
-        {thread.lastError ? (
-          <Text as="span" className="mt-2 block" tone="danger" truncate variant="meta">
-            {thread.lastError}
-          </Text>
-        ) : null}
-      </span>
-    </button>
-    {onThreadDelete ? (
-      <IconButton
-        className={cn(
-          "mr-3 mt-3 size-7 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
-          thread.activeTurnId && "opacity-45 group-hover:opacity-45 group-focus-within:opacity-45",
-        )}
-        disabled={Boolean(thread.activeTurnId)}
-        icon={<Trash2 aria-hidden className="size-3.5" />}
-        label={`Delete ${thread.title}`}
-        onClick={() => onThreadDelete(thread.id)}
-        size="sm"
-        title={thread.activeTurnId ? "Cannot delete while a turn is active" : "Delete chat"}
-        tone="danger"
-        variant="ghost"
-      />
-    ) : null}
-  </div>
-);
+      </button>
+      {onThreadDelete ? (
+        <IconButton
+          className={cn(
+            "mr-3 mt-3 size-7 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
+            thread.activeTurnId &&
+              "opacity-45 group-hover:opacity-45 group-focus-within:opacity-45",
+          )}
+          disabled={Boolean(thread.activeTurnId)}
+          icon={<Trash2 aria-hidden className="size-3.5" />}
+          label={`Delete ${thread.title}`}
+          onClick={() => onThreadDelete(thread.id)}
+          size="sm"
+          title={thread.activeTurnId ? "Cannot delete while a turn is active" : "Delete chat"}
+          tone="danger"
+          variant="ghost"
+        />
+      ) : null}
+    </div>
+  );
+};
 
 export type AgentChatStreamingTextProps = {
   readonly className?: string;
@@ -854,36 +1017,105 @@ export type AgentChatActivityStripProps = {
   readonly activities: readonly AgentChatActivity[];
   readonly className?: string;
   readonly maxVisible?: number;
+  readonly relativeBase?: Date | string;
 };
 
 const compactPayloadValue = (value: unknown): string | undefined => {
-  const formatted = formatPayloadValue(value);
-  if (formatted !== undefined) return formatted;
-  if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? "" : "s"}`;
-  if (isRecord(value)) {
-    const serialized = JSON.stringify(value);
-    return serialized.length > 120 ? `${serialized.slice(0, 117)}...` : serialized;
+  const compact = compactUnknownValue(value);
+  return compact && compact.length > 120 ? `${compact.slice(0, 117)}...` : compact;
+};
+
+const usefulActivityPayloadEntries = (
+  activity: AgentChatActivity,
+): readonly (readonly [string, string])[] => {
+  const event = nestedActivityEvent(activity);
+  const entries: [string, string][] = [];
+  const command = activityCommandLabel(activity);
+  const tool = activityToolLabel(activity);
+  const output = activityOutputDetail(activity);
+
+  if (command !== undefined) entries.push(["command", command]);
+  if (tool !== undefined && tool !== command) entries.push(["tool", tool]);
+  const rawInput = event?.input ?? activity.payload?.input;
+  const inputRecord = isRecord(rawInput) ? rawInput : undefined;
+  const input = compactPayloadValue(inputRecord?.arguments ?? rawInput);
+  const inputLabel = inputRecord?.arguments === undefined ? "input" : "arguments";
+  if (command === undefined && input !== undefined && input !== tool) {
+    entries.push([inputLabel, input]);
+  } else if (command !== undefined && inputRecord?.arguments !== undefined && input !== undefined) {
+    entries.push(["arguments", input]);
   }
-  return undefined;
+  if (output !== undefined && output !== command && output !== tool)
+    entries.push(["output", output]);
+
+  const error =
+    stringPayloadValue(event?.message) ??
+    stringPayloadValue(event?.code) ??
+    stringPayloadValue(activity.payload?.error);
+  if (error !== undefined) entries.push(["error", error]);
+
+  return entries;
 };
 
 const activityPayloadEntries = (
   activity: AgentChatActivity,
 ): readonly (readonly [string, string])[] =>
-  Object.entries(activity.payload ?? {})
-    .filter(([key]) => !hiddenActivityPayloadKeys.has(key))
-    .map(([key, value]) => [key, compactPayloadValue(value)] as const)
-    .filter((entry): entry is readonly [string, string] => entry[1] !== undefined)
-    .slice(0, 6);
+  [
+    ...usefulActivityPayloadEntries(activity),
+    ...Object.entries(activity.payload ?? {})
+      .filter(([key]) => !hiddenActivityPayloadKeys.has(key))
+      .map(([key, value]) => [key, compactPayloadValue(value)] as const)
+      .filter((entry): entry is readonly [string, string] => entry[1] !== undefined),
+  ].slice(0, 6);
 
-const activityLogSummary = (activities: readonly AgentChatActivity[]): string => {
-  const failed = activities.filter((activity) => activity.status === "failed").length;
-  const running = activities.filter(
-    (activity) => activity.status === "running" || activity.status === "pending",
-  ).length;
-  if (failed > 0) return `${activities.length} events, ${failed} failed`;
-  if (running > 0) return `${activities.length} events, ${running} active`;
-  return `${activities.length} event${activities.length === 1 ? "" : "s"}`;
+const activityItemType = (activity: AgentChatActivity): string | undefined =>
+  payloadString(activity.payload, "itemType");
+
+const isCommandActivity = (activity: AgentChatActivity): boolean => {
+  const itemType = activityItemType(activity);
+  const toolName = eventToolName(activity) ?? payloadString(activity.payload, "name");
+  return (
+    activityCommandLabel(activity) !== undefined ||
+    itemType === "commandExecution" ||
+    itemType === "command_execution" ||
+    toolName === "command_execution" ||
+    /^command$/iu.test(activity.title)
+  );
+};
+
+const isFileActivity = (activity: AgentChatActivity): boolean => {
+  const itemType = activityItemType(activity);
+  return (
+    itemType === "fileChange" ||
+    itemType === "file_change" ||
+    payloadString(activity.payload, "streamKind") === "file_change_output" ||
+    activity.title.toLowerCase().includes("file") ||
+    activity.payload?.diff !== undefined ||
+    activity.payload?.patch !== undefined
+  );
+};
+
+const isSearchActivity = (activity: AgentChatActivity): boolean => {
+  const itemType = activityItemType(activity);
+  const event = nestedActivityEvent(activity);
+  const input = isRecord(event?.input) ? event.input : undefined;
+  return (
+    itemType === "webSearch" ||
+    itemType === "web_search" ||
+    stringPayloadValue(input?.query) !== undefined ||
+    activity.title.toLowerCase().includes("search")
+  );
+};
+
+const plural = (count: number, singular: string, pluralLabel = `${singular}s`): string =>
+  count === 1 ? singular : pluralLabel;
+
+const countLabel = (count: number, singular: string, pluralLabel = `${singular}s`): string =>
+  count === 1 ? `a ${singular}` : `${count} ${pluralLabel}`;
+
+const joinSummaryParts = (parts: readonly string[]): string => {
+  if (parts.length <= 2) return parts.join(" and ");
+  return `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
 };
 
 const activityDisplayTitle = (activity: AgentChatActivity): string =>
@@ -891,106 +1123,149 @@ const activityDisplayTitle = (activity: AgentChatActivity): string =>
 
 const activityDisplayDetail = (activity: AgentChatActivity): string | undefined => {
   const title = activityDisplayTitle(activity);
+  const output = activityOutputDetail(activity);
+  if (output !== undefined && output !== title) return output;
   if (activity.detail && activity.detail.trim().length > 0 && activity.detail !== title) {
     return activity.detail;
   }
   return undefined;
 };
 
+const activityStripLabel = (activities: readonly AgentChatActivity[]): string => {
+  const failed = activities.filter((activity) => activity.status === "failed").length;
+  const running = activities.filter(
+    (activity) => activity.status === "running" || activity.status === "pending",
+  ).length;
+  const commands = activities.filter(isCommandActivity);
+  const files = activities.filter(
+    (activity) => !isCommandActivity(activity) && isFileActivity(activity),
+  );
+  const searches = activities.filter(
+    (activity) =>
+      !isCommandActivity(activity) && !isFileActivity(activity) && isSearchActivity(activity),
+  );
+  const tools = activities.filter(
+    (activity) =>
+      activity.kind === "tool" &&
+      !isCommandActivity(activity) &&
+      !isFileActivity(activity) &&
+      !isSearchActivity(activity),
+  );
+  const thinking = activities.filter((activity) => activity.kind === "thinking").length;
+  const usage = activities.filter((activity) => activity.kind === "usage").length;
+  const progress = activities.filter((activity) => activity.kind === "progress").length;
+  const parts = [
+    commands.length === 1 && activities.length === 1
+      ? `Ran ${activityDisplayTitle(commands[0] as AgentChatActivity)}`
+      : commands.length > 0
+        ? `Ran ${commands.length} ${plural(commands.length, "command")}`
+        : null,
+    files.length > 0 ? `Edited ${countLabel(files.length, "file")}` : null,
+    searches.length > 0
+      ? `Searched ${searches.length === 1 ? "code" : `${searches.length} times`}`
+      : null,
+    tools.length > 0 ? `Used ${tools.length} ${plural(tools.length, "tool")}` : null,
+    thinking > 0 ? `Reasoned${thinking === 1 ? "" : ` ${thinking} times`}` : null,
+    usage > 0 ? "Recorded usage" : null,
+    progress > 0 ? `Updated ${countLabel(progress, "progress event")}` : null,
+  ].filter((part): part is string => part !== null);
+  const base =
+    parts.length > 0
+      ? joinSummaryParts(parts)
+      : `${activities.length} background ${plural(activities.length, "event")}`;
+  if (failed > 0) return `${base}, ${failed} failed`;
+  if (running > 0) return `${base}, ${running} active`;
+  return base;
+};
+
+const activityStripIcon = (activities: readonly AgentChatActivity[]): LucideIcon => {
+  if (activities.some(isCommandActivity)) return Terminal;
+  if (activities.some(isFileActivity)) return PencilLine;
+  if (activities.some(isSearchActivity)) return Search;
+  if (activities.some((activity) => activity.kind === "thinking")) return Brain;
+  return Wrench;
+};
+
 export const AgentChatActivityStrip = ({
   activities,
   className,
-  maxVisible = 6,
+  maxVisible = Number.POSITIVE_INFINITY,
+  relativeBase,
 }: AgentChatActivityStripProps) => {
-  const latestActivity = activities.at(-1);
-  const visibleActivities = activities.slice(-maxVisible);
+  const visibleActivities =
+    Number.isFinite(maxVisible) && maxVisible > 0 ? activities.slice(-maxVisible) : activities;
   const hiddenCount = Math.max(activities.length - visibleActivities.length, 0);
-  const active = activities.some(
-    (activity) => activity.status === "running" || activity.status === "pending",
-  );
-  const [open, setOpen] = React.useState(active);
-
-  React.useEffect(() => {
-    setOpen(active);
-  }, [active, latestActivity?.id]);
+  const label = activityStripLabel(activities);
+  const Icon = activityStripIcon(activities);
 
   if (activities.length === 0) return null;
 
   return (
     <details
+      aria-label={label}
       className={cn(
-        "group/log border-b border-border/60 py-1.5 text-sm text-muted-foreground",
+        "group/activity-strip min-w-0 border-b border-border/50 px-1 py-1.5",
         className,
       )}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-      open={open}
     >
-      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md px-1.5 py-1 outline-none hover:bg-subtle focus-visible:ring-1 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-        <span className="grid size-5 shrink-0 place-items-center text-accent">
-          <Wrench aria-hidden className="size-3.5" strokeWidth={1.8} />
-        </span>
-        <Text as="span" className="shrink-0" variant="control">
-          Activity log
-        </Text>
-        <Badge appearance="outline">{activityLogSummary(activities)}</Badge>
-        {latestActivity ? (
-          <Text as="span" className="min-w-0 flex-1" tone="muted" truncate variant="meta">
-            {activityNotificationLabel(latestActivity)}
+      <summary className="grid min-w-0 cursor-pointer list-none grid-cols-[82px_minmax(0,1fr)] gap-3 rounded-md py-1 outline-none hover:bg-subtle/55 focus-visible:ring-1 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+        <span aria-hidden />
+        <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+          <Icon aria-hidden className="size-3.5 shrink-0" strokeWidth={1.8} />
+          <Text as="span" className="min-w-0 flex-1" truncate variant="bodyCompact">
+            {label}
           </Text>
-        ) : null}
-        <span className="ml-auto grid size-5 shrink-0 place-items-center text-muted-foreground">
+          {hiddenCount > 0 ? (
+            <Badge appearance="outline" className="shrink-0">
+              +{hiddenCount}
+            </Badge>
+          ) : null}
           <ChevronDown
             aria-hidden
-            className="size-3.5 transition-transform group-open/log:rotate-180"
+            className="size-3.5 shrink-0 transition-transform group-open/activity-strip:rotate-180"
             strokeWidth={1.8}
           />
         </span>
       </summary>
-      <div className="mt-1 border-l border-border/70 pl-4">
-        {hiddenCount > 0 ? (
-          <Text as="div" className="py-1 text-xs" tone="muted">
-            {hiddenCount} older event{hiddenCount === 1 ? "" : "s"} hidden in this preview.
-          </Text>
-        ) : null}
-        <div className="divide-y divide-border/60">
+      <div className="grid min-w-0 grid-cols-[82px_minmax(0,1fr)] gap-3 pb-2 pt-1">
+        <span aria-hidden />
+        <ol className="grid min-w-0 gap-1.5 rounded-md border border-border/70 bg-subtle/35 p-2">
           {visibleActivities.map((activity) => {
-            const Icon = activityKindIcon[activity.kind];
+            const ActivityIcon = activityKindIcon[activity.kind];
             const title = activityDisplayTitle(activity);
             const detail = activityDisplayDetail(activity);
-            const entries = activityPayloadEntries(activity);
+            const entries = activityPayloadEntries(activity).slice(0, 4);
 
             return (
-              <div
-                className="grid min-w-0 grid-cols-[78px_minmax(0,1fr)] gap-3 py-2"
+              <li
+                className="grid min-w-0 grid-cols-[20px_minmax(0,1fr)_auto] gap-2 rounded px-2 py-1.5"
                 key={activity.id}
               >
-                <div className="min-w-0">
-                  <DateTime
-                    className="block text-[11px] text-muted-foreground"
-                    format="time"
-                    value={activity.createdAt}
-                  />
-                  {activity.status ? (
-                    <Badge
-                      appearance="outline"
-                      className="mt-1 max-w-full"
-                      tone={activityStatusTone[activity.status]}
-                    >
-                      {activityStatusLabel[activity.status]}
-                    </Badge>
-                  ) : null}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-                    <Text as="span" className="min-w-0" truncate variant="control">
+                <span
+                  className={cn(
+                    "mt-0.5 grid size-5 place-items-center rounded border border-border bg-background text-muted-foreground",
+                    activity.kind === "tool" && "text-accent",
+                    activity.kind === "error" && "text-destructive",
+                    activity.status === "running" && "animate-pulse",
+                  )}
+                >
+                  <ActivityIcon aria-hidden className="size-3" strokeWidth={1.8} />
+                </span>
+                <span className="min-w-0">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Text as="span" className="min-w-0 flex-1" truncate variant="control">
                       {title}
                     </Text>
-                  </div>
+                    {activity.status ? (
+                      <Badge appearance="outline" tone={activityStatusTone[activity.status]}>
+                        {activityStatusLabel[activity.status]}
+                      </Badge>
+                    ) : null}
+                  </span>
                   {detail ? (
                     <Text
-                      as="p"
-                      className="mt-1 font-mono text-[12px] leading-5"
+                      as="span"
+                      className="mt-0.5 block font-mono text-[11px] leading-4"
                       tone="muted"
                       wrap="break"
                     >
@@ -998,23 +1273,29 @@ export const AgentChatActivityStrip = ({
                     </Text>
                   ) : null}
                   {entries.length > 0 ? (
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    <span className="mt-1 flex min-w-0 flex-wrap gap-1">
                       {entries.map(([key, value]) => (
                         <span
-                          className="inline-flex min-w-0 max-w-full items-center gap-1 rounded border border-border bg-subtle px-1.5 py-0.5 text-[11px]"
+                          className="inline-flex min-w-0 max-w-full items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground"
                           key={key}
                         >
                           <span className="font-medium text-foreground">{key}</span>
                           <span className="min-w-0 truncate">{value}</span>
                         </span>
                       ))}
-                    </div>
+                    </span>
                   ) : null}
-                </div>
-              </div>
+                </span>
+                <DateTime
+                  className="mt-0.5 shrink-0 text-[11px] text-muted-foreground"
+                  format="time"
+                  relativeBase={relativeBase}
+                  value={activity.createdAt}
+                />
+              </li>
             );
           })}
-        </div>
+        </ol>
       </div>
     </details>
   );

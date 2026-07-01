@@ -21,7 +21,22 @@ describe("MarkdownRenderer", () => {
     expect(markup).toContain("commit:abcdef1");
     expect(markup).toContain("Codex");
     expect(markup).toContain("Robert");
+    expect(markup).not.toContain("[Codex]");
+    expect(markup).not.toContain("(cycle-agent:codex)");
     expect(markup).not.toContain('href="cycle-');
+  });
+
+  it("unwraps nested Cycle reference labels saved by older tag insertion", () => {
+    const markup = renderToStaticMarkup(
+      createElement(MarkdownRenderer, {
+        markdown: "[[Codex](cycle-agent:codex)](cycle-agent:codex) is this ticket still valid?",
+      }),
+    );
+
+    expect(markup).toContain(">Codex</button>");
+    expect(markup).toContain("is this ticket still valid?");
+    expect(markup).not.toContain("[Codex]");
+    expect(markup).not.toContain("(cycle-agent:codex)");
   });
 
   it("keeps unsafe links inert", () => {

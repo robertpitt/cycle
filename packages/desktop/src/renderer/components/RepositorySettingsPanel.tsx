@@ -7,8 +7,11 @@ import {
   type RepositoryRecord,
 } from "../../shared/AppConfig.ts";
 import { useUpdateRepositoryPreferencesMutation } from "../mutations/index.ts";
+import { RepositoryAgentWorkSettingsPanel } from "./AgentWorkPanels.tsx";
+import type { DetectedAgentProvider } from "../../shared/AgentProviders.ts";
 
 type RepositorySettingsPanelProps = {
+  readonly agentProviders?: readonly DetectedAgentProvider[];
   readonly appConfig?: AppConfigState;
   readonly repository: RepositoryRecord;
   readonly status?: RepositoryStatus;
@@ -29,6 +32,7 @@ const shortId = (value: string | null | undefined): string =>
   value === null || value === undefined ? "Not committed" : value.slice(0, 12);
 
 export const RepositorySettingsPanel = ({
+  agentProviders = [],
   appConfig,
   repository,
   status,
@@ -54,44 +58,47 @@ export const RepositorySettingsPanel = ({
   };
 
   return (
-    <UiRepositorySettingsPanel
-      commitStyleItems={commitStyleItems}
-      informationRows={[
-        {
-          label: "Current branch",
-          value: status?.metadata?.currentBranch ?? "Detached or unavailable",
-        },
-        {
-          label: "Default remote",
-          value: defaultRemote ?? "No default remote",
-        },
-        {
-          label: "Default remote URL",
-          value: defaultRemoteUrl ?? "No remote URL",
-        },
-        {
-          label: "Remotes",
-          value: remoteSummary,
-        },
-        {
-          label: "Cycle snapshot",
-          value: shortId(status?.activeSnapshotId),
-        },
-        {
-          label: "Status",
-          value: status?.status ?? "Unavailable",
-        },
-        {
-          label: "Warnings",
-          value: String(status?.warningCount ?? 0),
-        },
-      ]}
-      onCommitStyleChange={setCommitStyle}
-      repository={{
-        commitStyle: repository.preferences.commitStyle,
-        displayName: repository.displayName,
-        path: repository.path,
-      }}
-    />
+    <div className="grid gap-6 pb-5">
+      <UiRepositorySettingsPanel
+        commitStyleItems={commitStyleItems}
+        informationRows={[
+          {
+            label: "Current branch",
+            value: status?.metadata?.currentBranch ?? "Detached or unavailable",
+          },
+          {
+            label: "Default remote",
+            value: defaultRemote ?? "No default remote",
+          },
+          {
+            label: "Default remote URL",
+            value: defaultRemoteUrl ?? "No remote URL",
+          },
+          {
+            label: "Remotes",
+            value: remoteSummary,
+          },
+          {
+            label: "Cycle snapshot",
+            value: shortId(status?.activeSnapshotId),
+          },
+          {
+            label: "Status",
+            value: status?.status ?? "Unavailable",
+          },
+          {
+            label: "Warnings",
+            value: String(status?.warningCount ?? 0),
+          },
+        ]}
+        onCommitStyleChange={setCommitStyle}
+        repository={{
+          commitStyle: repository.preferences.commitStyle,
+          displayName: repository.displayName,
+          path: repository.path,
+        }}
+      />
+      <RepositoryAgentWorkSettingsPanel providers={agentProviders} repositoryId={repository.id} />
+    </div>
   );
 };

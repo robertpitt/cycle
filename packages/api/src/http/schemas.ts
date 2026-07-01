@@ -188,6 +188,217 @@ export const AgentProvidersOutput = Schema.Struct({
 });
 export const AgentProvidersResourceEnvelope = ResourceEnvelopeOf(AgentProvidersOutput);
 
+export const AgentAuthorityMode = Schema.Literals([
+  "ticket-context",
+  "disposable-worktree",
+  "implementation-worktree",
+]);
+export const AgentJobStatus = Schema.Literals([
+  "queued",
+  "starting",
+  "running",
+  "waiting-for-input",
+  "suspending",
+  "suspended",
+  "resuming",
+  "retry-wait",
+  "cancelling",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+export const AgentWorkTrigger = Schema.Literals([
+  "assignment-pickup",
+  "agent-delegate",
+  "agent-mention",
+  "follow-up-implementation",
+  "manual-command",
+  "retry",
+  "resume",
+]);
+export const AgentSettingsOutput = Schema.Struct({
+  allowDisposableWorktreeForMentions: Schema.Boolean,
+  allowFullAccessJobs: Schema.Boolean,
+  defaultMentionAuthorityMode: AgentAuthorityMode,
+  defaultModel: Schema.optional(Schema.NullOr(Schema.String)),
+  defaultProviderId: Schema.String,
+  enabledProviders: Schema.Array(Schema.String),
+  maxConcurrentJobs: PositiveInteger,
+  paused: Schema.Boolean,
+  perAgentOverrides: JsonObject,
+});
+export const AgentSettingsPatchPayload = strictSchema(
+  Schema.Struct({
+    allowDisposableWorktreeForMentions: Schema.optional(Schema.Boolean),
+    allowFullAccessJobs: Schema.optional(Schema.Boolean),
+    defaultMentionAuthorityMode: Schema.optional(AgentAuthorityMode),
+    defaultModel: Schema.optional(Schema.NullOr(Schema.String)),
+    defaultProviderId: Schema.optional(Schema.String),
+    enabledProviders: Schema.optional(Schema.Array(Schema.String)),
+    maxConcurrentJobs: Schema.optional(PositiveInteger),
+    paused: Schema.optional(Schema.Boolean),
+    perAgentOverrides: Schema.optional(JsonObject),
+  }),
+);
+export const RepositoryAgentSettingsOutput = Schema.Struct({
+  agentWorkDisabled: Schema.Boolean,
+  maxConcurrentJobs: PositiveInteger,
+  model: Schema.optional(Schema.NullOr(Schema.String)),
+  paused: Schema.Boolean,
+  perAgentOverrides: JsonObject,
+  providerId: Schema.optional(Schema.NullOr(Schema.String)),
+  repositoryId: Schema.String,
+  updatedAt: Schema.String,
+});
+export const RepositoryAgentSettingsPatchPayload = strictSchema(
+  Schema.Struct({
+    agentWorkDisabled: Schema.optional(Schema.Boolean),
+    maxConcurrentJobs: Schema.optional(PositiveInteger),
+    model: Schema.optional(Schema.NullOr(Schema.String)),
+    paused: Schema.optional(Schema.Boolean),
+    perAgentOverrides: Schema.optional(JsonObject),
+    providerId: Schema.optional(Schema.NullOr(Schema.String)),
+  }),
+);
+export const AgentDelegateOutput = Schema.Struct({
+  agentId: Schema.String,
+  assignedBy: Schema.String,
+  assignmentVersion: PositiveInteger,
+  createdAt: Schema.String,
+  enabled: Schema.Boolean,
+  model: Schema.optional(Schema.NullOr(Schema.String)),
+  notes: Schema.optional(Schema.NullOr(Schema.String)),
+  providerId: Schema.String,
+  repositoryId: Schema.String,
+  ticketId: Schema.String,
+  updatedAt: Schema.String,
+});
+export const AgentDelegateNullableOutput = Schema.NullOr(AgentDelegateOutput);
+export const AgentDelegatePutPayload = strictSchema(
+  Schema.Struct({
+    agentId: Schema.String,
+    assignedBy: Schema.optional(Schema.String),
+    enabled: Schema.optional(Schema.Boolean),
+    model: Schema.optional(Schema.NullOr(Schema.String)),
+    notes: Schema.optional(Schema.NullOr(Schema.String)),
+    providerId: Schema.optional(Schema.String),
+  }),
+);
+export const AgentDelegateJobPayload = strictSchema(
+  Schema.Struct({
+    agentId: Schema.String,
+    assignedBy: Schema.optional(Schema.String),
+    enabled: Schema.optional(Schema.Boolean),
+    instructions: Schema.optional(Schema.NullOr(Schema.String)),
+    model: Schema.optional(Schema.NullOr(Schema.String)),
+    notes: Schema.optional(Schema.NullOr(Schema.String)),
+    providerId: Schema.optional(Schema.String),
+  }),
+);
+export const AgentJobOutput = Schema.Struct({
+  agentId: Schema.String,
+  attempt: NonNegativeInteger,
+  authorityMode: AgentAuthorityMode,
+  branchAssociationId: Schema.optional(Schema.NullOr(Schema.String)),
+  completedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  createdAt: Schema.String,
+  currentGate: Schema.optional(Schema.NullOr(Schema.String)),
+  dedupeKey: Schema.String,
+  executionId: Schema.String,
+  jobId: Schema.String,
+  lastError: Schema.optional(Schema.NullOr(Schema.String)),
+  lastHeartbeatAt: Schema.optional(Schema.NullOr(Schema.String)),
+  lastProviderEventAt: Schema.optional(Schema.NullOr(Schema.String)),
+  logicalJobKey: Schema.String,
+  maxAttempts: PositiveInteger,
+  metadata: JsonObject,
+  model: Schema.optional(Schema.NullOr(Schema.String)),
+  providerId: Schema.String,
+  providerSessionId: Schema.optional(Schema.NullOr(Schema.String)),
+  repositoryId: Schema.String,
+  requestedBy: Schema.String,
+  schemaVersion: Schema.Literal(1),
+  startedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  status: AgentJobStatus,
+  ticketId: Schema.String,
+  trigger: AgentWorkTrigger,
+  updatedAt: Schema.String,
+  workflowId: Schema.optional(Schema.NullOr(Schema.String)),
+  worktreeId: Schema.optional(Schema.NullOr(Schema.String)),
+});
+export const AgentDelegateJobOutput = Schema.Struct({
+  delegate: AgentDelegateOutput,
+  job: AgentJobOutput,
+});
+export const AgentActivityOutput = Schema.Struct({
+  actor: Schema.optional(Schema.Unknown),
+  dedupeKey: Schema.optional(Schema.NullOr(Schema.String)),
+  eventId: Schema.String,
+  eventType: Schema.String,
+  eventVersion: PositiveInteger,
+  jobId: Schema.optional(Schema.NullOr(Schema.String)),
+  occurredAt: Schema.String,
+  payload: JsonObject,
+  repositoryId: Schema.optional(Schema.NullOr(Schema.String)),
+  sequence: PositiveInteger,
+  source: Schema.String,
+  ticketId: Schema.optional(Schema.NullOr(Schema.String)),
+});
+export const AgentJobLogEntryOutput = Schema.Struct({
+  actor: Schema.optional(Schema.NullOr(Schema.String)),
+  entryId: Schema.String,
+  kind: Schema.Literals(["activity", "checkpoint", "event", "status"]),
+  message: Schema.String,
+  occurredAt: Schema.String,
+  payload: JsonObject,
+  source: Schema.optional(Schema.NullOr(Schema.String)),
+  status: Schema.optional(Schema.NullOr(Schema.String)),
+  title: Schema.String,
+});
+export const AgentJobLogOutput = Schema.Struct({
+  entries: Schema.Array(AgentJobLogEntryOutput),
+  job: AgentJobOutput,
+});
+export const AgentSettingsResourceEnvelope = ResourceEnvelopeOf(AgentSettingsOutput);
+export const RepositoryAgentSettingsResourceEnvelope = ResourceEnvelopeOf(
+  RepositoryAgentSettingsOutput,
+);
+export const AgentDelegateResourceEnvelope = ResourceEnvelopeOf(AgentDelegateNullableOutput);
+export const AgentDelegateChangedEnvelope = ResourceEnvelopeOf(AgentDelegateOutput);
+export const AgentDelegateJobResourceEnvelope = ResourceEnvelopeOf(AgentDelegateJobOutput);
+export const AgentJobResourceEnvelope = ResourceEnvelopeOf(AgentJobOutput);
+export const AgentJobLogResourceEnvelope = ResourceEnvelopeOf(AgentJobLogOutput);
+export const AgentJobCollectionEnvelope = CollectionEnvelopeOf(AgentJobOutput);
+export const AgentActivityCollectionEnvelope = CollectionEnvelopeOf(AgentActivityOutput);
+export const AgentJobsQueryParams = {
+  "filter[status]": Schema.optional(Schema.String),
+  "filter[ticketId]": Schema.optional(Schema.String),
+  repositoryId: Schema.optional(Schema.String),
+  status: Schema.optional(Schema.String),
+  ticketId: Schema.optional(Schema.String),
+};
+export const AgentActivityQueryParams = {
+  after: Schema.optional(PositiveIntegerFromString),
+  "page[limit]": Schema.optional(PositiveIntegerFromString),
+  repositoryId: Schema.optional(Schema.String),
+};
+export const AgentJobParams = { jobId: Schema.String };
+export const AgentDelegateParams = {
+  issueId: Schema.String,
+  repositoryId: Schema.String,
+};
+export const AgentJobCancelPayload = strictSchema(
+  Schema.Struct({
+    reason: Schema.optional(Schema.String),
+    requestedBy: Schema.optional(Schema.String),
+  }),
+);
+export const AgentJobResumePayload = strictSchema(
+  Schema.Struct({
+    requestedBy: Schema.optional(Schema.String),
+  }),
+);
+
 export const ThemePreference = Schema.Literals(["light", "dark", "system"]);
 export type ThemePreference = typeof ThemePreference.Type;
 

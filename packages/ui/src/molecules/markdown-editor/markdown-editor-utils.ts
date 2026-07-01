@@ -30,6 +30,7 @@ import {
   cycleReferenceProtocols,
   getCycleReferenceHref,
   type CycleReferenceKind,
+  unwrapNestedCycleReferenceMarkdownLinks,
 } from "../../lib/markdown-references.ts";
 
 export const markdownEditorNodes: InitialConfigType["nodes"] = [
@@ -147,7 +148,7 @@ export const isSafeMarkdownUrl = (href: string): boolean => {
 };
 
 export const normalizeMarkdownEditorValue = (markdown: string): string =>
-  markdown.replace(/\r\n?/gu, "\n");
+  unwrapNestedCycleReferenceMarkdownLinks(markdown.replace(/\r\n?/gu, "\n"));
 
 export const importMarkdownIntoEditor = (markdown: string): void => {
   $convertFromMarkdownString(

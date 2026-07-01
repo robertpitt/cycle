@@ -62,11 +62,10 @@ const ignoredTargetSelector = [
   "[role='textbox']",
 ].join(", ");
 
-export const initialMacTrackpadSwipeNavigationState =
-  (): MacTrackpadSwipeNavigationState => ({
-    accumulatedX: 0,
-    gestureHandled: false,
-  });
+export const initialMacTrackpadSwipeNavigationState = (): MacTrackpadSwipeNavigationState => ({
+  accumulatedX: 0,
+  gestureHandled: false,
+});
 
 const resolveOptions = (
   options: MacTrackpadSwipeNavigationOptions | undefined,
@@ -151,10 +150,7 @@ export const updateMacTrackpadSwipeNavigation = (
   const absX = Math.abs(deltaX);
   const absY = Math.abs(deltaY);
 
-  if (
-    absX < resolvedOptions.minEventDeltaPx ||
-    absX < absY * resolvedOptions.dominanceRatio
-  ) {
+  if (absX < resolvedOptions.minEventDeltaPx || absX < absY * resolvedOptions.dominanceRatio) {
     return {
       consumed: false,
       state: resetAccumulation(stateWithWheelTime),

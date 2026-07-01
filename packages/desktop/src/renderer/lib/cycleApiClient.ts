@@ -33,6 +33,25 @@ import type { DetectedAgentProvider } from "../../shared/AgentProviders.ts";
 import type { UpdateRepositoryPreferencesInput } from "../../shared/LocalWorkspace.ts";
 import type { CompleteOnboardingInput, ProfileUpdateInput } from "../../shared/Profile.ts";
 import { getDesktopBridge } from "./desktopBridge.ts";
+import {
+  parseAgentJob,
+  parseAgentJobLog,
+  parseAgentDelegate,
+  parseAgentDelegateJobResult,
+  parseAgentSettings,
+  parseRepositoryAgentSettings,
+  summarizeAgentActivity,
+  type AgentActivity,
+  type AgentDelegate,
+  type AgentDelegateJobResult,
+  type AgentSettings,
+  type AgentSettingsPatch,
+  type AgentJobLog,
+  type AgentWorkJob,
+  type RepositoryAgentSettings,
+  type RepositoryAgentSettingsPatch,
+  type StartAgentDelegateJobInput,
+} from "./agentWork.ts";
 
 type SupportedCycleApiAlias = Extract<
   UseCaseAlias,
@@ -76,6 +95,12 @@ type CollectionEnvelope<Entry> = {
   readonly page: {
     readonly nextCursor: string | null;
   };
+};
+type UnknownResourceEnvelope = {
+  readonly data?: unknown;
+};
+type UnknownCollectionEnvelope = {
+  readonly data?: unknown;
 };
 type ApiAgentProviderProfile = (typeof AgentProvidersOutputSchema.Type)["providers"][number];
 
@@ -389,6 +414,43 @@ const resourceOrNull = async <S extends Schema.Top>(
     if (error instanceof CycleApiRequestError && error.status === 404) return null;
     throw error;
   }
+};
+
+const unknownResource = async (method: string, path: string, body?: unknown): Promise<unknown> => {
+  const response = (await request(
+    method,
+    path,
+    ResourceEnvelopeOf(Schema.Unknown),
+    body,
+  )) as UnknownResourceEnvelope;
+  return response.data;
+};
+
+const unknownResourceOrNull = async (
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<unknown | null> => {
+  try {
+    return await unknownResource(method, path, body);
+  } catch (error) {
+    if (error instanceof CycleApiRequestError && error.status === 404) return null;
+    throw error;
+  }
+};
+
+const unknownCollection = async (
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<ReadonlyArray<unknown>> => {
+  const response = (await request(
+    method,
+    path,
+    CollectionEnvelopeOf(Schema.Unknown),
+    body,
+  )) as UnknownCollectionEnvelope;
+  return Array.isArray(response.data) ? response.data : [];
 };
 
 const collection = async <S extends Schema.Top>(
@@ -761,6 +823,87 @@ export const cycleApiClient = {
     const response = await resource("GET", "/v1/agents/providers", AgentProvidersOutputSchema);
     return response.providers.map(detectedAgentProviderFromProfile);
   },
+
+  getAgentSettings: async (
+    providers: readonly DetectedAgentProvider[] = [],
+  ): Promise<AgentSettings> =>
+    parseAgentSettings(await unknownResource("GET", "/v1/agent-settings"), providers),
+
+  updateAgentSettings: async (
+    input: AgentSettingsPatch,
+    providers: readonly DetectedAgentProvider[] = [],
+  ): Promise<AgentSettings> =>
+    parseAgentSettings(await unknownResource("PATCH", "/v1/agent-settings", input), providers),
+
+  getRepositoryAgentSettings: async (repositoryId: string): Promise<RepositoryAgentSettings> =>
+    parseRepositoryAgentSettings(
+      await unknownResource("GET", `${repositoryPath(repositoryId)}/agent-settings`),
+      repositoryId,
+    ),
+
+  updateRepositoryAgentSettings: async (
+    repositoryId: string,
+    input: RepositoryAgentSettingsPatch,
+  ): Promise<RepositoryAgentSettings> =>
+    parseRepositoryAgentSettings(
+      await unknownResource("PATCH", `${repositoryPath(repositoryId)}/agent-settings`, input),
+      repositoryId,
+    ),
+
+  getIssueAgentDelegate: async (
+    repositoryId: string,
+    issueId: string,
+  ): Promise<AgentDelegate | null> =>
+    parseAgentDelegate(
+      await unknownResourceOrNull(
+        "GET",
+        `${repositoryPath(repositoryId)}/issues/${encodeSegment(issueId)}/agent-delegate`,
+      ),
+    ),
+
+  startIssueAgentDelegateJob: async (
+    repositoryId: string,
+    issueId: string,
+    input: StartAgentDelegateJobInput,
+  ): Promise<AgentDelegateJobResult | null> =>
+    parseAgentDelegateJobResult(
+      await unknownResource(
+        "POST",
+        `${repositoryPath(repositoryId)}/issues/${encodeSegment(issueId)}/agent-delegate/jobs`,
+        input,
+      ),
+    ),
+
+  listAgentJobs: async (query: QueryInput = {}): Promise<ReadonlyArray<AgentWorkJob>> =>
+    (await unknownCollection("GET", withQuery("/v1/agent-jobs", query))).flatMap((entry) => {
+      const job = parseAgentJob(entry);
+      return job ? [job] : [];
+    }),
+
+  getAgentJob: async (jobId: string): Promise<AgentWorkJob | null> => {
+    const job = parseAgentJob(
+      await unknownResourceOrNull("GET", `/v1/agent-jobs/${encodeSegment(jobId)}`),
+    );
+    return job;
+  },
+
+  getAgentJobLog: async (jobId: string): Promise<AgentJobLog | null> =>
+    parseAgentJobLog(
+      await unknownResourceOrNull("GET", `/v1/agent-jobs/${encodeSegment(jobId)}/logs`),
+    ),
+
+  resumeAgentJob: async (jobId: string): Promise<AgentWorkJob | null> =>
+    parseAgentJob(
+      await unknownResource("POST", `/v1/agent-jobs/${encodeSegment(jobId)}/resume`, {}),
+    ),
+
+  cancelAgentJob: async (jobId: string): Promise<AgentWorkJob | null> =>
+    parseAgentJob(
+      await unknownResource("POST", `/v1/agent-jobs/${encodeSegment(jobId)}/cancel`, {}),
+    ),
+
+  getAgentActivity: async (): Promise<AgentActivity> =>
+    summarizeAgentActivity(await unknownCollection("GET", "/v1/agent-jobs")),
 
   openRepositoryPath: (input: OpenRepositoryPathInput): Promise<RepositoryStatus> =>
     resource("POST", "/v1/repositories", ContractSchemas.RepositoryStatusOutput, input),

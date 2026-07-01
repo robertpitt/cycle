@@ -3,6 +3,7 @@ import { makeCodexAppServerClient, type CodexAppServerClient } from "@cycle/code
 import { Schema } from "effect";
 import { describe, it, vi } from "vitest";
 import { makeCodexAgentService } from "../src/codex.ts";
+import { makeAgentJobRequestMetadata } from "../src/providers/capabilities.ts";
 import { parseStructured } from "../src/providers/codex/structured.ts";
 import type { AgentEvent, AgentSessionBinding, AgentSessionStore } from "../src/types.ts";
 
@@ -181,6 +182,17 @@ describe("@cycle/agents codex app-server adapter", () => {
       runtimeMode: "workspace-write",
       title: "App server chat",
     });
+    const metadata = makeAgentJobRequestMetadata({
+      agentId: "agent_local",
+      authorityMode: "implementation-worktree",
+      branchName: "cycle/task/CYC-123-stream-a-response",
+      jobId: "job_stream",
+      providerId: "codex",
+      repositoryId: "repo_local",
+      ticketId: "CYC-123",
+      trigger: "assignment-pickup",
+      worktreePath: "/tmp/cycle/worktrees/worktree_stream",
+    });
     const eventsPromise = collect(
       service.stream(session.id, {
         context: {
@@ -191,11 +203,12 @@ describe("@cycle/agents codex app-server adapter", () => {
         model: {
           id: "gpt-test",
         },
+        metadata,
       }),
     );
 
     await completeStartup(peer, {
-      approvalPolicy: "on-request",
+      approvalPolicy: "never",
       sandbox: "workspace-write",
     });
     await startTurn(peer);
@@ -238,6 +251,7 @@ describe("@cycle/agents codex app-server adapter", () => {
     assert.equal(completed?.type, "turn.completed");
     assert.equal(completed?.result.text, "Hello");
     assert.equal(completed?.result.usage?.totalTokens, 5);
+    assert.deepEqual(completed?.result.metadata, metadata);
 
     const stored = bindings.get(session.id);
     assert.equal(stored?.native?.threadId, "native_thread");
@@ -453,7 +467,71 @@ describe("@cycle/agents codex app-server adapter", () => {
     assert.match(warning?.message ?? "", /reported no tools/u);
   });
 
-  it("roundtrips command approvals through AgentService", async () => {
+  it("fails before starting a turn when required Cycle MCP warm-up reports no tools", async () => {
+    const peer = makeMockPeer();
+    const service = makeCodexAgentService({ appServerClient: peer.client });
+    const session = await service.createSession();
+    const eventsPromise = collect(
+      service.stream(session.id, {
+        input: "List MCPs",
+        mcp: {
+          headers: {
+            authorization: "Bearer test-token",
+          },
+          mode: "http",
+          required: true,
+          url: "http://127.0.0.1:4738/mcp",
+        },
+      }),
+    );
+
+    const initialize = await peer.expectRequest("initialize");
+    peer.respond(initialize.id, {
+      platformFamily: "unix",
+      platformOs: "macos",
+      userAgent: "mock-codex",
+    });
+    await peer.expectNotification("initialized");
+    const threadStart = await peer.expectRequest("thread/start");
+    peer.respond(threadStart.id, {
+      model: "gpt-test",
+      thread: {
+        id: "native_thread",
+        turns: [],
+      },
+    });
+    const reload = await peer.expectRequest("config/mcpServer/reload");
+    peer.respond(reload.id, {});
+    for (const _ of [0, 1, 2]) {
+      const status = await peer.expectRequest("mcpServerStatus/list");
+      peer.respond(status.id, {
+        data: [
+          {
+            authStatus: "bearerToken",
+            name: "cycle",
+            resourceTemplates: [],
+            resources: [],
+            serverInfo: {
+              name: "cycle",
+              version: "0.0.0",
+            },
+            tools: {},
+          },
+        ],
+        nextCursor: null,
+      });
+    }
+
+    const events = await eventsPromise;
+    const terminal = events.at(-1);
+    assert.equal(terminal?.type, "turn.failed");
+    if (terminal?.type === "turn.failed") {
+      assert.equal(terminal.error.code, "mcp_unavailable");
+      assert.match(terminal.error.message, /reported no tools/u);
+    }
+  });
+
+  it("auto-accepts command approvals without pausing the turn", async () => {
     const peer = makeMockPeer();
     const service = makeCodexAgentService({ appServerClient: peer.client });
     const session = await service.createSession();
@@ -469,17 +547,16 @@ describe("@cycle/agents codex app-server adapter", () => {
       threadId: "native_thread",
       turnId: "native_turn",
     });
-    const requested = await nextEvent(iterator, "approval.requested");
-    assert.equal(requested.request.kind, "command");
-    assert.equal(requested.request.details?.command, "pnpm test");
-
-    const result = await service.respondToApproval(
-      session.id,
-      requested.request.requestId,
-      "accept",
-    );
-    assert.equal(result.status, "accepted");
     assert.deepEqual((await approvalResponse).result, { decision: "accept" });
+
+    const pendingNext = iterator.next();
+    const pendingResult = await Promise.race([
+      pendingNext.then((result) => ({ result, type: "event" as const })),
+      new Promise<{ readonly type: "still-pending" }>((resolve) =>
+        setTimeout(() => resolve({ type: "still-pending" }), 100),
+      ),
+    ]);
+    assert.equal(pendingResult.type, "still-pending");
 
     peer.notify("turn/completed", {
       threadId: "native_thread",
@@ -488,10 +565,11 @@ describe("@cycle/agents codex app-server adapter", () => {
         status: "completed",
       },
     });
-    await nextEvent(iterator, "turn.completed");
+    const completed = await pendingNext;
+    assert.equal(completed.value?.type, "turn.completed");
   });
 
-  it("does not time out while a command approval is pending", async () => {
+  it("roundtrips file change approvals through AgentService", async () => {
     const peer = makeMockPeer();
     const service = makeCodexAgentService({
       appServerClient: peer.client,
@@ -504,20 +582,16 @@ describe("@cycle/agents codex app-server adapter", () => {
     await completeStartup(peer);
     await startTurn(peer);
     assert.equal((await started).value?.type, "turn.started");
-    const approvalResponse = peer.serverRequest("item/commandExecution/requestApproval", {
-      command: "pnpm test",
-      itemId: "command_1",
+    const approvalResponse = peer.serverRequest("item/fileChange/requestApproval", {
+      changes: [{ path: "src/index.ts" }],
+      itemId: "file_change_1",
+      startedAtMs: Date.now(),
       threadId: "native_thread",
       turnId: "native_turn",
     });
     const requested = await nextEvent(iterator, "approval.requested");
-    const pendingNext = iterator.next();
-    const pendingResult = await Promise.race([
-      pendingNext.then((result) => ({ result, type: "event" as const })),
-      wait(100).then(() => ({ type: "still-pending" as const })),
-    ]);
-
-    assert.equal(pendingResult.type, "still-pending");
+    assert.equal(requested.request.kind, "file-change");
+    assert.deepEqual(requested.request.details?.changes, [{ path: "src/index.ts" }]);
 
     const result = await service.respondToApproval(
       session.id,
@@ -534,8 +608,7 @@ describe("@cycle/agents codex app-server adapter", () => {
     });
 
     assert.deepEqual((await approvalResponse).result, { decision: "accept" });
-    const resolved = await pendingNext;
-    assert.equal(resolved.value?.type, "approval.resolved");
+    await nextEvent(iterator, "approval.resolved");
     await nextEvent(iterator, "turn.completed");
   });
 
@@ -548,7 +621,9 @@ describe("@cycle/agents codex app-server adapter", () => {
         timeoutMs: 50,
       });
       const session = await service.createSession();
-      const iterator = service.stream(session.id, { input: "Keep working" })[Symbol.asyncIterator]();
+      const iterator = service
+        .stream(session.id, { input: "Keep working" })
+        [Symbol.asyncIterator]();
       const started = iterator.next();
 
       await completeStartup(peer);
@@ -560,6 +635,50 @@ describe("@cycle/agents codex app-server adapter", () => {
       const failed = await failedPromise;
       assert.equal(failed.error.code, "timeout");
       assert.equal(failed.error.message, "Codex turn timed out.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("refreshes the Codex turn timeout when provider activity arrives", async () => {
+    vi.useFakeTimers();
+    try {
+      const peer = makeMockPeer();
+      const service = makeCodexAgentService({
+        appServerClient: peer.client,
+        timeoutMs: 50,
+      });
+      const session = await service.createSession();
+      const iterator = service
+        .stream(session.id, { input: "Keep working" })
+        [Symbol.asyncIterator]();
+      const started = iterator.next();
+
+      await completeStartup(peer);
+      await startTurn(peer);
+      assert.equal((await started).value?.type, "turn.started");
+
+      await vi.advanceTimersByTimeAsync(40);
+      peer.notify("item/agentMessage/delta", {
+        delta: "Still working.",
+        itemId: "message_1",
+        threadId: "native_thread",
+        turnId: "native_turn",
+      });
+      const delta = await nextEvent(iterator, "content.delta");
+      assert.equal(delta.delta, "Still working.");
+
+      await vi.advanceTimersByTimeAsync(40);
+      peer.notify("turn/completed", {
+        threadId: "native_thread",
+        turn: {
+          id: "native_turn",
+          status: "completed",
+        },
+      });
+
+      const completed = await nextEvent(iterator, "turn.completed");
+      assert.equal(completed.result.status, "completed");
     } finally {
       vi.useRealTimers();
     }
@@ -647,9 +766,6 @@ const collect = async <T>(iterable: AsyncIterable<T>): Promise<T[]> => {
   for await (const value of iterable) values.push(value);
   return values;
 };
-
-const wait = (milliseconds: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 const nextEvent = async <TType extends AgentEvent["type"]>(
   iterator: AsyncIterator<AgentEvent>,

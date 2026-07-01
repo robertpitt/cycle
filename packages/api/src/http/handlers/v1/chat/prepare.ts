@@ -121,7 +121,8 @@ export const prepareChatTurn = (input: {
   const sessionId = input.payload.sessionId ?? input.payload.threadId ?? `chat_${input.requestId}`;
   const threadId = input.payload.threadId ?? sessionId;
   const mcpUrl =
-    input.runtime.mcpPath === undefined ? undefined : `${input.origin}${input.runtime.mcpPath}`;
+    input.runtime.mcpUrl ??
+    (input.runtime.mcpPath === undefined ? undefined : `${input.origin}${input.runtime.mcpPath}`);
   const conversation = formatConversation(input.payload.messages ?? []);
 
   return {
@@ -157,10 +158,14 @@ export const prepareChatTurn = (input: {
                 authorization: `Bearer ${input.runtime.staticToken}`,
               },
               mode: "http",
+              ...(input.payload.mcpRequired === true ? { required: true } : {}),
               url: mcpUrl,
             },
           }),
       ...(input.payload.model === undefined ? {} : { model: { id: input.payload.model } }),
+      ...(input.payload.responseFormat === undefined
+        ? {}
+        : { responseFormat: input.payload.responseFormat }),
       ...(input.payload.runtimeMode === undefined
         ? {}
         : { runtimeMode: input.payload.runtimeMode }),

@@ -1,6 +1,6 @@
 import { UseCaseRunnerLive } from "@cycle/usecases";
 import { ExecutableResolverLive } from "@cycle/agents/executables";
-import { GitRepository } from "@cycle/git";
+import { GitRepository, WorktreeServiceLive } from "@cycle/git";
 import { defaultLayer as CycleLoggingLive } from "@cycle/logging";
 import { NodeServices } from "@effect/platform-node";
 import { Layer } from "effect";
@@ -42,6 +42,7 @@ const AppConfigServiceLive = AppConfigLive.pipe(Layer.provide(ElectronAppService
 const ProfileServiceLive = ProfileLive.pipe(Layer.provide(AppConfigServiceLive));
 
 const GitRepositoryServiceLive = GitRepository.NodeLive;
+const WorktreeServiceServiceLive = WorktreeServiceLive.NodeLive;
 
 const DesktopLoggerServiceLive = DesktopLoggerLive;
 
@@ -73,6 +74,7 @@ const DatabaseConsumerDependenciesLive = Layer.mergeAll(
   DesktopRuntimeLive,
   ElectronPreferencesServiceLive,
   GitRepositoryServiceLive,
+  WorktreeServiceServiceLive,
   LocalWorkspaceServiceLive,
 );
 
@@ -91,6 +93,7 @@ const DesktopServicesLive = Layer.mergeAll(
   ElectronPreferencesServiceLive,
   DesktopLoggerServiceLive,
   GitRepositoryServiceLive,
+  WorktreeServiceServiceLive,
   LocalWorkspaceServiceLive,
   UseCaseRunnerServiceLive,
   ExecutableResolverLive,

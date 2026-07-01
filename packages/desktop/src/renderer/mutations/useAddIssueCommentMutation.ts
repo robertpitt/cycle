@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
+import { agentActivityQueryKey, agentJobsQueryKey } from "../queries/agentWork.ts";
 import { issueHistoryQueryKey } from "../queries/issueHistory.ts";
 import {
   issueDetailQueryKey,
@@ -53,6 +54,12 @@ export const useAddIssueCommentMutation = ({
         }),
         queryClient.invalidateQueries({
           queryKey: issueHistoryQueryKey(repositoryId, issueId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: agentActivityQueryKey,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: agentJobsQueryKey({ repositoryId, ticketId: issueId }),
         }),
       ]);
     },

@@ -10,6 +10,7 @@ import {
   makeTicketDocument,
   normalizeKey,
   stripUndefined,
+  validateNewTicketType,
   updatedDateKey,
   updateTicketDocument,
   type Actor,
@@ -1100,10 +1101,19 @@ export const makeDatabaseService = (
 
       const actor = yield* identity.currentActor;
       const repository = yield* getRepository(repositoryId);
+      const type = validateNewTicketType(input.type);
+
+      if (!type.ok) {
+        return yield* Effect.fail(validationError("type", type.reason));
+      }
+
       const id = yield* generateTicketId(repository);
       const now = nowIso();
       const body = input.body ?? defaultIssueBody();
-      const ticket = makeTicketDocument(makeFrontmatter(input, id, actor, now), body);
+      const ticket = makeTicketDocument(
+        makeFrontmatter({ ...input, type: type.type }, id, actor, now),
+        body,
+      );
 
       yield* validateTicket(ticket);
 
@@ -2306,7 +2316,7 @@ export const makeDatabaseService = (
       repositoryId,
       {
         ...input,
-        type: input.type ?? "initiative",
+        type: input.type ?? "epic",
       },
       options,
     );
@@ -4237,7 +4247,7 @@ const defaultRepositoryMetadata = (
         {
           labels: ["bug"],
           priority: "high",
-          type: "issue",
+          type: "bug",
         },
       ),
       template(
@@ -4249,7 +4259,7 @@ const defaultRepositoryMetadata = (
         {
           labels: ["feature"],
           priority: "medium",
-          type: "issue",
+          type: "feature",
         },
       ),
       template(
@@ -4261,13 +4271,13 @@ const defaultRepositoryMetadata = (
         {
           labels: ["improvement"],
           priority: "medium",
-          type: "issue",
+          type: "task",
         },
       ),
       template("qa", "QA task", "qa", "{{title}}", "## Test focus\n\n## Scenarios\n\n## Notes\n", {
         labels: ["qa"],
         priority: "medium",
-        type: "issue",
+        type: "task",
       }),
       template(
         "initiative",
@@ -4277,7 +4287,7 @@ const defaultRepositoryMetadata = (
         "## Outcome\n\n## Scope\n\n## Progress updates\n",
         {
           priority: "medium",
-          type: "initiative",
+          type: "epic",
         },
       ),
     ],

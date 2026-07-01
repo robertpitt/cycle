@@ -1,4 +1,9 @@
-import { DatabaseService, DatabaseTest, type DatabaseServiceShape } from "@cycle/database";
+import {
+  DatabaseService,
+  DatabaseTest,
+  type DatabaseServiceShape,
+  type TicketDocument,
+} from "@cycle/database";
 import { GitDbInMemory, Store as GitDbStore } from "@cycle/git-db";
 import {
   UseCaseAliasList,
@@ -13,9 +18,12 @@ import { Effect, Layer, Result, Schema } from "effect";
 import type { Span } from "effect/Tracer";
 import {
   AutomationEvaluateQuery,
+  CommentAdd,
   IssueCreate,
+  IssueGet,
   IssueList,
   IssueRelationAdd,
+  IssueUpdate,
   RepositoryStatusGet,
   IssueTransition,
   UseCaseRunner,
@@ -58,10 +66,48 @@ const withOpenRepository = <A>(
       pollIntervalMs: false,
       repositoryId: repository.id,
       store,
-    });
+    } as never);
 
     return yield* effect;
   }).pipe(Effect.provide(TestLayer));
+
+type TicketDocumentOverrides = Omit<Partial<TicketDocument>, "frontmatter"> & {
+  readonly frontmatter?: Partial<TicketDocument["frontmatter"]>;
+};
+
+const ticketDocument = (overrides: TicketDocumentOverrides = {}): TicketDocument => {
+  const { frontmatter: frontmatterOverrides, ...ticketOverrides } = overrides;
+  const frontmatter = {
+    createdAt: "1970-01-01T00:00:00.000Z",
+    createdBy: {
+      name: "Test",
+      type: "human" as const,
+    },
+    id: "CYC-00001",
+    priority: "none",
+    status: "backlog",
+    title: "Fixture ticket",
+    type: "task",
+    updatedAt: "1970-01-01T00:00:00.000Z",
+    ...frontmatterOverrides,
+  };
+
+  return {
+    body: "",
+    bodyFormat: "markdown",
+    createdBy: "Test",
+    id: frontmatter.id,
+    parent: "",
+    priority: frontmatter.priority,
+    schemaVersion: 1,
+    status: frontmatter.status,
+    title: frontmatter.title,
+    type: frontmatter.type,
+    updatedDate: "1970-01-01",
+    ...ticketOverrides,
+    frontmatter,
+  } as TicketDocument;
+};
 
 describe("@cycle/usecases", () => {
   it.effect("exposes schema-backed contracts for every canonical usecase alias", () =>
@@ -158,6 +204,7 @@ describe("@cycle/usecases", () => {
           input: {
             body: "Usecase body",
             title: "Build the usecase layer",
+            type: "task",
           },
           repository,
         }),
@@ -171,11 +218,133 @@ describe("@cycle/usecases", () => {
       );
 
       assert.equal(created.title, "Build the usecase layer");
+      assert.equal(created.type, "task");
+      assert.equal(created.frontmatter.type, "task");
       assert.deepEqual(
         listed.entries.map((ticket) => ticket.id),
         [created.id],
       );
     }).pipe(withOpenRepository),
+  );
+
+  it.effect("requires canonical ticket type IDs for issue creates", () =>
+    Effect.gen(function* () {
+      const runner = makeUseCaseRunner(databaseStub({}));
+      const invalidInputs = [
+        {
+          input: {
+            title: "Missing type",
+          },
+          requestId: "missing-type",
+        },
+        {
+          input: {
+            title: "Empty type",
+            type: "",
+          },
+          requestId: "empty-type",
+        },
+        {
+          input: {
+            title: "Display label type",
+            type: "Task",
+          },
+          requestId: "display-label-type",
+        },
+        {
+          input: {
+            title: "Legacy alias type",
+            type: "issue",
+          },
+          requestId: "legacy-alias-type",
+        },
+        {
+          input: {
+            title: "Unknown type",
+            type: "unknown",
+          },
+          requestId: "unknown-type",
+        },
+      ] as const;
+
+      for (const { input, requestId } of invalidInputs) {
+        const result = yield* runner
+          .run(
+            IssueCreate(
+              {
+                input,
+                repository,
+              } as never,
+              { requestId, source: "test" },
+            ),
+          )
+          .pipe(Effect.result);
+
+        assert.equal(Result.isFailure(result), true);
+        if (Result.isFailure(result)) {
+          assert.equal(result.failure._tag, "InvalidInputFailure");
+          assert.equal(result.failure.requestId, requestId);
+        }
+      }
+    }),
+  );
+
+  it.effect("normalizes legacy readable ticket types on issue reads", () =>
+    Effect.gen(function* () {
+      const cases = [
+        {
+          expected: "task",
+          ticket: ticketDocument({
+            frontmatter: { type: "issue" },
+            type: "issue",
+          }),
+        },
+        {
+          expected: "epic",
+          ticket: ticketDocument({
+            frontmatter: { type: "initiative" },
+            type: "initiative",
+          }),
+        },
+        {
+          expected: "task",
+          ticket: ticketDocument({
+            frontmatter: { type: undefined as never },
+            type: undefined as never,
+          }),
+        },
+        {
+          expected: "legacy-custom",
+          ticket: ticketDocument({
+            frontmatter: { type: "legacy-custom" },
+            type: "legacy-custom",
+          }),
+        },
+      ] as const;
+
+      for (const [index, testCase] of cases.entries()) {
+        const runner = makeUseCaseRunner(
+          databaseStub({
+            getTicket: () => Effect.succeed(testCase.ticket),
+          }),
+        );
+        const ticket = yield* runner.run(
+          IssueGet(
+            {
+              input: {
+                id: testCase.ticket.id,
+              },
+              repository,
+            },
+            { requestId: `legacy-type-read-${index}`, source: "test" },
+          ),
+        );
+
+        assert.ok(ticket !== null);
+        assert.equal(ticket.type, testCase.expected);
+        assert.equal(ticket.frontmatter.type, testCase.expected);
+      }
+    }),
   );
 
   it.effect("rejects invalid usecase payloads with typed failures", () =>
@@ -187,6 +356,7 @@ describe("@cycle/usecases", () => {
             {
               input: {
                 body: "missing title",
+                type: "task",
               } as never,
               repository,
             },
@@ -213,6 +383,7 @@ describe("@cycle/usecases", () => {
               input: {
                 debug: true,
                 title: "Strict contract input",
+                type: "task",
               },
               repository,
             } as never,
@@ -311,6 +482,7 @@ describe("@cycle/usecases", () => {
           input: {
             body: "Alias-compatible body",
             title: "Alias-compatible issue",
+            type: "task",
           },
           repository,
         } as never,
@@ -331,6 +503,7 @@ describe("@cycle/usecases", () => {
             {
               input: {
                 title: "Idempotency requires a store",
+                type: "task",
               },
               repository,
             },
@@ -373,6 +546,141 @@ describe("@cycle/usecases", () => {
     }).pipe(withOpenRepository),
   );
 
+  it.effect("rejects non-canonical ticket types on issue update writes", () =>
+    Effect.gen(function* () {
+      const runner = yield* UseCaseRunner;
+      const created = yield* runner.run(
+        IssueCreate({
+          input: {
+            title: "Canonical update",
+            type: "task",
+          },
+          repository,
+        }),
+      );
+
+      const result = yield* runner
+        .run(
+          IssueUpdate({
+            input: {
+              id: created.id,
+              patch: {
+                frontmatter: {
+                  type: "Task",
+                },
+              },
+            },
+            repository,
+          }),
+        )
+        .pipe(Effect.result);
+
+      assert.equal(Result.isFailure(result), true);
+      if (Result.isFailure(result)) {
+        assert.equal(result.failure._tag, "InvalidInputFailure");
+        assert.equal(result.failure.field, "patch.frontmatter.type");
+      }
+    }).pipe(withOpenRepository),
+  );
+
+  it.effect("allows agent pickup transition from todo to in-progress", () =>
+    Effect.gen(function* () {
+      const runner = yield* UseCaseRunner;
+      const created = yield* runner.run(
+        IssueCreate({
+          input: {
+            status: "todo",
+            title: "Agent pickup",
+            type: "task",
+          },
+          repository,
+        }),
+      );
+
+      const transitioned = yield* runner.run(
+        IssueTransition(
+          {
+            input: {
+              id: created.id,
+              status: "in-progress",
+            },
+            repository,
+          },
+          {
+            actor: {
+              name: "Automation",
+              type: "agent",
+            },
+            requestId: "agent-pickup",
+            source: "test",
+          },
+        ),
+      );
+
+      assert.equal(transitioned.status, "in-progress");
+    }).pipe(withOpenRepository),
+  );
+
+  it.effect("requires an explicit human actor for done transitions", () =>
+    Effect.gen(function* () {
+      const runner = yield* UseCaseRunner;
+      const created = yield* runner.run(
+        IssueCreate({
+          input: {
+            planningNotRequired: true,
+            status: "in-review",
+            title: "Explicit approval",
+            type: "task",
+          },
+          repository,
+        }),
+      );
+
+      const missingActor = yield* runner
+        .run(
+          IssueTransition(
+            {
+              input: {
+                id: created.id,
+                status: "done",
+              },
+              repository,
+            },
+            { requestId: "missing-actor-done", source: "test" },
+          ),
+        )
+        .pipe(Effect.result);
+
+      assert.equal(Result.isFailure(missingActor), true);
+      if (Result.isFailure(missingActor)) {
+        assert.equal(missingActor.failure._tag, "PolicyViolationFailure");
+        assert.equal(missingActor.failure.code, "HUMAN_APPROVAL_REQUIRED");
+      }
+
+      const approved = yield* runner.run(
+        IssueTransition(
+          {
+            input: {
+              id: created.id,
+              status: "done",
+            },
+            repository,
+          },
+          {
+            actor: {
+              name: "Reviewer",
+              type: "human",
+            },
+            requestId: "human-done",
+            source: "test",
+          },
+        ),
+      );
+
+      assert.equal(approved.status, "done");
+    }).pipe(withOpenRepository),
+  );
+
   it.effect("rejects non-human done transitions before storage", () =>
     Effect.gen(function* () {
       const runner = yield* UseCaseRunner;
@@ -382,6 +690,7 @@ describe("@cycle/usecases", () => {
             planningNotRequired: true,
             status: "in-review",
             title: "Needs approval",
+            type: "task",
           },
           repository,
         }),
@@ -417,6 +726,52 @@ describe("@cycle/usecases", () => {
     }).pipe(withOpenRepository),
   );
 
+  it.effect("preserves comment payload shape and rejects empty comments", () =>
+    Effect.gen(function* () {
+      const runner = yield* UseCaseRunner;
+      const created = yield* runner.run(
+        IssueCreate({
+          input: {
+            title: "Comment shape",
+            type: "task",
+          },
+          repository,
+        }),
+      );
+
+      const empty = yield* runner
+        .run(
+          CommentAdd({
+            input: {
+              body: "   ",
+              issueId: created.id,
+            },
+            repository,
+          }),
+        )
+        .pipe(Effect.result);
+
+      assert.equal(Result.isFailure(empty), true);
+      if (Result.isFailure(empty)) {
+        assert.equal(empty.failure._tag, "InvalidInputFailure");
+        assert.equal(empty.failure.field, "input.body");
+      }
+
+      const comment = yield* runner.run(
+        CommentAdd({
+          input: {
+            body: "Keep\nshape",
+            issueId: created.id,
+          },
+          repository,
+        }),
+      );
+
+      assert.equal(comment.recordType, "comment");
+      assert.deepEqual(comment.payload, { body: "Keep\nshape" });
+    }).pipe(withOpenRepository),
+  );
+
   it.effect("rejects self-relations in usecase policy", () =>
     Effect.gen(function* () {
       const runner = yield* UseCaseRunner;
@@ -424,6 +779,7 @@ describe("@cycle/usecases", () => {
         IssueCreate({
           input: {
             title: "Relate safely",
+            type: "task",
           },
           repository,
         }),
@@ -460,6 +816,7 @@ describe("@cycle/usecases", () => {
           input: {
             status: "ready",
             title: "Ready without plan",
+            type: "task",
           },
           repository,
         }),

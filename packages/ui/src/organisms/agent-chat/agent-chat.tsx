@@ -33,6 +33,8 @@ import {
   AgentChatThreadListItem,
   AgentChatTurnStatusIndicator,
   isAgentChatApprovalActivity,
+  originDescription,
+  originLabel,
   type AgentChatActivity,
   type AgentChatApprovalDecisionInput,
   type AgentChatConnectionStatus,
@@ -355,7 +357,13 @@ export const AgentChatTimeline = ({
     <div className={cn("mx-auto grid w-full max-w-5xl gap-0 p-3", className)}>
       {renderItems.map((entry) => {
         if (entry.kind === "activity-strip") {
-          return <AgentChatActivityStrip activities={entry.activities} key={entry.id} />;
+          return (
+            <AgentChatActivityStrip
+              activities={entry.activities}
+              key={entry.id}
+              relativeBase={relativeBase}
+            />
+          );
         }
 
         if (entry.kind === "message") {
@@ -620,6 +628,8 @@ export const AgentChatConversation = ({
   });
   const questionsPending = pendingQuestionCount(selectedThread);
   const approvalsPending = pendingApprovalCount(selectedThread);
+  const sourceLabel = originLabel(selectedThread?.origin);
+  const sourceDescription = originDescription(selectedThread?.origin);
 
   if (!selectedThread) {
     return (
@@ -647,6 +657,16 @@ export const AgentChatConversation = ({
             <Text as="h2" className="mt-2" truncate variant="pageTitle">
               {selectedThread.title}
             </Text>
+            {sourceLabel ? (
+              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2">
+                <Badge appearance="outline">{sourceLabel}</Badge>
+                {sourceDescription && sourceDescription !== sourceLabel ? (
+                  <Text as="span" className="min-w-0" tone="muted" truncate variant="meta">
+                    {sourceDescription}
+                  </Text>
+                ) : null}
+              </div>
+            ) : null}
             {selectedThread.summary ? (
               <Text
                 as="p"

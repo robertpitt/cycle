@@ -59,7 +59,12 @@ import {
 import { $findMatchingParent } from "@lexical/utils";
 import { MarkdownRenderer, type MarkdownReferenceHandlers } from "../markdown-renderer/index.ts";
 import { cn } from "../../lib/cn.ts";
-import { getCycleReferenceHref, type CycleReferenceKind } from "../../lib/markdown-references.ts";
+import {
+  getCycleReferenceHref,
+  isSameCycleReference,
+  parseCycleReferenceMarkdownLink,
+  type CycleReferenceKind,
+} from "../../lib/markdown-references.ts";
 import { focusRing, typography } from "../../lib/styles.ts";
 import {
   exportMarkdownFromEditorState,
@@ -634,7 +639,16 @@ const suggestionText = (value: React.ReactNode): string => (typeof value === "st
 export const getMarkdownEditorTagSuggestionInsertLabel = (
   suggestion: MarkdownEditorTagSuggestion,
 ): string => {
-  if (suggestion.insertLabel) return suggestion.insertLabel;
+  if (suggestion.insertLabel) {
+    const parsedInsertLabel = parseCycleReferenceMarkdownLink(suggestion.insertLabel);
+    const expectedReference = { id: suggestion.id, kind: suggestion.kind };
+
+    if (parsedInsertLabel && isSameCycleReference(parsedInsertLabel.reference, expectedReference)) {
+      return parsedInsertLabel.label;
+    }
+
+    return suggestion.insertLabel;
+  }
 
   const label = suggestionText(suggestion.label);
   switch (suggestion.kind) {

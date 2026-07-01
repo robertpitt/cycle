@@ -49,10 +49,7 @@ const requireInboxQuery = (query: InboxQuery | undefined): InboxQuery => {
   return query;
 };
 
-export const inboxListPageQuery = (
-  query: InboxQuery,
-  cursor: string | undefined,
-): InboxQuery => {
+export const inboxListPageQuery = (query: InboxQuery, cursor: string | undefined): InboxQuery => {
   const { cursor: _cursor, ...baseQuery } = query;
 
   return {

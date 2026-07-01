@@ -1,5 +1,6 @@
-import type { ApplicationSettingsSection, AppShellNavSection } from "@cycle/ui/organisms";
+import type { AppShellNavSection } from "@cycle/ui/organisms";
 import {
+  Bot,
   History,
   Inbox,
   Keyboard,
@@ -17,6 +18,7 @@ import {
   Wrench,
 } from "lucide-react";
 import type { RepositoryRecord } from "../../../shared/AppConfig.ts";
+import type { ApplicationSettingsSection } from "../../components/ApplicationSettingsPanel.tsx";
 
 const createRepositoryNavItems = (repositories: readonly RepositoryRecord[]) =>
   repositories.flatMap((repository) => {
@@ -120,6 +122,7 @@ export const createRendererNavSections = (
 export const defaultApplicationSettingsSection = "general" satisfies ApplicationSettingsSection;
 
 const applicationSettingsSections = new Set<ApplicationSettingsSection>([
+  "agents",
   "appearance",
   "configuration",
   "connectors",
@@ -187,6 +190,11 @@ export const createRendererSettingsNavSections = () =>
           icon: <Keyboard aria-hidden className="size-4" />,
           id: settingsNavItemIdForApplicationSection("keyboard-shortcuts"),
           label: "Keyboard Shortcuts",
+        },
+        {
+          icon: <Bot aria-hidden className="size-4" />,
+          id: settingsNavItemIdForApplicationSection("agents"),
+          label: "Agents",
         },
       ],
       title: "Personal",

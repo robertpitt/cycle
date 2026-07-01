@@ -59,14 +59,24 @@ const providers: readonly AgentChatProviderProfile[] = [
 const activityStripItems: readonly AgentChatActivity[] = [
   {
     createdAt: "2026-06-16T09:42:00.000Z",
-    detail: "list_mcp_resources",
     id: "strip-mcp-1",
     kind: "tool",
     payload: {
-      itemType: "mcpToolCall",
+      event: {
+        _tag: "ToolCompleted",
+        input: {
+          server: "repo",
+          tool: "read_file",
+          arguments: { path: "src/orders/pending-order-merge.ts" },
+        },
+        output: "Read 120 lines.",
+        toolCallId: "tool_call_1",
+        toolName: "mcp_tool_call",
+      },
+      eventType: "tool.completed",
     },
     status: "completed",
-    title: "MCP tool",
+    title: "mcp_tool_call",
   },
   {
     createdAt: "2026-06-16T09:42:05.000Z",
@@ -84,11 +94,19 @@ const activityStripItems: readonly AgentChatActivity[] = [
     id: "strip-command-1",
     kind: "tool",
     payload: {
-      command: "pnpm test order_injection_concurrency",
-      itemType: "commandExecution",
+      event: {
+        _tag: "ToolCompleted",
+        input: {
+          command: "pnpm test order_injection_concurrency",
+        },
+        output: "1 failing assertion.",
+        toolCallId: "tool_call_2",
+        toolName: "command_execution",
+      },
+      eventType: "tool.completed",
     },
     status: "completed",
-    title: "Command",
+    title: "command_execution",
   },
   {
     createdAt: "2026-06-16T09:42:22.000Z",
@@ -150,6 +168,15 @@ export const RowsAndControls: Story = {
             activeTurnId: "turn-1",
             id: "thread-1",
             model: "gpt-5-codex",
+            origin: {
+              agentId: "codex",
+              commentId: "comment-1",
+              issueId: "ROB-10001",
+              jobId: "job-1",
+              kind: "issue-comment",
+              repositoryId: "cycle",
+              trigger: "agent-mention",
+            },
             providerId: "codex",
             runtimeMode: "workspace-write",
             status: "waiting",

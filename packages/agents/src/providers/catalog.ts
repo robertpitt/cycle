@@ -40,7 +40,8 @@ export const agentProviderProfileFromDetection = (
     displayName: detected.name,
     executableName: detected.executable,
     ...(detected.executablePath === undefined ? {} : { executablePath: detected.executablePath }),
-    message: detected.status === "available" ? undefined : `${detected.name} executable was not found.`,
+    message:
+      detected.status === "available" ? undefined : `${detected.name} executable was not found.`,
     models: [],
     provider: detected.id,
     status,

@@ -9,4 +9,6 @@ export * as GitObjectCodec from "./object-store/GitObjectCodec.ts";
 export * as GitPack from "./object-store/GitPack.ts";
 export { GitRepository, type GitRepositoryServiceShape } from "./repository/index.ts";
 export * as GitRepositoryLive from "./repository/GitRepositoryLive.ts";
+export { WorktreeService, type WorktreeServiceShape } from "./worktree/index.ts";
+export * as WorktreeServiceLive from "./worktree/WorktreeServiceLive.ts";
 export { Git as GitService } from "./object-store/Git.ts";

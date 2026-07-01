@@ -1,4 +1,5 @@
 import type { Actor, CreateTicketInput, IssueFrontmatter, TicketDocument } from "./Types.ts";
+import { materializeTicketType } from "./TicketType.ts";
 
 export const CURRENT_SCHEMA_VERSION = 1 as const;
 
@@ -33,6 +34,7 @@ export const makeIssueFrontmatter = (
 
 export const makeTicketDocument = (frontmatter: IssueFrontmatter, body: string): TicketDocument => {
   const normalizedFrontmatter = makeIssueFrontmatter(frontmatter);
+  const type = materializeTicketType(normalizedFrontmatter.type);
 
   return stripUndefined({
     archivedAt: normalizedFrontmatter.archivedAt ?? undefined,
@@ -56,7 +58,7 @@ export const makeTicketDocument = (frontmatter: IssueFrontmatter, body: string):
     schemaVersion: CURRENT_SCHEMA_VERSION,
     status: normalizeKey(normalizedFrontmatter.status),
     title: normalizedFrontmatter.title,
-    type: normalizeKey(normalizedFrontmatter.type),
+    type: type.type,
     updatedDate: updatedDateKey(normalizedFrontmatter.updatedAt),
   }) as TicketDocument;
 };
@@ -82,7 +84,7 @@ export const makeFrontmatter = (
     repository: input.repository,
     status: input.status ?? "backlog",
     title: input.title,
-    type: input.type ?? "issue",
+    type: input.type,
     updatedAt: now,
   });
 

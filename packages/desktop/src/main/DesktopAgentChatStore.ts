@@ -20,6 +20,7 @@ type ThreadRow = {
   readonly created_at: string;
   readonly last_error: string | null;
   readonly model: string | null;
+  readonly origin_json: string | null;
   readonly runtime_mode: string | null;
   readonly session_id: string | null;
   readonly status: AgentChatThreadRecord["status"];
@@ -387,8 +388,8 @@ export const makeDesktopAgentChatStore = (path: string): AgentChatStoreShape => 
       db.prepare(
         `INSERT INTO agent_chat_threads (
 	          thread_id, title, summary, status, agent_id, session_id, model, runtime_mode, thinking_level,
-	          active_turn_id, last_error, archived_at, created_at, updated_at
-	        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	          active_turn_id, last_error, origin_json, archived_at, created_at, updated_at
+	        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	        ON CONFLICT(thread_id) DO UPDATE SET
 	          title = excluded.title,
 	          summary = excluded.summary,
@@ -400,6 +401,7 @@ export const makeDesktopAgentChatStore = (path: string): AgentChatStoreShape => 
 	          thinking_level = excluded.thinking_level,
 	          active_turn_id = excluded.active_turn_id,
 	          last_error = excluded.last_error,
+	          origin_json = excluded.origin_json,
 	          archived_at = excluded.archived_at,
 	          updated_at = excluded.updated_at`,
       ).run(
@@ -414,6 +416,7 @@ export const makeDesktopAgentChatStore = (path: string): AgentChatStoreShape => 
         input.thinkingLevel ?? null,
         input.activeTurnId ?? null,
         input.lastError ?? null,
+        input.origin === undefined ? null : jsonString(input.origin),
         input.archivedAt ?? null,
         input.createdAt,
         input.updatedAt,
@@ -468,6 +471,7 @@ const ensureChatSchemaCompatibility = (db: DatabaseSync): void => {
     ["agent_chat_threads", "thinking_level TEXT"],
     ["agent_chat_threads", "active_turn_id TEXT"],
     ["agent_chat_threads", "last_error TEXT"],
+    ["agent_chat_threads", "origin_json TEXT"],
     ["agent_chat_threads", "archived_at TEXT"],
     ["agent_chat_messages", "turn_id TEXT"],
     ["agent_chat_messages", "streaming INTEGER NOT NULL DEFAULT 0"],
@@ -530,6 +534,7 @@ const threadFromRow = (row: ThreadRow): AgentChatThreadRecord => ({
   id: row.thread_id,
   ...(row.last_error === null ? {} : { lastError: row.last_error }),
   ...(row.model === null ? {} : { model: row.model }),
+  ...jsonRecordProperty("origin", row.origin_json),
   ...(runtimeModeFromString(row.runtime_mode) === undefined
     ? {}
     : { runtimeMode: runtimeModeFromString(row.runtime_mode) }),

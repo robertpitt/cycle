@@ -25,6 +25,12 @@ import {
   useCaseFailure,
   type UseCaseFailure,
 } from "./UseCaseFailure.ts";
+import {
+  CanonicalTicketTypeIds,
+  normalizeTicketTypeForRead,
+  validateTicketTypeForWrite,
+  type TicketTypeId,
+} from "./schemas/index.ts";
 
 export type UseCaseRunnerShape = {
   readonly run: <Name extends UseCaseName>(
@@ -48,11 +54,11 @@ const defaultTransitions: Readonly<Record<string, ReadonlyArray<string>>> = {
   backlog: ["todo", "ready", "canceled"],
   canceled: ["backlog", "todo"],
   done: ["in-review"],
-  "in-progress": ["needs-review", "in-review", "canceled"],
+  "in-progress": ["needs-review", "in-review", "todo", "canceled"],
   "in-review": ["needs-review", "done", "in-progress", "canceled"],
   "needs-review": ["todo", "ready", "in-progress", "in-review", "canceled"],
   ready: ["in-progress", "todo", "canceled"],
-  todo: ["backlog", "ready", "canceled"],
+  todo: ["backlog", "ready", "in-progress", "canceled"],
 };
 
 const StrictDecodeOptions = { onExcessProperty: "error" } as const;
@@ -309,13 +315,24 @@ const execute = <Name extends UseCaseName>(
     case "InboxArchive":
       return database.archiveInboxItems(useCase.input).pipe(Effect.mapError(mapFailure(context)));
     case "IssueCreate":
-      return database
-        .createTicket(useCase.input.repository.id, useCase.input.input)
-        .pipe(Effect.mapError(mapFailure(context)));
+      return Effect.gen(function* () {
+        const type = yield* validateTicketTypeWritePolicy(
+          context,
+          useCase.input.input.type,
+          "input.type",
+        );
+        return yield* database
+          .createTicket(useCase.input.repository.id, {
+            ...useCase.input.input,
+            type,
+          })
+          .pipe(Effect.map(normalizeTicketDocumentForRead), Effect.mapError(mapFailure(context)));
+      });
     case "IssueGet":
-      return database
-        .getTicket(useCase.input.repository.id, useCase.input.input.id)
-        .pipe(Effect.mapError(mapFailure(context)));
+      return database.getTicket(useCase.input.repository.id, useCase.input.input.id).pipe(
+        Effect.map((ticket) => (ticket === null ? null : normalizeTicketDocumentForRead(ticket))),
+        Effect.mapError(mapFailure(context)),
+      );
     case "IssueList": {
       const input = useCase.input.input ?? {};
       const repositoryIds =
@@ -327,7 +344,13 @@ const execute = <Name extends UseCaseName>(
           ...input,
           repositoryIds,
         })
-        .pipe(Effect.mapError(mapFailure(context)));
+        .pipe(
+          Effect.map((page) => ({
+            ...page,
+            entries: page.entries.map(normalizeTicketDocumentForRead),
+          })),
+          Effect.mapError(mapFailure(context)),
+        );
     }
     case "IssueSearch": {
       const input = useCase.input.input;
@@ -339,7 +362,16 @@ const execute = <Name extends UseCaseName>(
               ? input.repositoryIds
               : [useCase.input.repository.id],
         })
-        .pipe(Effect.mapError(mapFailure(context)));
+        .pipe(
+          Effect.map((page) => ({
+            ...page,
+            entries: page.entries.map((entry) => ({
+              ...entry,
+              ticket: normalizeTicketDocumentForRead(entry.ticket),
+            })),
+          })),
+          Effect.mapError(mapFailure(context)),
+        );
     }
     case "IssueUpdate":
       return Effect.gen(function* () {
@@ -351,7 +383,7 @@ const execute = <Name extends UseCaseName>(
             useCase.input.input.id,
             useCase.input.input.patch,
           )
-          .pipe(Effect.mapError(mapFailure(context)));
+          .pipe(Effect.map(normalizeTicketDocumentForRead), Effect.mapError(mapFailure(context)));
       });
     case "IssueTransition":
       return Effect.gen(function* () {
@@ -362,26 +394,26 @@ const execute = <Name extends UseCaseName>(
             reason: useCase.input.input.reason,
             status: useCase.input.input.status,
           })
-          .pipe(Effect.mapError(mapFailure(context)));
+          .pipe(Effect.map(normalizeTicketDocumentForRead), Effect.mapError(mapFailure(context)));
       });
     case "IssueArchive":
       return database
         .archiveTicket(useCase.input.repository.id, useCase.input.input.id, {
           reason: useCase.input.input.reason,
         })
-        .pipe(Effect.mapError(mapFailure(context)));
+        .pipe(Effect.map(normalizeTicketDocumentForRead), Effect.mapError(mapFailure(context)));
     case "IssueRestore":
       return database
         .restoreTicket(useCase.input.repository.id, useCase.input.input.id, {
           reason: useCase.input.input.reason,
         })
-        .pipe(Effect.mapError(mapFailure(context)));
+        .pipe(Effect.map(normalizeTicketDocumentForRead), Effect.mapError(mapFailure(context)));
     case "IssueDelete":
       return database
         .deleteTicket(useCase.input.repository.id, useCase.input.input.id, {
           reason: useCase.input.input.reason,
         })
-        .pipe(Effect.mapError(mapFailure(context)));
+        .pipe(Effect.map(normalizeTicketDocumentForRead), Effect.mapError(mapFailure(context)));
     case "IssueHistoryList": {
       const input = useCase.input.input;
       return database
@@ -418,7 +450,7 @@ const execute = <Name extends UseCaseName>(
             useCase.input.input.id,
             useCase.input.input.relation,
           )
-          .pipe(Effect.mapError(mapFailure(context)));
+          .pipe(Effect.map(normalizeTicketDocumentForRead), Effect.mapError(mapFailure(context)));
       });
     case "IssueRelationRemove":
       return database
@@ -427,11 +459,21 @@ const execute = <Name extends UseCaseName>(
           useCase.input.input.id,
           useCase.input.input.relation,
         )
-        .pipe(Effect.mapError(mapFailure(context)));
+        .pipe(Effect.map(normalizeTicketDocumentForRead), Effect.mapError(mapFailure(context)));
     case "DraftCreate":
-      return database
-        .createDraft(useCase.input.repository.id, useCase.input.input)
-        .pipe(Effect.mapError(mapFailure(context)));
+      return Effect.gen(function* () {
+        const type = yield* validateTicketTypeWritePolicy(
+          context,
+          useCase.input.input.type,
+          "input.type",
+        );
+        return yield* database
+          .createDraft(useCase.input.repository.id, {
+            ...useCase.input.input,
+            type,
+          })
+          .pipe(Effect.mapError(mapFailure(context)));
+      });
     case "DraftUpdate":
       return database
         .updateDraft(useCase.input.repository.id, useCase.input.input.draftId, {
@@ -443,13 +485,20 @@ const execute = <Name extends UseCaseName>(
     case "DraftCommit":
       return database
         .commitDraft(useCase.input.repository.id, useCase.input.input)
-        .pipe(Effect.mapError(mapFailure(context)));
+        .pipe(Effect.map(normalizeTicketDocumentForRead), Effect.mapError(mapFailure(context)));
     case "CommentAdd":
-      return database
-        .addComment(useCase.input.repository.id, useCase.input.input.issueId, {
-          body: useCase.input.input.body,
-        })
-        .pipe(Effect.mapError(mapFailure(context)));
+      return Effect.gen(function* () {
+        yield* validateCommentBodyPolicy(
+          context,
+          useCase.input.input.issueId,
+          useCase.input.input.body,
+        );
+        return yield* database
+          .addComment(useCase.input.repository.id, useCase.input.input.issueId, {
+            body: useCase.input.input.body,
+          })
+          .pipe(Effect.mapError(mapFailure(context)));
+      });
     case "RecordAdd":
       return database
         .addRecord(useCase.input.repository.id, useCase.input.input.issueId, {
@@ -749,6 +798,74 @@ const readRequiredTicket = <Name extends UseCaseName>(
     { ticketId },
   );
 
+const normalizeTicketDocumentForRead = (ticket: TicketDocument): TicketDocument => {
+  const topLevelType = (ticket as { readonly type?: unknown }).type;
+  const frontmatterType = (ticket.frontmatter as { readonly type?: unknown }).type;
+  const rawType =
+    typeof topLevelType === "string" && topLevelType.trim() !== "" ? topLevelType : frontmatterType;
+  const normalized = normalizeTicketTypeForRead(rawType);
+
+  if (ticket.type === normalized.type && ticket.frontmatter.type === normalized.type) {
+    return ticket;
+  }
+
+  return {
+    ...ticket,
+    frontmatter: {
+      ...ticket.frontmatter,
+      type: normalized.type,
+    },
+    type: normalized.type,
+  };
+};
+
+const validateTicketTypeWritePolicy = <Name extends UseCaseName>(
+  context: RequestContext<Name>,
+  value: unknown,
+  field: string,
+): Effect.Effect<TicketTypeId, UseCaseFailure> => {
+  const validation = validateTicketTypeForWrite(value);
+  if (validation.type === "valid") return Effect.succeed(validation.value);
+
+  const messages = {
+    "display-label": "Ticket type must be a canonical ID, not a display label.",
+    empty: "Ticket type is required.",
+    missing: "Ticket type is required.",
+    unknown: "Ticket type must be one of the canonical ticket type IDs.",
+  } as const;
+
+  return Effect.fail(
+    invalidInputFailure({
+      details: {
+        allowedTypeIds: CanonicalTicketTypeIds,
+        reason: validation.reason,
+        value: validation.value,
+      },
+      field,
+      message: messages[validation.reason],
+      requestId: context.requestId,
+      useCase: context.useCase.name,
+    }),
+  );
+};
+
+const validateCommentBodyPolicy = <Name extends UseCaseName>(
+  context: RequestContext<Name>,
+  ticketId: string,
+  body: string,
+): Effect.Effect<void, UseCaseFailure> =>
+  body.trim() === ""
+    ? Effect.fail(
+        invalidInputFailure({
+          details: { ticketId },
+          field: "input.body",
+          message: "Comment body must not be empty.",
+          requestId: context.requestId,
+          useCase: context.useCase.name,
+        }),
+      )
+    : Effect.void;
+
 const validateIssueUpdatePolicy = <Name extends UseCaseName>(
   context: RequestContext<Name>,
   current: TicketDocument,
@@ -780,6 +897,14 @@ const validateIssueUpdatePolicy = <Name extends UseCaseName>(
       if (typeof nextStatus === "string" && nextStatus !== current.status) {
         yield* validateTransitionPolicy(context, current, nextStatus);
       }
+
+      if (Object.hasOwn(patch.frontmatter ?? {}, "type")) {
+        yield* validateTicketTypeWritePolicy(
+          context,
+          patch.frontmatter?.["type"],
+          "patch.frontmatter.type",
+        );
+      }
     }),
     {
       hasBodyPatch: patch.body !== undefined,
@@ -799,22 +924,22 @@ const validateTransitionPolicy = <Name extends UseCaseName>(
   const allowed = defaultTransitions[fromKey] ?? [];
 
   const program =
-    toKey === "done" && actor !== undefined && actor.type !== "human"
+    toKey === "done" && actor?.type !== "human"
       ? Effect.fail(
           policyViolationFailure({
             code: "HUMAN_APPROVAL_REQUIRED",
-            message: `Only a human actor can mark ticket ${ticket.id} done.`,
+            message: `Only an explicit human actor can mark ticket ${ticket.id} done.`,
             repositoryId: repositoryIdFromInput(context.useCase.input),
             requestId: context.requestId,
             ticketId: ticket.id,
             useCase: context.useCase.name,
           }),
         )
-      : fromKey === "done" && actor !== undefined && actor.type !== "human"
+      : fromKey === "done" && actor?.type !== "human"
         ? Effect.fail(
             policyViolationFailure({
               code: "HUMAN_REOPEN_REQUIRED",
-              message: `Only a human actor can transition ticket ${ticket.id} away from done.`,
+              message: `Only an explicit human actor can transition ticket ${ticket.id} away from done.`,
               repositoryId: repositoryIdFromInput(context.useCase.input),
               requestId: context.requestId,
               ticketId: ticket.id,

@@ -377,7 +377,12 @@ describe("@cycle/api/mcp", () => {
         {
           issues: [
             { clientId: "parent", title: "Parent feature", type: "feature" },
-            { body: "Ship the implementation", clientId: "task", title: "Implementation task" },
+            {
+              body: "Ship the implementation",
+              clientId: "task",
+              title: "Implementation task",
+              type: "task",
+            },
           ],
           relations: [
             {
@@ -403,6 +408,7 @@ describe("@cycle/api/mcp", () => {
     assert.deepEqual(requests[1].body, {
       body: "Ship the implementation",
       title: "Implementation task",
+      type: "task",
     });
     assert.equal(requests[2].path, "/v1/repositories/repo/issues/CYC-1/relations");
     assert.deepEqual(requests[2].body, {
@@ -450,6 +456,78 @@ describe("@cycle/api/mcp", () => {
     assert.equal(result.isError, true);
     assert.equal((result.value as any).error.code, "INVALID_MCP_TOOL_INPUT");
     assert.equal(requests.length, 0);
+  });
+
+  it("rejects tools disallowed by job-scoped ticket-context authority", async () => {
+    const requests: Array<unknown> = [];
+    const result = await Effect.runPromise(
+      callCycleMcpTool(
+        "cycle_issue_transition",
+        {
+          issueId: "CYC-1",
+          repositoryId: "repo",
+          status: "in-progress",
+        },
+        {
+          ...context(requests),
+          authorityMode: "ticket-context",
+          jobId: "agent_job_1",
+          repositoryId: "repo",
+          ticketId: "CYC-1",
+        },
+      ),
+    );
+
+    assert.equal(result.isError, true);
+    assert.equal((result.value as any).error.code, "MCP_TOOL_NOT_ALLOWED");
+    assert.equal((result.value as any).error.status, 403);
+    assert.equal(requests.length, 0);
+  });
+
+  it("rejects job-scoped MCP calls outside repository and ticket scope", async () => {
+    const repositoryRequests: Array<unknown> = [];
+    const repositoryResult = await Effect.runPromise(
+      callCycleMcpTool(
+        "cycle_issue_get",
+        {
+          issueId: "CYC-1",
+          repositoryId: "other",
+        },
+        {
+          ...context(repositoryRequests),
+          authorityMode: "ticket-context",
+          jobId: "agent_job_1",
+          repositoryId: "repo",
+          ticketId: "CYC-1",
+        },
+      ),
+    );
+
+    assert.equal(repositoryResult.isError, true);
+    assert.equal((repositoryResult.value as any).error.code, "MCP_REPOSITORY_SCOPE_VIOLATION");
+    assert.equal(repositoryRequests.length, 0);
+
+    const ticketRequests: Array<unknown> = [];
+    const ticketResult = await Effect.runPromise(
+      callCycleMcpTool(
+        "cycle_issue_get",
+        {
+          issueId: "CYC-2",
+          repositoryId: "repo",
+        },
+        {
+          ...context(ticketRequests),
+          authorityMode: "ticket-context",
+          jobId: "agent_job_1",
+          repositoryId: "repo",
+          ticketId: "CYC-1",
+        },
+      ),
+    );
+
+    assert.equal(ticketResult.isError, true);
+    assert.equal((ticketResult.value as any).error.code, "MCP_TICKET_SCOPE_VIOLATION");
+    assert.equal(ticketRequests.length, 0);
   });
 
   it("returns API failures as tool errors", async () => {

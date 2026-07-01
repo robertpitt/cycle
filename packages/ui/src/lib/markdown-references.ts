@@ -39,6 +39,44 @@ export const parseCycleReferenceHref = (href: string): CycleReference | null => 
   return null;
 };
 
+const cycleReferenceMarkdownLinkPattern = /^\[([^\]\n]+)\]\(([^()\s]+)\)$/u;
+const nestedCycleReferenceMarkdownLinkPattern = /\[\[([^\]\n]+)\]\(([^()\s]+)\)\]\(([^()\s]+)\)/gu;
+
+export const isSameCycleReference = (first: CycleReference, second: CycleReference): boolean =>
+  first.kind === second.kind && first.id === second.id;
+
+export const parseCycleReferenceMarkdownLink = (
+  markdown: string,
+): { readonly label: string; readonly reference: CycleReference } | null => {
+  const match = cycleReferenceMarkdownLinkPattern.exec(markdown.trim());
+  if (!match) return null;
+
+  const label = match[1];
+  const href = match[2];
+  if (!label || !href) return null;
+
+  const reference = parseCycleReferenceHref(href);
+  return reference ? { label, reference } : null;
+};
+
+export const unwrapNestedCycleReferenceMarkdownLinks = (markdown: string): string =>
+  markdown.replace(
+    nestedCycleReferenceMarkdownLinkPattern,
+    (match: string, label: string, innerHref: string, outerHref: string) => {
+      const innerReference = parseCycleReferenceHref(innerHref);
+      const outerReference = parseCycleReferenceHref(outerHref);
+      if (
+        !innerReference ||
+        !outerReference ||
+        !isSameCycleReference(innerReference, outerReference)
+      ) {
+        return match;
+      }
+
+      return `[${label}](${outerHref})`;
+    },
+  );
+
 const linkReference = (
   markdown: string,
   pattern: RegExp,

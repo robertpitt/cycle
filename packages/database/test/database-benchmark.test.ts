@@ -71,7 +71,7 @@ describe("@cycle/database benchmark", () => {
                   priority: priorityFor(index),
                   repository: repositoryKeyFor(index),
                   title: `Benchmark ticket ${String(index + 1).padStart(4, "0")}`,
-                  type: index % 20 === 0 ? "epic" : "issue",
+                  type: index % 20 === 0 ? "epic" : "task",
                 });
 
                 createdTickets.push(ticket.id);
@@ -250,6 +250,7 @@ const writeExternalTicketBatch = (
             priority: priorityFor(index),
             repository: repositoryKeyFor(index),
             title: `External benchmark ticket ${String(index + 1).padStart(4, "0")}`,
+            type: "task",
           },
           id,
           actor,

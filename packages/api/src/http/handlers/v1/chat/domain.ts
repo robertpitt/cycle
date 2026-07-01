@@ -1,4 +1,9 @@
-import type { AgentProviderId, AgentRuntimeMode, AgentTurnRequest } from "@cycle/agents";
+import type {
+  AgentProviderId,
+  AgentResponseFormat,
+  AgentRuntimeMode,
+  AgentTurnRequest,
+} from "@cycle/agents";
 
 export type ChatMessagePayload = {
   readonly content: string;
@@ -17,9 +22,11 @@ export type ChatTurnPayload = {
   readonly instructions?: string;
   readonly message: string;
   readonly messages?: readonly ChatMessagePayload[];
+  readonly mcpRequired?: boolean;
   readonly model?: string;
   readonly provider?: AgentProviderId;
   readonly repositories?: readonly ChatRepositoryPayload[];
+  readonly responseFormat?: AgentResponseFormat;
   readonly runtimeMode?: AgentRuntimeMode;
   readonly sessionId?: string;
   readonly stream?: {

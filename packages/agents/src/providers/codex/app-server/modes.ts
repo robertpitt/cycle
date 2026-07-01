@@ -17,7 +17,7 @@ export const runtimeModeToCodexThreadConfig = (
   switch (mode) {
     case "workspace-write":
       return {
-        approvalPolicy: "on-request",
+        approvalPolicy: "never",
         sandbox: "workspace-write",
       };
     case "full-access":
@@ -28,7 +28,7 @@ export const runtimeModeToCodexThreadConfig = (
     case "read-only":
     default:
       return {
-        approvalPolicy: "untrusted",
+        approvalPolicy: "never",
         sandbox: "read-only",
       };
   }

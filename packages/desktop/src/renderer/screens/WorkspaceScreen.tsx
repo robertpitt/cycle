@@ -16,6 +16,7 @@ import * as React from "react";
 import { useLocation, useNavigate, type NavigateOptions } from "react-router";
 import {
   AddRepositoryStep,
+  AgentActivityIndicator,
   ApplicationSettingsPanel,
   BootloaderScreen,
   ChatPanel,
@@ -26,10 +27,12 @@ import {
   RepositorySettingsPanel,
   SettingsSidebar,
   SetupScreen,
+  ticketTypeSections,
   ViewIssuePanel,
   ViewsPanel,
 } from "../components/index.ts";
 import { fallbackAgentProviders, toSetupHarnesses } from "../lib/agentProviders.ts";
+import { normalizeCreateTicketType } from "../lib/agentWork.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 import { createMarkdownTagSuggestions } from "../lib/markdownTagSuggestions.ts";
 import {
@@ -365,11 +368,11 @@ export const WorkspaceScreen = () => {
         createIssueForm.setEstimate(String(defaults.estimate));
       }
       if (typeof defaults.type === "string") {
-        createIssueForm.setType(defaults.type);
+        createIssueForm.setType(normalizeCreateTicketType(defaults.type) ?? "task");
       } else if (template.kind === "initiative") {
-        createIssueForm.setType("initiative");
+        createIssueForm.setType("epic");
       } else {
-        createIssueForm.setType("issue");
+        createIssueForm.setType("task");
       }
     },
     [createIssueForm, templateListQuery.data?.entries],
@@ -791,7 +794,7 @@ export const WorkspaceScreen = () => {
   const openCreateIssueDialog = () => {
     createIssueForm.openDialog();
     if (isInitiativesPage) {
-      createIssueForm.setType("initiative");
+      createIssueForm.setType("epic");
     }
   };
   const closeCreateIssueDialog = () => {
@@ -810,7 +813,7 @@ export const WorkspaceScreen = () => {
     const draft = getCreateIssueFormDraft(createIssueForm.values);
 
     if (!draft) {
-      createIssueForm.setError("Enter an issue title before creating the issue.");
+      createIssueForm.setError("Enter an issue title and choose a canonical type.");
       return;
     }
 
@@ -900,6 +903,15 @@ export const WorkspaceScreen = () => {
     repositoryStatusText;
   const pageHeaderActions = (
     <>
+      <AgentActivityIndicator
+        onOpenChat={() =>
+          navigateWorkspace({
+            page: "chat",
+            scope: "workspace",
+          })
+        }
+        providers={detectedAgentProviders}
+      />
       {activeRepository ? (
         <div
           className="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-subtle px-2 text-xs font-medium text-muted-foreground"
@@ -1033,6 +1045,7 @@ export const WorkspaceScreen = () => {
             >
               {isApplicationSettingsPage && appConfigQuery.data ? (
                 <ApplicationSettingsPanel
+                  agentProviders={detectedAgentProviders}
                   appConfig={appConfigQuery.data}
                   section={applicationSettingsSection}
                 />
@@ -1044,6 +1057,7 @@ export const WorkspaceScreen = () => {
                 />
               ) : hasRepositories && isRepositorySettingsPage && activeRepository ? (
                 <RepositorySettingsPanel
+                  agentProviders={detectedAgentProviders}
                   appConfig={appConfigQuery.data}
                   repository={activeRepository}
                   status={repositoryStatus}
@@ -1108,7 +1122,7 @@ export const WorkspaceScreen = () => {
                     });
                   }}
                   profile={appConfigQuery.data?.profile}
-                  query={isInitiativesPage ? { type: "initiative" } : {}}
+                  query={isInitiativesPage ? { type: "epic" } : {}}
                   repositoryId={issueRepository?.id}
                   repositoryIds={isGlobalIssuesPage ? repositoryIds : undefined}
                   repositories={repositories}
@@ -1216,6 +1230,7 @@ export const WorkspaceScreen = () => {
           onStatusChange={createIssueForm.setStatus}
           onTemplateChange={applyIssueTemplate}
           onTitleChange={createIssueForm.setTitle}
+          onTypeChange={createIssueForm.setType}
           priority={createIssueForm.values.priority}
           prioritySections={createIssueOptions.prioritySections}
           project={createIssueForm.values.project}
@@ -1228,6 +1243,8 @@ export const WorkspaceScreen = () => {
           template={createIssueForm.values.template}
           templateSections={createIssueOptions.templateSections}
           title={createIssueForm.values.title}
+          type={createIssueForm.values.type}
+          typeSections={ticketTypeSections}
         />
       ) : null}
     </>

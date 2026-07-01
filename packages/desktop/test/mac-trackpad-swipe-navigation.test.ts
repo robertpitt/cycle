@@ -195,18 +195,18 @@ describe("mac trackpad swipe navigation", () => {
   });
 
   it("keeps horizontal scrolling available until the scrollable edge", () => {
-    expect(
-      canScrollHorizontallyInWheelDirection(horizontalTarget({ scrollLeft: 25 }), -10),
-    ).toBe(true);
-    expect(
-      canScrollHorizontallyInWheelDirection(horizontalTarget({ scrollLeft: 0 }), -10),
-    ).toBe(false);
+    expect(canScrollHorizontallyInWheelDirection(horizontalTarget({ scrollLeft: 25 }), -10)).toBe(
+      true,
+    );
+    expect(canScrollHorizontallyInWheelDirection(horizontalTarget({ scrollLeft: 0 }), -10)).toBe(
+      false,
+    );
 
-    expect(
-      canScrollHorizontallyInWheelDirection(horizontalTarget({ scrollLeft: 25 }), 10),
-    ).toBe(true);
-    expect(
-      canScrollHorizontallyInWheelDirection(horizontalTarget({ scrollLeft: 100 }), 10),
-    ).toBe(false);
+    expect(canScrollHorizontallyInWheelDirection(horizontalTarget({ scrollLeft: 25 }), 10)).toBe(
+      true,
+    );
+    expect(canScrollHorizontallyInWheelDirection(horizontalTarget({ scrollLeft: 100 }), 10)).toBe(
+      false,
+    );
   });
 });

@@ -5,8 +5,10 @@ import { join } from "node:path";
 import { Effect } from "effect";
 import { afterEach, describe, it } from "vitest";
 import {
+  capabilitySupportsAuthorityMode,
   defaultAgentCapabilities,
   detectAgentProviders,
+  makeAgentJobRequestMetadata,
   resolveExecutable,
   supportedAgentProviders,
 } from "../src/index.ts";
@@ -121,6 +123,44 @@ describe("@cycle/agents runtime contracts", () => {
     assert.equal(capabilities.streaming, true);
     assert.equal(capabilities.structuredOutput, true);
     assert.equal(capabilities.supports.mcp, true);
+    assert.equal(capabilities.providerFeatures?.commandExecution, true);
+    assert.equal(capabilities.providerFeatures?.workspaceWriteMode, true);
+    assert.equal(capabilitySupportsAuthorityMode(capabilities, "ticket-context"), true);
+    assert.equal(capabilitySupportsAuthorityMode(capabilities, "disposable-worktree"), true);
+    assert.equal(capabilitySupportsAuthorityMode(capabilities, "implementation-worktree"), true);
     assert.equal(capabilities.supportedJobTypes.includes("implement_issue"), true);
+  });
+
+  it("builds provider request metadata for job-scoped turns", () => {
+    assert.deepEqual(
+      makeAgentJobRequestMetadata({
+        agentId: "agent_local",
+        authorityMode: "implementation-worktree",
+        branchName: "cycle/task/CYC-123-work",
+        jobId: "job_123",
+        model: "gpt-test",
+        providerId: "codex",
+        repositoryId: "repo_123",
+        ticketId: "CYC-123",
+        trigger: "assignment-pickup",
+        worktreePath: "/tmp/cycle/worktrees/worktree_123",
+      }),
+      {
+        agent: {
+          id: "agent_local",
+          model: "gpt-test",
+          providerId: "codex",
+        },
+        agentId: "agent_local",
+        authorityMode: "implementation-worktree",
+        branchName: "cycle/task/CYC-123-work",
+        jobId: "job_123",
+        repositoryId: "repo_123",
+        ticketId: "CYC-123",
+        trigger: "assignment-pickup",
+        triggerType: "assignment-pickup",
+        worktreePath: "/tmp/cycle/worktrees/worktree_123",
+      },
+    );
   });
 });

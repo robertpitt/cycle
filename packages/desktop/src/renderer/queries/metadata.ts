@@ -1,6 +1,7 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import type {
   InitiativeProgress,
+  IssueTemplateDocument,
   IssueTemplatePage,
   IssueTemplateQuery,
   LabelDefinitionDocument,
@@ -14,6 +15,7 @@ import type {
   UserProfileQuery,
 } from "@cycle/contracts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
+import { normalizeCreateTicketType } from "../lib/agentWork.ts";
 
 const usersQueryKey = (repositoryId: string | undefined) =>
   ["desktop", "api", "users", repositoryId] as const;
@@ -102,13 +104,38 @@ const getViewForRepository = async ({
 const listTemplatesForRepository = async (
   repositoryId: string,
   query: IssueTemplateQuery = {},
-): Promise<IssueTemplatePage> =>
-  cycleApiClient.call("ticket.template.list", {
+): Promise<IssueTemplatePage> => {
+  const page = await cycleApiClient.call("ticket.template.list", {
     input: query,
     repository: {
       id: repositoryId,
     },
   });
+
+  return {
+    ...page,
+    entries: page.entries.map(normalizeTemplateTypeDefault),
+  };
+};
+
+const normalizeTemplateTypeDefault = <
+  TTemplate extends {
+    readonly defaults?: { readonly type?: string };
+  },
+>(
+  template: TTemplate,
+): IssueTemplateDocument => {
+  const type = normalizeCreateTicketType(template.defaults?.type);
+  if (!template.defaults || template.defaults.type === type) {
+    return template as unknown as IssueTemplateDocument;
+  }
+
+  const { type: _type, ...defaults } = template.defaults;
+  return {
+    ...template,
+    defaults: type === undefined ? defaults : { ...defaults, type },
+  } as unknown as IssueTemplateDocument;
+};
 
 const getInitiativeProgressForRepository = async ({
   initiativeId,

@@ -1,3 +1,4 @@
+export * from "./AgentWorkPanels.tsx";
 export * from "./AddRepositoryStep.tsx";
 export * from "./ApplicationSettingsPanel.tsx";
 export * from "./BootloaderScreen.tsx";

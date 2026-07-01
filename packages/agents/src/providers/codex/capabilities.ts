@@ -1,4 +1,5 @@
 import type { AgentCapabilities, AgentProviderDefinition } from "../../types.ts";
+import { codexAuthorityCapabilities } from "../capabilities.ts";
 import { planningJobTypes } from "../shared.ts";
 
 export const codexProviderDefinition: AgentProviderDefinition = {
@@ -8,7 +9,22 @@ export const codexProviderDefinition: AgentProviderDefinition = {
 };
 
 export const codexAgentCapabilities: AgentCapabilities = {
+  authorityModes: codexAuthorityCapabilities,
   provider: "codex",
+  providerFeatures: {
+    abortInterrupt: true,
+    approvalInteractions: true,
+    commandExecution: true,
+    fileChanges: true,
+    mcpAttachments: true,
+    modelSelection: true,
+    sessionResume: true,
+    streaming: true,
+    structuredOutput: true,
+    usageReporting: true,
+    userInputInteractions: true,
+    workspaceWriteMode: true,
+  },
   sessionPersistence: "provider-local",
   streaming: true,
   structuredOutput: true,

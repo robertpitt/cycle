@@ -2,7 +2,6 @@ import {
   CodexAppServerRequestError,
   spawnCodexAppServerClient,
   type CodexAppServerClient,
-  type CommandExecutionRequestApprovalParams,
   type FileChangeRequestApprovalParams,
   type JsonValue as CodexJsonValue,
   type ThreadItem,
@@ -108,6 +107,7 @@ type CurrentTurn = {
   readonly artifactByItemId: Map<string, AgentArtifact>;
   readonly createdAt: Date;
   readonly queue: AsyncEventQueue<AgentEvent>;
+  readonly refreshTimeout: () => void;
   readonly request: AgentTurnRequest;
   readonly sessionId: string;
   readonly suspendTimeout: () => () => void;
@@ -282,10 +282,12 @@ const warmCycleMcpServer = async (
     }
   }
 
-  pushMcpWarmupWarning(
-    sessionRuntime,
-    lastError ?? new Error("Codex app-server did not report the Cycle MCP server."),
-  );
+  const error = lastError ?? new Error("Codex app-server did not report the Cycle MCP server.");
+  if (request.mcp.required === true) {
+    throw new Error(`Cycle MCP warm-up failed: ${errorMessage(error)}`);
+  }
+
+  pushMcpWarmupWarning(sessionRuntime, error);
 };
 
 const environmentForRequest = (
@@ -308,6 +310,7 @@ const timeoutSignal = (
 ): {
   readonly cleanup: () => void;
   readonly controller: AbortController;
+  readonly refresh: () => void;
   readonly signal: AbortSignal;
   readonly suspend: () => () => void;
 } => {
@@ -343,6 +346,10 @@ const timeoutSignal = (
       signal?.removeEventListener("abort", onAbort);
     },
     controller,
+    refresh: () => {
+      clearTimer();
+      startTimer();
+    },
     signal: controller.signal,
     suspend: () => {
       suspended += 1;
@@ -385,43 +392,9 @@ const normalizeUsage = (usage: unknown): AgentUsage | undefined => {
 const numberField = (value: Readonly<Record<string, unknown>>, key: string): number | undefined =>
   typeof value[key] === "number" ? value[key] : undefined;
 
-const approvalDecisionToCodexCommandDecision = (
-  decision: AgentApprovalDecision,
-): "accept" | "acceptForSession" | "decline" | "cancel" => decision;
-
 const approvalDecisionToCodexFileDecision = (
   decision: AgentApprovalDecision,
 ): AgentApprovalDecision => decision;
-
-const compactCommand = (payload: CommandExecutionRequestApprovalParams): string | undefined => {
-  if (typeof payload.command === "string") return payload.command;
-  if (Array.isArray(payload.command)) return payload.command.join(" ");
-  const commandAction = Array.isArray(payload.commandActions)
-    ? payload.commandActions[0]
-    : undefined;
-  return isRecord(commandAction) && typeof commandAction.command === "string"
-    ? commandAction.command
-    : undefined;
-};
-
-const approvalRequestFromCommand = (
-  sessionId: string,
-  requestId: string,
-  payload: CommandExecutionRequestApprovalParams,
-): AgentApprovalRequest => ({
-  createdAt: now().toISOString(),
-  defaultDecision: "decline",
-  details: jsonObjectFromRecord({
-    command: compactCommand(payload),
-    cwd: payload.cwd,
-    approvalId: payload.approvalId,
-  }),
-  itemId: payload.itemId,
-  kind: "command",
-  requestId,
-  sessionId,
-  turnId: payload.turnId,
-});
 
 const approvalRequestFromFileChange = (
   sessionId: string,
@@ -564,6 +537,7 @@ const pushDelta = (
   },
 ) => {
   const at = now();
+  current.refreshTimeout();
   if (input.streamKind === "assistant_text") current.text = `${current.text}${input.delta}`;
   const snapshot = input.streamKind === "assistant_text" ? current.text : undefined;
   current.queue.push({
@@ -665,6 +639,7 @@ const registerHandlers = (
   sessionRuntime.client.handleServerNotification("turn/started", (payload) => {
     const active = current();
     if (active === undefined) return;
+    active.refreshTimeout();
     active.nativeTurnId = payload.turn.id;
     active.queue.push({
       at: now(),
@@ -746,6 +721,7 @@ const registerHandlers = (
   sessionRuntime.client.handleServerNotification("turn/plan/updated", (payload) => {
     const active = current();
     if (active === undefined) return;
+    active.refreshTimeout();
     active.queue.push({
       at: now(),
       ...(payload.explanation === undefined || payload.explanation === null
@@ -761,6 +737,7 @@ const registerHandlers = (
   sessionRuntime.client.handleServerNotification("turn/diff/updated", (payload) => {
     const active = current();
     if (active === undefined) return;
+    active.refreshTimeout();
     active.queue.push({
       at: now(),
       diff: payload.diff,
@@ -777,6 +754,7 @@ const registerHandlers = (
   ) => {
     const active = current();
     if (active === undefined) return;
+    active.refreshTimeout();
     const artifact = artifactFromItem(item);
     if (artifact !== undefined) active.artifactByItemId.set(item.id, artifact);
     active.queue.push({
@@ -809,6 +787,7 @@ const registerHandlers = (
   sessionRuntime.client.handleServerNotification("warning", (payload) => {
     const active = current();
     if (active === undefined) return;
+    active.refreshTimeout();
     active.queue.push({
       at: now(),
       message: payload.message ?? "Codex app-server warning.",
@@ -822,6 +801,7 @@ const registerHandlers = (
   sessionRuntime.client.handleServerNotification("error", (payload) => {
     const active = current();
     if (active === undefined) return;
+    active.refreshTimeout();
     active.queue.push({
       at: now(),
       error: {
@@ -850,6 +830,7 @@ const registerHandlers = (
     }
 
     const error = typeof payload.error === "string" ? payload.error : undefined;
+    active.refreshTimeout();
     active.queue.push({
       at: now(),
       message: `Cycle MCP startup failed${error === undefined ? "." : `: ${error}`}`,
@@ -863,6 +844,7 @@ const registerHandlers = (
   sessionRuntime.client.handleServerNotification("turn/completed", (payload) => {
     const active = current();
     if (active === undefined) return;
+    active.refreshTimeout();
     const completedAt = now();
     const usage = normalizeUsage(payload.usage);
 
@@ -900,6 +882,24 @@ const registerHandlers = (
 
   sessionRuntime.client.handleServerRequest(
     "item/commandExecution/requestApproval",
+    async () => {
+      const active = current();
+      if (active === undefined) {
+        throw CodexAppServerRequestError.internalError(
+          "No active Cycle turn for Codex approval request.",
+        );
+      }
+      active.refreshTimeout();
+      // Cycle uses Codex sandbox modes as the command safety boundary. Command approvals are
+      // therefore non-interactive so chat turns cannot hang waiting for an approval UI.
+      return {
+        decision: "accept",
+      };
+    },
+  );
+
+  sessionRuntime.client.handleServerRequest(
+    "item/fileChange/requestApproval",
     async (payload) => {
       const active = current();
       if (active === undefined) {
@@ -907,8 +907,9 @@ const registerHandlers = (
           "No active Cycle turn for Codex approval request.",
         );
       }
+      active.refreshTimeout();
       const requestId = newCodexId("approval");
-      const request = approvalRequestFromCommand(active.sessionId, requestId, payload);
+      const request = approvalRequestFromFileChange(active.sessionId, requestId, payload);
       const resumeTimeout = active.suspendTimeout();
       const decision = await new Promise<AgentApprovalDecision>((resolve) => {
         runtime.pendingApprovals.set(`${active.sessionId}:${requestId}`, {
@@ -934,48 +935,10 @@ const registerHandlers = (
         type: "approval.resolved",
       });
       return {
-        decision: approvalDecisionToCodexCommandDecision(decision),
+        decision: approvalDecisionToCodexFileDecision(decision),
       };
     },
   );
-
-  sessionRuntime.client.handleServerRequest("item/fileChange/requestApproval", async (payload) => {
-    const active = current();
-    if (active === undefined) {
-      throw CodexAppServerRequestError.internalError(
-        "No active Cycle turn for Codex approval request.",
-      );
-    }
-    const requestId = newCodexId("approval");
-    const request = approvalRequestFromFileChange(active.sessionId, requestId, payload);
-    const resumeTimeout = active.suspendTimeout();
-    const decision = await new Promise<AgentApprovalDecision>((resolve) => {
-      runtime.pendingApprovals.set(`${active.sessionId}:${requestId}`, {
-        decision: resolve,
-        request,
-      });
-      active.queue.push({
-        at: now(),
-        request,
-        sessionId: active.sessionId,
-        turnId: active.turnId,
-        type: "approval.requested",
-      });
-    }).finally(resumeTimeout);
-    runtime.resolvedInteractions.add(`${active.sessionId}:${requestId}`);
-    runtime.pendingApprovals.delete(`${active.sessionId}:${requestId}`);
-    active.queue.push({
-      at: now(),
-      decision,
-      requestId,
-      sessionId: active.sessionId,
-      turnId: active.turnId,
-      type: "approval.resolved",
-    });
-    return {
-      decision: approvalDecisionToCodexFileDecision(decision),
-    };
-  });
 
   sessionRuntime.client.handleServerRequest("item/tool/requestUserInput", async (payload) => {
     const active = current();
@@ -984,6 +947,7 @@ const registerHandlers = (
         "No active Cycle turn for Codex user-input request.",
       );
     }
+    active.refreshTimeout();
     const requestId = newCodexId("user-input");
     const request = userInputRequestFromPayload(active.sessionId, requestId, payload);
     const resumeTimeout = active.suspendTimeout();
@@ -1170,6 +1134,7 @@ export async function* streamCodexAppServerTurn<TStructured = unknown>(
     artifactByItemId: new Map(),
     createdAt,
     queue,
+    refreshTimeout: abort.refresh,
     request,
     sessionId,
     suspendTimeout: abort.suspend,

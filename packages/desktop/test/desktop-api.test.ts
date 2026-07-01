@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { GitRepository } from "@cycle/git";
+import { GitRepository, WorktreeService } from "@cycle/git";
 import { UseCaseRunner } from "@cycle/usecases";
 import { NodeServices } from "@effect/platform-node";
 import { Effect, Layer } from "effect";
@@ -173,6 +173,19 @@ const makeLayer = (config: AppConfigState) =>
         inspect: () => Effect.die("not implemented"),
         metadata: () => Effect.die("not implemented"),
         resolveGitDir: () => Effect.die("not implemented"),
+      }),
+    ),
+    Layer.succeed(
+      WorktreeService,
+      WorktreeService.of({
+        cleanupWorktree: () => Effect.die("not implemented"),
+        commitWorktree: () => Effect.die("not implemented"),
+        createDisposableWorktree: () => Effect.die("not implemented"),
+        createImplementationWorktree: () => Effect.die("not implemented"),
+        createOrUpdateBranch: () => Effect.die("not implemented"),
+        diffWorktree: () => Effect.die("not implemented"),
+        inspectWorktree: () => Effect.die("not implemented"),
+        retainWorktree: () => Effect.die("not implemented"),
       }),
     ),
     Layer.succeed(

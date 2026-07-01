@@ -51,12 +51,18 @@ export const startCycleApiServerEffect = (
     const host = options.host ?? "127.0.0.1";
     const logging = apiLogging(options.logging);
     assertLoopback(host);
-    const serverOptions = withServerMcpDefaults(options);
+    const configuredBaseUrl =
+      options.baseUrl ??
+      (options.port === undefined ? undefined : `http://${host}:${options.port}`);
+    const serverOptions = withServerMcpDefaults({
+      ...options,
+      ...(configuredBaseUrl === undefined ? {} : { baseUrl: configuredBaseUrl }),
+    });
 
     const scope = yield* Scope.make("sequential");
     const api = makeCycleApi({
       ...serverOptions,
-      baseUrl: `http://${host}:${options.port ?? 0}`,
+      baseUrl: serverOptions.baseUrl ?? `http://${host}:${options.port ?? 0}`,
     });
     const { createServer } = yield* Effect.tryPromise({
       try: () => import("node:http"),

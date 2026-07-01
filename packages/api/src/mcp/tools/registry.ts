@@ -131,7 +131,14 @@ export type CycleMcpToolDefinition<Input> = {
 
 export type CycleMcpToolContext = {
   readonly api: CycleMcpApiClientShape;
+  readonly actor?: unknown;
+  readonly allowedTools?: ReadonlyArray<CycleMcpToolName>;
+  readonly authorityMode?: "ticket-context" | "disposable-worktree" | "implementation-worktree";
+  readonly jobId?: string;
   readonly makeRequestId: () => string;
+  readonly repositoryId?: string;
+  readonly ticketId?: string;
+  readonly worktreePath?: string;
 };
 
 export const cycleMcpToolNames: ReadonlyArray<CycleMcpToolName> = [
@@ -440,6 +447,9 @@ export const callCycleMcpTool = (
       });
     }
 
+    const allowlistError = mcpAllowlistError(name as CycleMcpToolName, context);
+    if (allowlistError !== undefined) return allowlistError;
+
     const decoded = yield* Effect.try({
       try: () => Schema.decodeUnknownSync(definition.inputSchema, StrictDecodeOptions)(payload),
       catch: (error) =>
@@ -458,6 +468,9 @@ export const callCycleMcpTool = (
         requestId: decoded.failure.requestId ?? context.makeRequestId(),
       });
     }
+
+    const scopeError = mcpScopeError(decoded.success as ToolContextInput, context);
+    if (scopeError !== undefined) return scopeError;
 
     return yield* definition.handle(decoded.success, context);
   }).pipe(
@@ -1071,6 +1084,7 @@ type ToolContextInput = {
   readonly issueId?: string;
   readonly repositoryId?: string;
   readonly requestId?: string;
+  readonly targetIssueId?: string;
 };
 
 const toolSuccess = (
@@ -1132,6 +1146,135 @@ const withToolMeta = (
 
 const requestIdFor = (input: ToolContextInput, context: CycleMcpToolContext): string =>
   input.requestId ?? context.makeRequestId();
+
+const mcpAllowlistError = (
+  name: CycleMcpToolName,
+  context: CycleMcpToolContext,
+): CycleMcpToolResult | undefined => {
+  const allowed = context.allowedTools ?? defaultAllowedToolsFor(context.authorityMode);
+  if (
+    context.jobId === undefined &&
+    context.allowedTools === undefined &&
+    context.authorityMode === undefined
+  ) {
+    return undefined;
+  }
+  if (allowed.includes(name)) return undefined;
+
+  return toolError({
+    code: "MCP_TOOL_NOT_ALLOWED",
+    details: {
+      allowedTools: allowed,
+      authorityMode: context.authorityMode ?? null,
+      jobId: context.jobId ?? null,
+      tool: name,
+    },
+    message: `Cycle MCP tool ${name} is not allowed by the current job authority.`,
+    requestId: context.makeRequestId(),
+    retryable: false,
+    status: 403,
+  });
+};
+
+const mcpScopeError = (
+  input: ToolContextInput,
+  context: CycleMcpToolContext,
+): CycleMcpToolResult | undefined => {
+  if (
+    context.repositoryId !== undefined &&
+    input.repositoryId !== undefined &&
+    input.repositoryId !== context.repositoryId
+  ) {
+    return toolError({
+      code: "MCP_REPOSITORY_SCOPE_VIOLATION",
+      details: {
+        expectedRepositoryId: context.repositoryId,
+        requestedRepositoryId: input.repositoryId,
+      },
+      message: "Cycle MCP tool input is outside the scoped repository.",
+      repositoryId: input.repositoryId,
+      requestId: requestIdFor(input, context),
+      retryable: false,
+      status: 403,
+    });
+  }
+
+  const requestedTicketId = input.targetIssueId ?? input.issueId;
+  if (
+    context.ticketId !== undefined &&
+    requestedTicketId !== undefined &&
+    requestedTicketId !== context.ticketId
+  ) {
+    return toolError({
+      code: "MCP_TICKET_SCOPE_VIOLATION",
+      details: {
+        expectedTicketId: context.ticketId,
+        requestedTicketId,
+      },
+      issueId: requestedTicketId,
+      message: "Cycle MCP tool input is outside the scoped ticket.",
+      repositoryId: input.repositoryId,
+      requestId: requestIdFor(input, context),
+      retryable: false,
+      status: 403,
+    });
+  }
+
+  return undefined;
+};
+
+const defaultAllowedToolsFor = (
+  authorityMode: CycleMcpToolContext["authorityMode"],
+): ReadonlyArray<CycleMcpToolName> => {
+  switch (authorityMode) {
+    case "ticket-context":
+      return [
+        "cycle_repository_list",
+        "cycle_repository_get",
+        "cycle_autocomplete",
+        "cycle_issue_get",
+        "cycle_issue_list",
+        "cycle_issue_search",
+        "cycle_issue_create",
+        "cycle_issue_comments_list",
+        "cycle_issue_comment_add",
+        "cycle_issue_records_list",
+        "cycle_issue_history",
+        "cycle_automation_evaluate",
+      ];
+    case "disposable-worktree":
+      return [
+        "cycle_repository_list",
+        "cycle_repository_get",
+        "cycle_autocomplete",
+        "cycle_issue_get",
+        "cycle_issue_list",
+        "cycle_issue_search",
+        "cycle_issue_create",
+        "cycle_issue_comments_list",
+        "cycle_issue_comment_add",
+        "cycle_issue_records_list",
+        "cycle_issue_history",
+        "cycle_automation_evaluate",
+      ];
+    case "implementation-worktree":
+      return [
+        "cycle_repository_list",
+        "cycle_repository_get",
+        "cycle_autocomplete",
+        "cycle_issue_get",
+        "cycle_issue_list",
+        "cycle_issue_search",
+        "cycle_issue_comments_list",
+        "cycle_issue_comment_add",
+        "cycle_issue_records_list",
+        "cycle_issue_history",
+        "cycle_automation_evaluate",
+      ];
+    default:
+      return cycleMcpToolNames;
+  }
+};
 
 const targetIssueId = (input: {
   readonly issueId: string;

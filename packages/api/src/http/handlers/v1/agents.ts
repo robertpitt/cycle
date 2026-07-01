@@ -38,7 +38,28 @@ export const withAgentHandlers = (handlers: any) =>
       const output = yield* decodeHttpValue(
         AgentProvidersOutput,
         {
-          providers: result.success,
+          providers: result.success.map((provider) => ({
+            capabilities: {
+              provider: provider.capabilities.provider,
+              sessionPersistence: provider.capabilities.sessionPersistence,
+              streaming: provider.capabilities.streaming,
+              structuredOutput: provider.capabilities.structuredOutput,
+              supportedJobTypes: provider.capabilities.supportedJobTypes,
+              supports: provider.capabilities.supports,
+              workspace: provider.capabilities.workspace,
+            },
+            checkedAt: provider.checkedAt,
+            configuration: provider.configuration,
+            displayName: provider.displayName,
+            executableName: provider.executableName,
+            ...(provider.executablePath === undefined
+              ? {}
+              : { executablePath: provider.executablePath }),
+            ...(provider.message === undefined ? {} : { message: provider.message }),
+            models: provider.models,
+            provider: provider.provider,
+            status: provider.status,
+          })),
         },
         requestId,
         {

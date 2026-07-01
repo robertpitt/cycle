@@ -5,8 +5,7 @@ import {
   type DetectedAgentProvider,
 } from "../../shared/AgentProviders.ts";
 
-export const isAgentProviderId = (value: string): value is AgentProviderId =>
-  value === "codex";
+export const isAgentProviderId = (value: string): value is AgentProviderId => value === "codex";
 
 export const fallbackAgentProviders = (): ReadonlyArray<DetectedAgentProvider> =>
   supportedAgentProviders.map((provider) => ({

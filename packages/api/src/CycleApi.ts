@@ -1,4 +1,5 @@
 import { mcpBearerTokenEnvVar } from "@cycle/agents";
+import { makeAgentOrchestrationService } from "@cycle/agents/orchestration";
 import { makeDefaultAgentServiceRegistry } from "@cycle/agents/service";
 import { NodeServices } from "@effect/platform-node";
 import { Layer } from "effect";
@@ -8,6 +9,7 @@ import {
   makeAgentActiveTurnDirectory,
   type AgentActiveTurnDirectoryShape,
 } from "./agents/services/AgentActiveTurnDirectory.ts";
+import { makeHttpInMemoryAgentWorkRuntime } from "./agent-work/httpAdapter.ts";
 import { listLocalAgentProviderProfiles } from "./agents/services/AgentProviderProfiles.ts";
 import { CycleHttpApi, makeOpenApiDocument } from "./api.ts";
 import { CycleAuthorizationLive } from "./http/handlers/Authorization.ts";
@@ -78,25 +80,51 @@ export const makeCycleApi = (options: CycleApiOptions): CycleApi => {
 };
 
 export const makeCycleApiLayer = (options: CycleApiOptions) => {
+  const baseUrl = normalizeBaseUrl(options.baseUrl);
   const mcpPath = hostedMcpPath(options.mcp);
+  const mcpUrl =
+    baseUrl === undefined || mcpPath === undefined
+      ? undefined
+      : joinBaseUrlPath(baseUrl, mcpPath);
   const agentServiceEnv = agentServiceEnvFromMcp(options.mcp, options.staticToken);
   const activeAgentTurns = makeAgentActiveTurnDirectory();
+  const agentServices =
+    options.agentServices ??
+    makeDefaultAgentServiceRegistry({
+      ...(agentServiceEnv === undefined ? {} : { env: agentServiceEnv }),
+      sessionStore: options.agentSessionStore,
+    });
+  const agentOrchestration =
+    options.agentOrchestration ??
+    makeAgentOrchestrationService({
+      agentServices,
+      now: options.now,
+    });
   const runtimeShape: CycleApiRuntimeShape = {
     activeAgentTurns,
+    agentOrchestration,
     agentProviderProfiles: options.agentProviderProfiles ?? listLocalAgentProviderProfiles,
-    agentServices:
-      options.agentServices ??
-      makeDefaultAgentServiceRegistry({
-        ...(agentServiceEnv === undefined ? {} : { env: agentServiceEnv }),
-        sessionStore: options.agentSessionStore,
-      }),
+    agentServices,
     ...(options.agentChatStore === undefined ? {} : { agentChatStore: options.agentChatStore }),
+    agentWork:
+      options.agentWork ??
+      makeHttpInMemoryAgentWorkRuntime({
+        ...(options.worktreeService === undefined
+          ? {}
+          : {
+              executionPolicy: {
+                supportedAuthorityModes: ["ticket-context", "implementation-worktree"],
+              },
+            }),
+      }),
     ...(options.agentSessionStore === undefined
       ? {}
       : { agentSessionStore: options.agentSessionStore }),
     apiVersion: options.apiVersion ?? "0.1.0",
+    ...(baseUrl === undefined ? {} : { baseUrl }),
     ...(options.localSettings === undefined ? {} : { localSettings: options.localSettings }),
     ...(mcpPath === undefined ? {} : { mcpPath }),
+    ...(mcpUrl === undefined ? {} : { mcpUrl }),
     now: options.now ?? (() => new Date()),
     ...(options.repositoryOpenInput === undefined
       ? {}
@@ -104,6 +132,10 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
     runner: options.runner,
     startedAt: (options.startedAt ?? new Date()).toISOString(),
     staticToken: options.staticToken,
+    ...(options.worktreeService === undefined ? {} : { worktreeService: options.worktreeService }),
+    ...(options.worktreeStoragePath === undefined
+      ? {}
+      : { worktreeStoragePath: options.worktreeStoragePath }),
   };
   const runtime = Layer.succeed(CycleApiRuntime, runtimeShape);
   const handlers = Layer.mergeAll(SystemApiHandlers, V1ApiHandlers).pipe(
@@ -136,6 +168,12 @@ const hostedMcpPath = (mcp: false | CycleApiMcpOptions | undefined): string | un
   if (mcp === false || mcp === undefined || mcp.enabled === false) return undefined;
   return mcp.path ?? "/mcp";
 };
+
+const normalizeBaseUrl = (baseUrl: string | undefined): string | undefined =>
+  baseUrl === undefined ? undefined : baseUrl.replace(/\/+$/u, "");
+
+const joinBaseUrlPath = (baseUrl: string, path: string): string =>
+  `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 
 const agentServiceEnvFromMcp = (
   mcp: false | CycleApiMcpOptions | undefined,

@@ -18,11 +18,13 @@ export const chatThreadFromPayload = (input: {
   const payload = isRecord(input.payload) ? input.payload : {};
   const agentId = stringValue(payload.agentId);
   const sessionId = stringValue(payload.sessionId);
+  const origin = isRecord(payload.origin) ? payload.origin : undefined;
 
   return {
     createdAt: stringValue(payload.createdAt) ?? input.now,
     id: input.threadId,
     ...(agentId === undefined ? {} : { agentId }),
+    ...(origin === undefined ? {} : { origin }),
     ...(sessionId === undefined ? {} : { sessionId }),
     status: chatThreadStatus(payload.status),
     summary: stringValue(payload.summary) ?? "New conversation",

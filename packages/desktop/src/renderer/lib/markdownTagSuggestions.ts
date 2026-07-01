@@ -63,7 +63,7 @@ export const createMarkdownTagSuggestions = ({
         ? (provider.executablePath ?? provider.executable)
         : `${provider.executable} not installed`,
     id: provider.id,
-    insertLabel: `@${provider.name}`,
+    insertLabel: `[${provider.name}](cycle-agent:${provider.id})`,
     kind: "agent" as const,
     label: provider.name,
     searchText: [provider.id, provider.name, provider.executable, provider.status].join(" "),

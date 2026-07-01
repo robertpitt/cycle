@@ -258,11 +258,13 @@ describe("@cycle/database", () => {
           labels: ["database", "sqlite"],
           priority: "high",
           title: "Build database package",
+          type: "task",
         });
         const ticketB = yield* database.createTicket("repo-b", {
           labels: ["frontend"],
           priority: "medium",
           title: "Polish issue sidebar",
+          type: "task",
         });
         const fetchedA = yield* database.getTicket("repo-a", ticketA.id);
         const repoAHigh = yield* database.listTickets({
@@ -320,6 +322,7 @@ describe("@cycle/database", () => {
 
       const ticket = yield* database.createTicket("first-write-repo", {
         title: "First write ticket",
+        type: "task",
       });
       const events = yield* GitDbEvent.list(store);
       const sourceProfile = yield* database.getUser("first-write-repo", "test@example.invalid");
@@ -361,6 +364,7 @@ describe("@cycle/database", () => {
         priority: "low",
         status: "todo",
         title: "Event log invariant ticket",
+        type: "task",
       });
       yield* database.updateTicket(repositoryId, ticket.id, {
         frontmatter: {
@@ -481,6 +485,7 @@ describe("@cycle/database", () => {
 
       const draft = yield* database.createDraft("draft-ticket-id-repo", {
         title: "Draft ticket id",
+        type: "task",
       });
       const ticket = yield* database.commitDraft("draft-ticket-id-repo", draft.id);
 
@@ -502,6 +507,7 @@ describe("@cycle/database", () => {
       const ticket = yield* database.createTicket("search-repo", {
         body: "The body mentions materialized views.",
         title: "Projection search",
+        type: "task",
       });
       const comment = yield* database.addComment("search-repo", ticket.id, {
         body: "Comment mentions sync visibility for the frontend.",
@@ -594,6 +600,7 @@ describe("@cycle/database", () => {
           ticket: {
             body: "Please review this, @reviewer.",
             title: "Mentioned ticket",
+            type: "task",
           },
           ticketId: "EXT-00001",
         });
@@ -733,6 +740,7 @@ describe("@cycle/database", () => {
             {
               body: "Self-authored @reviewer mention.",
               title: "Self mention",
+              type: "task",
             },
             "EXT-00003",
             {
@@ -766,6 +774,7 @@ describe("@cycle/database", () => {
                 {
                   body: "Unknown @missing-user mention.",
                   title: "Unknown mention",
+                  type: "task",
                 },
                 "EXT-00004",
                 externalActor,
@@ -818,6 +827,7 @@ describe("@cycle/database", () => {
         priority: "low",
         status: "todo",
         title: "Manual property edit ticket",
+        type: "task",
       });
       const updated = yield* database.updateTicket("manual-property-edit-repo", ticket.id, {
         frontmatter: {
@@ -848,9 +858,11 @@ describe("@cycle/database", () => {
         dueDate: "2026-06-30",
         estimate: 3,
         title: "Metadata ticket",
+        type: "task",
       });
       const target = yield* database.createTicket("metadata-repo", {
         title: "Dependency ticket",
+        type: "task",
       });
       const related = yield* database.addIssueRelation("metadata-repo", source.id, {
         issueId: target.id,
@@ -957,6 +969,7 @@ describe("@cycle/database", () => {
         body: "Old body",
         priority: "low",
         title: "Revision ticket",
+        type: "task",
       });
       yield* database.updateTicket("revision-repo", ticket.id, {
         body: "New body",
@@ -1005,6 +1018,7 @@ describe("@cycle/database", () => {
 
       const ticket = yield* database.createTicket("history-repo", {
         title: "History ticket",
+        type: "task",
       });
       yield* database.addComment("history-repo", ticket.id, {
         body: "Record this in history.",
@@ -1057,6 +1071,7 @@ describe("@cycle/database", () => {
       for (let index = 0; index < 5; index += 1) {
         const ticket = yield* database.createTicket("incremental-replay-repo", {
           title: `Incremental replay ticket ${index + 1}`,
+          type: "task",
         });
 
         if (index === 0) {
@@ -1097,11 +1112,13 @@ describe("@cycle/database", () => {
 
       yield* database.createTicket("write-delta-repo", {
         title: "Initial ticket seeds defaults",
+        type: "task",
       });
 
       counter.eventDocumentReads = 0;
       const ticket = yield* database.createTicket("write-delta-repo", {
         title: "Delta materialized ticket",
+        type: "task",
       });
       const projected = yield* database.getTicket("write-delta-repo", ticket.id);
 
@@ -1125,6 +1142,7 @@ describe("@cycle/database", () => {
         const valid = yield* database.createTicket("warning-repo", {
           labels: ["valid"],
           title: "Valid ticket",
+          type: "task",
         });
         const tx = yield* store.begin();
 
@@ -1164,6 +1182,7 @@ describe("@cycle/database", () => {
       const ticket = yield* database.createTicket("removed-pointer-repo", {
         body: "This ticket should disappear when the GitDB ref is removed.",
         title: "Pointer removal ticket",
+        type: "task",
       });
       const beforeRemoval = yield* database.listTickets({
         repositoryIds: ["removed-pointer-repo"],
@@ -1211,6 +1230,7 @@ describe("@cycle/database", () => {
 
       const ticket = yield* database.createTicket("reopened-removed-pointer-repo", {
         title: "Reopened pointer removal ticket",
+        type: "task",
       });
       const pointer = yield* store.pointer("main");
 
@@ -1250,6 +1270,7 @@ describe("@cycle/database", () => {
 
       yield* database.createTicket("users-repo", {
         title: "First shared ticket",
+        type: "task",
       });
 
       const events = yield* GitDbEvent.list(store);
@@ -1316,18 +1337,21 @@ describe("@cycle/database", () => {
       const archivedTemplate = yield* database.archiveTemplate("linear-metadata-repo", template.id);
       const initiative = yield* database.createInitiative("linear-metadata-repo", {
         title: "Improve issue workflow",
+        type: "epic",
       });
       const doneChild = yield* database.createTicket("linear-metadata-repo", {
         estimate: 3,
         parent: initiative.id,
         status: "done",
         title: "Finish shared metadata",
+        type: "task",
       });
       yield* database.createTicket("linear-metadata-repo", {
         estimate: 2,
         parent: initiative.id,
         status: "todo",
         title: "Add desktop metadata controls",
+        type: "task",
       });
       const initiativeUpdate = yield* database.addInitiativeUpdate(
         "linear-metadata-repo",
@@ -1365,7 +1389,7 @@ describe("@cycle/database", () => {
       assert.strictEqual(updatedLabel.color, "orange");
       assert.strictEqual(updatedView.pinned, true);
       assert.strictEqual(archivedTemplate.active, false);
-      assert.strictEqual(initiative.type, "initiative");
+      assert.strictEqual(initiative.type, "epic");
       assert.strictEqual(doneChild.parent, initiative.id);
       assert.strictEqual(initiativeUpdate.recordType, "initiative-update");
       assert.ok(labels.entries.some((entry) => entry.id === label.id));
@@ -1420,6 +1444,7 @@ describe("@cycle/database", () => {
 
       const ticket = yield* database.createTicket("validation-repo", {
         title: "Safe ticket",
+        type: "task",
       });
       const failure = yield* Effect.flip(
         database.addRecord("validation-repo", ticket.id, {

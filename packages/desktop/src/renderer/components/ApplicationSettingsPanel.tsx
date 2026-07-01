@@ -1,6 +1,6 @@
 import {
   ApplicationSettingsPanel as UiApplicationSettingsPanel,
-  type ApplicationSettingsSection,
+  type ApplicationSettingsSection as UiApplicationSettingsSection,
   type ApplicationSettingsProfile,
 } from "@cycle/ui/organisms";
 import * as React from "react";
@@ -14,8 +14,13 @@ import {
   useSetThemePreferenceMutation,
   useUpdateProfileMutation,
 } from "../mutations/index.ts";
+import { ApplicationAgentSettingsPanel } from "./AgentWorkPanels.tsx";
+import type { DetectedAgentProvider } from "../../shared/AgentProviders.ts";
+
+export type ApplicationSettingsSection = UiApplicationSettingsSection | "agents";
 
 type ApplicationSettingsPanelProps = {
+  readonly agentProviders?: readonly DetectedAgentProvider[];
   readonly appConfig: AppConfigState;
   readonly section: ApplicationSettingsSection;
 };
@@ -35,7 +40,11 @@ const themeItems = [
   },
 ] satisfies ReadonlyArray<{ readonly label: string; readonly value: ThemePreference }>;
 
-export const ApplicationSettingsPanel = ({ appConfig, section }: ApplicationSettingsPanelProps) => {
+export const ApplicationSettingsPanel = ({
+  agentProviders = [],
+  appConfig,
+  section,
+}: ApplicationSettingsPanelProps) => {
   const [cacheCleared, setCacheCleared] = React.useState(false);
   const updateProfile = useUpdateProfileMutation({ appConfig });
   const setThemePreference = useSetThemePreferenceMutation({ appConfig });
@@ -56,6 +65,10 @@ export const ApplicationSettingsPanel = ({ appConfig, section }: ApplicationSett
       onSuccess: () => setCacheCleared(true),
     });
   };
+
+  if (section === "agents") {
+    return <ApplicationAgentSettingsPanel providers={agentProviders} />;
+  }
 
   return (
     <UiApplicationSettingsPanel

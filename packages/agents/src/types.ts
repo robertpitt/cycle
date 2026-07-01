@@ -22,6 +22,13 @@ export type JsonSchema = Record<string, unknown>;
 
 export type AgentRuntimeMode = "read-only" | "workspace-write" | "full-access";
 
+export type AgentAuthorityMode =
+  | "ticket-context"
+  | "disposable-worktree"
+  | "implementation-worktree";
+
+export type AgentJobTrigger = "assignment-pickup" | "agent-mention" | "manual";
+
 export type AgentModelRef = {
   readonly provider?: string;
   readonly id: string;
@@ -29,7 +36,61 @@ export type AgentModelRef = {
 
 export type AgentWorkJobType = ContractAgentWorkJobType;
 
-export type AgentCapabilities = ContractAgentCapabilities;
+export type AgentProviderFeatureCapabilities = {
+  readonly streaming: boolean;
+  readonly structuredOutput: boolean;
+  readonly mcpAttachments: boolean;
+  readonly commandExecution: boolean;
+  readonly fileChanges: boolean;
+  readonly workspaceWriteMode: boolean;
+  readonly sessionResume: boolean;
+  readonly abortInterrupt: boolean;
+  readonly approvalInteractions: boolean;
+  readonly userInputInteractions: boolean;
+  readonly usageReporting: boolean;
+  readonly modelSelection: boolean;
+};
+
+export type AgentAuthorityCapabilities = Readonly<Record<AgentAuthorityMode, boolean>>;
+
+export type AgentProviderCapabilityMetadata = {
+  readonly authorityModes?: AgentAuthorityCapabilities;
+  readonly providerFeatures?: AgentProviderFeatureCapabilities;
+};
+
+export type AgentCapabilities = ContractAgentCapabilities & AgentProviderCapabilityMetadata;
+
+export type AgentJobRequestMetadata = JsonObject & {
+  readonly jobId: string;
+  readonly repositoryId: string;
+  readonly ticketId: string;
+  readonly authorityMode: AgentAuthorityMode;
+  readonly worktreePath?: string;
+  readonly branchName?: string;
+  readonly trigger: AgentJobTrigger;
+  readonly triggerType: AgentJobTrigger;
+  readonly triggerCommentId?: string;
+  readonly agentId: string;
+  readonly agent: {
+    readonly id: string;
+    readonly providerId?: AgentProviderId;
+    readonly model?: string;
+  };
+};
+
+export type CreateAgentJobRequestMetadataInput = {
+  readonly jobId: string;
+  readonly repositoryId: string;
+  readonly ticketId: string;
+  readonly authorityMode: AgentAuthorityMode;
+  readonly worktreePath?: string;
+  readonly branchName?: string;
+  readonly trigger: AgentJobTrigger;
+  readonly triggerCommentId?: string;
+  readonly agentId: string;
+  readonly providerId?: AgentProviderId;
+  readonly model?: string;
+};
 
 export type AgentHarnessStatus = ContractAgentHarnessStatus;
 
@@ -173,12 +234,14 @@ export type AgentMcpAttachment =
       readonly mode: "http";
       readonly url: string;
       readonly headers?: Readonly<Record<string, string>>;
+      readonly required?: boolean;
     }
   | {
       readonly mode: "stdio";
       readonly command: string;
       readonly args?: readonly string[];
       readonly env?: Readonly<Record<string, string>>;
+      readonly required?: boolean;
     };
 
 export type AgentTurnRequest<TStructured = unknown> = {

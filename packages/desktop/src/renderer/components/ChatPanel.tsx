@@ -69,6 +69,23 @@ const arrayValue = (value: unknown): readonly unknown[] => (Array.isArray(value)
 const runtimeMode = (value: unknown): AgentChatRuntimeMode | null =>
   value === "read-only" || value === "workspace-write" || value === "full-access" ? value : null;
 
+const threadOrigin = (value: unknown): AgentChatThreadListEntry["origin"] => {
+  if (!isRecord(value)) return null;
+  const kind = stringValue(value.kind);
+  if (kind === undefined) return null;
+
+  return {
+    agentId: stringOrNull(value.agentId),
+    commentId: stringOrNull(value.commentId),
+    issueId: stringOrNull(value.issueId),
+    jobId: stringOrNull(value.jobId),
+    kind,
+    label: stringOrNull(value.label),
+    repositoryId: stringOrNull(value.repositoryId),
+    trigger: stringOrNull(value.trigger),
+  };
+};
+
 const threadStatus = (value: unknown): AgentChatThreadStatus => {
   if (
     value === "active" ||
@@ -164,6 +181,7 @@ const protocolThread = (value: unknown): AgentChatThreadListEntry | undefined =>
     id,
     lastError: stringOrNull(value.lastError),
     model: stringOrNull(value.model),
+    origin: threadOrigin(value.origin),
     providerId: stringOrNull(value.providerId),
     runtimeMode: runtimeMode(value.runtimeMode),
     status: threadStatus(value.status),
@@ -382,13 +400,31 @@ const questionEntry = (question: AgentChatQuestion): AgentChatTimelineEntry => (
   sequence: question.sequence,
 });
 
+const timelineEntryWithSequence = (
+  entry: AgentChatTimelineEntry,
+  sequence: number | undefined,
+): AgentChatTimelineEntry => {
+  if (sequence === undefined) return entry;
+  if (entry.kind === "message") {
+    return { ...entry, message: { ...entry.message, sequence }, sequence };
+  }
+  if (entry.kind === "activity") {
+    return { ...entry, activity: { ...entry.activity, sequence }, sequence };
+  }
+  return { ...entry, question: { ...entry.question, sequence }, sequence };
+};
+
 const upsertTimelineEntry = (
   entries: readonly AgentChatTimelineEntry[],
   nextEntry: AgentChatTimelineEntry,
-): readonly AgentChatTimelineEntry[] => [
-  ...entries.filter((entry) => entry.id !== nextEntry.id),
-  nextEntry,
-];
+): readonly AgentChatTimelineEntry[] => {
+  const existing = entries.find((entry) => entry.id === nextEntry.id);
+  const preservedSequence = existing?.sequence ?? nextEntry.sequence;
+  return [
+    ...entries.filter((entry) => entry.id !== nextEntry.id),
+    timelineEntryWithSequence(nextEntry, preservedSequence),
+  ];
+};
 
 const threadTurnStatus = (thread: AgentChatThreadListEntry): AgentChatTurnStatus | null =>
   thread.activeTurnId ? "running" : null;
@@ -421,7 +457,7 @@ const mergeDetailThread = (
 ): AgentChatThreadDetail => ({
   ...(detail ?? { timeline: [] }),
   ...thread,
-  turnStatus: detail?.turnStatus ?? threadTurnStatus(thread),
+  turnStatus: thread.activeTurnId ? (detail?.turnStatus ?? threadTurnStatus(thread)) : null,
 });
 
 const sortThreads = (
@@ -975,6 +1011,19 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
       pendingCommandsRef.current.clear();
     };
   }, [handleServerMessage]);
+
+  React.useEffect(() => {
+    if (connectionStatus !== "connected") return;
+
+    const refresh = () => {
+      sendCommand("thread.list");
+      const selected = selectedThreadIdRef.current;
+      if (selected !== null) subscribeThread(selected);
+    };
+    const timer = window.setInterval(refresh, 4000);
+
+    return () => window.clearInterval(timer);
+  }, [connectionStatus, sendCommand, subscribeThread]);
 
   const selectedThread = React.useMemo<AgentChatThreadDetail | null>(() => {
     if (selectedThreadId === null) return null;
