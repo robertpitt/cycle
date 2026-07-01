@@ -6,7 +6,7 @@ import type {
   AgentRuntimeError,
   AgentRuntimeMcpRequest,
 } from "./contracts.ts";
-import { agentRuntimeFailure } from "./contracts.ts";
+import { AgentRuntimeFailure } from "./contracts.ts";
 
 export type AgentAuthorityProfile = {
   readonly codebaseReadOnly: boolean;
@@ -43,7 +43,7 @@ export const makeDefaultAgentAuthorityPolicy = (): AgentAuthorityPolicyShape => 
     if (authority.mode === "implementation-worktree") {
       if (authority.workspacePath === undefined || authority.workspacePath.trim().length === 0) {
         return Effect.fail(
-          agentRuntimeFailure({
+          new AgentRuntimeFailure({
             code: "workspace_unavailable",
             message: "implementation-worktree authority requires a workspacePath.",
             retryable: false,
@@ -62,7 +62,7 @@ export const makeDefaultAgentAuthorityPolicy = (): AgentAuthorityPolicyShape => 
     }
 
     return Effect.fail(
-      agentRuntimeFailure({
+      new AgentRuntimeFailure({
         code: "authority_denied",
         message: `Authority mode '${authority.mode}' is not supported by the agent runtime.`,
         retryable: false,
@@ -110,7 +110,7 @@ export class AgentMcpConnector extends Context.Service<AgentMcpConnector, AgentM
 
 export const makeDefaultAgentMcpConnector = (): AgentMcpConnectorShape => ({
   connect: ({ authorityProfile, mcp, run }) => {
-    if (mcp === undefined || mcp.mode === "disabled") return Effect.succeed(undefined);
+    if (mcp === undefined || mcp.mode === "disabled") return Effect.as(Effect.void, undefined);
 
     const allowedOperations =
       mcp.allowedOperations ??
@@ -177,4 +177,3 @@ const redactAttachment = (attachment: AgentMcpAttachment): AgentMcpAttachment =>
 
 const isSecretLike = (key: string): boolean =>
   /token|secret|password|authorization|credential|api[_-]?key/iu.test(key);
-

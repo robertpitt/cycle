@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import type { ObjectId, TreeEntry } from "../schemas/index.ts";
-import { gitAdapterError, type GitAdapterError } from "../errors/index.ts";
+import { GitAdapterError } from "../errors/index.ts";
 import { bytesFromString, bytesToString, concatBytes } from "../internals/bytes.ts";
 import { writeObject } from "./GitFilesystemObject.ts";
 import type { FilesystemRuntime } from "./GitFilesystemTypes.ts";
@@ -17,26 +17,29 @@ export const readFilesystemTree = (
       const modeEnd = payload.indexOf(0x20, offset);
 
       if (modeEnd === -1) {
-        return yield* Effect.fail(
-          gitAdapterError("filesystem readTree", "Tree entry is missing mode separator"),
-        );
+        return yield* new GitAdapterError({
+          operation: "filesystem readTree",
+          message: "Tree entry is missing mode separator",
+        });
       }
 
       const nameEnd = payload.indexOf(0, modeEnd + 1);
 
       if (nameEnd === -1) {
-        return yield* Effect.fail(
-          gitAdapterError("filesystem readTree", "Tree entry is missing name terminator"),
-        );
+        return yield* new GitAdapterError({
+          operation: "filesystem readTree",
+          message: "Tree entry is missing name terminator",
+        });
       }
 
       const objectStart = nameEnd + 1;
       const objectEnd = objectStart + 20;
 
       if (objectEnd > payload.byteLength) {
-        return yield* Effect.fail(
-          gitAdapterError("filesystem readTree", "Tree entry is missing object id bytes"),
-        );
+        return yield* new GitAdapterError({
+          operation: "filesystem readTree",
+          message: "Tree entry is missing object id bytes",
+        });
       }
 
       const mode = bytesToString(payload.subarray(offset, modeEnd));
@@ -74,7 +77,9 @@ export const writeFilesystemTree = (
 const hexToBytes = (hex: string, operation: string): Effect.Effect<Uint8Array, GitAdapterError> =>
   Effect.suspend(() => {
     if (!/^[0-9a-fA-F]{40}$/u.test(hex)) {
-      return Effect.fail(gitAdapterError(operation, `Invalid Git object id: ${hex}`));
+      return Effect.fail(
+        new GitAdapterError({ operation: operation, message: `Invalid Git object id: ${hex}` }),
+      );
     }
 
     const bytes = new Uint8Array(20);

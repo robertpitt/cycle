@@ -2,6 +2,7 @@ import { DatabaseService, type RepositoryMetadata, type RepositoryStatus } from 
 import { GitRepository, type GitRepositoryMetadata } from "@cycle/git";
 import { GitDb, Store as GitDbStore, type SyncResult } from "@cycle/git-db";
 import { Cause, Deferred, Effect, Layer, Option, Queue } from "effect";
+import { BootstrapRepositoryError } from "../errors/index.ts";
 import { DesktopRuntime } from "../platform/DesktopRuntime.ts";
 import type { RepositoryRecord } from "../shared/AppConfig.ts";
 import {
@@ -242,9 +243,7 @@ export const DesktopBootstrapLive = Layer.effect(
       repositoryPath: string,
       gitDir: string,
     ): Effect.Effect<GitDbStore.StoreServiceShape, unknown> =>
-      Effect.gen(function* () {
-        return yield* GitDbStore.StoreService;
-      }).pipe(
+      GitDbStore.StoreService.pipe(
         Effect.provide(
           GitDb.GitDbFilesystem({
             cwd: repositoryPath,
@@ -258,9 +257,7 @@ export const DesktopBootstrapLive = Layer.effect(
       repositoryPath: string,
       gitDir: string,
     ): Effect.Effect<GitDbStore.StoreServiceShape, unknown> =>
-      Effect.gen(function* () {
-        return yield* GitDbStore.StoreService;
-      }).pipe(
+      GitDbStore.StoreService.pipe(
         Effect.provide(
           GitDb.GitDbLive({
             cwd: repositoryPath,
@@ -522,7 +519,12 @@ export const DesktopBootstrapLive = Layer.effect(
           );
 
           return repository === undefined
-            ? Effect.fail(new Error(`Repository is not configured: ${repositoryId}`))
+            ? Effect.fail(
+                new BootstrapRepositoryError({
+                  message: `Repository is not configured: ${repositoryId}`,
+                  repositoryId,
+                }),
+              )
             : Effect.succeed(repository);
         }),
       );
@@ -542,7 +544,10 @@ export const DesktopBootstrapLive = Layer.effect(
         yield* ensureRepositoryOpenedUnsafe(repository);
         const runtime = opened.get(repositoryId);
         if (runtime === undefined) {
-          return yield* Effect.fail(new Error(`Repository is not open: ${repositoryId}`));
+          return yield* new BootstrapRepositoryError({
+            message: `Repository is not open: ${repositoryId}`,
+            repositoryId,
+          });
         }
 
         const remote = runtime.metadata.defaultRemote;
@@ -588,9 +593,10 @@ export const DesktopBootstrapLive = Layer.effect(
         });
 
         if (runtime.metadata.gitDir === undefined) {
-          return yield* Effect.fail(
-            new Error(`Repository git directory is unavailable: ${repositoryId}`),
-          );
+          return yield* new BootstrapRepositoryError({
+            message: `Repository git directory is unavailable: ${repositoryId}`,
+            repositoryId,
+          });
         }
 
         const transportStore = yield* makeTransportStore(
@@ -681,18 +687,25 @@ export const DesktopBootstrapLive = Layer.effect(
         yield* ensureRepositoryOpenedUnsafe(repository);
         const runtime = opened.get(repositoryId);
         if (runtime === undefined) {
-          return yield* Effect.fail(new Error(`Repository is not open: ${repositoryId}`));
+          return yield* new BootstrapRepositoryError({
+            message: `Repository is not open: ${repositoryId}`,
+            repositoryId,
+          });
         }
 
         const remote = runtime.metadata.defaultRemote;
         if (remote === undefined) {
-          return yield* Effect.fail(new Error(`Repository has no default remote: ${repositoryId}`));
+          return yield* new BootstrapRepositoryError({
+            message: `Repository has no default remote: ${repositoryId}`,
+            repositoryId,
+          });
         }
 
         if (runtime.metadata.gitDir === undefined) {
-          return yield* Effect.fail(
-            new Error(`Repository git directory is unavailable: ${repositoryId}`),
-          );
+          return yield* new BootstrapRepositoryError({
+            message: `Repository git directory is unavailable: ${repositoryId}`,
+            repositoryId,
+          });
         }
 
         setRepositoryStatus(runtime.record, {
@@ -820,7 +833,10 @@ export const DesktopBootstrapLive = Layer.effect(
         yield* ensureRepositoryOpenedUnsafe(repository);
         const runtimeRepository = opened.get(repositoryId);
         if (runtimeRepository === undefined) {
-          return yield* Effect.fail(new Error(`Repository is not open: ${repositoryId}`));
+          return yield* new BootstrapRepositoryError({
+            message: `Repository is not open: ${repositoryId}`,
+            repositoryId,
+          });
         }
 
         const localSnapshot = yield* refreshLocalProjectionIfNeeded(runtimeRepository);

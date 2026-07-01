@@ -1,6 +1,10 @@
-import { Effect } from "effect";
+import { Data, Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { runDesktopStartupWorkflow, type DesktopStartupWorkflow } from "../src/main/MainProgram.ts";
+
+class TestFailure extends Data.TaggedError("TestFailure")<{
+  readonly message: string;
+}> {}
 
 const makeWorkflow = (
   events: Array<string>,
@@ -65,7 +69,7 @@ describe("desktop startup workflow", () => {
             makeWorkflow(events, {
               startBootstrapSupervision: Effect.sync(() => {
                 events.push("startBootstrapSupervision");
-              }).pipe(Effect.andThen(Effect.fail(new Error("bootstrap failed")))),
+              }).pipe(Effect.andThen(new TestFailure({ message: "bootstrap failed" }))),
             }),
           ),
         ),

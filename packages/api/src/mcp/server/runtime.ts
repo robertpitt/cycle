@@ -9,6 +9,7 @@ import {
   HttpServerResponse,
 } from "effect/unstable/http";
 import * as McpServer from "effect/unstable/ai/McpServer";
+import { CycleMcpServerError } from "../../errors/index.ts";
 import { CycleMcpApiClientLive, type CycleMcpApiClientOptions } from "../client.ts";
 import { CycleMcpToolsLive } from "../tools/layer.ts";
 import { cycleMcpTools, mcpToolFromDefinition } from "../tools/registry.ts";
@@ -96,7 +97,12 @@ export const startCycleMcpHttpServerEffect = (
     const scope = yield* Scope.make("sequential");
     const { createServer } = yield* Effect.tryPromise({
       try: () => import("node:http"),
-      catch: (cause) => cause,
+      catch: (cause) =>
+        new CycleMcpServerError({
+          cause,
+          message: cause instanceof Error ? cause.message : "import node:http failed",
+          operation: "import node:http",
+        }),
     });
     const routes = (
       Layer.mergeAll(
@@ -121,6 +127,7 @@ export const startCycleMcpHttpServerEffect = (
     );
     const context = yield* Layer.buildWithScope(serverLayer as any, scope);
     const server = Context.get(context, HttpServer.HttpServer);
+    const services = yield* Effect.context<NodeServices.NodeServices>();
 
     if (server.address._tag !== "TcpAddress") {
       yield* Scope.close(scope, Exit.void);
@@ -138,10 +145,9 @@ export const startCycleMcpHttpServerEffect = (
     return {
       baseUrl,
       close: () =>
-        Effect.runPromise(
+        Effect.runPromiseWith(services)(
           Scope.close(scope, Exit.void).pipe(
             Effect.andThen(logInfo("mcp", "mcp http server stopped", { baseUrl, path })),
-            Effect.provide(CycleLoggingLive(mcpLogging)),
           ),
         ),
       path,
@@ -164,7 +170,14 @@ const httpCompatibilityLayer = (
   if (options.auth !== false && (token === undefined || token.length === 0)) {
     return Layer.effectDiscard(
       logWarning("mcp", "mcp http auth token missing").pipe(
-        Effect.andThen(Effect.fail(new Error("Cycle MCP HTTP auth requires a bearer token."))),
+        Effect.andThen(
+          Effect.fail(
+            new CycleMcpServerError({
+              message: "Cycle MCP HTTP auth requires a bearer token.",
+              operation: "mcp http auth",
+            }),
+          ),
+        ),
       ),
     );
   }
@@ -243,8 +256,7 @@ const mcpHttpCompatibilityResponse = (
 
 const readCachedJson = (
   request: HttpServerRequest.HttpServerRequest,
-): Effect.Effect<unknown | undefined> =>
-  request.json.pipe(Effect.catch(() => Effect.succeed(undefined)));
+): Effect.Effect<unknown | undefined> => request.json.pipe(Effect.catch(() => Effect.void));
 
 const jsonRpcResult = (
   id: JsonRpcId | undefined,

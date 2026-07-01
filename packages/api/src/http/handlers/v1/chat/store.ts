@@ -1,7 +1,7 @@
 import { Effect, Result } from "effect";
 import type { HttpServerResponse } from "effect/unstable/http";
 import { CycleApiRuntime, type AgentChatStoreShape } from "../../../runtime/CycleApiRuntime.ts";
-import { errorResponse } from "../../shared.ts";
+import { ApiHandlerError, errorResponse } from "../../shared.ts";
 
 type StoreOperation<T> =
   | {
@@ -43,7 +43,12 @@ export const runStoreOperation = <T>(
 
     const result = yield* Effect.result(
       Effect.tryPromise({
-        catch: (cause) => cause,
+        catch: (cause) =>
+          new ApiHandlerError({
+            cause,
+            message: cause instanceof Error ? cause.message : `${action} failed`,
+            operation: action,
+          }),
         try: () => operation(store),
       }),
     );

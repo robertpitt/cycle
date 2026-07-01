@@ -3,7 +3,7 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import { Effect, FileSystem, Layer, Path, Result } from "effect";
 import { gitRaw } from "../command/GitCommand.ts";
 import { bytesToString } from "../internals/bytes.ts";
-import { gitRepositoryError } from "../errors/index.ts";
+import { GitRepositoryError } from "../errors/index.ts";
 import type { GitRepositoryRemote } from "../schemas/index.ts";
 import { GitRepository } from "./GitRepository.ts";
 
@@ -27,10 +27,16 @@ export const layer = Layer.effect(
         allowFailure: true,
         quietAllowedFailure: options.quietAllowedFailure,
       }).pipe(
-        Effect.mapError((cause) =>
-          gitRepositoryError(args.join(" "), cwd, "Unable to inspect Git repository.", {
-            cause,
-          }),
+        Effect.mapError(
+          (cause) =>
+            new GitRepositoryError({
+              operation: args.join(" "),
+              path: cwd,
+              message: "Unable to inspect Git repository.",
+              ...{
+                cause,
+              },
+            }),
         ),
       );
 
@@ -70,19 +76,28 @@ export const layer = Layer.effect(
         const result = yield* gitRaw(spawner, cwd, ["rev-parse", "--absolute-git-dir"], {
           allowFailure: true,
         }).pipe(
-          Effect.mapError((cause) =>
-            gitRepositoryError("git rev-parse", cwd, "Unable to inspect Git repository.", {
-              cause,
-            }),
+          Effect.mapError(
+            (cause) =>
+              new GitRepositoryError({
+                operation: "git rev-parse",
+                path: cwd,
+                message: "Unable to inspect Git repository.",
+                ...{
+                  cause,
+                },
+              }),
           ),
         );
 
         if (result.status !== 0) {
-          return yield* Effect.fail(
-            gitRepositoryError("git rev-parse", cwd, "Path is not a Git repository.", {
+          return yield* new GitRepositoryError({
+            operation: "git rev-parse",
+            path: cwd,
+            message: "Path is not a Git repository.",
+            ...{
               cause: bytesToString(result.stderr).trim(),
-            }),
-          );
+            },
+          });
         }
 
         return bytesToString(result.stdout).trim();
@@ -104,16 +119,24 @@ export const layer = Layer.effect(
           const exists = yield* fs.exists(cwd).pipe(Effect.catch(() => Effect.succeed(false)));
 
           if (!exists) {
-            return yield* Effect.fail(
-              gitRepositoryError("git init", cwd, "Selected path does not exist."),
-            );
+            return yield* new GitRepositoryError({
+              operation: "git init",
+              path: cwd,
+              message: "Selected path does not exist.",
+            });
           }
 
           yield* gitRaw(spawner, cwd, ["init"]).pipe(
-            Effect.mapError((cause) =>
-              gitRepositoryError("git init", cwd, "Unable to initialise Git repository.", {
-                cause,
-              }),
+            Effect.mapError(
+              (cause) =>
+                new GitRepositoryError({
+                  operation: "git init",
+                  path: cwd,
+                  message: "Unable to initialise Git repository.",
+                  ...{
+                    cause,
+                  },
+                }),
             ),
           );
 

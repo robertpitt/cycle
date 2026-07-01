@@ -68,26 +68,34 @@ const makeIssue = (id: string, title: string, body: string): TicketDocument =>
     updatedDate: "2026-06-12",
   }) as TicketDocument;
 
+const failingAgentStream = (message: string): AsyncIterable<never> => ({
+  [Symbol.asyncIterator]: () => ({
+    next: async () => {
+      throw new Error(message);
+    },
+  }),
+});
+
 const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) => {
   const calls: Array<string> = [];
   const issues: Array<TicketDocument> = [];
   const comments: Array<unknown> = [];
   const runner: UseCaseRunnerShape = {
     run: (useCase: CycleUseCase) =>
-      Effect.sync(() => {
+      Effect.suspend(() => {
         calls.push(useCase.name);
 
         switch (useCase.name) {
           case "RepositoryList":
-            return [makeRepositoryStatus()] as never;
+            return Effect.succeed([makeRepositoryStatus()] as never);
           case "RepositoryOpen":
           case "RepositoryStatusGet":
           case "RepositorySync":
-            return makeRepositoryStatus() as never;
+            return Effect.succeed(makeRepositoryStatus() as never);
           case "RepositoryMaterializationWarningsList":
-            return [] as never;
+            return Effect.succeed([] as never);
           case "RepositoryHistoryList":
-            return { entries: [] } as never;
+            return Effect.succeed({ entries: [] } as never);
           case "IssueCreate": {
             const input = (useCase.input as any).input as {
               readonly body?: string;
@@ -95,22 +103,24 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
             };
             const issue = makeIssue("ISSUE-1", input.title, input.body ?? "");
             issues.push(issue);
-            return issue as never;
+            return Effect.succeed(issue as never);
           }
           case "IssueGet":
-            return (issues.find((issue) => issue.id === (useCase.input as any).input.id) ??
-              null) as never;
+            return Effect.succeed(
+              (issues.find((issue) => issue.id === (useCase.input as any).input.id) ??
+                null) as never,
+            );
           case "IssueList":
-            return {
+            return Effect.succeed({
               entries: issues,
-            } as never;
+            } as never);
           case "IssueSearch":
-            return {
+            return Effect.succeed({
               entries: issues.map((issue) => ({
                 matchedFields: ["title"],
                 ticket: issue,
               })),
-            } as never;
+            } as never);
           case "IssueUpdate": {
             const input = (useCase.input as any).input as {
               readonly id: string;
@@ -120,7 +130,7 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
               };
             };
             const index = issues.findIndex((issue) => issue.id === input.id);
-            if (index < 0) return null as never;
+            if (index < 0) return Effect.succeed(null as never);
             const current = issues[index] as TicketDocument;
             const updated = {
               ...current,
@@ -135,7 +145,7 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
                   : current.type,
             } as TicketDocument;
             issues[index] = updated;
-            return updated as never;
+            return Effect.succeed(updated as never);
           }
           case "IssueTransition": {
             const input = (useCase.input as any).input as {
@@ -143,7 +153,7 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
               readonly status: string;
             };
             const index = issues.findIndex((issue) => issue.id === input.id);
-            if (index < 0) return null as never;
+            if (index < 0) return Effect.succeed(null as never);
             const current = issues[index] as TicketDocument;
             const updated = {
               ...current,
@@ -154,7 +164,7 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
               status: input.status,
             } as TicketDocument;
             issues[index] = updated;
-            return updated as never;
+            return Effect.succeed(updated as never);
           }
           case "CommentAdd": {
             const input = (useCase.input as any).input as {
@@ -169,10 +179,10 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
               recordType: "comment",
             };
             comments.push(comment);
-            return comment as never;
+            return Effect.succeed(comment as never);
           }
           default:
-            throw new Error(`Unexpected usecase: ${useCase.name}`);
+            return Effect.die(new Error(`Unexpected usecase: ${useCase.name}`));
         }
       }),
   };
@@ -1570,9 +1580,7 @@ describe("@cycle/api", () => {
       run: async () => {
         throw new Error("Agent Work runner test should not call run");
       },
-      stream: async function* () {
-        throw new Error("Agent Work must not stream without MCP.");
-      },
+      stream: () => failingAgentStream("Agent Work must not stream without MCP."),
     };
     const agentWork = makeHttpAgentWorkRuntimeFromStore(makeInMemoryAgentWorkStore());
     const { api, comments } = makeTestApi({
@@ -1636,9 +1644,9 @@ describe("@cycle/api", () => {
     const calls: Array<string> = [];
     const runner: UseCaseRunnerShape = {
       run: (useCase: CycleUseCase) =>
-        Effect.sync(() => {
+        Effect.suspend(() => {
           calls.push(useCase.name);
-          return makeIssue("ISSUE-1", "Should not dispatch", "") as never;
+          return Effect.succeed(makeIssue("ISSUE-1", "Should not dispatch", "") as never);
         }),
     };
     const handle = await startCycleApiServer({ runner, staticToken: token });
@@ -2002,9 +2010,7 @@ describe("@cycle/api", () => {
       run: async () => {
         throw new Error("Stale cancel test should not run the provider.");
       },
-      stream: async function* () {
-        throw new Error("Stale cancel test should not stream the provider.");
-      },
+      stream: () => failingAgentStream("Stale cancel test should not stream the provider."),
     };
 
     await agentChatStore.upsertThread({
@@ -2807,9 +2813,9 @@ describe("@cycle/api", () => {
     const calls: Array<string> = [];
     const runner: UseCaseRunnerShape = {
       run: (useCase: CycleUseCase) =>
-        Effect.sync(() => {
+        Effect.suspend(() => {
           calls.push(useCase.name);
-          return makeIssue("ISSUE-1", "Traced issue", "") as never;
+          return Effect.succeed(makeIssue("ISSUE-1", "Traced issue", "") as never);
         }).pipe(Effect.withSpan(`api.usecase.${useCase.name}`)),
     };
     const appLayer = (
@@ -2864,9 +2870,9 @@ describe("@cycle/api", () => {
     const calls: Array<string> = [];
     const runner: UseCaseRunnerShape = {
       run: (useCase: CycleUseCase) =>
-        Effect.sync(() => {
+        Effect.suspend(() => {
           calls.push(useCase.name);
-          return makeIssue("ISSUE-1", "Server traced issue", "") as never;
+          return Effect.succeed(makeIssue("ISSUE-1", "Server traced issue", "") as never);
         }).pipe(Effect.withSpan(`api.usecase.${useCase.name}`)),
     };
     const handle = await Effect.runPromise(

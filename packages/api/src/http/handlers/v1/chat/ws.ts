@@ -25,6 +25,7 @@ import type {
   AgentChatTurnRecord,
   CycleApiRuntimeShape,
 } from "../../../runtime/CycleApiRuntime.ts";
+import { ApiHandlerError } from "../../shared.ts";
 import type { ChatMessagePayload, ChatRepositoryPayload, ChatTurnPayload } from "./domain.ts";
 import { isRecord } from "./domain.ts";
 import { prepareChatTurn, requestOrigin } from "./prepare.ts";
@@ -202,10 +203,11 @@ export const makeChatWebSocketLayer = (
         const authorizationToken = bearerTokenFromHeaders(request.headers);
         const socket = yield* request.upgrade;
         const write = yield* socket.writer;
+        const context = yield* Effect.context<never>();
         let connection: ChatConnection | undefined;
 
         const send: WriteMessage = async (message) => {
-          await Effect.runPromise(write(JSON.stringify(message)));
+          await Effect.runPromiseWith(context)(write(JSON.stringify(message)));
         };
 
         const readLoop = socket
@@ -215,7 +217,13 @@ export const makeChatWebSocketLayer = (
                 connection ??= gateway.connect(send, origin, authorizationToken);
                 await gateway.handleRawMessage(connection, raw);
               },
-              catch: (cause) => cause,
+              catch: (cause) =>
+                new ApiHandlerError({
+                  cause,
+                  message:
+                    cause instanceof Error ? cause.message : "handle chat websocket message failed",
+                  operation: "handle chat websocket message",
+                }),
             }),
           )
           .pipe(

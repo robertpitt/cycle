@@ -1,6 +1,6 @@
 import { Cache, Crypto, FileSystem, Option, Path } from "effect";
 import type { ObjectId } from "../schemas/index.ts";
-import { gitAdapterError, type GitAdapterError } from "../errors/index.ts";
+import { GitAdapterError } from "../errors/index.ts";
 
 export type GitObject = {
   readonly payload: Uint8Array;
@@ -74,8 +74,12 @@ export const decodeObjectCacheKey = (
 export const mapFsError =
   (operation: string, target: string) =>
   (cause: unknown): GitAdapterError =>
-    gitAdapterError(operation, `${operation} failed for ${target}: ${errorMessage(cause)}`, {
-      cause,
+    new GitAdapterError({
+      operation: operation,
+      message: `${operation} failed for ${target}: ${errorMessage(cause)}`,
+      ...{
+        cause,
+      },
     });
 
 export const errorMessage = (cause: unknown): string =>

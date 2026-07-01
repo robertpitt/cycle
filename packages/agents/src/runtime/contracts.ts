@@ -1,6 +1,9 @@
 import { Schema, Stream } from "effect";
 import type { AgentAuthorityMode, AgentMcpAttachment, AgentProviderId } from "../types.ts";
+import type { AgentRuntimeError } from "../errors/index.ts";
 import type { AgentRuntimeEvent } from "./events.ts";
+
+export { AgentRuntimeFailure, type AgentRuntimeError } from "../errors/index.ts";
 
 export type JsonObject = Readonly<Record<string, unknown>>;
 
@@ -55,31 +58,6 @@ export type AgentRuntimeErrorCode =
   | "timeout"
   | "unknown"
   | "workspace_unavailable";
-
-export class AgentRuntimeFailure extends Schema.TaggedErrorClass<AgentRuntimeFailure>()(
-  "AgentRuntimeFailure",
-  {
-    cause: Schema.optional(Schema.Unknown),
-    code: Schema.String,
-    message: Schema.String,
-    retryable: Schema.optional(Schema.Boolean),
-  },
-) {}
-
-export type AgentRuntimeError = AgentRuntimeFailure;
-
-export const agentRuntimeFailure = (input: {
-  readonly cause?: unknown;
-  readonly code: AgentRuntimeErrorCode;
-  readonly message: string;
-  readonly retryable?: boolean;
-}): AgentRuntimeFailure =>
-  new AgentRuntimeFailure({
-    ...(input.cause === undefined ? {} : { cause: input.cause }),
-    code: input.code,
-    message: input.message,
-    ...(input.retryable === undefined ? {} : { retryable: input.retryable }),
-  });
 
 export type AgentRuntimeConfig = {
   readonly automaticResume: boolean;
@@ -423,4 +401,3 @@ export type AgentRunHandle = {
   readonly sessionId: string;
   readonly snapshot: AgentRunSnapshot;
 };
-

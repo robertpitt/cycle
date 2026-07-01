@@ -90,8 +90,7 @@ const runAgentWorkJob = async (input: {
     await input.runtime.agentWork.failJob(input.job.jobId, {
       actor: "workflow",
       code: "unsupported-provider-capability",
-      message:
-        `Agent Work provider execution is not wired for authority '${input.job.authorityMode}'.`,
+      message: `Agent Work provider execution is not wired for authority '${input.job.authorityMode}'.`,
       remediation: "Use ticket-context or implementation-worktree authority.",
       retrySafe: false,
     });
@@ -369,7 +368,9 @@ const resolveRepositoryPath = async (input: {
   const repositories = Array.isArray(repositoriesResult.success)
     ? (repositoriesResult.success as readonly RepositoryStatus[])
     : [];
-  const repository = repositories.find((candidate) => candidate.repositoryId === input.job.repositoryId);
+  const repository = repositories.find(
+    (candidate) => candidate.repositoryId === input.job.repositoryId,
+  );
   const repositoryPath = repository?.metadata?.worktreePath;
   if (typeof repositoryPath !== "string" || repositoryPath.trim().length === 0) {
     throw new Error(
@@ -433,9 +434,7 @@ const toAgentWorktreeInput = (worktree: GitWorktreeRecord) => ({
   ...(worktree.branchName === undefined ? {} : { branchName: worktree.branchName }),
   ...(worktree.branchRef === undefined ? {} : { branchRef: worktree.branchRef }),
   ...(worktree.cleanedAt === undefined ? {} : { cleanedAt: worktree.cleanedAt }),
-  ...(worktree.retentionReason === undefined
-    ? {}
-    : { retentionReason: worktree.retentionReason }),
+  ...(worktree.retentionReason === undefined ? {} : { retentionReason: worktree.retentionReason }),
 });
 
 type ProviderEventResult = "continue" | "waiting" | "completed" | "failed" | "cancelled";
@@ -1055,7 +1054,7 @@ const completeAgentWorkJob = async (
           ? "Implementation branch was published and a ticket comment was added."
           : "Provider response was added as a ticket comment.",
     payload: {
-      ...(completion?.payload ?? {}),
+      ...completion?.payload,
       responseLength: commentBody.length,
     },
   });
@@ -1181,7 +1180,12 @@ const gitWorktreeFromJob = (job: AgentJob): GitWorktreeRecord | undefined => {
   const baseSha = stringFromMetadata(job.metadata, "baseSha");
   const branchName = stringFromMetadata(job.metadata, "branchName");
   const branchRef = stringFromMetadata(job.metadata, "branchRef");
-  if (worktreeId === undefined || path === undefined || baseRef === undefined || baseSha === undefined) {
+  if (
+    worktreeId === undefined ||
+    path === undefined ||
+    baseRef === undefined ||
+    baseSha === undefined
+  ) {
     return undefined;
   }
 

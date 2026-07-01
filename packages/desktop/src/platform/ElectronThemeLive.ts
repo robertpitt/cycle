@@ -1,7 +1,7 @@
 import { nativeTheme } from "electron";
 import { Cause, Effect, Layer } from "effect";
 import { DesktopRuntime } from "./DesktopRuntime.ts";
-import { electronError } from "./ElectronError.ts";
+import { ElectronError } from "./ElectronError.ts";
 import {
   ElectronTheme,
   type ElectronThemeLifecycleHandlers,
@@ -49,7 +49,13 @@ export const ElectronThemeLive = Layer.effect(
             nativeTheme.themeSource = source;
             return readThemeState();
           },
-          catch: (cause) => electronError("nativeTheme.themeSource", cause),
+          catch: (cause) =>
+            new ElectronError({
+              category: "electron",
+              cause,
+              message: cause instanceof Error ? cause.message : "nativeTheme.themeSource failed.",
+              operation: "nativeTheme.themeSource",
+            }),
         }),
       startLifecycleSupervision: (handlers: ElectronThemeLifecycleHandlers) =>
         Effect.acquireRelease(

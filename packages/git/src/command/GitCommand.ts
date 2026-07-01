@@ -1,6 +1,6 @@
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { Context, Effect, Stream } from "effect";
-import { gitAdapterError, type GitAdapterError, type GitTransportError } from "../errors/index.ts";
+import { GitAdapterError, type GitTransportError } from "../errors/index.ts";
 import { bytesToString, concatBytes, inputToStream } from "../internals/bytes.ts";
 
 export type ChildProcessSpawnerService = Context.Service.Shape<
@@ -38,10 +38,14 @@ export const git = <E extends GitRunError = GitAdapterError>(
     result: GitRunResult | undefined,
     cause: unknown,
   ) => E = ((failedArgs, result, cause) =>
-    gitAdapterError(formatOperation(failedArgs), formatGitFailure(failedArgs, result, cause), {
-      cause,
-      status: result?.status,
-      stderr: result === undefined ? undefined : sanitizeStderr(bytesToString(result.stderr)),
+    new GitAdapterError({
+      operation: formatOperation(failedArgs),
+      message: formatGitFailure(failedArgs, result, cause),
+      ...{
+        cause,
+        status: result?.status,
+        stderr: result === undefined ? undefined : sanitizeStderr(bytesToString(result.stderr)),
+      },
     })) as (args: ReadonlyArray<string>, result: GitRunResult | undefined, cause: unknown) => E,
 ): Effect.Effect<GitRunResult, E> =>
   runGit(spawner, cwd, ["--git-dir", gitDir, ...args], options, makeError, {
@@ -59,10 +63,14 @@ export const gitRaw = <E extends GitRunError = GitAdapterError>(
     result: GitRunResult | undefined,
     cause: unknown,
   ) => E = ((failedArgs, result, cause) =>
-    gitAdapterError(formatOperation(failedArgs), formatGitFailure(failedArgs, result, cause), {
-      cause,
-      status: result?.status,
-      stderr: result === undefined ? undefined : sanitizeStderr(bytesToString(result.stderr)),
+    new GitAdapterError({
+      operation: formatOperation(failedArgs),
+      message: formatGitFailure(failedArgs, result, cause),
+      ...{
+        cause,
+        status: result?.status,
+        stderr: result === undefined ? undefined : sanitizeStderr(bytesToString(result.stderr)),
+      },
     })) as (args: ReadonlyArray<string>, result: GitRunResult | undefined, cause: unknown) => E,
 ): Effect.Effect<GitRunResult, E> => runGit(spawner, cwd, args, options, makeError);
 
@@ -84,6 +92,8 @@ const collectBytes = (
   stream: Stream.Stream<Uint8Array, unknown>,
 ): Effect.Effect<Uint8Array, unknown> =>
   Stream.runCollect(stream).pipe(Effect.map((chunks) => concatBytes(chunks)));
+
+const failGitRun = <E extends GitRunError>(error: E): Effect.Effect<never, E> => Effect.fail(error);
 
 const runGit = <E extends GitRunError>(
   spawner: ChildProcessSpawnerService,
@@ -124,7 +134,7 @@ const runGit = <E extends GitRunError>(
       if (result.status !== 0 && !options.allowFailure) {
         yield* Effect.logWarning("git command failed").pipe(Effect.annotateLogs(resultAnnotations));
 
-        return yield* Effect.fail(makeError(operationArgs, result, undefined));
+        return yield* failGitRun(makeError(operationArgs, result, undefined));
       }
 
       if (result.status !== 0 && options.quietAllowedFailure === true) {

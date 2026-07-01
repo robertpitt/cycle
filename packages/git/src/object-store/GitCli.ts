@@ -1,7 +1,7 @@
 import { ChildProcessSpawner } from "effect/unstable/process";
 import { Effect, Layer } from "effect";
 import type { Ref as GitRef } from "../schemas/index.ts";
-import { gitAdapterError, remoteFetchError, remotePushError } from "../errors/index.ts";
+import { GitAdapterError, RemoteFetchError, RemotePushError } from "../errors/index.ts";
 import { bytesToString } from "../internals/bytes.ts";
 import { git, formatGitFailure, formatOperation, sanitizeStderr } from "../command/GitCommand.ts";
 import { Git, type GitService } from "./Git.ts";
@@ -31,17 +31,17 @@ export const layer = Layer.effect(
           ["fetch", ...(input.prune === true ? ["--prune"] : []), input.remote, ...input.refspecs],
           {},
           (args, result, cause) =>
-            remoteFetchError(
-              input.remote,
-              formatOperation(args),
-              formatGitFailure(args, result, cause),
-              {
+            new RemoteFetchError({
+              remote: input.remote,
+              operation: formatOperation(args),
+              message: formatGitFailure(args, result, cause),
+              ...{
                 cause,
                 status: result?.status,
                 stderr:
                   result === undefined ? undefined : sanitizeStderr(bytesToString(result.stderr)),
               },
-            ),
+            }),
         ).pipe(Effect.asVoid),
       isAncestor: (store, ancestor, descendant) =>
         git(
@@ -60,9 +60,13 @@ export const layer = Layer.effect(
             const stderr = sanitizeStderr(bytesToString(result.stderr));
 
             return Effect.fail(
-              gitAdapterError("git merge-base --is-ancestor", stderr || "git merge-base failed", {
-                status: result.status,
-                stderr,
+              new GitAdapterError({
+                operation: "git merge-base --is-ancestor",
+                message: stderr || "git merge-base failed",
+                ...{
+                  status: result.status,
+                  stderr,
+                },
               }),
             );
           }),
@@ -116,17 +120,17 @@ export const layer = Layer.effect(
           ],
           {},
           (args, result, cause) =>
-            remotePushError(
-              input.remote,
-              formatOperation(args),
-              formatGitFailure(args, result, cause),
-              {
+            new RemotePushError({
+              remote: input.remote,
+              operation: formatOperation(args),
+              message: formatGitFailure(args, result, cause),
+              ...{
                 cause,
                 status: result?.status,
                 stderr:
                   result === undefined ? undefined : sanitizeStderr(bytesToString(result.stderr)),
               },
-            ),
+            }),
         ).pipe(Effect.asVoid),
       readBlob: (store, id) =>
         git(spawner, store.gitDir, store.cwd, ["cat-file", "-p", id]).pipe(

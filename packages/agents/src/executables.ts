@@ -218,7 +218,7 @@ const readPathFromLaunchctl = (): Effect.Effect<
 > =>
   execFileText("/bin/launchctl", ["getenv", "PATH"], { timeout: 2000 }).pipe(
     Effect.map((value) => trimNonEmpty(value)),
-    Effect.catch(() => Effect.succeed(undefined)),
+    Effect.catch(() => Effect.as(Effect.void, undefined)),
   );
 
 const readEnvironmentFromWindowsShell = (
@@ -244,7 +244,7 @@ const readEnvironmentFromWindowsShell = (
   return Effect.gen(function* () {
     for (const shell of WINDOWS_SHELL_CANDIDATES) {
       const output = yield* execFileText(shell, args, { timeout: 5000 }).pipe(
-        Effect.catch(() => Effect.succeed(undefined)),
+        Effect.catch(() => Effect.as(Effect.void, undefined)),
       );
 
       if (output === undefined) continue;

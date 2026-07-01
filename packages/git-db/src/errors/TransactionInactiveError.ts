@@ -5,6 +5,3 @@ export class TransactionInactiveError extends Schema.TaggedErrorClass<Transactio
 )("TransactionInactiveError", {
   message: Schema.String,
 }) {}
-
-export const transactionInactive = (): TransactionInactiveError =>
-  new TransactionInactiveError({ message: "Transaction is no longer active" });

@@ -1,6 +1,6 @@
 import { Cache, Clock, Effect } from "effect";
 import type { ObjectId, WriteCommitInput } from "../schemas/index.ts";
-import { gitAdapterError, type GitAdapterError } from "../errors/index.ts";
+import { GitAdapterError } from "../errors/index.ts";
 import { bytesFromString, bytesToString } from "../internals/bytes.ts";
 import { formatIdentity, normalizeIdentity } from "../internals/identity.ts";
 import { writeObject } from "./GitFilesystemObject.ts";
@@ -210,7 +210,10 @@ export const parseCommitSummary = (
 
   if (tree === undefined) {
     return Effect.fail(
-      gitAdapterError("filesystem commit summary", `Commit ${id} does not contain a tree`),
+      new GitAdapterError({
+        operation: "filesystem commit summary",
+        message: `Commit ${id} does not contain a tree`,
+      }),
     );
   }
 

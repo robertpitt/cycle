@@ -3,6 +3,7 @@ import { HttpServerResponse } from "effect/unstable/http";
 import { CycleApiRuntime } from "../../runtime/CycleApiRuntime.ts";
 import { AgentProvidersOutput } from "../../schemas.ts";
 import {
+  ApiHandlerError,
   decodeHttpValue,
   errorResponse,
   requestIdFromHeaders,
@@ -16,7 +17,12 @@ export const withAgentHandlers = (handlers: any) =>
       const requestId = yield* requestIdFromHeaders(request.headers);
       const result = yield* Effect.result(
         Effect.tryPromise({
-          catch: (cause) => cause,
+          catch: (cause) =>
+            new ApiHandlerError({
+              cause,
+              message: cause instanceof Error ? cause.message : "list agent providers failed",
+              operation: "list agent providers",
+            }),
           try: () => runtime.agentProviderProfiles(),
         }),
       );

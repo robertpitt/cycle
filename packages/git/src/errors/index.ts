@@ -1,7 +1,7 @@
-export { GitAdapterError, gitAdapterError } from "./GitAdapterError.ts";
-export { GitRepositoryError, gitRepositoryError } from "./GitRepositoryError.ts";
-export { RemoteFetchError, remoteFetchError } from "./RemoteFetchError.ts";
-export { RemotePushError, remotePushError } from "./RemotePushError.ts";
+export { GitAdapterError } from "./GitAdapterError.ts";
+export { GitRepositoryError } from "./GitRepositoryError.ts";
+export { RemoteFetchError } from "./RemoteFetchError.ts";
+export { RemotePushError } from "./RemotePushError.ts";
 
 import type { GitAdapterError } from "./GitAdapterError.ts";
 import type { GitRepositoryError } from "./GitRepositoryError.ts";

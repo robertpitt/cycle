@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { strict as assert } from "node:assert";
 import { promisify } from "node:util";
-import { Effect, Layer, Result } from "effect";
+import { Data, Effect, Layer, Result } from "effect";
 import { sanitizeStderr } from "../src/command/GitCommand.ts";
 import { bytesToString } from "../src/internals/bytes.ts";
 import { Git, type GitService } from "../src/object-store/Git.ts";
@@ -18,13 +18,18 @@ import { describe, it } from "./effect-vitest.ts";
 const execFileAsync = promisify(execFile);
 const encoder = new TextEncoder();
 
-const attemptPromise = <A>(try_: () => Promise<A>): Effect.Effect<A, unknown> =>
+class TestFailure extends Data.TaggedError("TestFailure")<{
+  readonly cause?: unknown;
+  readonly message: string;
+}> {}
+
+const attemptPromise = <A>(try_: () => Promise<A>): Effect.Effect<A, TestFailure> =>
   Effect.tryPromise({
-    catch: (cause) => cause,
+    catch: (cause) => new TestFailure({ cause, message: "test promise failed" }),
     try: try_,
   });
 
-const git = (cwd: string, args: ReadonlyArray<string>): Effect.Effect<string, unknown> =>
+const git = (cwd: string, args: ReadonlyArray<string>): Effect.Effect<string, TestFailure> =>
   attemptPromise(async () => {
     const { stdout } = await execFileAsync("git", [...args], { cwd });
     return stdout;
@@ -36,7 +41,7 @@ const cleanupDir = (dir: string): Effect.Effect<void, never> =>
 const withTempDir = <A, E, R>(
   prefix: string,
   f: (dir: string) => Effect.Effect<A, E, R>,
-): Effect.Effect<A, E | unknown, R> =>
+): Effect.Effect<A, E | TestFailure, R> =>
   Effect.scoped(
     Effect.gen(function* () {
       const dir = yield* Effect.acquireRelease(
@@ -48,7 +53,7 @@ const withTempDir = <A, E, R>(
     }),
   );
 
-const createRepo = (): Effect.Effect<string, unknown> =>
+const createRepo = (): Effect.Effect<string, TestFailure> =>
   Effect.gen(function* () {
     const repo = yield* attemptPromise(() => mkdtemp(path.join(os.tmpdir(), "cycle-git-")));
 

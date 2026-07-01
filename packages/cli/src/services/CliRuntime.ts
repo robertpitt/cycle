@@ -62,13 +62,14 @@ export const defaultCliRuntime = (
     const path = yield* Path.Path;
     const args = argv ?? (yield* stdio.args);
     const env = yield* readCliEnv;
+    const services = yield* Effect.context<Stdio.Stdio>();
 
     return {
       argv: args,
       cwd: path.resolve("."),
       env,
       readStdin: () =>
-        Effect.runPromise(
+        Effect.runPromiseWith(services)(
           stdio.stdin.pipe(
             Stream.decodeText(),
             Stream.runFold(

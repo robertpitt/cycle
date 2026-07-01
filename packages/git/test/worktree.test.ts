@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { strict as assert } from "node:assert";
 import { promisify } from "node:util";
-import { Effect, Layer, Result } from "effect";
+import { Data, Effect, Layer, Result } from "effect";
 import {
   implementationBranchName,
   resolveBranchCollision,
@@ -16,13 +16,18 @@ import { describe, it } from "./effect-vitest.ts";
 
 const execFileAsync = promisify(execFile);
 
-const attemptPromise = <A>(try_: () => Promise<A>): Effect.Effect<A, unknown> =>
+class TestFailure extends Data.TaggedError("TestFailure")<{
+  readonly cause?: unknown;
+  readonly message: string;
+}> {}
+
+const attemptPromise = <A>(try_: () => Promise<A>): Effect.Effect<A, TestFailure> =>
   Effect.tryPromise({
-    catch: (cause) => cause,
+    catch: (cause) => new TestFailure({ cause, message: "test promise failed" }),
     try: try_,
   });
 
-const git = (cwd: string, args: readonly string[]): Effect.Effect<string, unknown> =>
+const git = (cwd: string, args: readonly string[]): Effect.Effect<string, TestFailure> =>
   attemptPromise(async () => {
     const { stdout } = await execFileAsync("git", [...args], { cwd });
     return stdout.trim();
@@ -31,7 +36,7 @@ const git = (cwd: string, args: readonly string[]): Effect.Effect<string, unknow
 const cleanupDir = (dir: string): Effect.Effect<void, never> =>
   attemptPromise(() => rm(dir, { force: true, recursive: true })).pipe(Effect.orDie);
 
-const createRepo = (root: string): Effect.Effect<string, unknown> =>
+const createRepo = (root: string): Effect.Effect<string, TestFailure> =>
   Effect.gen(function* () {
     const repo = path.join(root, "source");
     yield* attemptPromise(() => mkdir(repo, { recursive: true }));
@@ -50,7 +55,7 @@ const withRepoRoot = <A, E, R>(
     readonly root: string;
     readonly storage: string;
   }) => Effect.Effect<A, E, R>,
-): Effect.Effect<A, E | unknown, R> =>
+): Effect.Effect<A, E | TestFailure, R> =>
   Effect.scoped(
     Effect.gen(function* () {
       const root = yield* Effect.acquireRelease(

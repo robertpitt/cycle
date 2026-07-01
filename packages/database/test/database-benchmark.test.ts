@@ -191,9 +191,7 @@ describe("@cycle/database benchmark", () => {
 });
 
 const makeFilesystemStore = (database: string) =>
-  Effect.gen(function* () {
-    return yield* GitDbStore.StoreService;
-  }).pipe(
+  GitDbStore.StoreService.pipe(
     Effect.provide(
       GitDbFilesystem({
         cwd: REPO_ROOT,

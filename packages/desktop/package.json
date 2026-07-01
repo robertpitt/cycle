@@ -6,6 +6,7 @@
   "main": "./out/main/index.js",
   "exports": {
     ".": "./src/index.ts",
+    "./errors": "./src/errors/index.ts",
     "./ipc": "./src/ipc/index.ts",
     "./main": "./src/main/index.ts",
     "./platform": "./src/platform/index.ts",

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { GitRepository, WorktreeService } from "@cycle/git";
 import { UseCaseRunner } from "@cycle/usecases";
 import { NodeServices } from "@effect/platform-node";
-import { Effect, Layer } from "effect";
+import { Data, Effect, Layer } from "effect";
 import { afterEach, describe, it } from "vitest";
 import { DesktopRuntime } from "../src/platform/DesktopRuntime.ts";
 import { AppConfig, defaultAppConfig, type AppConfigState } from "../src/shared/AppConfig.ts";
@@ -16,6 +16,11 @@ import { DesktopLogger } from "../src/main/DesktopLoggerLive.ts";
 import { ElectronPreferences } from "../src/main/ElectronPreferences.ts";
 
 const temporaryDirectories: Array<string> = [];
+
+class TestFailure extends Data.TaggedError("TestFailure")<{
+  readonly cause?: unknown;
+  readonly message: string;
+}> {}
 
 const makeTempDir = async (): Promise<string> => {
   const directory = await mkdtemp(join(tmpdir(), "cycle-desktop-api-"));
@@ -228,7 +233,8 @@ describe("desktop API startup", () => {
               const runtime = JSON.parse(
                 yield* Effect.tryPromise({
                   try: () => readFile(runtimeFile, "utf8"),
-                  catch: (cause) => cause,
+                  catch: (cause) =>
+                    new TestFailure({ cause, message: "failed to read runtime file" }),
                 }),
               ) as {
                 readonly baseUrl: string;
@@ -238,7 +244,8 @@ describe("desktop API startup", () => {
               const cliConfig = JSON.parse(
                 yield* Effect.tryPromise({
                   try: () => readFile(configFile, "utf8"),
-                  catch: (cause) => cause,
+                  catch: (cause) =>
+                    new TestFailure({ cause, message: "failed to read config file" }),
                 }),
               ) as {
                 readonly api?: {
@@ -248,7 +255,7 @@ describe("desktop API startup", () => {
 
               const health = yield* Effect.tryPromise({
                 try: () => fetch(`${runtime.baseUrl}/health`),
-                catch: (cause) => cause,
+                catch: (cause) => new TestFailure({ cause, message: "health request failed" }),
               });
               const mcp = yield* Effect.tryPromise({
                 try: () =>
@@ -264,7 +271,7 @@ describe("desktop API startup", () => {
                     },
                     method: "POST",
                   }),
-                catch: (cause) => cause,
+                catch: (cause) => new TestFailure({ cause, message: "mcp request failed" }),
               });
 
               assert.equal(health.status, 200);

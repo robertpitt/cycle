@@ -1,7 +1,12 @@
 import { Effect, Result, Stream } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import { CycleApiRuntime } from "../../runtime/CycleApiRuntime.ts";
-import { errorResponse, requestIdFromHeaders, resourceResponse } from "../shared.ts";
+import {
+  ApiHandlerError,
+  errorResponse,
+  requestIdFromHeaders,
+  resourceResponse,
+} from "../shared.ts";
 import type { ChatTurnPayload } from "./chat/domain.ts";
 import { prepareChatTurn, requestOrigin, streamOptionsFromPayload } from "./chat/prepare.ts";
 import { chatMessageFromPayload, chatThreadFromPayload } from "./chat/records.ts";
@@ -118,7 +123,11 @@ export const withChatHandlers = (handlers: any) =>
                 activeTurn.record.abortController.signal.aborted ? "cancelled" : "failed",
                 error instanceof Error ? error.message : String(error),
               );
-              return error;
+              return new ApiHandlerError({
+                cause: error,
+                message: error instanceof Error ? error.message : "run chat turn failed",
+                operation: "run chat turn",
+              });
             },
           }).pipe(
             Effect.tap((turnResult) =>

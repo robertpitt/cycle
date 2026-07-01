@@ -6,6 +6,3 @@ export class DocumentNotFoundError extends Schema.TaggedErrorClass<DocumentNotFo
   message: Schema.String,
   path: Schema.String,
 }) {}
-
-export const documentNotFound = (path: string): DocumentNotFoundError =>
-  new DocumentNotFoundError({ message: `Document not found: ${path}`, path });

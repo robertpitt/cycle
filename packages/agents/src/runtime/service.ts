@@ -16,8 +16,8 @@ import {
   type AgentRuntimeError,
   type AgentRuntimeReconcileRequest,
   type AgentSessionRecord,
+  AgentRuntimeFailure,
   defaultAgentRuntimeConfig,
-  agentRuntimeFailure,
 } from "./contracts.ts";
 import type { AgentDurabilityShape } from "./durability.ts";
 import { AgentDurability } from "./durability.ts";
@@ -127,7 +127,9 @@ export const makeAgentRuntime = (options: AgentRuntimeOptions): AgentRuntimeShap
   };
   const activeRuns = new Map<string, ActiveRun>();
 
-  const snapshot = (runId: string): Effect.Effect<Option.Option<AgentRunSnapshot>, AgentRuntimeError> =>
+  const snapshot = (
+    runId: string,
+  ): Effect.Effect<Option.Option<AgentRunSnapshot>, AgentRuntimeError> =>
     Effect.gen(function* () {
       const run = yield* durability.getRun(runId);
       if (run === undefined) return Option.none();
@@ -149,7 +151,9 @@ export const makeAgentRuntime = (options: AgentRuntimeOptions): AgentRuntimeShap
       });
     });
 
-  const replayEvents = (request: AgentRunEventsRequest): Stream.Stream<AgentRuntimeEvent, AgentRuntimeError> =>
+  const replayEvents = (
+    request: AgentRunEventsRequest,
+  ): Stream.Stream<AgentRuntimeEvent, AgentRuntimeError> =>
     Stream.unwrap(
       durability
         .listEvents(request.runId, request.afterSequence)
@@ -171,7 +175,7 @@ export const makeAgentRuntime = (options: AgentRuntimeOptions): AgentRuntimeShap
           Option.match(value, {
             onNone: () =>
               Effect.fail(
-                agentRuntimeFailure({
+                new AgentRuntimeFailure({
                   code: "storage_error",
                   message: `Agent run '${input.run.runId}' was not readable after creation.`,
                   retryable: false,
@@ -184,7 +188,7 @@ export const makeAgentRuntime = (options: AgentRuntimeOptions): AgentRuntimeShap
       const execute =
         input.execute === true && input.attempt !== undefined
           ? executeAttempt({
-            attempt: input.attempt,
+              attempt: input.attempt,
               authorityProfile: input.authorityProfile,
               mcp: input.mcp,
               run: input.run,
@@ -342,7 +346,8 @@ export const makeAgentRuntime = (options: AgentRuntimeOptions): AgentRuntimeShap
       switch (input.event.type) {
         case "text.delta": {
           if (input.state.sawAssistantContentDelta) return [];
-          const snapshot = input.event.snapshot ?? `${input.state.assistantText}${input.event.delta}`;
+          const snapshot =
+            input.event.snapshot ?? `${input.state.assistantText}${input.event.delta}`;
           input.state.assistantText = snapshot;
           return [
             new AgentRuntimeMessageDelta({
@@ -376,7 +381,8 @@ export const makeAgentRuntime = (options: AgentRuntimeOptions): AgentRuntimeShap
 
           if (input.event.streamKind === "assistant_text") {
             input.state.sawAssistantContentDelta = true;
-            const snapshot = input.event.snapshot ?? `${input.state.assistantText}${input.event.delta}`;
+            const snapshot =
+              input.event.snapshot ?? `${input.state.assistantText}${input.event.delta}`;
             input.state.assistantText = snapshot;
             return [
               new AgentRuntimeMessageDelta({
@@ -809,7 +815,13 @@ export const makeAgentRuntime = (options: AgentRuntimeOptions): AgentRuntimeShap
           });
           yield* durability.appendEvent(
             new AgentRuntimeRunInterrupted({
-              ...eventBase(run, yield* requiredSession(durability, run.sessionId), attempt, now, makeId),
+              ...eventBase(
+                run,
+                yield* requiredSession(durability, run.sessionId),
+                attempt,
+                now,
+                makeId,
+              ),
               reason: "Run was interrupted before the runtime reconciled it.",
             }),
           );
@@ -857,13 +869,14 @@ export const makeAgentRuntime = (options: AgentRuntimeOptions): AgentRuntimeShap
         const decoded = (yield* Schema.decodeUnknownEffect(AgentRunStartRequestSchema)(
           request,
         ).pipe(
-          Effect.mapError((cause) =>
-            agentRuntimeFailure({
-              cause,
-              code: "invalid_request",
-              message: "Invalid agent run start request.",
-              retryable: false,
-            }),
+          Effect.mapError(
+            (cause) =>
+              new AgentRuntimeFailure({
+                cause,
+                code: "invalid_request",
+                message: "Invalid agent run start request.",
+                retryable: false,
+              }),
           ),
         )) as AgentRunStartRequest;
         const idempotencyKey = decoded.idempotencyKey ?? deriveIdempotencyKey(decoded);
@@ -874,7 +887,8 @@ export const makeAgentRuntime = (options: AgentRuntimeOptions): AgentRuntimeShap
         }
 
         const harnessId = decoded.harness?.harnessId ?? config.defaultHarnessId;
-        const providerId = (decoded.harness?.providerId ?? config.defaultProviderId) as AgentProviderId;
+        const providerId = (decoded.harness?.providerId ??
+          config.defaultProviderId) as AgentProviderId;
         const harness = yield* options.harnessRegistry.get(harnessId);
         const capabilities = yield* harness.capabilities;
         const authorityProfile = yield* options.authorityPolicy.resolve(decoded.authority);
@@ -981,9 +995,7 @@ export const makeAgentRuntime = (options: AgentRuntimeOptions): AgentRuntimeShap
         });
 
         const base =
-          attempt === undefined
-            ? undefined
-            : eventBase(run, session, attempt, now, makeId);
+          attempt === undefined ? undefined : eventBase(run, session, attempt, now, makeId);
         if (active === undefined || attempt === undefined || base === undefined) {
           return yield* requiredSnapshot(snapshot, run.runId);
         }
@@ -1097,11 +1109,13 @@ export const makeAgentRuntime = (options: AgentRuntimeOptions): AgentRuntimeShap
   }
 };
 
-export const AgentRuntimeLive = (options: {
-  readonly config?: Partial<AgentRuntimeConfig>;
-  readonly makeId?: (prefix: string) => string;
-  readonly now?: () => Date;
-} = {}) =>
+export const AgentRuntimeLive = (
+  options: {
+    readonly config?: Partial<AgentRuntimeConfig>;
+    readonly makeId?: (prefix: string) => string;
+    readonly now?: () => Date;
+  } = {},
+) =>
   Layer.effect(
     AgentRuntime,
     Effect.gen(function* () {
@@ -1134,7 +1148,7 @@ const requiredRun = (
     Effect.flatMap((run) =>
       run === undefined
         ? Effect.fail(
-            agentRuntimeFailure({
+            new AgentRuntimeFailure({
               code: "invalid_request",
               message: `Agent run '${runId}' was not found.`,
               retryable: false,
@@ -1152,7 +1166,7 @@ const requiredSession = (
     Effect.flatMap((session) =>
       session === undefined
         ? Effect.fail(
-            agentRuntimeFailure({
+            new AgentRuntimeFailure({
               code: "storage_error",
               message: `Agent session '${sessionId}' was not found.`,
               retryable: false,
@@ -1171,7 +1185,7 @@ const requiredSnapshot = (
       Option.match(value, {
         onNone: () =>
           Effect.fail(
-            agentRuntimeFailure({
+            new AgentRuntimeFailure({
               code: "storage_error",
               message: `Agent run '${runId}' did not produce a readable snapshot.`,
               retryable: false,
@@ -1259,7 +1273,7 @@ const validateHarnessCapabilities = (
 ): Effect.Effect<void, AgentRuntimeError> => {
   if (authority.workspaceWrite && !capabilities.workspaceWrite) {
     return Effect.fail(
-      agentRuntimeFailure({
+      new AgentRuntimeFailure({
         code: "harness_unsupported",
         message: "Selected harness does not support workspace-write execution.",
         retryable: false,
@@ -1268,7 +1282,7 @@ const validateHarnessCapabilities = (
   }
   if (authority.codebaseReadOnly && !capabilities.readOnlyWorkspace) {
     return Effect.fail(
-      agentRuntimeFailure({
+      new AgentRuntimeFailure({
         code: "harness_unsupported",
         message: "Selected harness does not support read-only workspace execution.",
         retryable: false,

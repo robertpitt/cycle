@@ -20,9 +20,7 @@ import { Projection } from "../src/store/Projection.ts";
 import { assert, describe, it } from "./effect-vitest.ts";
 
 const makeStore = (database: string) =>
-  Effect.gen(function* () {
-    return yield* GitDbStore.StoreService;
-  }).pipe(Effect.provide(GitDbInMemory({ database })));
+  GitDbStore.StoreService.pipe(Effect.provide(GitDbInMemory({ database })));
 
 const countEventDocumentReads = (
   store: GitDbStore.StoreServiceShape,

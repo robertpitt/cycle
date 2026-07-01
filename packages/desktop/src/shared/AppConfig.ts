@@ -1,5 +1,8 @@
 import { AgentProviderId } from "@cycle/contracts/schemas";
-import { Config, ConfigProvider, Context, Data, Effect, Schema } from "effect";
+import { Config, ConfigProvider, Context, Effect, Schema } from "effect";
+import { AppConfigError } from "../errors/index.ts";
+
+export { AppConfigError } from "../errors/index.ts";
 
 export const CURRENT_APP_CONFIG_SCHEMA_VERSION = 3;
 export const DEFAULT_API_PORT = 4738;
@@ -103,23 +106,6 @@ export const AppConfigState = Schema.Struct({
 });
 export type AppConfigState = typeof AppConfigState.Type;
 
-export class AppConfigError extends Data.TaggedError("AppConfigError")<{
-  readonly cause?: unknown;
-  readonly message: string;
-  readonly operation: string;
-}> {}
-
-export const appConfigError = (
-  operation: string,
-  message: string,
-  cause?: unknown,
-): AppConfigError =>
-  new AppConfigError({
-    cause,
-    message,
-    operation,
-  });
-
 export const defaultAppConfig = (): AppConfigState => ({
   agentProviders: {
     preferences: [],
@@ -145,8 +131,13 @@ export const parseAppConfig = (value: unknown): Effect.Effect<AppConfigState, Ap
   Config.schema(AppConfigState)
     .parse(ConfigProvider.fromUnknown(value))
     .pipe(
-      Effect.mapError((cause) =>
-        appConfigError("AppConfig.parse", "App config did not match the expected schema.", cause),
+      Effect.mapError(
+        (cause) =>
+          new AppConfigError({
+            cause,
+            message: "App config did not match the expected schema.",
+            operation: "AppConfig.parse",
+          }),
       ),
     );
 

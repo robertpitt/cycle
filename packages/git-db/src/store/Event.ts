@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import type { Change, Snapshot } from "../domain/index.ts";
-import { invalidJsonDocument, invalidPath, type GitDbError } from "../errors/index.ts";
+import { InvalidJsonDocumentError, InvalidPathError, type GitDbError } from "../errors/index.ts";
 import { bytesFromString } from "../internals/bytes.ts";
 import { normalizeStorePath } from "./Path.ts";
 import type { Document } from "./Document.ts";
@@ -51,8 +51,11 @@ export const aggregatePath = (
 export const canonicalJson = (value: unknown): Effect.Effect<string, GitDbError> =>
   Effect.try({
     catch: (cause) =>
-      invalidJsonDocument(cause instanceof Error ? cause.message : "Cannot encode event JSON", {
-        cause,
+      new InvalidJsonDocumentError({
+        message: cause instanceof Error ? cause.message : "Cannot encode event JSON",
+        ...{
+          cause,
+        },
       }),
     try: () => JSON.stringify(normalizeJson(value)),
   });
@@ -80,7 +83,10 @@ export const append = (
     const existing = yield* tx.get(eventPath);
 
     if (existing !== null) {
-      return yield* Effect.fail(invalidPath(eventPath, "event path already exists"));
+      return yield* new InvalidPathError({
+        path: eventPath,
+        message: `Invalid store path ${eventPath}: ${"event path already exists"}`,
+      });
     }
 
     yield* tx.put(eventPath, yield* canonicalJsonBytes(input.payload));
@@ -218,7 +224,12 @@ const aggregateShard = (aggregateId: string): string => {
 const validateEventSegment = (label: string, value: string): Effect.Effect<string, GitDbError> => {
   if (safeEventSegment.test(value)) return Effect.succeed(value);
 
-  return Effect.fail(invalidPath(value, `invalid event ${label}`));
+  return Effect.fail(
+    new InvalidPathError({
+      path: value,
+      message: `Invalid store path ${value}: ${`invalid event ${label}`}`,
+    }),
+  );
 };
 
 const normalizeJson = (value: unknown): unknown => {

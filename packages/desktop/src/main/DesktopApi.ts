@@ -14,8 +14,9 @@ import { UseCaseRunner, type UseCaseRunnerShape } from "@cycle/usecases";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, FileSystem, Path, Schema } from "effect";
+import { DesktopApiError } from "../errors/index.ts";
 import { DesktopRuntime } from "../platform/DesktopRuntime.ts";
-import { AppConfig, appConfigError, type RepositoryRecord } from "../shared/AppConfig.ts";
+import { AppConfig, AppConfigError, type RepositoryRecord } from "../shared/AppConfig.ts";
 import { DesktopBootstrap, type DesktopBootstrapService } from "../shared/Bootstrap.ts";
 import { LocalWorkspace } from "../shared/LocalWorkspace.ts";
 import { cycleCliConfigPathFromHome } from "./CycleDirectory.ts";
@@ -62,9 +63,7 @@ const makeLocalStore = (
   repositoryPath: string,
   gitDir: string,
 ): Effect.Effect<GitDbStore.StoreServiceShape, unknown> =>
-  Effect.gen(function* () {
-    return yield* GitDbStore.StoreService;
-  }).pipe(
+  GitDbStore.StoreService.pipe(
     Effect.provide(
       GitDb.GitDbFilesystem({
         cwd: repositoryPath,
@@ -81,18 +80,19 @@ const writeCliConfigToken = (
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const configPath = cliConfigPath();
-    const text = yield* fs
-      .readFileString(configPath, "utf8")
-      .pipe(Effect.catch(() => Effect.succeed(undefined)));
-    let current: CycleCliConfigFile = {};
-
-    if (text !== undefined) {
-      try {
-        current = Schema.decodeUnknownSync(CycleCliConfigFile)(JSON.parse(text) as unknown);
-      } catch {
-        current = {};
-      }
-    }
+    const text = yield* fs.readFileString(configPath, "utf8").pipe(Effect.catch(() => Effect.void));
+    const current: CycleCliConfigFile =
+      text === undefined
+        ? {}
+        : yield* Effect.try({
+            try: () => Schema.decodeUnknownSync(CycleCliConfigFile)(JSON.parse(text) as unknown),
+            catch: (cause) =>
+              new DesktopApiError({
+                cause,
+                message: cause instanceof Error ? cause.message : "parse cli config failed",
+                operation: "parse cli config",
+              }),
+          }).pipe(Effect.catch(() => Effect.succeed({} satisfies CycleCliConfigFile)));
 
     const api = current.api ?? {};
     yield* fs.makeDirectory(path.dirname(configPath), { recursive: true, mode: 0o700 });
@@ -183,12 +183,10 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
             : repositoryById(yield* localWorkspace.listRepositories(), request.repositoryId ?? "");
 
         if (repository === undefined) {
-          return yield* Effect.fail(
-            appConfigError(
-              "DesktopApi.repositoryOpenInput",
-              "Repository path or registered repository id is required.",
-            ),
-          );
+          return yield* new AppConfigError({
+            message: "Repository path or registered repository id is required.",
+            operation: "DesktopApi.repositoryOpenInput",
+          });
         }
 
         const inspected = yield* gitRepository.metadata(repository.path);
@@ -285,7 +283,12 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
           throw error;
         }
       },
-      catch: (cause) => cause,
+      catch: (cause) =>
+        new DesktopApiError({
+          cause,
+          message: cause instanceof Error ? cause.message : "start api server failed",
+          operation: "start api server",
+        }),
     }),
     ({ agentChatStore, agentSessionStore, agentWorkStore, handle }) =>
       Effect.tryPromise({
@@ -295,7 +298,12 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
           await agentChatStore.close?.();
           await agentSessionStore.close?.();
         },
-        catch: (cause) => cause,
+        catch: (cause) =>
+          new DesktopApiError({
+            cause,
+            message: cause instanceof Error ? cause.message : "stop api server failed",
+            operation: "stop api server",
+          }),
       }).pipe(
         Effect.catch((error) =>
           logError("api", "api server shutdown failed", {

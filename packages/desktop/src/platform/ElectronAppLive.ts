@@ -1,7 +1,7 @@
 import { app } from "electron";
 import { Cause, Deferred, Effect, Layer, Queue, Scope } from "effect";
 import { DesktopRuntime } from "./DesktopRuntime.ts";
-import { electronError } from "./ElectronError.ts";
+import { ElectronError } from "./ElectronError.ts";
 import { ElectronApp, type ElectronAppLifecycleHandlers } from "./ElectronApp.ts";
 import { ProcessLifecycle, type ProcessLifecycleEvent } from "./ProcessLifecycle.ts";
 
@@ -109,7 +109,13 @@ export const ElectronAppLive = Layer.effect(
       whenReady: () =>
         Effect.tryPromise({
           try: () => app.whenReady().then(() => undefined),
-          catch: (cause) => electronError("app.whenReady", cause),
+          catch: (cause) =>
+            new ElectronError({
+              category: "electron",
+              cause,
+              message: cause instanceof Error ? cause.message : "app.whenReady failed.",
+              operation: "app.whenReady",
+            }),
         }),
     };
   }),

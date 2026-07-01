@@ -1,12 +1,15 @@
 import { Effect } from "effect";
-import { invalidJsonDocument, type InvalidJsonDocumentError } from "../errors/index.ts";
+import { InvalidJsonDocumentError } from "../errors/index.ts";
 import { bytesFromString } from "../internals/bytes.ts";
 
 export const encodeValue = (value: unknown): Effect.Effect<Uint8Array, InvalidJsonDocumentError> =>
   Effect.try({
     catch: (cause) =>
-      invalidJsonDocument(cause instanceof Error ? cause.message : "Cannot encode document", {
-        cause,
+      new InvalidJsonDocumentError({
+        message: cause instanceof Error ? cause.message : "Cannot encode document",
+        ...{
+          cause,
+        },
       }),
     try: () => {
       if (value instanceof Uint8Array) return value;

@@ -25,6 +25,7 @@
     "check": "pnpm typecheck && pnpm lint && pnpm format:check"
   },
   "devDependencies": {
+    "@effect/language-service": "0.86.2",
     "@types/node": "^25.9.2",
     "oxfmt": "^0.53.0",
     "oxlint": "^1.68.0",

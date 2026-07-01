@@ -2,7 +2,7 @@ import {
   DatabaseIdGenerator,
   DatabaseIdentity,
   DatabaseLiveWithOptions,
-  validationError,
+  ValidationError,
 } from "@cycle/database";
 import { Crypto, Effect, FileSystem, Layer, Path } from "effect";
 import { Profile } from "../shared/Profile.ts";
@@ -20,8 +20,13 @@ const DesktopDatabaseIdentityLive = Layer.effect(
           name: current.displayName.trim().length === 0 ? "Cycle User" : current.displayName,
           type: "human" as const,
         })),
-        Effect.mapError((error) =>
-          validationError("profile", "failed to read profile for database identity", error),
+        Effect.mapError(
+          (error) =>
+            new ValidationError({
+              field: "profile",
+              message: "failed to read profile for database identity",
+              cause: error,
+            }),
         ),
       ),
     });
@@ -33,7 +38,14 @@ const DesktopDatabaseIdGeneratorLive = Layer.effect(
   Effect.gen(function* () {
     const crypto = yield* Crypto.Crypto;
     const randomUuid = crypto.randomUUIDv4.pipe(
-      Effect.mapError((cause) => validationError("id", "failed to generate database id", cause)),
+      Effect.mapError(
+        (cause) =>
+          new ValidationError({
+            field: "id",
+            message: "failed to generate database id",
+            cause: cause,
+          }),
+      ),
     );
     const makeId = (prefix: string) =>
       randomUuid.pipe(Effect.map((uuid) => `${prefix}_${uuid.replaceAll("-", "")}`));
@@ -63,13 +75,16 @@ export const DesktopDatabaseLive = Layer.unwrap(
     const path = yield* Path.Path;
     const projectionPath = yield* cycleDatabasePath;
 
-    yield* fs
-      .makeDirectory(path.dirname(projectionPath), { recursive: true })
-      .pipe(
-        Effect.mapError((cause) =>
-          validationError("database", "failed to create Cycle directory", cause),
-        ),
-      );
+    yield* fs.makeDirectory(path.dirname(projectionPath), { recursive: true }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ValidationError({
+            field: "database",
+            message: "failed to create Cycle directory",
+            cause: cause,
+          }),
+      ),
+    );
 
     return DatabaseLiveWithOptions({
       projectionPath,

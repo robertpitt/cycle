@@ -6,6 +6,3 @@ export class StoreNotFoundError extends Schema.TaggedErrorClass<StoreNotFoundErr
   gitDir: Schema.String,
   message: Schema.String,
 }) {}
-
-export const storeNotFound = (gitDir: string): StoreNotFoundError =>
-  new StoreNotFoundError({ gitDir, message: `Git directory not found: ${gitDir}` });

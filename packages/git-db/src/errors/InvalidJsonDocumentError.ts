@@ -7,9 +7,3 @@ export class InvalidJsonDocumentError extends Schema.TaggedErrorClass<InvalidJso
   message: Schema.String,
   path: Schema.optional(Schema.String),
 }) {}
-
-export const invalidJsonDocument = (
-  message: string,
-  options: { readonly cause?: unknown; readonly path?: string } = {},
-): InvalidJsonDocumentError =>
-  new InvalidJsonDocumentError({ cause: options.cause, message, path: options.path });

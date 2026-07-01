@@ -3,7 +3,7 @@ import { GitRepository, type GitRepositoryServiceShape } from "@cycle/git";
 import { Effect, Layer, Path } from "effect";
 import {
   AppConfig,
-  appConfigError,
+  AppConfigError,
   defaultRepositoryPreferences,
   type RepositoryRecord,
 } from "../shared/AppConfig.ts";
@@ -15,29 +15,31 @@ import {
 } from "../shared/LocalWorkspace.ts";
 
 const ensureGitRepository = (gitRepository: GitRepositoryServiceShape, repositoryPath: string) =>
-  gitRepository
-    .ensure(repositoryPath)
-    .pipe(
-      Effect.mapError((cause) =>
-        appConfigError(
-          "LocalWorkspace.git",
-          "This project is not git initialised. Initialise it to import.",
+  gitRepository.ensure(repositoryPath).pipe(
+    Effect.mapError(
+      (cause) =>
+        new AppConfigError({
           cause,
-        ),
-      ),
-    );
+          message: "This project is not git initialised. Initialise it to import.",
+          operation: "LocalWorkspace.git",
+        }),
+    ),
+  );
 
 const initializeGitRepository = (
   gitRepository: GitRepositoryServiceShape,
   repositoryPath: string,
 ) =>
-  gitRepository
-    .init(repositoryPath)
-    .pipe(
-      Effect.mapError((cause) =>
-        appConfigError("LocalWorkspace.gitInit", "Unable to initialise Git repository.", cause),
-      ),
-    );
+  gitRepository.init(repositoryPath).pipe(
+    Effect.mapError(
+      (cause) =>
+        new AppConfigError({
+          cause,
+          message: "Unable to initialise Git repository.",
+          operation: "LocalWorkspace.gitInit",
+        }),
+    ),
+  );
 
 export const LocalWorkspaceLive = Layer.effect(
   LocalWorkspace,
@@ -63,12 +65,13 @@ export const LocalWorkspaceLive = Layer.effect(
           remote: metadata.defaultRemote,
         });
       }).pipe(
-        Effect.mapError((cause) =>
-          appConfigError(
-            "LocalWorkspace.repositoryIdentity",
-            "Unable to derive repository id.",
-            cause,
-          ),
+        Effect.mapError(
+          (cause) =>
+            new AppConfigError({
+              cause,
+              message: "Unable to derive repository id.",
+              operation: "LocalWorkspace.repositoryIdentity",
+            }),
         ),
       );
 
@@ -99,18 +102,16 @@ export const LocalWorkspaceLive = Layer.effect(
         );
 
         if (collision !== undefined) {
-          return yield* Effect.fail(
-            appConfigError(
-              "LocalWorkspace.repositoryIdentity",
-              `Repository id collision for ${id}.`,
-              {
-                existingPath: collision.path,
-                existingRoot: collision.gitDbRootCommitId,
-                nextPath: normalizedPath,
-                nextRoot: identity.rootCommitId,
-              },
-            ),
-          );
+          return yield* new AppConfigError({
+            cause: {
+              existingPath: collision.path,
+              existingRoot: collision.gitDbRootCommitId,
+              nextPath: normalizedPath,
+              nextRoot: identity.rootCommitId,
+            },
+            message: `Repository id collision for ${id}.`,
+            operation: "LocalWorkspace.repositoryIdentity",
+          });
         }
 
         const existing = repositories.find(

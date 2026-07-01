@@ -15,7 +15,7 @@ import {
 } from "../ipc/index.ts";
 import type { ApiConnection as ApiConnectionValue } from "../ipc/Channels.ts";
 import { DesktopRuntime, type DesktopRuntimeService } from "../platform/DesktopRuntime.ts";
-import { electronSecurityError, type ElectronError } from "../platform/ElectronError.ts";
+import { ElectronError } from "../platform/ElectronError.ts";
 import { ElectronShell } from "../platform/ElectronShell.ts";
 import {
   ElectronThemeState as ElectronThemeStateSchema,
@@ -64,20 +64,29 @@ const validateInvokeSender = (
     Effect.flatMap((frame) => {
       if (frame === null) {
         return Effect.fail(
-          electronSecurityError("ipc.sender", `Rejected ${channel}: sender frame is unavailable.`),
+          new ElectronError({
+            category: "security",
+            message: `Rejected ${channel}: sender frame is unavailable.`,
+            operation: "ipc.sender",
+          }),
         );
       }
       if (frame.isDestroyed()) {
         return Effect.fail(
-          electronSecurityError("ipc.sender", `Rejected ${channel}: sender frame was destroyed.`),
+          new ElectronError({
+            category: "security",
+            message: `Rejected ${channel}: sender frame was destroyed.`,
+            operation: "ipc.sender",
+          }),
         );
       }
       if (frame.top !== null && frame.top !== frame) {
         return Effect.fail(
-          electronSecurityError(
-            "ipc.sender",
-            `Rejected ${channel}: sender frame is not the top frame.`,
-          ),
+          new ElectronError({
+            category: "security",
+            message: `Rejected ${channel}: sender frame is not the top frame.`,
+            operation: "ipc.sender",
+          }),
         );
       }
       return Effect.void;
@@ -104,11 +113,12 @@ const decodeOpenExternalRequest = (
           return { targetUrl: url.toString() };
         },
         catch: (cause) =>
-          electronSecurityError(
-            "ipc.openExternal",
-            "Renderer requested an invalid external URL.",
+          new ElectronError({
+            category: "security",
             cause,
-          ),
+            message: "Renderer requested an invalid external URL.",
+            operation: "ipc.openExternal",
+          }),
       }),
     ),
   );
@@ -126,7 +136,13 @@ const decodeSchema =
             input: unknown,
           ) => S["Type"]
         )(value),
-      catch: (cause) => electronSecurityError(category, message, cause),
+      catch: (cause) =>
+        new ElectronError({
+          category: "security",
+          cause,
+          message,
+          operation: category,
+        }),
     });
 
 const decodeIpcOutput = <S extends Schema.Top>(
@@ -142,17 +158,24 @@ const decodeIpcOutput = <S extends Schema.Top>(
         ) => S["Type"]
       )(value),
     catch: (cause) =>
-      electronSecurityError(
-        "ipc.response",
-        `Main process produced an invalid response for ${channel}.`,
+      new ElectronError({
+        category: "security",
         cause,
-      ),
+        message: `Main process produced an invalid response for ${channel}.`,
+        operation: "ipc.response",
+      }),
   });
 
 const decodeEmptyRequest = (value: unknown): Effect.Effect<void, ElectronError> =>
   value === undefined
     ? Effect.void
-    : Effect.fail(electronSecurityError("ipc.request", "Expected empty renderer request."));
+    : Effect.fail(
+        new ElectronError({
+          category: "security",
+          message: "Expected empty renderer request.",
+          operation: "ipc.request",
+        }),
+      );
 
 const apiBaseUrlFromConfig = (config: ApiConfig): string =>
   `http://${config.host}:${config.port === "auto" ? DEFAULT_API_PORT : config.port}`;
@@ -167,7 +190,7 @@ const readDesktopApiRuntimeBaseUrl = (): Effect.Effect<
     return parseRuntimeBaseUrlFromDiscoveryText(
       yield* fs.readFileString(desktopApiRuntimeDiscoveryPath(), "utf8"),
     );
-  }).pipe(Effect.catch(() => Effect.succeed(undefined)));
+  }).pipe(Effect.catch(() => Effect.as(Effect.void, undefined)));
 
 const selectRepositoryFolder = (): Effect.Effect<
   { readonly path: string; readonly status: "selected" } | { readonly status: "cancelled" },
@@ -189,11 +212,12 @@ const selectRepositoryFolder = (): Effect.Effect<
           : await dialog.showOpenDialog(window, options);
       },
       catch: (cause) =>
-        electronSecurityError(
-          "dialog.selectRepositoryFolder",
-          "Unable to open repository folder picker.",
+        new ElectronError({
+          category: "security",
           cause,
-        ),
+          message: "Unable to open repository folder picker.",
+          operation: "dialog.selectRepositoryFolder",
+        }),
     });
 
     const selectedPath = result.filePaths[0];
@@ -276,9 +300,11 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
         );
 
         if (!config.api.enabled) {
-          return yield* Effect.fail(
-            electronSecurityError("ipc.apiConnection", "The local Cycle API is disabled."),
-          );
+          return yield* new ElectronError({
+            category: "security",
+            message: "The local Cycle API is disabled.",
+            operation: "ipc.apiConnection",
+          });
         }
 
         return {

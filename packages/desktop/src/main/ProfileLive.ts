@@ -1,10 +1,5 @@
 import { Effect, Layer } from "effect";
-import {
-  AppConfig,
-  appConfigError,
-  type AppConfigError,
-  type ProfileConfig,
-} from "../shared/AppConfig.ts";
+import { AppConfig, AppConfigError, type ProfileConfig } from "../shared/AppConfig.ts";
 import {
   Profile,
   type CompleteOnboardingInput,
@@ -19,7 +14,10 @@ const normalizeEmail = (email: string): Effect.Effect<string, AppConfigError> =>
     Effect.flatMap((trimmed) => {
       if (trimmed === "" || emailPattern.test(trimmed)) return Effect.succeed(trimmed);
       return Effect.fail(
-        appConfigError("Profile.email", "Profile email must be empty or a valid email address."),
+        new AppConfigError({
+          message: "Profile email must be empty or a valid email address.",
+          operation: "Profile.email",
+        }),
       );
     }),
   );

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { Effect } from "effect";
+import { Data, Effect } from "effect";
 import {
   Event as EventApi,
   GitDbFilesystem,
@@ -26,9 +26,14 @@ import { assert, describe, it } from "./effect-vitest.ts";
 
 const execFileAsync = promisify(execFile);
 
-const attemptPromise = <A>(try_: () => Promise<A>): Effect.Effect<A, unknown> =>
+class TestFailure extends Data.TaggedError("TestFailure")<{
+  readonly cause?: unknown;
+  readonly message: string;
+}> {}
+
+const attemptPromise = <A>(try_: () => Promise<A>): Effect.Effect<A, TestFailure> =>
   Effect.tryPromise({
-    catch: (cause) => cause,
+    catch: (cause) => new TestFailure({ cause, message: "test promise failed" }),
     try: try_,
   });
 
@@ -38,7 +43,7 @@ const cleanupDir = (dir: string): Effect.Effect<void, never> =>
 const withTempDir = <A, E, R>(
   prefix: string,
   f: (dir: string) => Effect.Effect<A, E, R>,
-): Effect.Effect<A, E | unknown, R> =>
+): Effect.Effect<A, E | TestFailure, R> =>
   Effect.scoped(
     Effect.gen(function* () {
       const dir = yield* Effect.acquireRelease(
@@ -50,7 +55,7 @@ const withTempDir = <A, E, R>(
     }),
   );
 
-const git = (cwd: string, args: ReadonlyArray<string>): Effect.Effect<void, unknown> =>
+const git = (cwd: string, args: ReadonlyArray<string>): Effect.Effect<void, TestFailure> =>
   attemptPromise(() => execFileAsync("git", [...args], { cwd })).pipe(Effect.asVoid);
 
 const storeFor = (repositoryPath: string) =>

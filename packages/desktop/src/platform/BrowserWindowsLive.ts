@@ -1,7 +1,7 @@
 import { BrowserWindow } from "electron";
 import { Effect, Layer } from "effect";
 import { BrowserWindows } from "./BrowserWindows.ts";
-import { electronError } from "./ElectronError.ts";
+import { ElectronError } from "./ElectronError.ts";
 
 export const BrowserWindowsLive = Layer.succeed(BrowserWindows)({
   all: Effect.sync(() => BrowserWindow.getAllWindows()),
@@ -14,7 +14,13 @@ export const BrowserWindowsLive = Layer.succeed(BrowserWindows)({
     Effect.acquireRelease(
       Effect.try({
         try: () => new BrowserWindow(options),
-        catch: (cause) => electronError("BrowserWindow.constructor", cause),
+        catch: (cause) =>
+          new ElectronError({
+            category: "electron",
+            cause,
+            message: cause instanceof Error ? cause.message : "BrowserWindow.constructor failed.",
+            operation: "BrowserWindow.constructor",
+          }),
       }),
       (window) =>
         Effect.sync(() => {

@@ -2,6 +2,7 @@
 import { defaultLayer as CycleLoggingLive } from "@cycle/logging";
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { Effect } from "effect";
+import { McpCliError } from "../errors/index.ts";
 import {
   runCycleMcpStdio,
   startCycleMcpHttpServerEffect,
@@ -10,6 +11,7 @@ import {
 } from "./server/index.ts";
 
 const logging = { packageName: "api" } as const;
+
 const flags = parseFlags(process.argv.slice(2));
 const env = process.env;
 const common: CycleMcpOptions = {
@@ -41,7 +43,11 @@ if ((flags.transport ?? env.CYCLE_MCP_TRANSPORT) === "http") {
   Effect.acquireRelease(startCycleMcpHttpServerEffect(options), (server) =>
     Effect.tryPromise({
       try: () => server.close(),
-      catch: (cause) => cause,
+      catch: (cause) =>
+        new McpCliError({
+          cause,
+          message: cause instanceof Error ? cause.message : "failed to close MCP server",
+        }),
     }).pipe(Effect.catch(() => Effect.void)),
   ).pipe(
     Effect.flatMap(() => Effect.never),

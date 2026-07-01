@@ -215,7 +215,8 @@ const handleCycleApiProxyUpgrade = (
           ].join("\r\n"),
         );
         if (head.length > 0) upstream.write(head);
-        socket.pipe(upstream).pipe(socket);
+        socket.pipe(upstream);
+        upstream.pipe(socket);
       });
       upstream.on("error", () => {
         socket.destroy();

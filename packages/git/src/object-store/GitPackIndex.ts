@@ -1,6 +1,5 @@
 import { Cache, Effect } from "effect";
-import type { GitAdapterError } from "../errors/index.ts";
-import { gitAdapterError } from "../errors/index.ts";
+import { GitAdapterError } from "../errors/index.ts";
 import type { FilesystemRuntimeBase, ParsedPackIndex } from "./GitFilesystemTypes.ts";
 import { compareObjectIdAt, dataView, mapPackFsError, objectIdBytes } from "./GitPackBytes.ts";
 
@@ -67,20 +66,19 @@ export const parsePackIndex = (
       bytes[2] !== 0x4f ||
       bytes[3] !== 0x63
     ) {
-      return yield* Effect.fail(
-        gitAdapterError("filesystem pack index", `Unsupported pack index format: ${indexPath}`),
-      );
+      return yield* new GitAdapterError({
+        operation: "filesystem pack index",
+        message: `Unsupported pack index format: ${indexPath}`,
+      });
     }
 
     const version = view.getUint32(4);
 
     if (version !== 2) {
-      return yield* Effect.fail(
-        gitAdapterError(
-          "filesystem pack index",
-          `Unsupported pack index v${version}: ${indexPath}`,
-        ),
-      );
+      return yield* new GitAdapterError({
+        operation: "filesystem pack index",
+        message: `Unsupported pack index v${version}: ${indexPath}`,
+      });
     }
 
     const fanoutOffset = 8;
@@ -109,9 +107,10 @@ const lookupIndexOffset = (
     const target = objectIdBytes(id);
 
     if (target === null) {
-      return yield* Effect.fail(
-        gitAdapterError("filesystem pack index", `Invalid object id for pack lookup: ${id}`),
-      );
+      return yield* new GitAdapterError({
+        operation: "filesystem pack index",
+        message: `Invalid object id for pack lookup: ${id}`,
+      });
     }
 
     const firstByte = Number.parseInt(id.slice(0, 2), 16);
@@ -156,10 +155,10 @@ const indexOffsetAt = (
 
   return largeOffset > Number.MAX_SAFE_INTEGER
     ? Effect.fail(
-        gitAdapterError(
-          "filesystem pack index",
-          `Pack offset is larger than Number.MAX_SAFE_INTEGER: ${indexPath}`,
-        ),
+        new GitAdapterError({
+          operation: "filesystem pack index",
+          message: `Pack offset is larger than Number.MAX_SAFE_INTEGER: ${indexPath}`,
+        }),
       )
     : Effect.succeed(largeOffset);
 };

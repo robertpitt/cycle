@@ -7,7 +7,7 @@ import type {
   AgentRuntimeError,
   AgentSessionRecord,
 } from "./contracts.ts";
-import { agentRuntimeFailure } from "./contracts.ts";
+import { AgentRuntimeFailure } from "./contracts.ts";
 import type { AgentRuntimeEvent } from "./events.ts";
 
 export type AgentRunLease = {
@@ -97,7 +97,7 @@ export class AgentDurability extends Context.Service<AgentDurability, AgentDurab
 const terminalRunStatuses = new Set(["cancelled", "completed", "failed", "interrupted"]);
 
 const storageDefect = (cause: unknown): AgentRuntimeError =>
-  agentRuntimeFailure({
+  new AgentRuntimeFailure({
     cause,
     code: "storage_error",
     message: cause instanceof Error ? cause.message : "Agent durability operation failed.",
@@ -167,8 +167,7 @@ export const makeInMemoryAgentDurability = (): AgentDurabilityShape => {
     findRunByIdempotencyKey: (idempotencyKey) =>
       effect(() =>
         [...runs.values()].find(
-          (run) =>
-            run.idempotencyKey === idempotencyKey && !terminalRunStatuses.has(run.status),
+          (run) => run.idempotencyKey === idempotencyKey && !terminalRunStatuses.has(run.status),
         ),
       ),
     findSessionByConversationKey: (conversationKey) =>
@@ -199,13 +198,14 @@ export const makeInMemoryAgentDurability = (): AgentDurabilityShape => {
     listAttemptsByRun: (runId) =>
       effect(() => [...attempts.values()].filter((attempt) => attempt.runId === runId)),
     listEvents: (runId, afterSequence = 0) =>
-      effect(() => (eventsByRun.get(runId) ?? []).filter((event) => event.sequence > afterSequence)),
+      effect(() =>
+        (eventsByRun.get(runId) ?? []).filter((event) => event.sequence > afterSequence),
+      ),
     listOpenInteractions: (runId) =>
       effect(() =>
         [...interactions.values()].filter(
           (interaction) =>
-            interaction.status === "open" &&
-            (runId === undefined || interaction.runId === runId),
+            interaction.status === "open" && (runId === undefined || interaction.runId === runId),
         ),
       ),
     releaseRun: (runId, ownerId) =>

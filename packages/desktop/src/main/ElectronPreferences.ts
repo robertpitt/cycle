@@ -1,6 +1,6 @@
 import { session } from "electron";
 import { Context, Effect, Layer, Scope } from "effect";
-import { electronError, type ElectronError } from "../platform/ElectronError.ts";
+import { ElectronError } from "../platform/ElectronError.ts";
 import {
   ElectronTheme,
   type ElectronThemeLifecycleHandlers,
@@ -68,7 +68,13 @@ export class ElectronPreferences extends Context.Service<
         clearCache: () =>
           Effect.tryPromise({
             try: () => session.defaultSession.clearCache(),
-            catch: (cause) => electronError("session.clearCache", cause),
+            catch: (cause) =>
+              new ElectronError({
+                category: "electron",
+                cause,
+                message: cause instanceof Error ? cause.message : "session.clearCache failed.",
+                operation: "session.clearCache",
+              }),
           }),
         completeOnboarding: (input) =>
           profile

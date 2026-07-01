@@ -1,6 +1,6 @@
 import { Cache, Effect } from "effect";
 import type { ObjectId, Ref as GitRef } from "../schemas/index.ts";
-import { gitAdapterError, type GitAdapterError } from "../errors/index.ts";
+import { GitAdapterError } from "../errors/index.ts";
 import {
   decodePackedRefsCacheKey,
   looseRefPath,
@@ -19,9 +19,10 @@ export const readRef = (
 ): Effect.Effect<ObjectId | null, GitAdapterError> =>
   Effect.gen(function* () {
     if (seen.has(ref)) {
-      return yield* Effect.fail(
-        gitAdapterError("filesystem readRef", `Symbolic ref cycle detected at ${ref}`),
-      );
+      return yield* new GitAdapterError({
+        operation: "filesystem readRef",
+        message: `Symbolic ref cycle detected at ${ref}`,
+      });
     }
 
     const loose = yield* readLooseRef(runtime, gitDir, ref);

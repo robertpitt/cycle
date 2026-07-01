@@ -1,5 +1,5 @@
 import { Config, ConfigProvider, Effect, Layer, Option, Path } from "effect";
-import { electronConfigurationError, type ElectronError } from "../platform/ElectronError.ts";
+import { ElectronError } from "../platform/ElectronError.ts";
 import { DesktopConfig } from "./DesktopConfig.ts";
 
 const readRendererUrl = (): Effect.Effect<string | undefined, ElectronError> =>
@@ -12,17 +12,17 @@ const readRendererUrl = (): Effect.Effect<string | undefined, ElectronError> =>
           onSome: (value) => (value.trim().length === 0 ? undefined : value),
         }),
       ),
-      Effect.mapError((cause) =>
-        electronConfigurationError(
-          "DesktopConfig.rendererUrl",
-          "Unable to read ELECTRON_RENDERER_URL.",
-          cause,
-        ),
+      Effect.mapError(
+        (cause) =>
+          new ElectronError({
+            category: "configuration",
+            cause,
+            message: "Unable to read ELECTRON_RENDERER_URL.",
+            operation: "DesktopConfig.rendererUrl",
+          }),
       ),
-    )
-    .pipe(
       Effect.flatMap((value) => {
-        if (value === undefined || value === "") return Effect.succeed(undefined);
+        if (value === undefined || value === "") return Effect.as(Effect.void, undefined);
 
         return Effect.try({
           try: () => {
@@ -33,11 +33,12 @@ const readRendererUrl = (): Effect.Effect<string | undefined, ElectronError> =>
             return url.toString();
           },
           catch: (cause) =>
-            electronConfigurationError(
-              "DesktopConfig.rendererUrl",
-              "ELECTRON_RENDERER_URL is not a valid renderer URL.",
+            new ElectronError({
+              category: "configuration",
               cause,
-            ),
+              message: "ELECTRON_RENDERER_URL is not a valid renderer URL.",
+              operation: "DesktopConfig.rendererUrl",
+            }),
         });
       }),
     );

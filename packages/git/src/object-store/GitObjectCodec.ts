@@ -6,7 +6,7 @@ import type {
   TreeEntry,
   WriteCommitInput,
 } from "../schemas/index.ts";
-import { gitAdapterError, type GitAdapterError } from "../errors/index.ts";
+import { GitAdapterError } from "../errors/index.ts";
 import { normalizeIdentity } from "../internals/identity.ts";
 
 export const parseTree = (raw: string): Effect.Effect<ReadonlyArray<TreeEntry>, GitAdapterError> =>
@@ -15,8 +15,12 @@ export const parseTree = (raw: string): Effect.Effect<ReadonlyArray<TreeEntry>, 
 
     return match === null
       ? Effect.fail(
-          gitAdapterError("git ls-tree", `Unexpected ls-tree record: ${record}`, {
-            stderr: record,
+          new GitAdapterError({
+            operation: "git ls-tree",
+            message: `Unexpected ls-tree record: ${record}`,
+            ...{
+              stderr: record,
+            },
           }),
         )
       : Effect.succeed({
@@ -53,7 +57,10 @@ export const parseCommit = (
 
   if (tree === undefined) {
     return Effect.fail(
-      gitAdapterError("git cat-file commit", `Commit ${id} does not contain a tree`),
+      new GitAdapterError({
+        operation: "git cat-file commit",
+        message: `Commit ${id} does not contain a tree`,
+      }),
     );
   }
 

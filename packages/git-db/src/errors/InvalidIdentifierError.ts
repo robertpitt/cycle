@@ -7,6 +7,3 @@ export class InvalidIdentifierError extends Schema.TaggedErrorClass<InvalidIdent
   message: Schema.String,
   value: Schema.String,
 }) {}
-
-export const invalidIdentifier = (kind: string, value: string): InvalidIdentifierError =>
-  new InvalidIdentifierError({ kind, message: `Invalid ${kind}: ${value}`, value });

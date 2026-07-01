@@ -1,7 +1,7 @@
 import { deflateSync, inflateSync } from "node:zlib";
 import { Cache, Crypto, Effect } from "effect";
 import type { ObjectId } from "../schemas/index.ts";
-import { gitAdapterError, type GitAdapterError } from "../errors/index.ts";
+import { GitAdapterError } from "../errors/index.ts";
 import { bytesFromString, bytesToString, concatBytes } from "../internals/bytes.ts";
 import { sha1Hex } from "../internals/hash.ts";
 import { readPackedObject } from "./GitPackObject.ts";
@@ -25,10 +25,10 @@ export const readObject = (
     Effect.flatMap((object) => {
       if (expectedType !== undefined && object.type !== expectedType) {
         return Effect.fail(
-          gitAdapterError(
-            "filesystem readObject",
-            `Object ${id} expected ${expectedType} but contained ${object.type}`,
-          ),
+          new GitAdapterError({
+            operation: "filesystem readObject",
+            message: `Object ${id} expected ${expectedType} but contained ${object.type}`,
+          }),
         );
       }
 
@@ -51,9 +51,10 @@ export const readObjectUncached = (
       const packed = yield* readPackedObject(runtime, gitDir, id);
 
       if (packed === null) {
-        return yield* Effect.fail(
-          gitAdapterError("filesystem readObject", `Object not found: ${id}`),
-        );
+        return yield* new GitAdapterError({
+          operation: "filesystem readObject",
+          message: `Object not found: ${id}`,
+        });
       }
 
       return packed;
@@ -79,18 +80,20 @@ export const readObjectUncached = (
     const headerEnd = raw.indexOf(0);
 
     if (headerEnd === -1) {
-      return yield* Effect.fail(
-        gitAdapterError("filesystem readObject", `Object ${id} has no header terminator`),
-      );
+      return yield* new GitAdapterError({
+        operation: "filesystem readObject",
+        message: `Object ${id} has no header terminator`,
+      });
     }
 
     const header = bytesToString(raw.subarray(0, headerEnd));
     const match = /^(blob|commit|tree) (\d+)$/u.exec(header);
 
     if (match === null) {
-      return yield* Effect.fail(
-        gitAdapterError("filesystem readObject", `Object ${id} has an invalid header: ${header}`),
-      );
+      return yield* new GitAdapterError({
+        operation: "filesystem readObject",
+        message: `Object ${id} has an invalid header: ${header}`,
+      });
     }
 
     const type = match[1] as GitObject["type"];
@@ -98,12 +101,10 @@ export const readObjectUncached = (
     const payload = raw.subarray(headerEnd + 1);
 
     if (payload.byteLength !== size) {
-      return yield* Effect.fail(
-        gitAdapterError(
-          "filesystem readObject",
-          `Object ${id} expected ${size} bytes but contained ${payload.byteLength}`,
-        ),
-      );
+      return yield* new GitAdapterError({
+        operation: "filesystem readObject",
+        message: `Object ${id} expected ${size} bytes but contained ${payload.byteLength}`,
+      });
     }
 
     return { payload, type };
@@ -146,7 +147,7 @@ export const writeObject = (
               Effect.catch(() => Effect.succeed(false)),
               Effect.flatMap((currentExists) =>
                 currentExists
-                  ? Effect.succeed(undefined)
+                  ? Effect.void
                   : Effect.fail(mapFsError("filesystem writeObject", objectPath)(cause)),
               ),
             ),
@@ -165,7 +166,12 @@ const inflate = (
 ): Effect.Effect<Uint8Array, GitAdapterError> =>
   Effect.try({
     try: () => new Uint8Array(inflateSync(bytes)),
-    catch: (cause) => gitAdapterError(operation, "Could not inflate Git object", { cause }),
+    catch: (cause) =>
+      new GitAdapterError({
+        operation: operation,
+        message: "Could not inflate Git object",
+        ...{ cause },
+      }),
   });
 
 const deflate = (
@@ -174,5 +180,6 @@ const deflate = (
 ): Effect.Effect<Uint8Array, GitAdapterError> =>
   Effect.try({
     try: () => new Uint8Array(deflateSync(bytes)),
-    catch: (cause) => gitAdapterError(operation, errorMessage(cause), { cause }),
+    catch: (cause) =>
+      new GitAdapterError({ operation: operation, message: errorMessage(cause), ...{ cause } }),
   });

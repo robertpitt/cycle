@@ -104,7 +104,7 @@ const readRuntimeDiscovery = (
     const parsed = JSON.parse(yield* fs.readFileString(path, "utf8")) as RuntimeDiscoveryFile;
 
     return typeof parsed.baseUrl === "string" ? { baseUrl: parsed.baseUrl } : undefined;
-  }).pipe(Effect.catch(() => Effect.succeed(undefined)));
+  }).pipe(Effect.catch(() => Effect.as(Effect.void, undefined)));
 
 const readConfigToken = (
   env: Readonly<Record<string, string | undefined>>,
@@ -121,7 +121,7 @@ const readConfigToken = (
     const token = parsed.api?.staticToken;
 
     return typeof token === "string" && token.length > 0 ? token : undefined;
-  }).pipe(Effect.catch(() => Effect.succeed(undefined)));
+  }).pipe(Effect.catch(() => Effect.as(Effect.void, undefined)));
 
 const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/u, "");
 

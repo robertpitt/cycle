@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { AgentWorkEventError } from "../../../errors/index.ts";
 import { CycleApiRuntime } from "../../runtime/CycleApiRuntime.ts";
 import { launchAgentWorkJob, launchAgentWorkJobs } from "./agentWorkRunner.ts";
 
@@ -12,17 +13,24 @@ export const emitTicketEvent = (input: {
 }): Effect.Effect<void, never, CycleApiRuntime> =>
   Effect.gen(function* () {
     const runtime = yield* CycleApiRuntime;
-    yield* Effect.promise(() =>
-      runtime.agentWork.emit({
-        actor: input.actor,
-        dedupeKey: `${input.eventType}:${input.repositoryId}:${input.ticketId ?? "none"}:${input.requestId}`,
-        eventType: input.eventType,
-        payload: input.payload,
-        repositoryId: input.repositoryId,
-        source: "api",
-        ticketId: input.ticketId,
-      }),
-    );
+    yield* Effect.tryPromise({
+      try: () =>
+        runtime.agentWork.emit({
+          actor: input.actor,
+          dedupeKey: `${input.eventType}:${input.repositoryId}:${input.ticketId ?? "none"}:${input.requestId}`,
+          eventType: input.eventType,
+          payload: input.payload,
+          repositoryId: input.repositoryId,
+          source: "api",
+          ticketId: input.ticketId,
+        }),
+      catch: (cause) =>
+        new AgentWorkEventError({
+          cause,
+          message: cause instanceof Error ? cause.message : "emit ticket event failed",
+          operation: "emit ticket event",
+        }),
+    });
   }).pipe(Effect.catch(() => Effect.void));
 
 export const handleSuccessfulComment = (input: {
@@ -36,29 +44,43 @@ export const handleSuccessfulComment = (input: {
 }): Effect.Effect<void, never, CycleApiRuntime> =>
   Effect.gen(function* () {
     const runtime = yield* CycleApiRuntime;
-    yield* Effect.promise(() =>
-      runtime.agentWork.emit({
-        dedupeKey: `ticket.comment_added:${input.repositoryId}:${input.ticketId}:${input.commentId}`,
-        eventType: "ticket.comment_added",
-        payload: {
-          comment: input.comment,
+    yield* Effect.tryPromise({
+      try: () =>
+        runtime.agentWork.emit({
+          dedupeKey: `ticket.comment_added:${input.repositoryId}:${input.ticketId}:${input.commentId}`,
+          eventType: "ticket.comment_added",
+          payload: {
+            comment: input.comment,
+            commentId: input.commentId,
+            requestId: input.requestId,
+          },
+          repositoryId: input.repositoryId,
+          source: "api",
+          ticketId: input.ticketId,
+        }),
+      catch: (cause) =>
+        new AgentWorkEventError({
+          cause,
+          message: cause instanceof Error ? cause.message : "emit comment event failed",
+          operation: "emit comment event",
+        }),
+    });
+    const jobs = yield* Effect.tryPromise({
+      try: () =>
+        runtime.agentWork.handleSuccessfulComment({
+          body: input.body,
           commentId: input.commentId,
-          requestId: input.requestId,
-        },
-        repositoryId: input.repositoryId,
-        source: "api",
-        ticketId: input.ticketId,
-      }),
-    );
-    const jobs = yield* Effect.promise(() =>
-      runtime.agentWork.handleSuccessfulComment({
-        body: input.body,
-        commentId: input.commentId,
-        repositoryId: input.repositoryId,
-        source: "api",
-        ticketId: input.ticketId,
-      }),
-    );
+          repositoryId: input.repositoryId,
+          source: "api",
+          ticketId: input.ticketId,
+        }),
+      catch: (cause) =>
+        new AgentWorkEventError({
+          cause,
+          message: cause instanceof Error ? cause.message : "handle successful comment failed",
+          operation: "handle successful comment",
+        }),
+    });
     yield* Effect.sync(() =>
       launchAgentWorkJobs({
         jobs,
@@ -78,14 +100,21 @@ export const evaluateAssignmentPickup = (input: {
 }): Effect.Effect<void, never, CycleApiRuntime> =>
   Effect.gen(function* () {
     const runtime = yield* CycleApiRuntime;
-    const job = yield* Effect.promise(() =>
-      runtime.agentWork.evaluateAssignmentPickup({
-        repositoryId: input.repositoryId,
-        requestedBy: `api:${input.requestId}`,
-        ticketId: input.ticketId,
-        ticketStatus: input.ticketStatus,
-      }),
-    );
+    const job = yield* Effect.tryPromise({
+      try: () =>
+        runtime.agentWork.evaluateAssignmentPickup({
+          repositoryId: input.repositoryId,
+          requestedBy: `api:${input.requestId}`,
+          ticketId: input.ticketId,
+          ticketStatus: input.ticketStatus,
+        }),
+      catch: (cause) =>
+        new AgentWorkEventError({
+          cause,
+          message: cause instanceof Error ? cause.message : "evaluate assignment pickup failed",
+          operation: "evaluate assignment pickup",
+        }),
+    });
     yield* Effect.sync(() =>
       launchAgentWorkJob({
         job,

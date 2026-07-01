@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./codex": "./src/codex.ts",
     "./detection": "./src/detection.ts",
+    "./errors": "./src/errors/index.ts",
     "./executables": "./src/executables.ts",
     "./orchestration": "./src/orchestration.ts",
     "./providers": "./src/providers.ts",

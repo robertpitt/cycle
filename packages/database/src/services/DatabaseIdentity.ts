@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect";
 import type { Actor } from "../domain/index.ts";
-import type { DatabaseFailure } from "../errors.ts";
+import type { DatabaseFailure } from "../errors/index.ts";
 
 export type DatabaseIdentityShape = {
   readonly currentActor: Effect.Effect<Actor, DatabaseFailure>;

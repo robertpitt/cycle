@@ -1,4 +1,4 @@
-import { gitAdapterError, type GitAdapterError } from "../errors/index.ts";
+import { GitAdapterError } from "../errors/index.ts";
 
 export const dataView = (bytes: Uint8Array): DataView =>
   new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -36,8 +36,12 @@ export const compareObjectIdAt = (
 export const mapPackFsError =
   (operation: string, target: string) =>
   (cause: unknown): GitAdapterError =>
-    gitAdapterError(operation, `${operation} failed for ${target}: ${errorMessage(cause)}`, {
-      cause,
+    new GitAdapterError({
+      operation: operation,
+      message: `${operation} failed for ${target}: ${errorMessage(cause)}`,
+      ...{
+        cause,
+      },
     });
 
 const errorMessage = (cause: unknown): string =>

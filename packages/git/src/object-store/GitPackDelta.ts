@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { gitAdapterError, type GitAdapterError } from "../errors/index.ts";
+import { GitAdapterError } from "../errors/index.ts";
 
 export const applyDelta = (
   base: Uint8Array,
@@ -11,12 +11,10 @@ export const applyDelta = (
     const resultSize = readDeltaSize(delta, baseSize.nextOffset);
 
     if (baseSize.size !== base.byteLength) {
-      return yield* Effect.fail(
-        gitAdapterError(
-          "filesystem pack read",
-          `Delta base size mismatch in ${packPath}: expected ${base.byteLength}, got ${baseSize.size}`,
-        ),
-      );
+      return yield* new GitAdapterError({
+        operation: "filesystem pack read",
+        message: `Delta base size mismatch in ${packPath}: expected ${base.byteLength}, got ${baseSize.size}`,
+      });
     }
 
     const output = new Uint8Array(resultSize.size);
@@ -33,9 +31,10 @@ export const applyDelta = (
         const end = copy.offset + copy.size;
 
         if (end > base.byteLength || writeOffset + copy.size > output.byteLength) {
-          return yield* Effect.fail(
-            gitAdapterError("filesystem pack read", `Delta copy is outside bounds in ${packPath}`),
-          );
+          return yield* new GitAdapterError({
+            operation: "filesystem pack read",
+            message: `Delta copy is outside bounds in ${packPath}`,
+          });
         }
 
         output.set(base.subarray(copy.offset, end), writeOffset);
@@ -46,32 +45,29 @@ export const applyDelta = (
         const end = readOffset + size;
 
         if (end > delta.byteLength || writeOffset + size > output.byteLength) {
-          return yield* Effect.fail(
-            gitAdapterError(
-              "filesystem pack read",
-              `Delta insert is outside bounds in ${packPath}`,
-            ),
-          );
+          return yield* new GitAdapterError({
+            operation: "filesystem pack read",
+            message: `Delta insert is outside bounds in ${packPath}`,
+          });
         }
 
         output.set(delta.subarray(readOffset, end), writeOffset);
         readOffset = end;
         writeOffset += size;
       } else {
-        return yield* Effect.fail(
-          gitAdapterError("filesystem pack read", `Invalid delta instruction in ${packPath}`),
-        );
+        return yield* new GitAdapterError({
+          operation: "filesystem pack read",
+          message: `Invalid delta instruction in ${packPath}`,
+        });
       }
     }
 
     return writeOffset === output.byteLength
       ? output
-      : yield* Effect.fail(
-          gitAdapterError(
-            "filesystem pack read",
-            `Delta result size mismatch in ${packPath}: expected ${output.byteLength}, got ${writeOffset}`,
-          ),
-        );
+      : yield* new GitAdapterError({
+          operation: "filesystem pack read",
+          message: `Delta result size mismatch in ${packPath}: expected ${output.byteLength}, got ${writeOffset}`,
+        });
   });
 
 const readDeltaSize = (

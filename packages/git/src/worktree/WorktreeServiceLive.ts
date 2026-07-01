@@ -5,7 +5,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import path from "node:path";
 import { gitRaw } from "../command/GitCommand.ts";
-import { gitAdapterError, type GitAdapterError } from "../errors/index.ts";
+import { GitAdapterError } from "../errors/index.ts";
 import { bytesToString } from "../internals/bytes.ts";
 import {
   WorktreeService,
@@ -55,7 +55,7 @@ const operationError = (
   operation: string,
   message: string,
   options: { readonly cause?: unknown; readonly status?: number; readonly stderr?: string } = {},
-): GitAdapterError => gitAdapterError(operation, message, options);
+): GitAdapterError => new GitAdapterError({ operation: operation, message: message, ...options });
 
 const sanitizeSegment = (value: string, fallback: string): string => {
   const normalized = value
@@ -318,26 +318,23 @@ export const layer = Layer.effect(
         const repository = yield* ensureRepository(input.repositoryPath);
         const worktreePath = normalizePath(input.worktree.path);
         if (worktreePath === repository.primaryPath) {
-          return yield* Effect.fail(
-            operationError("git commit", "Refusing to commit the primary worktree for agent work."),
+          return yield* operationError(
+            "git commit",
+            "Refusing to commit the primary worktree for agent work.",
           );
         }
 
         const headSha = yield* gitString(worktreePath, ["rev-parse", "HEAD"]);
         if (headSha !== input.worktree.baseSha) {
-          return yield* Effect.fail(
-            operationError(
-              "git commit",
-              "Refusing to finalize a worktree whose HEAD moved from the recorded base SHA.",
-            ),
+          return yield* operationError(
+            "git commit",
+            "Refusing to finalize a worktree whose HEAD moved from the recorded base SHA.",
           );
         }
 
         const diff = yield* diffWorktree({ path: worktreePath });
         if (!diff.dirty && input.allowEmpty !== true) {
-          return yield* Effect.fail(
-            operationError("git commit", "Worktree has no changes to commit."),
-          );
+          return yield* operationError("git commit", "Worktree has no changes to commit.");
         }
 
         const authorName = yield* gitString(worktreePath, ["config", "--get", "user.name"]);

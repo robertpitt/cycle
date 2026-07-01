@@ -1,9 +1,5 @@
 import { detectAgentProviders } from "@cycle/agents/detection";
-import {
-  agentProviderProfileFromDetection,
-  staticAgentProviderProfile,
-  supportedAgentProviders,
-} from "@cycle/agents/providers";
+import { agentProviderProfileFromDetection } from "@cycle/agents/providers";
 import type { AgentProviderProfile } from "@cycle/agents/types";
 import { Context, Effect, Layer } from "effect";
 
@@ -19,16 +15,7 @@ export class AgentProviderProfiles extends Context.Service<
 export const listLocalAgentProviderProfiles = async (): Promise<
   readonly AgentProviderProfile[]
 > => {
-  const detected = await Effect.runPromise(
-    detectAgentProviders(process.env).pipe(Effect.catch(() => Effect.succeed(undefined))),
-  );
-
-  if (detected === undefined) {
-    const checkedAt = new Date().toISOString();
-    return supportedAgentProviders.map((provider) =>
-      staticAgentProviderProfile(provider.id, checkedAt),
-    );
-  }
+  const detected = await Effect.runPromise(detectAgentProviders(process.env));
 
   return detected.map(agentProviderProfileFromDetection);
 };

@@ -2,7 +2,6 @@ import { Config, ConfigProvider, Crypto, Effect, FileSystem, Layer, Path, Schema
 import {
   ApiConfig,
   AppConfig,
-  AppConfigError,
   AppConfigState,
   AgentProvidersConfig,
   CURRENT_APP_CONFIG_SCHEMA_VERSION,
@@ -12,10 +11,10 @@ import {
   ProfileConfig,
   RepositoryRecord,
   ThemeConfig,
-  appConfigError,
   defaultAppConfig,
   defaultApiConfig,
   defaultRepositoryPreferences,
+  AppConfigError,
   parseAppConfig,
   type ApiConfig as ApiConfigType,
   type AgentProvidersConfig as AgentProvidersConfigType,
@@ -63,13 +62,16 @@ const bytesToBase64Url = (bytes: Uint8Array): string => {
 const generateStaticToken = (): Effect.Effect<string, AppConfigError, Crypto.Crypto> =>
   Effect.gen(function* () {
     const crypto = yield* Crypto.Crypto;
-    const bytes = yield* crypto
-      .randomBytes(32)
-      .pipe(
-        Effect.mapError((cause) =>
-          appConfigError("AppConfig.generateToken", "Unable to generate API token.", cause),
-        ),
-      );
+    const bytes = yield* crypto.randomBytes(32).pipe(
+      Effect.mapError(
+        (cause) =>
+          new AppConfigError({
+            cause,
+            message: "Unable to generate API token.",
+            operation: "AppConfig.generateToken",
+          }),
+      ),
+    );
     return bytesToBase64Url(bytes);
   });
 
@@ -122,8 +124,13 @@ const parseSection = <A>(
   Config.schema(schema)
     .parse(ConfigProvider.fromUnknown(value))
     .pipe(
-      Effect.mapError((cause) =>
-        appConfigError("AppConfig.parseSection", "App config section is invalid.", cause),
+      Effect.mapError(
+        (cause) =>
+          new AppConfigError({
+            cause,
+            message: "App config section is invalid.",
+            operation: "AppConfig.parseSection",
+          }),
       ),
     );
 
@@ -136,8 +143,14 @@ const readConfigText = (
   }).pipe(
     Effect.catch((cause) =>
       isMissingFileError(cause)
-        ? Effect.succeed(undefined)
-        : Effect.fail(appConfigError("AppConfig.readFile", "Unable to read app config.", cause)),
+        ? Effect.as(Effect.void, undefined)
+        : Effect.fail(
+            new AppConfigError({
+              cause,
+              message: "Unable to read app config.",
+              operation: "AppConfig.readFile",
+            }),
+          ),
     ),
   );
 
@@ -149,13 +162,16 @@ const backupConfigFile = (
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
 
-    yield* fs
-      .rename(configPath, path.join(path.dirname(configPath), backupName(kind)))
-      .pipe(
-        Effect.mapError((cause) =>
-          appConfigError("AppConfig.backup", "Unable to back up app config.", cause),
-        ),
-      );
+    yield* fs.rename(configPath, path.join(path.dirname(configPath), backupName(kind))).pipe(
+      Effect.mapError(
+        (cause) =>
+          new AppConfigError({
+            cause,
+            message: "Unable to back up app config.",
+            operation: "AppConfig.backup",
+          }),
+      ),
+    );
   });
 
 const writeValidatedConfig = (
@@ -178,8 +194,13 @@ const writeValidatedConfig = (
     yield* fs.makeDirectory(directory, { recursive: true }).pipe(
       Effect.andThen(fs.writeFileString(temporaryPath, serialized)),
       Effect.andThen(fs.rename(temporaryPath, configPath)),
-      Effect.mapError((cause) =>
-        appConfigError("AppConfig.writeFile", "Unable to write app config.", cause),
+      Effect.mapError(
+        (cause) =>
+          new AppConfigError({
+            cause,
+            message: "Unable to write app config.",
+            operation: "AppConfig.writeFile",
+          }),
       ),
     );
 
@@ -297,7 +318,12 @@ const salvageAppConfig = (raw: unknown): Effect.Effect<AppConfigState, AppConfig
 const readJsonConfig = (text: string): Effect.Effect<unknown, AppConfigError> =>
   Effect.try({
     try: () => JSON.parse(text) as unknown,
-    catch: (cause) => appConfigError("AppConfig.parseJson", "App config is not valid JSON.", cause),
+    catch: (cause) =>
+      new AppConfigError({
+        cause,
+        message: "App config is not valid JSON.",
+        operation: "AppConfig.parseJson",
+      }),
   });
 
 const readOrRecoverConfig = (
@@ -380,7 +406,11 @@ export const AppConfigLive = Layer.effect(
         const next = yield* Effect.try({
           try: () => mutator(current),
           catch: (cause) =>
-            appConfigError("AppConfig.update", "Unable to update app config.", cause),
+            new AppConfigError({
+              cause,
+              message: "Unable to update app config.",
+              operation: "AppConfig.update",
+            }),
         });
         return yield* replace(next);
       });

@@ -1,11 +1,6 @@
 import { Cache, Crypto, Effect, FileSystem, Layer, Path } from "effect";
 import type { ObjectId } from "../schemas/index.ts";
-import {
-  gitAdapterError,
-  remoteFetchError,
-  remotePushError,
-  type GitAdapterError,
-} from "../errors/index.ts";
+import { GitAdapterError, RemoteFetchError, RemotePushError } from "../errors/index.ts";
 import { bytesToString } from "../internals/bytes.ts";
 import { Git, type GitService } from "./Git.ts";
 import {
@@ -48,13 +43,21 @@ export const layer = Layer.effect(
       lookup: (packPath) =>
         fs
           .readFile(packPath)
-          .pipe(Effect.mapError((cause) => gitAdapterError("filesystem pack read", String(cause)))),
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new GitAdapterError({ operation: "filesystem pack read", message: String(cause) }),
+            ),
+          ),
     });
     const packIndexes = yield* Cache.make<string, ParsedPackIndex, GitAdapterError>({
       capacity: 64,
       lookup: (indexPath) =>
         fs.readFile(indexPath).pipe(
-          Effect.mapError((cause) => gitAdapterError("filesystem pack index", String(cause))),
+          Effect.mapError(
+            (cause) =>
+              new GitAdapterError({ operation: "filesystem pack index", message: String(cause) }),
+          ),
           Effect.flatMap((bytes) => parsePackIndex(bytes, indexPath)),
         ),
     });
@@ -95,25 +98,23 @@ export const layer = Layer.effect(
           const actual = yield* readRef(runtime, store.gitDir, input.ref);
 
           if ("expected" in input && actual !== (input.expected ?? null)) {
-            return yield* Effect.fail(
-              gitAdapterError(
-                "filesystem deleteRef",
-                `ref ${input.ref} expected ${input.expected ?? "<missing>"} but was ${
-                  actual ?? "<missing>"
-                }`,
-              ),
-            );
+            return yield* new GitAdapterError({
+              operation: "filesystem deleteRef",
+              message: `ref ${input.ref} expected ${input.expected ?? "<missing>"} but was ${
+                actual ?? "<missing>"
+              }`,
+            });
           }
 
           yield* deleteLooseRef(runtime, store.gitDir, input.ref);
         }),
       fetch: (_store, input) =>
         Effect.fail(
-          remoteFetchError(
-            input.remote,
-            "filesystem fetch",
-            "GitFilesystem does not implement Git transport; use GitCli for fetch",
-          ),
+          new RemoteFetchError({
+            remote: input.remote,
+            operation: "filesystem fetch",
+            message: "GitFilesystem does not implement Git transport; use GitCli for fetch",
+          }),
         ),
       isAncestor: (store, ancestor, descendant) =>
         isAncestor(runtime, store.gitDir, ancestor, descendant),
@@ -140,11 +141,11 @@ export const layer = Layer.effect(
       mergeBase: (store, a, b) => mergeBase(runtime, store.gitDir, a, b),
       push: (_store, input) =>
         Effect.fail(
-          remotePushError(
-            input.remote,
-            "filesystem push",
-            "GitFilesystem does not implement Git transport; use GitCli for push",
-          ),
+          new RemotePushError({
+            remote: input.remote,
+            operation: "filesystem push",
+            message: "GitFilesystem does not implement Git transport; use GitCli for push",
+          }),
         ),
       readBlob: (store, id) =>
         readObject(runtime, store.gitDir, id, "blob").pipe(Effect.map((object) => object.payload)),
@@ -163,14 +164,12 @@ export const layer = Layer.effect(
           const actual = yield* readRef(runtime, store.gitDir, input.ref);
 
           if ("expected" in input && actual !== (input.expected ?? null)) {
-            return yield* Effect.fail(
-              gitAdapterError(
-                "filesystem updateRef",
-                `ref ${input.ref} expected ${input.expected ?? "<missing>"} but was ${
-                  actual ?? "<missing>"
-                }`,
-              ),
-            );
+            return yield* new GitAdapterError({
+              operation: "filesystem updateRef",
+              message: `ref ${input.ref} expected ${input.expected ?? "<missing>"} but was ${
+                actual ?? "<missing>"
+              }`,
+            });
           }
 
           yield* writeLooseRef(runtime, store.gitDir, input.ref, input.target);

@@ -83,9 +83,7 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
   const baseUrl = normalizeBaseUrl(options.baseUrl);
   const mcpPath = hostedMcpPath(options.mcp);
   const mcpUrl =
-    baseUrl === undefined || mcpPath === undefined
-      ? undefined
-      : joinBaseUrlPath(baseUrl, mcpPath);
+    baseUrl === undefined || mcpPath === undefined ? undefined : joinBaseUrlPath(baseUrl, mcpPath);
   const agentServiceEnv = agentServiceEnvFromMcp(options.mcp, options.staticToken);
   const activeAgentTurns = makeAgentActiveTurnDirectory();
   const agentServices =
@@ -108,15 +106,15 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
     ...(options.agentChatStore === undefined ? {} : { agentChatStore: options.agentChatStore }),
     agentWork:
       options.agentWork ??
-      makeHttpInMemoryAgentWorkRuntime({
-        ...(options.worktreeService === undefined
+      makeHttpInMemoryAgentWorkRuntime(
+        options.worktreeService === undefined
           ? {}
           : {
               executionPolicy: {
                 supportedAuthorityModes: ["ticket-context", "implementation-worktree"],
               },
-            }),
-      }),
+            },
+      ),
     ...(options.agentSessionStore === undefined
       ? {}
       : { agentSessionStore: options.agentSessionStore }),
@@ -138,7 +136,8 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
       : { worktreeStoragePath: options.worktreeStoragePath }),
   };
   const runtime = Layer.succeed(CycleApiRuntime, runtimeShape);
-  const handlers = Layer.mergeAll(SystemApiHandlers, V1ApiHandlers).pipe(
+  const handlers = V1ApiHandlers.pipe(
+    Layer.provideMerge(SystemApiHandlers),
     Layer.provide(CycleAuthorizationLive),
     Layer.provide(CycleApiTracingLive),
     Layer.provide(runtime),

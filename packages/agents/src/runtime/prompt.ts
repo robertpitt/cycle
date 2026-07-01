@@ -7,7 +7,7 @@ import type {
   AgentRuntimeError,
   JsonObject,
 } from "./contracts.ts";
-import { agentRuntimeFailure } from "./contracts.ts";
+import { AgentRuntimeFailure } from "./contracts.ts";
 import type { AgentAuthorityProfile, AgentMcpConnection } from "./policy.ts";
 
 export type AgentPromptTemplate = {
@@ -68,7 +68,7 @@ export const makePromptTemplateRegistry = (
       const template = byId.get(templateId);
       return template === undefined
         ? Effect.fail(
-            agentRuntimeFailure({
+            new AgentRuntimeFailure({
               code: "invalid_request",
               message: `Agent prompt template '${templateId}' is not registered.`,
               retryable: false,
@@ -90,29 +90,31 @@ export const makePromptAssembler = (
       const template = yield* registry.get(request.prompt.templateId);
       yield* validateTemplateSupport(template, request.source, request.authority.mode);
 
-      const decodedInput = yield* (Schema.decodeUnknownEffect(template.inputSchema)(
+      const decodedInput = yield* Schema.decodeUnknownEffect(template.inputSchema)(
         request.prompt.input,
       ).pipe(
-        Effect.mapError((cause) =>
-          agentRuntimeFailure({
-            cause,
-            code: "invalid_request",
-            message: `Invalid input for agent prompt template '${template.templateId}'.`,
-            retryable: false,
-          }),
+        Effect.mapError(
+          (cause) =>
+            new AgentRuntimeFailure({
+              cause,
+              code: "invalid_request",
+              message: `Invalid input for agent prompt template '${template.templateId}'.`,
+              retryable: false,
+            }),
         ),
-      ) as Effect.Effect<unknown, AgentRuntimeError>);
+      ) as Effect.Effect<unknown, AgentRuntimeError>;
       const context = promptContext({ authorityProfile, mcp, request, run });
-      yield* (Schema.decodeUnknownEffect(template.contextSchema)(context).pipe(
-        Effect.mapError((cause) =>
-          agentRuntimeFailure({
-            cause,
-            code: "invalid_request",
-            message: `Invalid context for agent prompt template '${template.templateId}'.`,
-            retryable: false,
-          }),
+      yield* Schema.decodeUnknownEffect(template.contextSchema)(context).pipe(
+        Effect.mapError(
+          (cause) =>
+            new AgentRuntimeFailure({
+              cause,
+              code: "invalid_request",
+              message: `Invalid context for agent prompt template '${template.templateId}'.`,
+              retryable: false,
+            }),
         ),
-      ) as Effect.Effect<unknown, AgentRuntimeError>);
+      ) as Effect.Effect<unknown, AgentRuntimeError>;
 
       const renderInput: AgentPromptRenderInput = {
         authorityProfile,
@@ -160,7 +162,7 @@ const validateTemplateSupport = (
 ): Effect.Effect<void, AgentRuntimeError> => {
   if (!template.supportedSources.includes(source)) {
     return Effect.fail(
-      agentRuntimeFailure({
+      new AgentRuntimeFailure({
         code: "invalid_request",
         message: `Prompt template '${template.templateId}' does not support source '${source}'.`,
         retryable: false,
@@ -169,7 +171,7 @@ const validateTemplateSupport = (
   }
   if (!template.supportedAuthorityModes.includes(authorityMode)) {
     return Effect.fail(
-      agentRuntimeFailure({
+      new AgentRuntimeFailure({
         code: "authority_denied",
         message: `Prompt template '${template.templateId}' does not support authority '${authorityMode}'.`,
         retryable: false,
@@ -203,9 +205,7 @@ const promptContext = (input: {
 });
 
 const toJsonObject = (value: unknown): JsonObject =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as JsonObject)
-    : {};
+  typeof value === "object" && value !== null && !Array.isArray(value) ? (value as JsonObject) : {};
 
 const stringField = (input: JsonObject, key: string): string | undefined => {
   const value = input[key];
@@ -221,7 +221,8 @@ const stableHash = (value: string): string => {
   return (hash >>> 0).toString(16).padStart(8, "0");
 };
 
-const preview = (value: string): string => (value.length > 1200 ? `${value.slice(0, 1200)}...` : value);
+const preview = (value: string): string =>
+  value.length > 1200 ? `${value.slice(0, 1200)}...` : value;
 
 const redact = (value: string): string =>
   value

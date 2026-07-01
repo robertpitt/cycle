@@ -6,6 +6,3 @@ export class SnapshotNotFoundError extends Schema.TaggedErrorClass<SnapshotNotFo
   message: Schema.String,
   snapshot: Schema.String,
 }) {}
-
-export const snapshotNotFound = (snapshot: string): SnapshotNotFoundError =>
-  new SnapshotNotFoundError({ message: `Snapshot not found: ${snapshot}`, snapshot });

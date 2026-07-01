@@ -3,9 +3,15 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { DatabaseService, type DatabaseServiceShape, type RepositoryStatus } from "@cycle/database";
+import {
+  DatabaseService,
+  ValidationError,
+  type DatabaseFailure,
+  type DatabaseServiceShape,
+  type RepositoryStatus,
+} from "@cycle/database";
 import { GitRepository } from "@cycle/git";
-import { Effect, Layer } from "effect";
+import { Data, Effect, Layer } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { DesktopRuntimeLive } from "../src/platform/DesktopRuntimeLive.ts";
 import { defaultAppConfig, type RepositoryRecord } from "../src/shared/AppConfig.ts";
@@ -163,8 +169,15 @@ type LogEvent = {
 type MakeLayerOptions = {
   readonly defaultRemote?: string | ((repository: RepositoryRecord) => string | undefined);
   readonly logs?: Array<LogEvent>;
-  readonly syncRepository?: (repositoryId: string) => Effect.Effect<RepositoryStatus, unknown>;
+  readonly syncRepository?: (
+    repositoryId: string,
+  ) => Effect.Effect<RepositoryStatus, DatabaseFailure>;
 };
+
+class TestFailure extends Data.TaggedError("TestFailure")<{
+  readonly cause?: unknown;
+  readonly message: string;
+}> {}
 
 const waitUntil = (
   predicate: () => boolean,
@@ -173,7 +186,7 @@ const waitUntil = (
     readonly attempts?: number;
     readonly intervalMs?: number;
   } = {},
-): Effect.Effect<void, Error> =>
+): Effect.Effect<void, TestFailure> =>
   Effect.gen(function* () {
     const attempts = options.attempts ?? 100;
     const intervalMs = options.intervalMs ?? 50;
@@ -183,17 +196,17 @@ const waitUntil = (
       yield* Effect.sleep(intervalMs);
     }
 
-    return yield* Effect.fail(new Error(message));
+    return yield* new TestFailure({ message });
   });
 
 const waitUntilEffect = (
-  predicate: () => Effect.Effect<boolean, unknown>,
+  predicate: () => Effect.Effect<boolean, TestFailure>,
   message: string,
   options: {
     readonly attempts?: number;
     readonly intervalMs?: number;
   } = {},
-): Effect.Effect<void, unknown> =>
+): Effect.Effect<void, TestFailure> =>
   Effect.gen(function* () {
     const attempts = options.attempts ?? 100;
     const intervalMs = options.intervalMs ?? 50;
@@ -203,21 +216,21 @@ const waitUntilEffect = (
       yield* Effect.sleep(intervalMs);
     }
 
-    return yield* Effect.fail(new Error(message));
+    return yield* new TestFailure({ message });
   });
 
 const waitUntilYield = (
   predicate: () => boolean,
   message: string,
   attempts = 1_000,
-): Effect.Effect<void, Error> =>
+): Effect.Effect<void, TestFailure> =>
   Effect.gen(function* () {
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       if (predicate()) return;
       yield* Effect.yieldNow;
     }
 
-    return yield* Effect.fail(new Error(message));
+    return yield* new TestFailure({ message });
   });
 
 const makeLayer = (
@@ -470,7 +483,11 @@ describe("DesktopBootstrapLive", () => {
                 try: async () =>
                   remoteSnapshot !== undefined &&
                   (await readCycleRef(repositoryPath)) === remoteSnapshot,
-                catch: (cause) => cause,
+                catch: (cause) =>
+                  new TestFailure({
+                    cause,
+                    message: "failed to read remote snapshot",
+                  }),
               }),
             "background sync did not fetch the remote GitDB snapshot",
           );
@@ -496,7 +513,12 @@ describe("DesktopBootstrapLive", () => {
                     await readCycleRef(repositoryPath),
                   );
                 },
-                catch: (cause) => cause,
+                catch: (cause) =>
+                  new ValidationError({
+                    field: "syncRepository",
+                    message: "sync repository failed",
+                    cause: cause,
+                  }),
               }),
           }),
         ),

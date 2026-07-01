@@ -18,7 +18,7 @@ import {
   CodexAppServerSpawnError,
   normalizeToRequestError,
   type CodexAppServerError,
-} from "./errors.ts";
+} from "./errors/index.ts";
 import {
   makeCodexAppServerProtocol,
   type CodexAppServerIncomingNotification,

@@ -11,12 +11,7 @@ import {
   TxRef,
 } from "effect";
 import { Git, type GitService } from "@cycle/git/object-store/Git";
-import {
-  gitAdapterError,
-  type GitAdapterError,
-  type RemoteFetchError,
-  type RemotePushError,
-} from "@cycle/git/errors";
+import { GitAdapterError, type RemoteFetchError, type RemotePushError } from "@cycle/git/errors";
 import type {
   CommitObject,
   DeleteRefInput,
@@ -32,13 +27,13 @@ import { Document } from "./Document.ts";
 import { encodeValue } from "./Json.ts";
 import * as Tree from "./Tree.ts";
 import {
-  pointerConflict,
-  pointerNotFound,
-  repositoryIdentityConflict,
-  snapshotNotFound,
-  storeNotFound,
-  syncConflict,
-  transactionInactive,
+  PointerConflictError,
+  PointerNotFoundError,
+  RepositoryIdentityConflictError,
+  SnapshotNotFoundError,
+  StoreNotFoundError,
+  SyncConflictError,
+  TransactionInactiveError,
   type GitDbError,
 } from "../errors/index.ts";
 import { Options as OptionsSchema, Store, type Options as StoreOptions } from "../schemas/Store.ts";
@@ -90,7 +85,15 @@ export const make = (
     const defaultPointer = yield* validatePointerName(options.defaultPointer ?? "main");
 
     if (options.verifyGitDir ?? true) {
-      yield* fs.access(gitDir).pipe(Effect.mapError(() => storeNotFound(gitDir)));
+      yield* fs.access(gitDir).pipe(
+        Effect.mapError(
+          () =>
+            new StoreNotFoundError({
+              gitDir: gitDir,
+              message: `Git directory not found: ${gitDir}`,
+            }),
+        ),
+      );
     }
 
     return new Store({ cwd, database, defaultPointer, gitDir, namespace });
@@ -359,9 +362,7 @@ const makeStoreRuntimeCache = (
 const uninitializedStructureCache =
   (name: string) =>
   (key: string): Effect.Effect<ReadonlyArray<Entry>, never> =>
-    Effect.sync(() => {
-      throw new Error(`Store structure cache ${name} was read before initialization: ${key}`);
-    });
+    Effect.die(new Error(`Store structure cache ${name} was read before initialization: ${key}`));
 
 const cacheGitAdapter = (adapter: StoreGit, cache: StoreRuntimeCache): StoreGit => ({
   ...adapter,
@@ -534,7 +535,10 @@ const makeStore = (runtime: StoreRuntime): StoreServiceShape => {
         config,
         Effect.gen(function* () {
           if (!(yield* adapter.isCommit(id))) {
-            return yield* Effect.fail(snapshotNotFound(id));
+            return yield* new SnapshotNotFoundError({
+              snapshot: id,
+              message: `Snapshot not found: ${id}`,
+            });
           }
 
           const commit = yield* adapter.readCommit(id);
@@ -590,22 +594,55 @@ const rootCommitForSnapshot = (
 
     if (roots.length === 1) return roots[0]!;
 
-    return yield* Effect.fail(
-      repositoryIdentityConflict({
-        pointer,
-        reason: roots.length === 0 ? "no-root" : "multiple-roots",
-        roots,
-      }),
-    );
+    const reason = roots.length === 0 ? "no-root" : "multiple-roots";
+
+    return yield* new RepositoryIdentityConflictError({
+      message: repositoryIdentityConflictMessage({ pointer, reason, roots }),
+      pointer,
+      reason,
+      roots,
+    });
   });
+
+const repositoryIdentityConflictMessage = (input: {
+  readonly localRoot?: string;
+  readonly pointer: string;
+  readonly reason: string;
+  readonly remoteRoot?: string;
+  readonly repositoryId?: string;
+  readonly roots?: ReadonlyArray<string>;
+}): string => {
+  if (input.reason === "multiple-roots") {
+    return `Repository identity conflict for ${input.pointer}: multiple roots ${
+      input.roots?.join(", ") ?? "<unknown>"
+    }`;
+  }
+
+  if (input.reason === "root-mismatch") {
+    return `Repository identity conflict for ${input.pointer}: local root ${
+      input.localRoot ?? "<missing>"
+    }, remote root ${input.remoteRoot ?? "<missing>"}`;
+  }
+
+  if (input.reason === "id-collision") {
+    return `Repository identity collision for ${input.repositoryId ?? "<unknown>"}`;
+  }
+
+  return `Repository identity conflict for ${input.pointer}: ${input.reason}`;
+};
 
 const randomSeedHex = (runtime: StoreRuntime): Effect.Effect<string, GitDbError> =>
   runtime.randomBytes(16).pipe(
     Effect.map(bytesToHex),
-    Effect.mapError((cause) =>
-      gitAdapterError("gitdb identity seed", "Unable to generate repository identity seed.", {
-        cause,
-      }),
+    Effect.mapError(
+      (cause) =>
+        new GitAdapterError({
+          operation: "gitdb identity seed",
+          message: "Unable to generate repository identity seed.",
+          ...{
+            cause,
+          },
+        }),
     ),
   );
 
@@ -669,14 +706,18 @@ const ensureRepositoryIdentity = (
         const localRoot = yield* rootCommitForSnapshot(runtime, pointer, localBefore);
 
         if (localRoot !== remoteRoot) {
-          return yield* Effect.fail(
-            repositoryIdentityConflict({
+          return yield* new RepositoryIdentityConflictError({
+            localRoot,
+            message: repositoryIdentityConflictMessage({
               localRoot,
               pointer,
               reason: "root-mismatch",
               remoteRoot,
             }),
-          );
+            pointer,
+            reason: "root-mismatch",
+            remoteRoot,
+          });
         }
 
         return repositoryIdentity(localRef, localRoot, "local");
@@ -726,7 +767,7 @@ const ensureRepositoryIdentity = (
       .pipe(Effect.andThen(runtime.adapter.readRef(remoteRef)));
 
     if (remoteAfter === null) {
-      return yield* Effect.fail(pushed.error);
+      return yield* pushed.error;
     }
 
     yield* movePointerRef(runtime, localRef, remoteAfter, created.id, pointer);
@@ -758,23 +799,27 @@ const makeStorePointer = (
           const hasExpected = Object.hasOwn(options, "expectedSnapshot");
           const input = hasExpected ? { expected: options.expectedSnapshot ?? null, ref } : { ref };
 
-          yield* adapter
-            .deleteRef(input)
-            .pipe(
-              Effect.catch((error) =>
-                hasExpected
-                  ? adapter
-                      .readRef(ref)
-                      .pipe(
-                        Effect.flatMap((actual) =>
-                          Effect.fail(
-                            pointerConflict(name, options.expectedSnapshot ?? null, actual, error),
-                          ),
-                        ),
-                      )
-                  : Effect.fail(error),
-              ),
-            );
+          yield* adapter.deleteRef(input).pipe(
+            Effect.catch((error) =>
+              hasExpected
+                ? adapter.readRef(ref).pipe(
+                    Effect.flatMap((actual) =>
+                      Effect.fail(
+                        new PointerConflictError({
+                          actual,
+                          cause: error,
+                          expected: options.expectedSnapshot ?? null,
+                          message: `Pointer conflict for ${name}: expected ${
+                            options.expectedSnapshot ?? "<missing>"
+                          }, actual ${actual ?? "<missing>"}`,
+                          pointer: name,
+                        }),
+                      ),
+                    ),
+                  )
+                : Effect.fail(error),
+            ),
+          );
         }),
         {
           expectedSnapshot: Object.hasOwn(options, "expectedSnapshot")
@@ -788,7 +833,10 @@ const makeStorePointer = (
         const current = yield* pointer.current();
 
         if (current === null) {
-          return yield* Effect.fail(pointerNotFound(name));
+          return yield* new PointerNotFoundError({
+            pointer: name,
+            message: `Pointer not found: ${name}`,
+          });
         }
 
         const target = yield* store.pointer(targetName);
@@ -803,7 +851,10 @@ const makeStorePointer = (
         const snapshotId = yield* store.resolveSnapshotId(source);
 
         if (snapshotId === null) {
-          return yield* Effect.fail(pointerNotFound(source));
+          return yield* new PointerNotFoundError({
+            pointer: source,
+            message: `Pointer not found: ${source}`,
+          });
         }
 
         const ref = yield* store.pointerRef(name);
@@ -818,7 +869,10 @@ const makeStorePointer = (
         runtime.config,
         Effect.gen(function* () {
           if (!(yield* adapter.isCommit(target))) {
-            return yield* Effect.fail(snapshotNotFound(target));
+            return yield* new SnapshotNotFoundError({
+              snapshot: target,
+              message: `Snapshot not found: ${target}`,
+            });
           }
 
           const current = yield* pointer.current();
@@ -1059,9 +1113,13 @@ const mergeDivergedPointer = (
     const remoteChanges = yield* store.diff(options.mergeBase, options.remoteBefore);
 
     if (hasMergeConflict(localChanges, remoteChanges)) {
-      return yield* Effect.fail(
-        syncConflict(options.pointer, options.localBefore, options.remoteBefore, options.mergeBase),
-      );
+      return yield* new SyncConflictError({
+        pointer: options.pointer,
+        localSnapshot: options.localBefore,
+        remoteSnapshot: options.remoteBefore,
+        mergeBase: options.mergeBase,
+        message: `Sync conflict for ${options.pointer}: local ${options.localBefore}, remote ${options.remoteBefore}`,
+      });
     }
 
     const remoteSnapshot = yield* store.snapshot(options.remoteBefore);
@@ -1109,9 +1167,12 @@ const localSnapshotsSince = (
 
       const parent = snapshot.parents[0];
       if (parent === undefined) {
-        return yield* Effect.fail(
-          syncConflict(options.pointer, options.toInclusive, options.fromExclusive),
-        );
+        return yield* new SyncConflictError({
+          pointer: options.pointer,
+          localSnapshot: options.toInclusive,
+          remoteSnapshot: options.fromExclusive,
+          message: `Sync conflict for ${options.pointer}: local ${options.toInclusive}, remote ${options.fromExclusive}`,
+        });
       }
 
       current = parent;
@@ -1137,9 +1198,13 @@ const rebaseDivergedPointer = (
     const remoteChanges = yield* store.diff(options.mergeBase, options.remoteBefore);
 
     if (hasMergeConflict(localChanges, remoteChanges)) {
-      return yield* Effect.fail(
-        syncConflict(options.pointer, options.localBefore, options.remoteBefore, options.mergeBase),
-      );
+      return yield* new SyncConflictError({
+        pointer: options.pointer,
+        localSnapshot: options.localBefore,
+        remoteSnapshot: options.remoteBefore,
+        mergeBase: options.mergeBase,
+        message: `Sync conflict for ${options.pointer}: local ${options.localBefore}, remote ${options.remoteBefore}`,
+      });
     }
 
     const localSnapshots = yield* localSnapshotsSince(store, {
@@ -1419,9 +1484,13 @@ const sync = (
         continue;
       }
 
-      return yield* Effect.fail(
-        syncConflict(pointer, localBefore, remoteBefore, mergeBase ?? undefined),
-      );
+      return yield* new SyncConflictError({
+        pointer: pointer,
+        localSnapshot: localBefore,
+        remoteSnapshot: remoteBefore,
+        mergeBase: mergeBase ?? undefined,
+        message: `Sync conflict for ${pointer}: local ${localBefore}, remote ${remoteBefore}`,
+      });
     }
 
     return {
@@ -1446,16 +1515,22 @@ const movePointerRef = (
     .pipe(
       Effect.catch(
         (error): Effect.Effect<void, GitDbError> =>
-          runtime.adapter
-            .readRef(ref)
-            .pipe(
-              Effect.flatMap(
-                (actual): Effect.Effect<void, GitDbError> =>
-                  actual !== expected
-                    ? Effect.fail(pointerConflict(pointerName, expected, actual, error))
-                    : Effect.fail(error),
-              ),
+          runtime.adapter.readRef(ref).pipe(
+            Effect.flatMap(
+              (actual): Effect.Effect<void, GitDbError> =>
+                actual !== expected
+                  ? Effect.fail(
+                      new PointerConflictError({
+                        pointer: pointerName,
+                        expected: expected,
+                        actual: actual,
+                        cause: error,
+                        message: `Pointer conflict for ${pointerName}: expected ${expected ?? "<missing>"}, actual ${actual ?? "<missing>"}`,
+                      }),
+                    )
+                  : Effect.fail(error),
             ),
+          ),
       ),
     );
 
@@ -1470,7 +1545,12 @@ const assertPointerCurrent = (
     const actual = yield* runtime.adapter.readRef(ref);
 
     if (actual !== expected) {
-      return yield* Effect.fail(pointerConflict(pointer, expected, actual));
+      return yield* new PointerConflictError({
+        pointer: pointer,
+        expected: expected,
+        actual: actual,
+        message: `Pointer conflict for ${pointer}: expected ${expected ?? "<missing>"}, actual ${actual ?? "<missing>"}`,
+      });
     }
   });
 
@@ -1479,7 +1559,9 @@ const getActiveState = (
 ): Effect.Effect<TransactionState, GitDbError> =>
   TxRef.get(state).pipe(
     Effect.flatMap((current) =>
-      current.active ? Effect.succeed(current) : Effect.fail(transactionInactive()),
+      current.active
+        ? Effect.succeed(current)
+        : Effect.fail(new TransactionInactiveError({ message: "Transaction is no longer active" })),
     ),
   );
 
@@ -1490,7 +1572,13 @@ const recordMutation = (
 ): Effect.Effect<void, GitDbError> =>
   TxRef.modify(state, (current): [StateUpdateResult, TransactionState] => {
     if (!current.active) {
-      return [{ _tag: "error", error: transactionInactive() } satisfies StateUpdateResult, current];
+      return [
+        {
+          _tag: "error",
+          error: new TransactionInactiveError({ message: "Transaction is no longer active" }),
+        } satisfies StateUpdateResult,
+        current,
+      ];
     }
 
     return [
@@ -1501,9 +1589,7 @@ const recordMutation = (
       },
     ];
   }).pipe(
-    Effect.flatMap((result) =>
-      result._tag === "ok" ? Effect.succeed(undefined) : Effect.fail(result.error),
-    ),
+    Effect.flatMap((result) => (result._tag === "ok" ? Effect.void : Effect.fail(result.error))),
   );
 
 const hasOverlappingMutation = (
@@ -1569,7 +1655,11 @@ const snapshotOrResolve = (
   Effect.gen(function* () {
     const id = yield* store.resolveSnapshotId(value);
 
-    if (id === null) return yield* Effect.fail(snapshotNotFound(value));
+    if (id === null)
+      return yield* new SnapshotNotFoundError({
+        snapshot: value,
+        message: `Snapshot not found: ${value}`,
+      });
 
     return yield* store.snapshot(id);
   });

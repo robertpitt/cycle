@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@effect/language-service':
+        specifier: 0.86.2
+        version: 0.86.2
       '@types/node':
         specifier: ^25.9.2
         version: 25.9.2
@@ -523,6 +526,10 @@ packages:
     resolution: {integrity: sha512-+MKAJEOfaBe5SmV6t34p80MMKhjvUz0vRrvVJbPT0WElzaOJ/1xs+D+KDv+tD/NE5ujfrChEcshd4fLn0wpiqg==}
     peerDependencies:
       react: '>=16.8.0'
+
+  '@effect/language-service@0.86.2':
+    resolution: {integrity: sha512-SaPln+8srOqDJDUwNTDmP5e+IYpEDr9+1epGznnsLqu8xvo6VnxyWARdeLpqvZJlb0Pgy9ca7ppqvvdWbHPXAg==}
+    hasBin: true
 
   '@effect/platform-node-shared@4.0.0-beta.84':
     resolution: {integrity: sha512-WQ6+gGMYgnuwL+rUHKlxFon1T/CfK1ezxRYSjbylqovWeA2lrO7OHDSBqdwPyXJFDt2KqkZEEtbl9HarlTF/eg==}
@@ -3786,6 +3793,8 @@ snapshots:
     dependencies:
       react: 19.2.7
       tslib: 2.8.1
+
+  '@effect/language-service@0.86.2': {}
 
   '@effect/platform-node-shared@4.0.0-beta.84(effect@4.0.0-beta.78)':
     dependencies:

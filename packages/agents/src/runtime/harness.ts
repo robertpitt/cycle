@@ -13,7 +13,7 @@ import type {
   AgentRuntimeError,
   AgentSessionRecord,
 } from "./contracts.ts";
-import { agentRuntimeFailure } from "./contracts.ts";
+import { AgentRuntimeFailure } from "./contracts.ts";
 import type { AgentAuthorityProfile, AgentMcpConnection } from "./policy.ts";
 
 export type AgentHarnessCapabilities = {
@@ -132,7 +132,7 @@ export const makeAgentHarnessRegistry = (
       const harness = byId.get(harnessId);
       return harness === undefined
         ? Effect.fail(
-            agentRuntimeFailure({
+            new AgentRuntimeFailure({
               code: "harness_unavailable",
               message: `Agent harness '${harnessId}' is not registered.`,
               retryable: false,
@@ -149,7 +149,7 @@ export const AgentHarnessRegistryLive = (harnesses: readonly AgentHarnessAdapter
 
 export const harnessError = (cause: unknown): AgentRuntimeError => {
   if (cause instanceof Error && /auth|login|credential/iu.test(cause.message)) {
-    return agentRuntimeFailure({
+    return new AgentRuntimeFailure({
       cause,
       code: "authentication_error",
       message: cause.message,
@@ -157,7 +157,7 @@ export const harnessError = (cause: unknown): AgentRuntimeError => {
     });
   }
   if (cause instanceof Error && /timeout/iu.test(cause.message)) {
-    return agentRuntimeFailure({
+    return new AgentRuntimeFailure({
       cause,
       code: "timeout",
       message: cause.message,
@@ -165,18 +165,17 @@ export const harnessError = (cause: unknown): AgentRuntimeError => {
     });
   }
   if (cause instanceof Error && /cancel|abort|interrupt/iu.test(cause.message)) {
-    return agentRuntimeFailure({
+    return new AgentRuntimeFailure({
       cause,
       code: "cancelled",
       message: cause.message,
       retryable: false,
     });
   }
-  return agentRuntimeFailure({
+  return new AgentRuntimeFailure({
     cause,
     code: "provider_error",
     message: cause instanceof Error ? cause.message : "Agent harness failed.",
     retryable: false,
   });
 };
-

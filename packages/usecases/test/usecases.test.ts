@@ -52,9 +52,7 @@ const withOpenRepository = <A>(
 ) =>
   Effect.gen(function* () {
     const database = yield* DatabaseService;
-    const store = yield* Effect.gen(function* () {
-      return yield* GitDbStore.StoreService;
-    }).pipe(
+    const store = yield* GitDbStore.StoreService.pipe(
       Effect.provide(
         GitDbInMemory({
           database: "cycle-usecases",

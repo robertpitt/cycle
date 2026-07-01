@@ -7,7 +7,7 @@ import type {
   TreeEntry,
   UpdateRefInput,
 } from "../schemas/index.ts";
-import { gitAdapterError, type GitAdapterError } from "../errors/index.ts";
+import { GitAdapterError } from "../errors/index.ts";
 import { bytesFromString } from "../internals/bytes.ts";
 import { gitObjectId } from "../internals/hash.ts";
 import { normalizeIdentity } from "../internals/identity.ts";
@@ -44,7 +44,7 @@ export const layer = Layer.effect(
         modifyRef(state, input, "in-memory deleteRef", (next) => {
           next.refs.delete(input.ref);
         }),
-      fetch: () => Effect.succeed(undefined),
+      fetch: () => Effect.void,
       isAncestor: (_store, ancestor, descendant) =>
         TxRef.get(state).pipe(Effect.map((current) => isAncestor(current, ancestor, descendant))),
       isCommit: (_store, id) =>
@@ -61,7 +61,7 @@ export const layer = Layer.effect(
         ),
       mergeBase: (_store, a, b) =>
         TxRef.get(state).pipe(Effect.map((current) => mergeBase(current, a, b))),
-      push: () => Effect.succeed(undefined),
+      push: () => Effect.void,
       readBlob: (_store, id) =>
         TxRef.get(state).pipe(
           Effect.flatMap((current) => {
@@ -69,7 +69,12 @@ export const layer = Layer.effect(
 
             return object?.kind === "blob"
               ? Effect.succeed(new Uint8Array(object.bytes))
-              : Effect.fail(gitAdapterError("in-memory readBlob", `Blob not found: ${id}`));
+              : Effect.fail(
+                  new GitAdapterError({
+                    operation: "in-memory readBlob",
+                    message: `Blob not found: ${id}`,
+                  }),
+                );
           }),
         ),
       readCommit: (_store, id) =>
@@ -79,7 +84,12 @@ export const layer = Layer.effect(
 
             return object?.kind === "commit"
               ? Effect.succeed(object.commit)
-              : Effect.fail(gitAdapterError("in-memory readCommit", `Commit not found: ${id}`));
+              : Effect.fail(
+                  new GitAdapterError({
+                    operation: "in-memory readCommit",
+                    message: `Commit not found: ${id}`,
+                  }),
+                );
           }),
         ),
       readRef: (_store, name) =>
@@ -90,7 +100,12 @@ export const layer = Layer.effect(
             const roots = rootCommitIds(current, start);
 
             return roots === null
-              ? Effect.fail(gitAdapterError("in-memory rootCommits", `Commit not found: ${start}`))
+              ? Effect.fail(
+                  new GitAdapterError({
+                    operation: "in-memory rootCommits",
+                    message: `Commit not found: ${start}`,
+                  }),
+                )
               : Effect.succeed(roots);
           }),
         ),
@@ -101,7 +116,12 @@ export const layer = Layer.effect(
 
             return object?.kind === "tree"
               ? Effect.succeed(object.entries)
-              : Effect.fail(gitAdapterError("in-memory readTree", `Tree not found: ${id}`));
+              : Effect.fail(
+                  new GitAdapterError({
+                    operation: "in-memory readTree",
+                    message: `Tree not found: ${id}`,
+                  }),
+                );
           }),
         ),
       updateRef: (_store, input) =>
@@ -199,12 +219,12 @@ const modifyRef = (
       return [
         {
           _tag: "error",
-          error: gitAdapterError(
-            operation,
-            `ref ${input.ref} expected ${input.expected ?? "<missing>"} but was ${
+          error: new GitAdapterError({
+            operation: operation,
+            message: `ref ${input.ref} expected ${input.expected ?? "<missing>"} but was ${
               actual ?? "<missing>"
             }`,
-          ),
+          }),
         },
         current,
       ];
@@ -215,9 +235,7 @@ const modifyRef = (
 
     return [{ _tag: "ok" }, next];
   }).pipe(
-    Effect.flatMap((result) =>
-      result._tag === "ok" ? Effect.succeed(undefined) : Effect.fail(result.error),
-    ),
+    Effect.flatMap((result) => (result._tag === "ok" ? Effect.void : Effect.fail(result.error))),
   );
 
 const cloneState = (state: InMemoryState): InMemoryState => ({

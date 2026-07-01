@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./errors": "./src/errors/index.ts"
   },
   "scripts": {
     "bench:local": "node scripts/benchmark-local.ts",

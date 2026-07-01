@@ -1,19 +1,16 @@
-export { DocumentNotFoundError, documentNotFound } from "./DocumentNotFoundError.ts";
-export { InvalidIdentifierError, invalidIdentifier } from "./InvalidIdentifierError.ts";
-export { InvalidJsonDocumentError, invalidJsonDocument } from "./InvalidJsonDocumentError.ts";
-export { InvalidNamespaceError, invalidNamespace } from "./InvalidNamespaceError.ts";
-export { InvalidPathError, invalidPath } from "./InvalidPathError.ts";
-export { InvalidPointerNameError, invalidPointerName } from "./InvalidPointerNameError.ts";
-export { PointerConflictError, pointerConflict } from "./PointerConflictError.ts";
-export { PointerNotFoundError, pointerNotFound } from "./PointerNotFoundError.ts";
-export {
-  RepositoryIdentityConflictError,
-  repositoryIdentityConflict,
-} from "./RepositoryIdentityConflictError.ts";
-export { SnapshotNotFoundError, snapshotNotFound } from "./SnapshotNotFoundError.ts";
-export { StoreNotFoundError, storeNotFound } from "./StoreNotFoundError.ts";
-export { SyncConflictError, syncConflict } from "./SyncConflictError.ts";
-export { TransactionInactiveError, transactionInactive } from "./TransactionInactiveError.ts";
+export { DocumentNotFoundError } from "./DocumentNotFoundError.ts";
+export { InvalidIdentifierError } from "./InvalidIdentifierError.ts";
+export { InvalidJsonDocumentError } from "./InvalidJsonDocumentError.ts";
+export { InvalidNamespaceError } from "./InvalidNamespaceError.ts";
+export { InvalidPathError } from "./InvalidPathError.ts";
+export { InvalidPointerNameError } from "./InvalidPointerNameError.ts";
+export { PointerConflictError } from "./PointerConflictError.ts";
+export { PointerNotFoundError } from "./PointerNotFoundError.ts";
+export { RepositoryIdentityConflictError } from "./RepositoryIdentityConflictError.ts";
+export { SnapshotNotFoundError } from "./SnapshotNotFoundError.ts";
+export { StoreNotFoundError } from "./StoreNotFoundError.ts";
+export { SyncConflictError } from "./SyncConflictError.ts";
+export { TransactionInactiveError } from "./TransactionInactiveError.ts";
 import type { DocumentNotFoundError } from "./DocumentNotFoundError.ts";
 import type { GitAdapterError, RemoteFetchError, RemotePushError } from "@cycle/git/errors";
 import type { InvalidIdentifierError } from "./InvalidIdentifierError.ts";

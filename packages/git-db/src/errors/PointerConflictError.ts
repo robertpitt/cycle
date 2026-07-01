@@ -9,19 +9,3 @@ export class PointerConflictError extends Schema.TaggedErrorClass<PointerConflic
   message: Schema.String,
   pointer: Schema.String,
 }) {}
-
-export const pointerConflict = (
-  pointer: string,
-  expected: string | null,
-  actual: string | null,
-  cause?: unknown,
-): PointerConflictError =>
-  new PointerConflictError({
-    actual,
-    cause,
-    expected,
-    message: `Pointer conflict for ${pointer}: expected ${expected ?? "<missing>"}, actual ${
-      actual ?? "<missing>"
-    }`,
-    pointer,
-  });

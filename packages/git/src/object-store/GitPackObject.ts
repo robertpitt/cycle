@@ -1,6 +1,6 @@
 import { inflateSync } from "node:zlib";
 import { Cache, Effect } from "effect";
-import { gitAdapterError, type GitAdapterError } from "../errors/index.ts";
+import { GitAdapterError } from "../errors/index.ts";
 import type { FilesystemRuntimeBase, GitObject } from "./GitFilesystemTypes.ts";
 import { bytesToHex, mapPackFsError } from "./GitPackBytes.ts";
 import { applyDelta } from "./GitPackDelta.ts";
@@ -63,9 +63,10 @@ const readPackObjectAt = (
 ): Effect.Effect<GitObject, GitAdapterError> =>
   Effect.gen(function* () {
     if (seenOffsets.has(offset)) {
-      return yield* Effect.fail(
-        gitAdapterError("filesystem pack read", `Pack delta cycle detected at offset ${offset}`),
-      );
+      return yield* new GitAdapterError({
+        operation: "filesystem pack read",
+        message: `Pack delta cycle detected at offset ${offset}`,
+      });
     }
 
     const parsed = yield* parsePackedObjectHeader(pack, offset, packPath);
@@ -91,12 +92,10 @@ const readPackObjectAt = (
           : null;
 
     if (base === null) {
-      return yield* Effect.fail(
-        gitAdapterError(
-          "filesystem pack read",
-          `Delta base object not found for object at offset ${offset}`,
-        ),
-      );
+      return yield* new GitAdapterError({
+        operation: "filesystem pack read",
+        message: `Delta base object not found for object at offset ${offset}`,
+      });
     }
 
     return {
@@ -115,9 +114,10 @@ const parsePackedObjectHeader = (
     let byte = pack[offset++];
 
     if (byte === undefined) {
-      return yield* Effect.fail(
-        gitAdapterError("filesystem pack read", `Object offset is outside pack: ${packPath}`),
-      );
+      return yield* new GitAdapterError({
+        operation: "filesystem pack read",
+        message: `Object offset is outside pack: ${packPath}`,
+      });
     }
 
     const typeCode = (byte >> 4) & 0x07;
@@ -128,9 +128,10 @@ const parsePackedObjectHeader = (
       byte = pack[offset++];
 
       if (byte === undefined) {
-        return yield* Effect.fail(
-          gitAdapterError("filesystem pack read", `Object header is truncated: ${packPath}`),
-        );
+        return yield* new GitAdapterError({
+          operation: "filesystem pack read",
+          message: `Object header is truncated: ${packPath}`,
+        });
       }
 
       size += (byte & 0x7f) * 2 ** shift;
@@ -140,9 +141,10 @@ const parsePackedObjectHeader = (
     const type = packObjectType(typeCode);
 
     if (type === null) {
-      return yield* Effect.fail(
-        gitAdapterError("filesystem pack read", `Unsupported packed object type ${typeCode}`),
-      );
+      return yield* new GitAdapterError({
+        operation: "filesystem pack read",
+        message: `Unsupported packed object type ${typeCode}`,
+      });
     }
 
     if (type === "ofs-delta") {
@@ -161,9 +163,10 @@ const parsePackedObjectHeader = (
       const baseEnd = offset + 20;
 
       if (baseEnd > pack.byteLength) {
-        return yield* Effect.fail(
-          gitAdapterError("filesystem pack read", `Ref-delta header is truncated: ${packPath}`),
-        );
+        return yield* new GitAdapterError({
+          operation: "filesystem pack read",
+          message: `Ref-delta header is truncated: ${packPath}`,
+        });
       }
 
       return {
@@ -193,9 +196,10 @@ const readOffsetDeltaBase = (
     let byte = pack[offset++];
 
     if (byte === undefined) {
-      return yield* Effect.fail(
-        gitAdapterError("filesystem pack read", `Ofs-delta header is truncated: ${packPath}`),
-      );
+      return yield* new GitAdapterError({
+        operation: "filesystem pack read",
+        message: `Ofs-delta header is truncated: ${packPath}`,
+      });
     }
 
     let distance = byte & 0x7f;
@@ -204,9 +208,10 @@ const readOffsetDeltaBase = (
       byte = pack[offset++];
 
       if (byte === undefined) {
-        return yield* Effect.fail(
-          gitAdapterError("filesystem pack read", `Ofs-delta header is truncated: ${packPath}`),
-        );
+        return yield* new GitAdapterError({
+          operation: "filesystem pack read",
+          message: `Ofs-delta header is truncated: ${packPath}`,
+        });
       }
 
       distance = (distance + 1) * 128 + (byte & 0x7f);
@@ -227,8 +232,12 @@ const inflatePackData = (
     Effect.try({
       try: () => new Uint8Array(inflateSync(compressed)),
       catch: (cause) =>
-        gitAdapterError("filesystem pack read", `Could not inflate packed object: ${packPath}`, {
-          cause,
+        new GitAdapterError({
+          operation: "filesystem pack read",
+          message: `Could not inflate packed object: ${packPath}`,
+          ...{
+            cause,
+          },
         }),
     }),
     (inflated) => {
@@ -237,10 +246,10 @@ const inflatePackData = (
       }
 
       return Effect.fail(
-        gitAdapterError(
-          "filesystem pack read",
-          `Expected ${expectedSize} bytes but inflated ${inflated.byteLength}: ${packPath}`,
-        ),
+        new GitAdapterError({
+          operation: "filesystem pack read",
+          message: `Expected ${expectedSize} bytes but inflated ${inflated.byteLength}: ${packPath}`,
+        }),
       );
     },
   );

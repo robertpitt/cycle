@@ -1,4 +1,7 @@
-import { CodexAppServerSchemaDecodeError, CodexAppServerSchemaEncodeError } from "./errors.ts";
+import {
+  CodexAppServerSchemaDecodeError,
+  CodexAppServerSchemaEncodeError,
+} from "./errors/index.ts";
 import type {
   InitializeParams as GeneratedInitializeParams,
   InitializeResponse as GeneratedInitializeResponse,

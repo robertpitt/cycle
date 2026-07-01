@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { invalidJsonDocument, type InvalidJsonDocumentError } from "../errors/index.ts";
+import { InvalidJsonDocumentError } from "../errors/index.ts";
 import { bytesToString } from "../internals/bytes.ts";
 
 export class Document extends Schema.Class<Document>("@cycle/git-db/Document")({
@@ -25,9 +25,12 @@ export const parseDocumentJson = <T = unknown>(
 ): Effect.Effect<T, InvalidJsonDocumentError> =>
   Effect.try({
     catch: (cause) =>
-      invalidJsonDocument(`Invalid JSON document at ${document.path}`, {
-        cause,
-        path: document.path,
+      new InvalidJsonDocumentError({
+        message: `Invalid JSON document at ${document.path}`,
+        ...{
+          cause,
+          path: document.path,
+        },
       }),
     try: () => document.json<T>(),
   });

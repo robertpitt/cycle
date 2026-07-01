@@ -6,7 +6,7 @@ import {
   type ElectronBrowserWindow,
 } from "../platform/BrowserWindows.ts";
 import { DesktopRuntime } from "../platform/DesktopRuntime.ts";
-import { electronError, type ElectronError } from "../platform/ElectronError.ts";
+import { ElectronError } from "../platform/ElectronError.ts";
 import { DesktopWindow } from "./DesktopWindow.ts";
 
 let mainWindow: ElectronBrowserWindow | null = null;
@@ -89,7 +89,13 @@ export const DesktopWindowLive = Layer.effect(
             desktopConfig.rendererUrl === undefined
               ? window.loadFile(desktopConfig.rendererIndexHtml)
               : window.loadURL(desktopConfig.rendererUrl),
-          catch: (cause) => electronError("BrowserWindow.load", cause),
+          catch: (cause) =>
+            new ElectronError({
+              category: "electron",
+              cause,
+              message: cause instanceof Error ? cause.message : "BrowserWindow.load failed.",
+              operation: "BrowserWindow.load",
+            }),
         }).pipe(
           Effect.catch((error: ElectronError) =>
             releaseWindow(window).pipe(Effect.andThen(Effect.fail(error))),

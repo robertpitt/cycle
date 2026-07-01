@@ -73,14 +73,15 @@ import {
   type UserProfileQuery,
 } from "../domain/index.ts";
 import {
-  consistencyError,
+  ConsistencyError,
   type DatabaseFailure,
-  materializationError,
-  repositoryNotFound,
-  sqliteError,
-  storageError,
-  validationError,
-} from "../errors.ts";
+  EventFoldError,
+  MaterializationError,
+  RepositoryNotFoundError,
+  SqliteError,
+  StorageError,
+  ValidationError,
+} from "../errors/index.ts";
 import { Projection } from "../store/Projection.ts";
 import { DatabaseIdGenerator, type DatabaseIdGeneratorShape } from "./DatabaseIdGenerator.ts";
 import {
@@ -540,7 +541,12 @@ export const makeDatabaseService = (
     Effect.sync(() => repositories.get(repositoryId)).pipe(
       Effect.flatMap((repository) =>
         repository === undefined
-          ? Effect.fail(repositoryNotFound(repositoryId))
+          ? Effect.fail(
+              new RepositoryNotFoundError({
+                repositoryId: repositoryId,
+                message: `Repository is not open: ${repositoryId}`,
+              }),
+            )
           : Effect.succeed(repository),
       ),
     );
@@ -595,8 +601,13 @@ export const makeDatabaseService = (
         currentSnapshotId,
         (message, data) => log(repositoryId, message, data),
       ).pipe(
-        Effect.mapError((error) =>
-          materializationError(repositoryId, "failed to build materialization plan", error),
+        Effect.mapError(
+          (error) =>
+            new MaterializationError({
+              repositoryId: repositoryId,
+              message: "failed to build materialization plan",
+              cause: error,
+            }),
         ),
       );
 
@@ -828,30 +839,29 @@ export const makeDatabaseService = (
             projection.markSyncFailed(repositoryId, error.message),
           ).pipe(Effect.andThen(Effect.fail(error))),
         ),
-        Effect.mapError((error) =>
-          consistencyError({
-            cause: error,
-            command,
-            committedSnapshotId: written.snapshotId,
-            message: `write committed but SQLite delta materialization failed for ${command}`,
-            objectId,
-            previousSnapshotId: previous,
-            repositoryId,
-          }),
+        Effect.mapError(
+          (error) =>
+            new ConsistencyError({
+              cause: error,
+              command,
+              committedSnapshotId: written.snapshotId,
+              message: `write committed but SQLite delta materialization failed for ${command}`,
+              objectId,
+              previousSnapshotId: previous,
+              repositoryId,
+            }),
         ),
       );
 
       if (!visible()) {
-        return yield* Effect.fail(
-          consistencyError({
-            command,
-            committedSnapshotId: written.snapshotId,
-            message: `write committed but ${objectId ?? "object"} is not visible in SQLite`,
-            objectId,
-            previousSnapshotId: previous,
-            repositoryId,
-          }),
-        );
+        return yield* new ConsistencyError({
+          command,
+          committedSnapshotId: written.snapshotId,
+          message: `write committed but ${objectId ?? "object"} is not visible in SQLite`,
+          objectId,
+          previousSnapshotId: previous,
+          repositoryId,
+        });
       }
 
       return written.result;
@@ -919,9 +929,10 @@ export const makeDatabaseService = (
     Effect.gen(function* () {
       if (actor.type !== "human") return;
       if (actor.email === undefined || actor.email.trim().length === 0) {
-        return yield* Effect.fail(
-          validationError("user.email", "human repository writes require an email address"),
-        );
+        return yield* new ValidationError({
+          field: "user.email",
+          message: "human repository writes require an email address",
+        });
       }
 
       const userId = yield* normalizeUserIdEffect(actor.email);
@@ -1047,9 +1058,10 @@ export const makeDatabaseService = (
         }
       }
 
-      return yield* Effect.fail(
-        validationError("ticket.id", "unable to generate a unique ticket id"),
-      );
+      return yield* new ValidationError({
+        field: "ticket.id",
+        message: "unable to generate a unique ticket id",
+      });
     });
 
   const ensureDefaultMetadata = (repositoryId: string): Effect.Effect<void, DatabaseFailure> =>
@@ -1104,7 +1116,7 @@ export const makeDatabaseService = (
       const type = validateNewTicketType(input.type);
 
       if (!type.ok) {
-        return yield* Effect.fail(validationError("type", type.reason));
+        return yield* new ValidationError({ field: "type", message: type.reason });
       }
 
       const id = yield* generateTicketId(repository);
@@ -1179,7 +1191,7 @@ export const makeDatabaseService = (
       const current = projection.getTicket(repositoryId, ticketId);
 
       if (current === null)
-        return yield* Effect.fail(validationError("ticketId", "ticket not found"));
+        return yield* new ValidationError({ field: "ticketId", message: "ticket not found" });
 
       yield* assertNoUnsafeContent("update ticket patch", patch);
 
@@ -1305,7 +1317,7 @@ export const makeDatabaseService = (
       const current = projection.getTicket(repositoryId, ticketId);
 
       if (current === null)
-        return yield* Effect.fail(validationError("ticketId", "ticket not found"));
+        return yield* new ValidationError({ field: "ticketId", message: "ticket not found" });
 
       const actor = yield* identity.currentActor;
       const now = nowIso();
@@ -1356,7 +1368,7 @@ export const makeDatabaseService = (
       const current = projection.getTicket(repositoryId, ticketId);
 
       if (current === null)
-        return yield* Effect.fail(validationError("ticketId", "ticket not found"));
+        return yield* new ValidationError({ field: "ticketId", message: "ticket not found" });
 
       const actor = yield* identity.currentActor;
       const now = nowIso();
@@ -1407,7 +1419,7 @@ export const makeDatabaseService = (
       const current = projection.getTicket(repositoryId, ticketId);
 
       if (current === null)
-        return yield* Effect.fail(validationError("ticketId", "ticket not found"));
+        return yield* new ValidationError({ field: "ticketId", message: "ticket not found" });
 
       const actor = yield* identity.currentActor;
       const now = nowIso();
@@ -1462,21 +1474,28 @@ export const makeDatabaseService = (
       validateTicketId("relation issue id", relation.issueId);
 
       if (!isIssueRelationType(relation.type)) {
-        return yield* Effect.fail(validationError("relation.type", "invalid issue relation type"));
+        return yield* new ValidationError({
+          field: "relation.type",
+          message: "invalid issue relation type",
+        });
       }
       if (relation.issueId === ticketId) {
-        return yield* Effect.fail(
-          validationError("relation.issueId", "ticket cannot relate to itself"),
-        );
+        return yield* new ValidationError({
+          field: "relation.issueId",
+          message: "ticket cannot relate to itself",
+        });
       }
 
       const current = projection.getTicket(repositoryId, ticketId);
       const related = projection.getTicket(repositoryId, relation.issueId);
 
       if (current === null)
-        return yield* Effect.fail(validationError("ticketId", "ticket not found"));
+        return yield* new ValidationError({ field: "ticketId", message: "ticket not found" });
       if (related === null)
-        return yield* Effect.fail(validationError("relation.issueId", "related ticket not found"));
+        return yield* new ValidationError({
+          field: "relation.issueId",
+          message: "related ticket not found",
+        });
 
       const actor = yield* identity.currentActor;
       const now = nowIso();
@@ -1569,7 +1588,7 @@ export const makeDatabaseService = (
       const ticket = projection.getTicket(repositoryId, ticketId);
 
       if (ticket === null)
-        return yield* Effect.fail(validationError("ticketId", "ticket not found"));
+        return yield* new ValidationError({ field: "ticketId", message: "ticket not found" });
 
       yield* assertNoUnsafeContent("record payload", input.payload);
 
@@ -1577,9 +1596,10 @@ export const makeDatabaseService = (
         normalizeKey(input.recordType) === "comment" &&
         commentPayloadBody(input.payload).trim().length === 0
       ) {
-        return yield* Effect.fail(
-          validationError("comment.body", "comment body must not be empty"),
-        );
+        return yield* new ValidationError({
+          field: "comment.body",
+          message: "comment body must not be empty",
+        });
       }
 
       const actor = yield* identity.currentActor;
@@ -1655,9 +1675,10 @@ export const makeDatabaseService = (
       const toTicket = yield* ticketRevision(repositoryId, ticketId, toSnapshotId);
 
       if (fromTicket === null && toTicket === null) {
-        return yield* Effect.fail(
-          validationError("ticketId", "ticket not found in either revision"),
-        );
+        return yield* new ValidationError({
+          field: "ticketId",
+          message: "ticket not found in either revision",
+        });
       }
 
       return {
@@ -1749,7 +1770,7 @@ export const makeDatabaseService = (
             const current = (yield* foldRepositoryEvents(repository)).drafts.get(draftId) ?? null;
 
             if (current === null) {
-              return yield* Effect.fail(validationError("draftId", "draft not found"));
+              return yield* new ValidationError({ field: "draftId", message: "draft not found" });
             }
             yield* ensureActorUserProfile(repository, tx, actor, now);
 
@@ -1800,7 +1821,7 @@ export const makeDatabaseService = (
             const draft = (yield* foldRepositoryEvents(repository)).drafts.get(draftId) ?? null;
 
             if (draft === null) {
-              return yield* Effect.fail(validationError("draftId", "draft not found"));
+              return yield* new ValidationError({ field: "draftId", message: "draft not found" });
             }
             yield* ensureActorUserProfile(repository, tx, actor, now);
 
@@ -1987,7 +2008,7 @@ export const makeDatabaseService = (
         .entries.find((label) => label.id === labelId);
 
       if (current === undefined) {
-        return yield* Effect.fail(validationError("labelId", "label not found"));
+        return yield* new ValidationError({ field: "labelId", message: "label not found" });
       }
 
       const actor = yield* identity.currentActor;
@@ -2096,7 +2117,8 @@ export const makeDatabaseService = (
       yield* assertNoUnsafeContent("saved view patch", patch);
       const current = projection.getView(repositoryId, viewId);
 
-      if (current === null) return yield* Effect.fail(validationError("viewId", "view not found"));
+      if (current === null)
+        return yield* new ValidationError({ field: "viewId", message: "view not found" });
 
       const actor = yield* identity.currentActor;
       const now = nowIso();
@@ -2153,7 +2175,8 @@ export const makeDatabaseService = (
     Effect.gen(function* () {
       const current = projection.getView(repositoryId, viewId);
 
-      if (current === null) return yield* Effect.fail(validationError("viewId", "view not found"));
+      if (current === null)
+        return yield* new ValidationError({ field: "viewId", message: "view not found" });
 
       const actor = yield* identity.currentActor;
       const now = nowIso();
@@ -2253,7 +2276,7 @@ export const makeDatabaseService = (
       const current = projection.getTemplate(repositoryId, templateId);
 
       if (current === null)
-        return yield* Effect.fail(validationError("templateId", "template not found"));
+        return yield* new ValidationError({ field: "templateId", message: "template not found" });
 
       const actor = yield* identity.currentActor;
       const now = nowIso();
@@ -2372,8 +2395,16 @@ export const makeDatabaseService = (
       yield* Effect.try({
         catch: (cause) =>
           cause instanceof Error
-            ? validationError("initiative-update", cause.message, cause)
-            : validationError("initiative-update", "invalid initiative update", cause),
+            ? new ValidationError({
+                field: "initiative-update",
+                message: cause.message,
+                cause: cause,
+              })
+            : new ValidationError({
+                field: "initiative-update",
+                message: "invalid initiative update",
+                cause: cause,
+              }),
         try: () => validateRequiredString("initiative update summary", input.summary),
       });
 
@@ -2410,8 +2441,12 @@ export const makeDatabaseService = (
       yield* Effect.try({
         catch: (cause) =>
           cause instanceof Error
-            ? validationError("itemIds", cause.message, cause)
-            : validationError("itemIds", "invalid inbox item ids", cause),
+            ? new ValidationError({ field: "itemIds", message: cause.message, cause: cause })
+            : new ValidationError({
+                field: "itemIds",
+                message: "invalid inbox item ids",
+                cause: cause,
+              }),
         try: () => {
           for (const itemId of itemIds) {
             validateRequiredString("itemId", itemId);
@@ -3107,39 +3142,46 @@ const foldRepositoryEvents = (
         if (document === null) continue;
         documentsRead += 1;
 
-        try {
-          const payload = document.json();
+        yield* Effect.try({
+          try: () => {
+            const payload = document.json();
 
-          if (options.seedFromProjection !== undefined) {
-            seedFoldedEventFromProjection(
-              folded,
-              options.seedFromProjection.projection,
-              options.seedFromProjection.repositoryId,
-              event.aggregateType,
-              event.aggregateId,
-              payload,
-            );
-          }
+            if (options.seedFromProjection !== undefined) {
+              seedFoldedEventFromProjection(
+                folded,
+                options.seedFromProjection.projection,
+                options.seedFromProjection.repositoryId,
+                event.aggregateType,
+                event.aggregateId,
+                payload,
+              );
+            }
 
-          applyDatabaseEvent(folded, event.aggregateType, event.aggregateId, payload, {
-            actor,
-            path: event.path,
-            snapshotId: snapshot.id,
-            timestamp,
-          });
-        } catch (error) {
-          warnings.push(
-            warning(
-              repository.repositoryId,
-              snapshot.id,
-              event.path,
-              event.aggregateType,
-              event.aggregateId,
-              error,
-              nowIso(),
-            ),
-          );
-        }
+            applyDatabaseEvent(folded, event.aggregateType, event.aggregateId, payload, {
+              actor,
+              path: event.path,
+              snapshotId: snapshot.id,
+              timestamp,
+            });
+          },
+          catch: (cause) => new EventFoldError({ cause }),
+        }).pipe(
+          Effect.catch((error) =>
+            Effect.sync(() => {
+              warnings.push(
+                warning(
+                  repository.repositoryId,
+                  snapshot.id,
+                  event.path,
+                  event.aggregateType,
+                  event.aggregateId,
+                  error.cause,
+                  nowIso(),
+                ),
+              );
+            }),
+          ),
+        );
       }
       processedCommits += 1;
       if (processedCommits % 10 === 0 || processedCommits === history.length) {
@@ -3820,14 +3862,14 @@ const validateTicket = (ticket: TicketDocument): Effect.Effect<void, DatabaseFai
   Effect.try({
     catch: (cause) =>
       cause instanceof Error
-        ? validationError("ticket", cause.message, cause)
-        : validationError("ticket", "invalid ticket", cause),
+        ? new ValidationError({ field: "ticket", message: cause.message, cause: cause })
+        : new ValidationError({ field: "ticket", message: "invalid ticket", cause: cause }),
     try: () => validateTicketSync(ticket),
   }).pipe(
     Effect.mapError((error) =>
       error instanceof Error
-        ? validationError("ticket", error.message, error)
-        : validationError("ticket", "invalid ticket", error),
+        ? new ValidationError({ field: "ticket", message: error.message, cause: error })
+        : new ValidationError({ field: "ticket", message: "invalid ticket", cause: error }),
     ),
   );
 
@@ -3883,7 +3925,10 @@ const assertNoUnsafeContent = (
   return unsafeKey === null
     ? Effect.void
     : Effect.fail(
-        validationError(field, `unsafe secret-bearing field is not allowed: ${unsafeKey}`),
+        new ValidationError({
+          field: field,
+          message: `unsafe secret-bearing field is not allowed: ${unsafeKey}`,
+        }),
       );
 };
 
@@ -4362,8 +4407,8 @@ const normalizeUserIdEffect = (email: string): Effect.Effect<string, DatabaseFai
   Effect.try({
     catch: (cause) =>
       cause instanceof Error
-        ? validationError("user.email", cause.message, cause)
-        : validationError("user.email", "invalid user email", cause),
+        ? new ValidationError({ field: "user.email", message: cause.message, cause: cause })
+        : new ValidationError({ field: "user.email", message: "invalid user email", cause: cause }),
     try: () => normalizeUserId(email),
   });
 
@@ -4413,8 +4458,12 @@ const normalizeTicketSeedEffect = (value: string): Effect.Effect<string, Databas
   Effect.try({
     catch: (cause) =>
       cause instanceof Error
-        ? validationError("ticket.id", cause.message, cause)
-        : validationError("ticket.id", "invalid ticket id seed", cause),
+        ? new ValidationError({ field: "ticket.id", message: cause.message, cause: cause })
+        : new ValidationError({
+            field: "ticket.id",
+            message: "invalid ticket id seed",
+            cause: cause,
+          }),
     try: () => {
       const normalized = value
         .trim()
@@ -4656,10 +4705,24 @@ const storage = <A, E>(
   operation: string,
   effect: Effect.Effect<A, E>,
 ): Effect.Effect<A, DatabaseFailure> =>
-  effect.pipe(Effect.mapError((cause) => storageError(operation, cause)));
+  effect.pipe(
+    Effect.mapError(
+      (cause) =>
+        new StorageError({
+          operation: operation,
+          cause: cause,
+          message: `GitDB operation failed: ${operation}`,
+        }),
+    ),
+  );
 
 const sqlite = <A>(operation: string, f: () => A): Effect.Effect<A, DatabaseFailure> =>
   Effect.try({
-    catch: (cause) => sqliteError(operation, cause),
+    catch: (cause) =>
+      new SqliteError({
+        operation: operation,
+        cause: cause,
+        message: `SQLite operation failed: ${operation}`,
+      }),
     try: f,
   });

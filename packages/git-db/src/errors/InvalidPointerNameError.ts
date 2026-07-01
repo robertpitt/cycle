@@ -6,6 +6,3 @@ export class InvalidPointerNameError extends Schema.TaggedErrorClass<InvalidPoin
   message: Schema.String,
   pointer: Schema.String,
 }) {}
-
-export const invalidPointerName = (pointer: string): InvalidPointerNameError =>
-  new InvalidPointerNameError({ message: `Invalid pointer name: ${pointer}`, pointer });
