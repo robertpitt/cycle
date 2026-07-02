@@ -28,9 +28,31 @@ export const ticketReferenceKey = (value: unknown, fallback = "none"): string =>
   return normalized.length === 0 ? fallback : normalized;
 };
 
+const assigneeValue = (value: unknown): string | null | undefined => {
+  if (value === null || value === undefined || typeof value === "string") return value;
+  if (typeof value !== "object") return String(value);
+
+  const actor = value as Readonly<Record<string, unknown>>;
+  const email = actor.email;
+  if (typeof email === "string" && email.trim().length > 0) return email;
+
+  const id = actor.id;
+  if (typeof id === "string" && id.trim().length > 0) return id;
+
+  const name = actor.name ?? actor.displayName;
+  if (typeof name === "string" && name.trim().length > 0) return name;
+
+  return undefined;
+};
+
 export const makeIssueFrontmatter = (
   input: IssueFrontmatter & Readonly<Record<string, unknown>>,
-): IssueFrontmatter => stripUndefined(input) as IssueFrontmatter;
+): IssueFrontmatter =>
+  stripUndefined({
+    ...input,
+    assignee: assigneeValue(input.assignee),
+    status: normalizeKey(input.status),
+  }) as IssueFrontmatter;
 
 export const makeTicketDocument = (frontmatter: IssueFrontmatter, body: string): TicketDocument => {
   const normalizedFrontmatter = makeIssueFrontmatter(frontmatter);

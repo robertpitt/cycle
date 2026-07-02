@@ -28,6 +28,7 @@ import {
   type CycleApiRuntimeShape,
 } from "../src/index.ts";
 import { prepareChatTurn } from "../src/http/handlers/v1/chat/prepare.ts";
+import { chatOriginInstructions } from "../src/http/handlers/v1/chat/ws.ts";
 
 const repository = { id: "test-repository" };
 const token = "test-token";
@@ -1383,6 +1384,44 @@ describe("@cycle/api", () => {
       assert.equal(prepared.agentRequest.mcp.url, "http://127.0.0.1:4738/mcp");
       assert.equal(prepared.agentRequest.mcp.headers?.authorization, `Bearer ${token}`);
     }
+    assert.match(
+      prepared.agentRequest.instructions ?? "",
+      /cycle-repository:<repositoryId>/u,
+    );
+    assert.match(
+      prepared.agentRequest.instructions ?? "",
+      /Assigned ticket implementation workflow/u,
+    );
+    assert.match(prepared.agentRequest.instructions ?? "", /Do not create a pull request/u);
+  });
+
+  it("adds assigned ticket workflow instructions for ticket work chat origins", () => {
+    const instructions = chatOriginInstructions({
+      createdAt: "2026-06-16T00:00:01.000Z",
+      id: "thread-ticket-work",
+      origin: {
+        issueId: "ISSUE-1",
+        kind: "ticket-agent-work",
+        repositoryId: repository.id,
+        ticketId: "ISSUE-1",
+        trigger: "ticket-view",
+      },
+      status: "active",
+      summary: "Implement ISSUE-1",
+      title: "Work on ISSUE-1",
+      updatedAt: "2026-06-16T00:00:01.000Z",
+    });
+
+    assert.match(
+      instructions ?? "",
+      /This chat thread was started for Cycle ticket implementation/u,
+    );
+    assert.match(instructions ?? "", /Assigned ticket implementation workflow/u);
+    assert.match(instructions ?? "", /dedicated git worktree/u);
+    assert.match(
+      instructions ?? "",
+      /cycle:\/\/repository\/test-repository\/tickets\/ISSUE-1/u,
+    );
   });
 
   it("starts issue mention chat threads for tagged Codex and Claude providers", async () => {

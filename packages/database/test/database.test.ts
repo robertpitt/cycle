@@ -15,6 +15,7 @@ import {
   type Actor,
   type CreateTicketInput,
   type LinkedRecord,
+  type TicketDocument,
 } from "../src/index.ts";
 import { Projection } from "../src/store/Projection.ts";
 import { assert, describe, it } from "./effect-vitest.ts";
@@ -227,6 +228,60 @@ describe("@cycle/database", () => {
         );
 
       assert.throws(() => projection.getUser("projection-schema-repo", "user-1"), /email/u);
+    } finally {
+      projection.close();
+    }
+  });
+
+  it("normalizes hydrated projection frontmatter statuses", () => {
+    const projection = new Projection(":memory:");
+    const now = "2026-06-20T00:00:00.000Z";
+    const ticket = {
+      body: "Legacy projected ticket body.",
+      bodyFormat: "markdown",
+      createdBy: "User One",
+      frontmatter: {
+        assignee: {
+          email: "user@example.invalid",
+          name: "User One",
+          type: "human",
+        },
+        createdAt: now,
+        createdBy: {
+          name: "User One",
+          type: "human",
+        },
+        id: "UKN-00001",
+        priority: "none",
+        status: "in progress",
+        title: "Legacy projected ticket",
+        type: "task",
+        updatedAt: now,
+      },
+      id: "UKN-00001",
+      parent: "none",
+      priority: "none",
+      schemaVersion: 1,
+      status: "in progress",
+      title: "Legacy projected ticket",
+      type: "task",
+      updatedDate: "2026-06-20",
+    } as unknown as TicketDocument;
+
+    try {
+      projection.upsertTicket({
+        path: "tickets/UKN-00001.md",
+        repositoryId: "projection-status-repo",
+        snapshotId: "snapshot-1",
+        ticket,
+      });
+
+      const hydrated = projection.getTicket("projection-status-repo", "UKN-00001");
+
+      assert.strictEqual(hydrated?.status, "in-progress");
+      assert.strictEqual(hydrated?.assignee, "user-example.invalid");
+      assert.strictEqual(hydrated?.frontmatter.status, "in-progress");
+      assert.strictEqual(hydrated?.frontmatter.assignee, "user@example.invalid");
     } finally {
       projection.close();
     }
@@ -838,6 +893,38 @@ describe("@cycle/database", () => {
       assert.strictEqual(updated.priority, "high");
       assert.strictEqual(updated.frontmatter.status, "in-progress");
       assert.strictEqual(updated.frontmatter.priority, "high");
+    }).pipe(Effect.provide(DatabaseTest())),
+  );
+
+  it.effect("normalizes display-label issue statuses in durable frontmatter", () =>
+    Effect.gen(function* () {
+      const database = yield* DatabaseService;
+      const store = yield* makeStore("display-label-status-repo");
+
+      yield* database.openRepository({
+        repositoryId: "display-label-status-repo",
+        store,
+      });
+
+      const created = yield* database.createTicket("display-label-status-repo", {
+        status: "In Progress",
+        title: "Display label status ticket",
+        type: "task",
+      });
+      const updated = yield* database.updateTicket("display-label-status-repo", created.id, {
+        frontmatter: {
+          status: "in progress",
+        },
+      });
+      const listed = yield* database.listTickets({
+        repositoryIds: ["display-label-status-repo"],
+      });
+
+      assert.strictEqual(created.status, "in-progress");
+      assert.strictEqual(created.frontmatter.status, "in-progress");
+      assert.strictEqual(updated.status, "in-progress");
+      assert.strictEqual(updated.frontmatter.status, "in-progress");
+      assert.strictEqual(listed.entries[0]?.frontmatter.status, "in-progress");
     }).pipe(Effect.provide(DatabaseTest())),
   );
 

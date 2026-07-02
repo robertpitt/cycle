@@ -338,6 +338,19 @@ const ticketDraftPrompt = ({ instructions, repository }: StartTicketDraftChatInp
     instructions.trim(),
   ].join("\n\n");
 
+const assignedTicketImplementationWorkflow = (): string =>
+  [
+    "Assigned ticket implementation workflow:",
+    "1. Resolve the repository and ticket through Cycle MCP tools before making repository or ticket claims.",
+    "2. Prepare a dedicated git worktree for the ticket and do the implementation work there with full read-write permissions.",
+    "3. Before changing code, assign the ticket to the current user when the current user identity is available, and transition the ticket to `In Progress`.",
+    "4. Complete the ticket scope. If you discover a separate out-of-scope issue, capture it as a follow-up Cycle ticket using a sub-agent when delegation is available, and continue the original task.",
+    "5. After implementation, run relevant tests, commit the branch when appropriate, and push to the configured remote when possible.",
+    "6. Move the ticket to `In Review`. If that status is not available through the exposed tools, create it or otherwise make it available when the tools support that operation; otherwise use the closest available workflow operation and report the limitation.",
+    "7. Add a ticket comment with a handoff that includes completed work, branch or remote links, testing performed, and known limitations or follow-up tickets.",
+    "Do not create a pull request as part of this workflow.",
+  ].join("\n");
+
 const issueAgentChatPrompt = ({
   instructions,
   issue,
@@ -350,6 +363,7 @@ const issueAgentChatPrompt = ({
     `Ticket type: ${issue.type}`,
     `Ticket status: ${issue.status}`,
     "Work on this Cycle ticket in implementation mode.",
+    assignedTicketImplementationWorkflow(),
     "Use Cycle MCP tools to inspect the ticket and repository context before making claims.",
     instructions?.trim() ? "User instructions:" : undefined,
     instructions?.trim() ? instructions.trim() : undefined,
@@ -555,7 +569,7 @@ const startIssueAgentChat = async (
       trigger: "ticket-view",
     },
     providerId: input.providerId,
-    runtimeMode: "workspace-write",
+    runtimeMode: "full-access",
     timeoutMessage: "Timed out while starting the ticket work chat.",
     title: `Work on ${input.issue.id}`,
   });

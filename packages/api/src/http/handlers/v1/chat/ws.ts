@@ -28,7 +28,11 @@ import type {
 import { ApiHandlerError } from "../../shared.ts";
 import type { ChatMessagePayload, ChatRepositoryPayload, ChatTurnPayload } from "./domain.ts";
 import { isRecord } from "./domain.ts";
-import { prepareChatTurn, requestOrigin } from "./prepare.ts";
+import {
+  assignedTicketImplementationWorkflowInstructions,
+  prepareChatTurn,
+  requestOrigin,
+} from "./prepare.ts";
 
 type WriteMessage = (message: ServerMessage) => Promise<void>;
 
@@ -2346,10 +2350,21 @@ const repositoriesFromThreadOrigin = (
   return repositoryId === undefined ? undefined : [{ id: repositoryId }];
 };
 
-const chatOriginInstructions = (thread: AgentChatThreadRecord): string | undefined => {
+export const chatOriginInstructions = (
+  thread: AgentChatThreadRecord,
+): string | undefined => {
   const repositoryId = threadOriginString(thread, "repositoryId");
   const issueId = threadOriginString(thread, "issueId");
   if (repositoryId === undefined || issueId === undefined) return undefined;
+
+  if (threadOriginString(thread, "kind") === "ticket-agent-work") {
+    return [
+      "This chat thread was started for Cycle ticket implementation.",
+      `Issue context: cycle://repository/${repositoryId}/tickets/${issueId}`,
+      "Resolve that Cycle URI through the attached MCP tools before claiming repository or ticket context is missing.",
+      assignedTicketImplementationWorkflowInstructions(),
+    ].join("\n");
+  }
 
   return [
     "This chat thread was started from a Cycle issue mention.",

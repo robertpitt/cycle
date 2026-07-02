@@ -43,7 +43,7 @@ import type {
   UserProfilePage,
   UserProfileQuery,
 } from "../domain/index.ts";
-import { normalizeKey, ticketReferenceKey } from "../domain/index.ts";
+import { makeIssueFrontmatter, normalizeKey, ticketReferenceKey } from "../domain/index.ts";
 
 type SqlValue = null | number | string;
 
@@ -285,7 +285,7 @@ const IssueFrontmatterJson = Schema.StructWithRest(
     agentProvenance: Schema.optional(JsonRecord),
     archivedAt: Schema.optional(Schema.NullOr(Schema.String)),
     archivedBy: Schema.optional(Schema.NullOr(ActorJson)),
-    assignee: Schema.optional(Schema.NullOr(Schema.String)),
+    assignee: Schema.optional(Schema.NullOr(Schema.Union([Schema.String, ActorJson]))),
     children: Schema.optional(StringListJson),
     createdAt: Schema.String,
     createdBy: ActorJson,
@@ -2726,10 +2726,12 @@ const decodeJson = <S extends Schema.Top>(schema: S, value: string): S["Type"] =
   Schema.decodeUnknownSync(schema as never, StrictDecodeOptions)(JSON.parse(value)) as S["Type"];
 
 const ticketFromRow = (row: TicketRow): TicketDocument => {
-  const frontmatter = decodeJson(
-    IssueFrontmatterJson,
-    row.frontmatter_json,
-  ) as unknown as TicketDocument["frontmatter"];
+  const frontmatter = makeIssueFrontmatter(
+    decodeJson(
+      IssueFrontmatterJson,
+      row.frontmatter_json,
+    ) as unknown as TicketDocument["frontmatter"],
+  );
 
   const labels = row.labels_json === null ? undefined : decodeJson(StringListJson, row.labels_json);
   const relations =
@@ -2741,7 +2743,10 @@ const ticketFromRow = (row: TicketRow): TicketDocument => {
         ) as unknown as TicketDocument["relations"]);
   return {
     archivedAt: row.archived_at ?? undefined,
-    assignee: row.assignee ?? undefined,
+    assignee:
+      frontmatter.assignee === null || frontmatter.assignee === undefined
+        ? undefined
+        : normalizeKey(frontmatter.assignee),
     body: row.body,
     bodyFormat: row.body_format,
     createdBy: frontmatter.createdBy?.email ?? frontmatter.createdBy?.name ?? "",
@@ -2757,7 +2762,7 @@ const ticketFromRow = (row: TicketRow): TicketDocument => {
     repository: row.repository_key ?? undefined,
     repositoryId: row.repository_id,
     schemaVersion: 1,
-    status: row.status,
+    status: normalizeKey(row.status),
     title: row.title,
     type: row.type,
     updatedDate: row.updated_at.slice(0, 10),

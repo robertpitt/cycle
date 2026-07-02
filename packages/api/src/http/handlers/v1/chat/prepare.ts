@@ -59,6 +59,19 @@ const formatRepositories = (repositories: readonly ChatRepositoryPayload[]): str
     .join("\n");
 };
 
+export const assignedTicketImplementationWorkflowInstructions = (): string =>
+  [
+    "Assigned ticket implementation workflow:",
+    "1. Resolve the repository and ticket through Cycle MCP tools before making repository or ticket claims.",
+    "2. Prepare a dedicated git worktree for the ticket and do the implementation work there with full read-write permissions.",
+    "3. Before changing code, assign the ticket to the current user when the current user identity is available, and transition the ticket to `In Progress`.",
+    "4. Complete the ticket scope. If you discover a separate out-of-scope issue, capture it as a follow-up Cycle ticket using a sub-agent when delegation is available, and continue the original task.",
+    "5. After implementation, run relevant tests, commit the branch when appropriate, and push to the configured remote when possible.",
+    "6. Move the ticket to `In Review`. If that status is not available through the exposed tools, create it or otherwise make it available when the tools support that operation; otherwise use the closest available workflow operation and report the limitation.",
+    "7. Add a ticket comment with a handoff that includes completed work, branch or remote links, testing performed, and known limitations or follow-up tickets.",
+    "Do not create a pull request as part of this workflow.",
+  ].join("\n");
+
 const chatInstructions = (input: {
   readonly instructions?: string;
   readonly mcpAttached: boolean;
@@ -70,9 +83,12 @@ const chatInstructions = (input: {
     "Use the attached Cycle MCP tools when repository state or database-backed issue context is needed.",
     "Do not call or inspect the Cycle MCP HTTP endpoint with shell commands such as curl. Use the MCP tools exposed by the agent runtime instead.",
     "Global chat has no implicit repository context. Treat markdown links with cycle:// URIs in the user message as explicit context references.",
+    "Also treat markdown links using cycle-repository:<repositoryId> or cycle-ticket:<ticketId> URIs as explicit Cycle context references.",
     "Resolve cycle://repository/<repositoryId> and cycle://repository/<repositoryId>/tickets/<ticketId> references through the Cycle MCP tools before answering context-sensitive questions.",
     "If Cycle MCP tools are not available in the agent runtime, say that repository-backed Cycle context is unavailable instead of probing localhost.",
     "Do not mutate repository state from chat unless the user explicitly asks for a change. Prefer explaining proposed changes and next steps.",
+    "When the user explicitly asks you to implement, fix, work on, or complete a Cycle ticket, treat that as assigned ticket implementation work and follow this workflow:",
+    assignedTicketImplementationWorkflowInstructions(),
     "Keep answers concise, concrete, and grounded in the context the user explicitly provided.",
     `Request id: ${input.requestId}`,
     `Cycle MCP: ${input.mcpAttached ? "attached as agent tools" : "not attached for this request"}`,

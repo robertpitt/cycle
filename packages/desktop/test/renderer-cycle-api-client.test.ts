@@ -280,13 +280,16 @@ describe("renderer cycle API client", () => {
     assert.equal(workCreateThread?.payload.origin.kind, "ticket-agent-work");
     assert.equal(workCreateThread?.payload.origin.repositoryId, "repo-cycle");
     assert.equal(workCreateThread?.payload.origin.issueId, "CYC-123");
-    assert.equal(workCreateThread?.payload.runtimeMode, "workspace-write");
+    assert.equal(workCreateThread?.payload.runtimeMode, "full-access");
     assert.equal(workCreateThread?.payload.model, "gpt-test");
     assert.equal(workSendTurn?.payload.threadId, "thread-work");
     assert.match(
       workSendTurn?.payload.message,
       /Ticket: cycle:\/\/repository\/repo-cycle\/tickets\/CYC-123/u,
     );
+    assert.match(workSendTurn?.payload.message, /Assigned ticket implementation workflow/u);
+    assert.match(workSendTurn?.payload.message, /dedicated git worktree/u);
+    assert.match(workSendTurn?.payload.message, /Do not create a pull request/u);
     assert.match(workSendTurn?.payload.message, /Implement this with tests/u);
   });
 });
