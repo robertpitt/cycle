@@ -1,0 +1,774 @@
+# Desktop App Features
+
+Source: `packages/desktop/` as reviewed on 2026-07-02.
+
+## Checkbox Legend
+
+- [x] Implemented and wired in the desktop app.
+- [ ] Present as UI, API surface, schema, or intent, but not wired, incomplete, or outstanding.
+- [ ] Parent items with mixed sub-items are intentionally left unchecked when important parts are missing.
+
+## Product Summary
+
+- [x] Electron desktop shell for Cycle.
+- [x] React renderer using `@cycle/ui`.
+- [x] Local authenticated Cycle HTTP API for product data.
+- [x] Local MCP endpoint started with the desktop API.
+- [x] Secure preload bridge for native desktop actions.
+- [x] Local app config stored under the Cycle home directory.
+- [x] Local projection database backed by `@cycle/database`.
+- [x] GitDB-backed repository projection and remote sync.
+- [x] Agent chat and agent task integrations for local providers.
+- [ ] Several advanced API capabilities exist but are not fully surfaced in desktop UI.
+
+## App Shell And Navigation
+
+- [x] Desktop window lifecycle.
+  - [x] Creates a main `BrowserWindow`.
+  - [x] Hides the window until ready to show.
+  - [x] Restores and focuses the existing window on app activation.
+  - [x] Destroys all windows on shutdown.
+  - [x] Logs renderer process exits and load failures.
+- [x] Secure Electron renderer container.
+  - [x] `contextIsolation` enabled.
+  - [x] `nodeIntegration` disabled.
+  - [x] `sandbox` enabled.
+  - [x] `webSecurity` enabled.
+  - [x] DevTools gated to development mode.
+- [x] Hash-router workspace shell.
+  - [x] Redirects `/` to the last stored valid workspace route.
+  - [x] Falls back to `/inbox` when no stored route exists.
+  - [x] Parses workspace routes.
+  - [x] Encodes workspace routes.
+  - [x] Rejects malformed workspace paths.
+  - [x] Redirects invalid repository routes to a safe fallback.
+- [x] Main workspace navigation.
+  - [x] Inbox.
+  - [x] Chat.
+  - [x] Issues.
+  - [x] Initiatives.
+  - [x] Views.
+  - [x] Repositories section in the sidebar.
+- [x] Repository navigation.
+  - [x] Repository issues.
+  - [x] Repository views.
+  - [x] Repository history.
+  - [x] Repository settings.
+  - [x] Per-repository sidebar expand/collapse preference.
+- [x] Settings navigation.
+  - [x] General.
+  - [x] Profile.
+  - [x] Agents.
+  - [x] Repositories.
+  - [x] Endpoints.
+  - [x] Advanced.
+- [x] Header actions.
+  - [x] Repository status indicator.
+  - [x] Back to parent issue/view action.
+  - [x] Add repository action.
+  - [x] Create issue action on work item pages.
+  - [x] Floating repository history action.
+- [x] Keyboard navigation.
+  - [x] `Escape` goes back or to the parent route.
+  - [x] `g n` opens Inbox.
+  - [x] `g c` opens Chat.
+  - [x] `g i` opens Issues.
+  - [x] `g p` opens Initiatives.
+  - [x] `g v` opens Views.
+  - [x] `g ,` opens Settings.
+  - [x] `g r i` opens active repository issues.
+  - [x] `g r v` opens active repository views.
+  - [x] `g r h` opens active repository history.
+  - [x] `g r ,` opens active repository settings.
+  - [x] Shortcuts ignore editable fields unless explicitly allowed.
+  - [x] Latest registration wins when bindings conflict.
+- [x] macOS trackpad navigation.
+  - [x] Horizontal swipe back.
+  - [x] Horizontal swipe forward.
+  - [x] Ignores dialogs and editable targets.
+  - [x] Preserves horizontal scrolling until scrollable edges.
+- [ ] Placeholder page fallback.
+  - [x] Generic placeholder component exists.
+  - [ ] No active product page should rely on this as a final state.
+
+## Startup, Bootstrap, And First Run
+
+- [x] Startup workflow.
+  - [x] Starts the desktop API before the Electron workflow.
+  - [x] Waits for Electron readiness.
+  - [x] Syncs stored theme preference into Electron native theme.
+  - [x] Registers IPC handlers.
+  - [x] Starts theme lifecycle supervision.
+  - [x] Starts app lifecycle supervision.
+  - [x] Creates the main window.
+  - [x] Starts repository bootstrap supervision.
+  - [x] Ensures window destruction on startup failure.
+- [x] Bootloader.
+  - [x] Shows while bootstrap is blocking.
+  - [x] Polls bootstrap status through the preload bridge.
+  - [x] Displays bootstrap phase/message via the UI loading screen.
+- [x] First-run onboarding.
+  - [x] Collects display name.
+  - [x] Collects email.
+  - [x] Detects local agent providers.
+  - [x] Lets users enable detected harnesses.
+  - [x] Saves onboarding completion.
+  - [x] Saves profile.
+  - [x] Saves enabled provider preferences.
+  - [x] Preserves the current theme preference.
+  - [x] Navigates to Inbox after completion.
+- [ ] Onboarding polish.
+  - [x] Falls back to provider stubs when detection fails.
+  - [x] Shows a notice when harness detection is unavailable outside Electron.
+  - [ ] Full validation rules for profile fields are delegated to UI/runtime behavior, not explicit in desktop code.
+
+## Local App Configuration
+
+- [x] Persistent app config.
+  - [x] Stores onboarding state.
+  - [x] Stores profile.
+  - [x] Stores theme preference.
+  - [x] Stores interface density.
+  - [x] Stores local API config.
+  - [x] Stores agent provider preferences.
+  - [x] Stores registered repositories.
+  - [x] Uses schema version `4`.
+- [x] Config recovery and migration.
+  - [x] Creates defaults on first run.
+  - [x] Generates a static API token when missing.
+  - [x] Migrates `api.port: "auto"` to the default desktop API port.
+  - [x] Migrates older schema versions forward.
+  - [x] Backs up unsupported newer config files.
+  - [x] Backs up invalid JSON config files.
+  - [x] Salvages valid sections from partially invalid config.
+  - [x] Writes config atomically through a temporary file and rename.
+- [x] Config-backed preferences.
+  - [x] Theme preference.
+  - [x] Interface density.
+  - [x] Agent provider enabled state.
+  - [x] Agent provider default model.
+  - [x] Agent provider executable override.
+  - [x] Agent provider max concurrent runs.
+  - [x] Repository commit style.
+  - [x] Repository auto sync.
+  - [x] Repository sidebar expanded state.
+- [ ] Config editing coverage.
+  - [x] Most user-facing preferences are editable through settings.
+  - [ ] API host, port, and token are stored but not editable in the desktop settings UI.
+  - [ ] Provider custom JSON config is stored by schema but not exposed as a settings editor.
+
+## Repositories
+
+- [x] Repository add/import.
+  - [x] Native folder picker through Electron.
+  - [x] Opens/registers repositories through `POST /v1/repositories`.
+  - [x] Normalizes selected paths.
+  - [x] Requires a Git repository for import.
+  - [x] Derives a stable repository id from the GitDB repository identity.
+  - [x] Dedupe by path or repository id.
+  - [x] Detects repository id collisions.
+  - [x] Stores display name, path, timestamps, GitDB root commit id, and preferences.
+  - [x] Shows import errors in the add repository flow.
+- [ ] Non-Git repository initialization.
+  - [x] `LocalWorkspace.initializeRepositoryPath` exists in main-process services.
+  - [x] Repository initialization dialog exists in the renderer.
+  - [ ] Renderer initialization mutation currently throws `Repository initialisation is not available through the Cycle API yet.`
+  - [ ] Add-repository mutation does not currently convert API "not git" errors into the dialog's `not-git` state.
+- [x] Repository bootstrap/open.
+  - [x] Reads configured repositories from app config.
+  - [x] Resolves repository identities.
+  - [x] Inspects Git metadata.
+  - [x] Creates local GitDB stores.
+  - [x] Opens repositories into the local projection database.
+  - [x] Materializes local projections on open.
+  - [x] Tracks pending/opening/ready/syncing/failed repository stages.
+  - [x] Continues bootstrap when individual repositories fail.
+  - [x] Marks bootstrap non-blocking after the local open phase.
+- [x] Repository status.
+  - [x] Repository status query.
+  - [x] Current branch display.
+  - [x] Default remote display.
+  - [x] Default remote URL display.
+  - [x] Active Cycle snapshot display.
+  - [x] Warning count display.
+  - [x] Last sync error display.
+  - [x] Materialization warnings query.
+- [x] Repository remote operations.
+  - [x] Manual sync action.
+  - [x] Manual push action.
+  - [x] Remote actions disable when no default remote exists.
+  - [x] Remote operations are serialized per repository.
+  - [x] Push handles non-fast-forward rebase retry through GitDB sync.
+  - [x] Background remote sync loop.
+  - [x] Background publish after local write notifications.
+  - [x] Background remote retry/backoff after failure.
+  - [x] Background loop keeps syncing other repositories when one fails.
+  - [x] Skips remote sync for repositories without a default remote.
+- [x] Repository preferences.
+  - [x] Commit style: descriptive or compact.
+  - [x] Auto sync toggle.
+  - [x] Sidebar expanded toggle.
+  - [x] Preferences update app config and renderer cache.
+- [x] Repository settings.
+  - [x] Repository status section.
+  - [x] Preferences section.
+  - [x] Remote operations section.
+  - [x] Diagnostics section.
+  - [x] Danger zone.
+  - [x] Remove repository with confirmation.
+  - [x] Removal unregisters only; source files remain on disk.
+- [x] Repository index settings.
+  - [x] Lists all registered repositories.
+  - [x] Shows bootstrap stage.
+  - [x] Shows branch, remote, and warnings.
+  - [x] Links to repository settings.
+  - [x] Provides row-level sync and push.
+- [x] Repository history.
+  - [x] Lists commits/snapshots.
+  - [x] Shows author, timestamp, message, parent count, warning count, snapshot id.
+  - [x] Paginates history.
+  - [x] Copies text through clipboard callback.
+  - [x] Navigates from changed issue ids into issue details.
+
+## Inbox
+
+- [x] Inbox list.
+  - [x] Loads inbox entries through the local API.
+  - [x] Requires a configured profile email.
+  - [x] Infinite paging.
+  - [x] Unread count summary.
+  - [x] Visible count label.
+  - [x] Repository status summaries in filters.
+- [x] Inbox filters.
+  - [x] Repository filter.
+  - [x] Reason filter.
+  - [x] Status filter.
+  - [x] Resets selection when filters change.
+- [x] Inbox actions.
+  - [x] Multi-select entries.
+  - [x] Archive selected entries.
+  - [x] Mark selected entries read.
+  - [x] Open an inbox entry's issue detail.
+- [ ] Inbox action gaps.
+  - [x] `markUnread` mutation exists.
+  - [ ] Inbox panel does not currently expose a mark-unread action.
+
+## Issues And Initiatives
+
+- [x] Issue list pages.
+  - [x] Global issues across registered repositories.
+  - [x] Repository-scoped issues.
+  - [x] Initiatives page using an epic/type filter.
+  - [x] Saved-view issue lists.
+  - [x] Handles cold repository syncing/loading state.
+- [x] Issue loading.
+  - [x] Infinite issue paging.
+  - [x] Load more button.
+  - [x] Empty states.
+  - [x] Error display.
+  - [x] Cross-repository cursor handling for global issue lists.
+- [x] Issue search and organization.
+  - [x] Search text query.
+  - [x] Group by status.
+  - [x] Group by assignee.
+  - [x] Group by priority.
+  - [x] Group by label.
+  - [x] No grouping option.
+  - [x] Collapsible groups.
+  - [x] Group counts.
+  - [x] Create issue action from groups.
+- [x] Inline issue edits from lists.
+  - [x] Change status.
+  - [x] Change priority.
+  - [x] Change assignee.
+  - [x] Invalidates issue detail, lists, records, and history after update.
+  - [x] Shows notification on update failure.
+- [x] Issue list metadata.
+  - [x] Shows repository meta on global issue lists.
+  - [x] Shows ticket type meta.
+  - [x] Shows label meta.
+  - [x] Uses users and labels from each repository.
+- [ ] Issue list gaps.
+  - [x] Query client supports many filters.
+  - [ ] Desktop UI does not provide an advanced filter builder.
+  - [ ] Desktop UI does not provide bulk issue actions.
+  - [ ] Desktop UI does not provide drag/drop status changes.
+  - [ ] Desktop UI does not provide inline label editing from the list.
+  - [ ] Workspace-level `/initiatives` uses the first repository rather than a true all-repository initiatives workspace.
+
+## Create Issue
+
+- [x] Create issue dialog.
+  - [x] Opens from work item pages.
+  - [x] Repository selector.
+  - [x] Canonical type selector: Epic, Feature, Bug, Task.
+  - [x] Title.
+  - [x] Description/body.
+  - [x] Status.
+  - [x] Priority.
+  - [x] Assignee.
+  - [x] Labels.
+  - [x] Template selector.
+  - [x] Due date.
+  - [x] Estimate.
+  - [x] Create more toggle.
+  - [x] Manual create mode.
+  - [x] Agent draft mode.
+  - [x] Error display.
+- [x] Manual issue creation.
+  - [x] Validates non-empty title.
+  - [x] Validates canonical type.
+  - [x] Sends issue create request to local API.
+  - [x] Invalidates issue list queries after create.
+  - [x] Supports create-more reset.
+- [x] Template application.
+  - [x] Applies body template.
+  - [x] Applies default assignee.
+  - [x] Applies default labels.
+  - [x] Applies default priority.
+  - [x] Applies default status.
+  - [x] Applies default due date.
+  - [x] Applies default estimate.
+  - [x] Applies default type.
+  - [ ] Title templates containing `{{...}}` are skipped rather than rendered.
+  - [ ] Template variables are not resolved in the desktop form.
+- [x] Agent draft creation.
+  - [x] Opens a chat WebSocket connection.
+  - [x] Creates a draft chat thread.
+  - [x] Sends repository context to the agent.
+  - [x] Sends the user's draft instructions.
+  - [x] Defaults to Codex provider when no provider is specified.
+  - [x] Navigates to Chat after the draft thread starts.
+  - [ ] The agent draft flow starts a chat thread; it does not directly create a final issue without further agent/user action.
+- [ ] Create issue gaps.
+  - [x] Project selector UI exists.
+  - [ ] Project selection is not included in the create issue mutation.
+  - [x] "Set due date" more action is redirected to the due date field.
+  - [ ] "Make recurring" more action is not wired.
+  - [ ] "Add link" more action is not wired.
+
+## Issue Detail
+
+- [x] Issue detail page.
+  - [x] Loads issue details.
+  - [x] Handles loading state.
+  - [x] Handles not found state.
+  - [x] Handles query error state.
+  - [x] Shows title.
+  - [x] Shows description/body.
+  - [x] Shows assignee.
+  - [x] Shows status.
+  - [x] Shows priority.
+  - [x] Shows due date.
+  - [x] Shows labels.
+  - [x] Shows external resources from issue frontmatter links.
+  - [x] Shows created-by viewer identity.
+- [x] Issue detail editing.
+  - [x] Edit title.
+  - [x] Edit description/body.
+  - [x] Change status.
+  - [x] Change priority.
+  - [x] Change assignee.
+  - [x] Change due date.
+  - [x] Change estimate.
+  - [x] Clears due date.
+  - [x] Clears estimate.
+  - [x] Invalidates issue detail, list, records, and history after updates.
+- [x] Comments and activity.
+  - [x] Lists comment records.
+  - [x] Creates comments.
+  - [x] Lists issue history.
+  - [x] Converts history entries into activity events.
+  - [x] Adds a synthetic created event when history does not include one.
+- [x] Sub-issues.
+  - [x] Sub-issue composer is wired through `ViewIssue`.
+  - [x] Creates a child task with `parent` set to the current issue id.
+  - [x] Supports sub-issue title.
+  - [x] Supports sub-issue description.
+  - [x] Supports sub-issue status.
+  - [x] Supports sub-issue priority.
+- [x] Initiative progress.
+  - [x] Queries progress for issue documents reported as `initiative`.
+  - [x] Shows completed child issues over total child issues.
+  - [ ] Epic/initiative naming should be verified across create/list/detail flows.
+- [x] Agent work on issues.
+  - [x] Lists agent tasks for the issue.
+  - [x] Polls task list.
+  - [x] Shows current/latest task.
+  - [x] Shows task status.
+  - [x] Shows last task error.
+  - [x] Shows branch metadata.
+  - [x] Shows commit metadata.
+  - [x] Shows worktree metadata.
+  - [x] Cancels active tasks.
+  - [x] Retries failed tasks.
+  - [x] Starts a task from the issue.
+  - [x] Selects provider.
+  - [x] Selects agent.
+  - [x] Optional model override.
+  - [x] Optional implementation instructions.
+  - [ ] Start task dialog labels the mode as Implementation, but submitted authority is currently `read-only`.
+- [ ] Issue detail gaps.
+  - [x] Attachment picker callback exists.
+  - [ ] Selected attachment files are only logged; upload/persistence is not implemented.
+  - [x] External resources are displayed.
+  - [ ] External resource/link editing is not wired.
+  - [x] Labels are displayed.
+  - [ ] Label editing from issue detail is not wired.
+  - [ ] Issue archive/delete/restore controls are not wired in issue detail.
+  - [ ] Issue relation editing is not wired in issue detail.
+
+## Saved Views
+
+- [x] Views page.
+  - [x] Loads saved views for a repository.
+  - [x] Shows name.
+  - [x] Shows description.
+  - [x] Shows owner.
+  - [x] Shows pinned state.
+  - [x] Shows scope label.
+  - [x] Shows layout/grouping label.
+  - [x] Shows filter summary.
+  - [x] Shows updated timestamp.
+  - [x] Selecting a view opens its issue list.
+- [x] Saved view usage from issue lists.
+  - [x] Saved view selector.
+  - [x] Applies saved view query.
+  - [x] Applies saved view sort.
+  - [x] Applies saved view grouping.
+  - [x] Clear active saved view.
+- [x] Saved view creation.
+  - [x] Create view from Views page.
+  - [x] Save current issue list as a view.
+  - [x] Persists saved views through `ticket.view.create`.
+  - [x] Invalidates saved view queries after creation.
+- [ ] Saved view gaps.
+  - [x] Creation uses a simple `window.prompt` for the name.
+  - [ ] No full create/edit form for saved view filters.
+  - [ ] No edit saved view UI.
+  - [ ] No delete saved view UI.
+  - [ ] No pin/unpin saved view UI.
+  - [ ] Workspace-level `/views` falls back to the first repository rather than a true all-repository views workspace.
+
+## Chat
+
+- [x] Agent chat runtime connection.
+  - [x] Discovers local API connection.
+  - [x] Connects to `/v1/chat/ws`.
+  - [x] Authenticates with the API token.
+  - [x] Tracks connecting/connected/disconnected/failed/reconnecting status.
+  - [x] Reconnects after failures.
+  - [x] Refreshes thread list and selected thread subscription while connected.
+- [x] Providers and settings.
+  - [x] Uses runtime provider profiles from the chat socket when available.
+  - [x] Falls back to detected desktop providers.
+  - [x] Selects provider.
+  - [x] Selects model.
+  - [x] Selects runtime mode.
+  - [x] Selects thinking/reasoning level.
+  - [x] Updates selected thread settings through `thread.update_settings`.
+- [x] Threads.
+  - [x] Lists threads.
+  - [x] Sorts threads by updated time.
+  - [x] Selects threads.
+  - [x] Subscribes to selected thread detail.
+  - [x] Creates threads.
+  - [x] Deletes inactive threads with confirmation.
+  - [x] Removes deleted threads from local state.
+- [x] Messages and turns.
+  - [x] Sends user messages.
+  - [x] Streams message deltas.
+  - [x] Marks messages complete.
+  - [x] Cancels active turns.
+  - [x] Tracks turn started/completed/failed/cancelled states.
+  - [x] Copies message text to clipboard.
+- [x] Chat timeline.
+  - [x] Messages.
+  - [x] Tool/progress/thinking/system/usage activities.
+  - [x] Filters noisy provider-only activity item types.
+  - [x] Questions.
+  - [x] Approval requests.
+  - [x] Approval resolution.
+- [x] User interaction inside chat.
+  - [x] Answers questions.
+  - [x] Supports multi-select question items.
+  - [x] Tracks question drafts.
+  - [x] Sends approval decisions.
+  - [x] Shows tag suggestions for repositories, issues, users, profile, and providers.
+- [ ] Chat gaps.
+  - [x] Thread statuses include archived in protocol parsing.
+  - [ ] Desktop ChatPanel does not expose an archive/unarchive command.
+  - [ ] Desktop ChatPanel does not expose a thread rename command.
+  - [ ] Desktop ChatPanel does not expose retry for a failed turn.
+  - [ ] Desktop ChatPanel does not include file attachment upload.
+
+## Agent Providers And Agent Tasks
+
+- [x] Supported desktop providers.
+  - [x] Codex.
+  - [x] Claude Code.
+- [x] Provider detection.
+  - [x] Detects local provider executables.
+  - [x] Reads provider model catalogs when provider is available.
+  - [x] Applies app-config provider preferences to detected profiles.
+  - [x] Reports active run count.
+  - [x] Reports capabilities.
+  - [x] Reports configured executable path.
+  - [x] Reports disabled providers from settings.
+  - [x] Falls back to missing provider profiles in the renderer.
+- [x] Provider settings.
+  - [x] Enable/disable provider.
+  - [x] Max concurrent runs.
+  - [x] Default model.
+  - [x] Executable override.
+  - [x] Save preferences through the local API.
+  - [x] Invalidate provider query after save.
+- [x] Agent tasks.
+  - [x] Create generic agent task API client.
+  - [x] Start issue-scoped agent task.
+  - [x] List issue-scoped agent tasks.
+  - [x] Get task.
+  - [x] List task events.
+  - [x] Cancel task.
+  - [x] Retry failed task.
+  - [x] Poll task list.
+  - [x] Task event query hook has polling.
+  - [x] Persist task data in a SQLite-backed task store.
+  - [x] Store worktrees under the Cycle home directory.
+- [ ] Agent task gaps.
+  - [x] Event query hook exists.
+  - [ ] Issue detail sidebar currently shows task summary, not the full task event stream.
+  - [ ] Task start authority/mode needs review because issue task UI says Implementation while sending read-only authority.
+
+## Settings
+
+- [x] General settings.
+  - [x] Theme preference: System, Light, Dark.
+  - [x] Interface density: Compact, Spacious.
+  - [x] Clear Electron renderer cache.
+  - [x] Shows cache clear success/error/loading state.
+- [x] Profile settings.
+  - [x] Edit display name.
+  - [x] Edit email.
+  - [x] Save profile through local API.
+  - [x] Update app config query cache after save.
+- [x] Agents settings.
+  - [x] Provider status.
+  - [x] Executable name and path.
+  - [x] SDK/package source.
+  - [x] Last checked timestamp.
+  - [x] Capabilities.
+  - [x] Enable toggle.
+  - [x] Max concurrent runs input.
+  - [x] Default model select/input.
+  - [x] Executable override input.
+  - [x] Validation for max concurrent runs.
+  - [x] Blocks enabling missing/unsupported providers.
+- [x] Repositories settings.
+  - [x] Repositories index page.
+  - [x] Repository detail page.
+  - [x] Repository preferences.
+  - [x] Repository remote actions.
+  - [x] Repository diagnostics.
+  - [x] Repository removal.
+- [x] Endpoint diagnostics.
+  - [x] API enabled state.
+  - [x] API base URL.
+  - [x] API auth state.
+  - [x] OpenAPI spec URL.
+  - [x] MCP enabled state.
+  - [x] MCP URL.
+  - [x] MCP path.
+  - [x] Runtime discovery file status.
+  - [x] Runtime process id.
+  - [x] Runtime started timestamp.
+  - [x] Opens URLs externally through validated IPC.
+- [x] Advanced diagnostics.
+  - [x] Cycle home path.
+  - [x] App config path.
+  - [x] Database path.
+  - [x] Log path.
+  - [x] Agent worktrees path.
+  - [x] Runtime discovery path.
+  - [x] CLI config path.
+  - [x] Bootstrap phase.
+  - [x] Bootstrap message.
+  - [x] Bootstrap started/completed timestamps.
+  - [x] Bootstrap repository summary.
+  - [x] Last bootstrap error.
+  - [x] Provider detection summary.
+  - [x] Config schema version.
+  - [x] Electron version.
+  - [x] Node version.
+- [ ] Settings gaps.
+  - [x] Endpoint diagnostics are visible.
+  - [ ] API and MCP endpoint settings are read-only in the UI.
+  - [ ] No UI for editing local API host, port, enabled state, or token.
+  - [ ] No UI for provider-specific JSON config.
+
+## Local API, MCP, And Renderer Data Layer
+
+- [x] Desktop API startup.
+  - [x] Starts local REST API when enabled.
+  - [x] Starts MCP endpoint at `/mcp`.
+  - [x] Uses static bearer token auth.
+  - [x] Writes runtime discovery file.
+  - [x] Writes the API token into the CLI config.
+  - [x] Provides repository-open resolver to the API.
+  - [x] Provides local settings handlers to the API.
+  - [x] Provides database layer to use cases.
+  - [x] Provides agent task service layer.
+  - [x] Provides worktree service and storage path.
+  - [x] Notifies bootstrap after write side effects.
+  - [x] Closes API, chat store, session store, and task store on shutdown.
+- [x] Renderer API discovery.
+  - [x] Uses preload bridge API connection in Electron.
+  - [x] Falls back to query string overrides.
+  - [x] Falls back to `localStorage` overrides.
+  - [x] Falls back to Vite env overrides.
+  - [x] Falls back to `/cycle-api` dev proxy for HTTP renderer testing.
+  - [x] Requires token for direct non-relative API calls.
+- [x] Renderer API client.
+  - [x] Schema-decodes API success envelopes.
+  - [x] Schema-decodes API error envelopes.
+  - [x] Normalizes API request errors.
+  - [x] Supports collection, page, resource, and nullable resource responses.
+  - [x] Maps supported use-case aliases to REST endpoints.
+  - [x] Supports cross-repository issue pagination.
+- [x] Local API features consumed by desktop.
+  - [x] App config read.
+  - [x] Profile update.
+  - [x] Onboarding completion.
+  - [x] Theme update.
+  - [x] Density update.
+  - [x] Agent provider listing.
+  - [x] Agent provider preference update.
+  - [x] Agent task create/list/get/events/cancel/retry.
+  - [x] Repository list/open/get/status/sync/push/remove/preferences/history/warnings.
+  - [x] Inbox list/summary/read/unread/archive.
+  - [x] Issue list/create/get/update/history.
+  - [x] Issue record list/add.
+  - [x] Users list.
+  - [x] Labels list.
+  - [x] Templates list.
+  - [x] Views list/create/get.
+  - [x] Initiative progress.
+  - [x] Autocomplete.
+  - [x] Chat WebSocket.
+- [ ] API surface not fully exposed in desktop UI.
+  - [x] API package exposes additional issue transitions/comments/relations/drafts/diffs/automation-style endpoints.
+  - [ ] Desktop renderer does not currently provide full UI coverage for every API endpoint.
+
+## Preload Bridge And IPC
+
+- [x] Preload bridge.
+  - [x] Exposes `window.cycleDesktop`.
+  - [x] Exposes `platform`.
+  - [x] Exposes `clearCache`.
+  - [x] Exposes `getApiConnection`.
+  - [x] Exposes `getBackendLogPath`.
+  - [x] Exposes `getBootstrapStatus`.
+  - [x] Exposes `getSettingsDiagnostics`.
+  - [x] Exposes `getThemeState`.
+  - [x] Exposes `onThemeStateChanged`.
+  - [x] Exposes `openExternal`.
+  - [x] Exposes `selectRepositoryFolder`.
+- [x] IPC validation.
+  - [x] Validates sender frame exists.
+  - [x] Rejects destroyed sender frames.
+  - [x] Rejects non-top-frame senders.
+  - [x] Strict schema-decodes requests.
+  - [x] Strict schema-decodes selected responses.
+  - [x] Normalizes IPC errors.
+- [x] Native shell and dialogs.
+  - [x] Opens external URLs.
+  - [x] Allows `http:`.
+  - [x] Allows `https:`.
+  - [x] Allows `mailto:`.
+  - [x] Rejects other external URL protocols.
+  - [x] Opens native repository folder picker.
+- [x] Theme bridge.
+  - [x] Reads current native theme state.
+  - [x] Broadcasts theme state changes to renderer.
+  - [x] Renderer subscribes and updates `ThemeProvider`.
+- [ ] Bridge gaps.
+  - [x] Backend log path can be read.
+  - [ ] No desktop UI action currently opens the backend log file directly.
+
+## Database And Storage
+
+- [x] Projection database.
+  - [x] Creates Cycle directory as needed.
+  - [x] Stores database at the Cycle database path.
+  - [x] Uses current profile as database identity.
+  - [x] Falls back to `Cycle User` when display name is blank.
+  - [x] Omits email when profile email is blank.
+- [x] Desktop id generation.
+  - [x] Draft ids.
+  - [x] Event ids.
+  - [x] Label ids.
+  - [x] Record ids.
+  - [x] Template ids.
+  - [x] Ticket ids.
+  - [x] View ids.
+- [x] Agent persistence.
+  - [x] Agent chat store backed by the Cycle database path.
+  - [x] Agent session store backed by the Cycle database path.
+  - [x] Agent task store backed by SQLite.
+  - [x] Agent task worktrees stored under Cycle home.
+
+## Notifications And Error Handling
+
+- [x] Renderer notifications.
+  - [x] Notification provider exists.
+  - [x] Dismiss timers.
+  - [x] Manual dismiss.
+  - [x] Used for issue update failures.
+- [x] Query and mutation error display.
+  - [x] Add repository errors.
+  - [x] Repository initialization errors.
+  - [x] Create issue errors.
+  - [x] Issue detail errors.
+  - [x] Inbox missing profile email state.
+  - [x] Repository remote operation errors.
+  - [x] Settings mutation errors.
+  - [x] Agent task start errors.
+  - [x] Chat command errors are logged.
+- [ ] Error handling gaps.
+  - [x] Chat connection failures are surfaced as connection status.
+  - [ ] Chat command failures are mostly logged, with limited user-facing recovery UI.
+
+## Test Coverage Signals
+
+- [x] Desktop API startup test.
+- [x] Workspace route helper tests.
+- [x] Desktop bootstrap tests.
+- [x] Agent session store tests.
+- [x] Agent chat store tests.
+- [x] Renderer inbox query tests.
+- [x] macOS trackpad navigation tests.
+- [x] Shortcut registry tests.
+- [x] Renderer app config tests.
+- [x] Desktop API runtime discovery tests.
+- [x] Chat protocol parsing tests.
+- [x] App config tests.
+- [x] Startup workflow tests.
+- [x] Renderer Cycle API client tests.
+- [ ] Test coverage gaps to consider.
+  - [ ] No direct renderer component tests for most panels in `packages/desktop`.
+  - [ ] No end-to-end desktop smoke test noted in `packages/desktop/test`.
+  - [ ] No visual regression test noted for the desktop renderer.
+
+## Highest-Value Outstanding Items
+
+- [ ] Wire the non-Git repository initialization flow through the local API and renderer mutation.
+- [ ] Add advanced issue filtering UI, or explicitly scope saved views/search as the current filter surface.
+- [ ] Add saved view edit/delete/pin management.
+- [ ] Wire project selection in the create issue dialog.
+- [ ] Wire recurring issue and issue link actions in the create issue dialog.
+- [ ] Implement issue attachment upload/persistence.
+- [ ] Add issue label editing, link editing, archive/delete/restore, and relation editing in issue detail.
+- [ ] Review initiative/epic terminology across create, list, and detail progress flows.
+- [ ] Resolve the issue agent task mode mismatch between "Implementation" UI and `read-only` submitted authority.
+- [ ] Add user-facing handling for chat command failures, failed turn retry, thread rename, and thread archive/unarchive.
+- [ ] Add UI for local API/MCP configuration if those settings are intended to be user-editable.
