@@ -150,6 +150,25 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
         comments.push(comment);
         return comment;
       }),
+    addRecord: (_repositoryId, issueId, input) =>
+      Effect.sync(() => {
+        calls.push("RecordAdd");
+        const record = {
+          createdAt: "2026-06-12T00:00:00.000Z",
+          createdBy: {
+            name: "Test",
+            type: "agent" as const,
+          },
+          createdDate: "2026-06-12",
+          id: "COMMENT-1",
+          issueId,
+          payload: input.payload,
+          recordType: input.recordType,
+          schemaVersion: 1 as const,
+        };
+        comments.push(record);
+        return record;
+      }),
     createTicket: (_repositoryId, input) =>
       Effect.sync(() => {
         calls.push("IssueCreate");
@@ -1368,6 +1387,163 @@ describe("@cycle/api", () => {
     if (prepared.agentRequest.mcp?.mode === "http") {
       assert.equal(prepared.agentRequest.mcp.url, "http://127.0.0.1:4738/mcp");
       assert.equal(prepared.agentRequest.mcp.headers?.authorization, `Bearer ${token}`);
+    }
+  });
+
+  it("starts issue mention chat threads for tagged Codex and Claude providers", async () => {
+    const agentChatStore = makeInMemoryAgentChatStore();
+    const timestamp = new Date("2026-06-16T00:00:01.000Z");
+    const captured: Array<{
+      readonly provider: AgentProviderId;
+      readonly request: AgentTurnRequest;
+      readonly sessionId: string;
+    }> = [];
+    const fakeAgent = (provider: AgentProviderId): AgentService => ({
+      abortTurn: async () => ({ accepted: false, reason: "not_supported" }),
+      capabilities: () => defaultAgentCapabilities(provider),
+      close: async () => undefined,
+      createSession: async () => ({
+        createdAt: timestamp,
+        harnessId: provider,
+        id: `session_${provider}`,
+        provider,
+        updatedAt: timestamp,
+      }),
+      provider,
+      resumeSession: async (sessionId) => ({
+        createdAt: timestamp,
+        harnessId: provider,
+        id: sessionId,
+        provider,
+        updatedAt: timestamp,
+      }),
+      respondToApproval: async (sessionId, requestId) => ({
+        requestId,
+        sessionId,
+        status: "not_found",
+      }),
+      respondToUserInput: async (sessionId, requestId) => ({
+        requestId,
+        sessionId,
+        status: "not_found",
+      }),
+      run: async (sessionId, request) => {
+        captured.push({ provider, request, sessionId });
+        return {
+          artifacts: [],
+          completedAt: timestamp,
+          createdAt: timestamp,
+          finishReason: "stop",
+          id: `message_${provider}`,
+          provider,
+          sessionId,
+          status: "completed",
+          text: `${provider} inspected the ticket.`,
+        };
+      },
+      stream: () => failingAgentStream("Issue mention test should not stream the provider."),
+    });
+    const { api } = makeTestApi({
+      agentChatStore,
+      agentProviderProfiles: async () => [
+        {
+          activeRunCount: 0,
+          capabilities: defaultAgentCapabilities("codex"),
+          checkedAt: timestamp.toISOString(),
+          configuration: {},
+          defaultModel: "gpt-5-codex",
+          displayName: "Codex",
+          enabled: true,
+          executableName: "codex",
+          executablePath: "/usr/local/bin/codex",
+          maxConcurrentRuns: 2,
+          models: ["gpt-5-codex"],
+          provider: "codex",
+          status: "available",
+        },
+        {
+          activeRunCount: 0,
+          capabilities: defaultAgentCapabilities("claude-code"),
+          checkedAt: timestamp.toISOString(),
+          configuration: {},
+          defaultModel: "claude-sonnet-4-5",
+          displayName: "Claude Code",
+          enabled: true,
+          executableName: "claude",
+          executablePath: "/usr/local/bin/claude",
+          maxConcurrentRuns: 2,
+          models: ["claude-sonnet-4-5"],
+          provider: "claude-code",
+          status: "available",
+        },
+      ],
+      agentServices: {
+        serviceFor: (provider) => Effect.succeed(fakeAgent(provider)),
+      },
+      mcp: {
+        enabled: true,
+        path: "/mcp",
+      },
+      now: () => timestamp,
+    });
+
+    try {
+      const response = await api.fetch(
+        new Request(`http://cycle.test/v1/repositories/${repository.id}/issues/ISSUE-1/records`, {
+          ...authed({
+            payload: {
+              body: "Please inspect [Codex](cycle-agent:codex) and [Claude Code](cycle-agent:claude-code).",
+            },
+            recordType: "comment",
+          }),
+          method: "POST",
+        }),
+      );
+      assert.equal(response.status, 201);
+
+      let threads = await agentChatStore.listThreads();
+      for (let attempt = 0; attempt < 20 && threads.length < 2; attempt++) {
+        await delay(10);
+        threads = await agentChatStore.listThreads();
+      }
+
+      const codexThread = threads.find((thread) => thread.agentId === "codex");
+      const claudeThread = threads.find((thread) => thread.agentId === "claude-code");
+      assert.equal(codexThread?.origin?.kind, "issue-comment");
+      assert.equal(codexThread?.origin?.commentId, "COMMENT-1");
+      assert.equal(claudeThread?.origin?.kind, "issue-comment");
+      assert.equal(claudeThread?.origin?.commentId, "COMMENT-1");
+      assert.equal(codexThread?.model, "gpt-5-codex");
+      assert.equal(claudeThread?.model, "claude-sonnet-4-5");
+
+      const codexMessages = await agentChatStore.listMessages(codexThread?.id ?? "");
+      const claudeMessages = await agentChatStore.listMessages(claudeThread?.id ?? "");
+      assert.ok(
+        codexMessages.some(
+          (message) =>
+            message.actor === "user" &&
+            message.body.includes("cycle-agent:codex") &&
+            message.body.includes("cycle://repository/test-repository/tickets/ISSUE-1"),
+        ),
+      );
+      assert.ok(
+        claudeMessages.some(
+          (message) =>
+            message.actor === "user" &&
+            message.body.includes("cycle-agent:claude-code") &&
+            message.body.includes("cycle://repository/test-repository/tickets/ISSUE-1"),
+        ),
+      );
+      assert.deepEqual(captured.map((entry) => entry.provider).sort(), ["claude-code", "codex"]);
+      assert.ok(
+        captured.every((entry) =>
+          String(entry.request.input).includes(
+            "cycle://repository/test-repository/tickets/ISSUE-1",
+          ),
+        ),
+      );
+    } finally {
+      await api.dispose();
     }
   });
 

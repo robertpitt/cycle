@@ -40,6 +40,7 @@ import {
   useCaseInvocation,
   urlFromRequest,
 } from "../shared.ts";
+import { handleSuccessfulCommentMentions, idFromResult } from "./commentMentions.ts";
 
 export const withIssueHandlers = (handlers: any) =>
   handlers
@@ -413,7 +414,31 @@ export const withIssueHandlers = (handlers: any) =>
           meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
+        const commentBody = commentBodyFromRecordInput(input);
+        if (commentBody !== undefined) {
+          yield* handleSuccessfulCommentMentions({
+            body: commentBody,
+            comment: result,
+            commentId: idFromResult(result, requestId),
+            repositoryId: params.repositoryId,
+            request,
+            requestId,
+            ticketId: params.issueId,
+          });
+        }
 
         return resourceResponse(requestId, 201, result);
       }),
     );
+
+const commentBodyFromRecordInput = (input: {
+  readonly payload: unknown;
+  readonly recordType: string;
+}): string | undefined => {
+  if (input.recordType !== "comment") return undefined;
+  if (typeof input.payload !== "object" || input.payload === null || Array.isArray(input.payload)) {
+    return undefined;
+  }
+  const body = (input.payload as Readonly<Record<string, unknown>>).body;
+  return typeof body === "string" && body.trim().length > 0 ? body : undefined;
+};
