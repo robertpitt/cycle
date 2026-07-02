@@ -7,7 +7,6 @@ import {
   repositoryHistoryRepositoryQueryKey,
   repositoryStatusQueryKey,
 } from "../queries/repositories.ts";
-import { repositoryAgentSettingsQueryKey } from "../queries/agentWork.ts";
 
 const invalidateRepositoryQueries = (
   queryClient: ReturnType<typeof useQueryClient>,
@@ -51,9 +50,6 @@ export const useRemoveRepositoryMutation = () => {
     onSuccess: (appConfig, repositoryId) => {
       queryClient.setQueryData(appConfigQueryKey, appConfig);
       invalidateRepositoryQueries(queryClient, repositoryId);
-      void queryClient.invalidateQueries({
-        queryKey: repositoryAgentSettingsQueryKey(repositoryId),
-      });
     },
   });
 };

@@ -17,7 +17,6 @@ import {
   useSetThemePreferenceMutation,
   useUpdateProfileMutation,
 } from "../mutations/index.ts";
-import { ApplicationAgentSettingsPanel } from "./AgentWorkPanels.tsx";
 import type { DetectedAgentProvider } from "../../shared/AgentProviders.ts";
 import type { BootstrapStatus } from "../../shared/Bootstrap.ts";
 import { useSettingsDiagnosticsQuery } from "../queries/index.ts";
@@ -336,7 +335,7 @@ export const ApplicationSettingsPanel = ({
   };
 
   if (section === "agents") {
-    return <ApplicationAgentSettingsPanel providers={agentProviders} />;
+    return <PageShell {...settingPageCopy.agents} />;
   }
 
   if (section === "endpoints") {

@@ -1,6 +1,6 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { CycleHttpApi } from "../CycleHttpApi.ts";
-import { withAgentWorkHandlers } from "./v1/agentWork.ts";
+import { withAgentTaskHandlers } from "./v1/agentTasks.ts";
 import { withAgentHandlers } from "./v1/agents.ts";
 import { withAutocompleteHandlers } from "./v1/autocomplete.ts";
 import { withAutomationHandlers } from "./v1/automation.ts";
@@ -17,7 +17,7 @@ import { withUserHandlers } from "./v1/users.ts";
 import { withViewHandlers } from "./v1/views.ts";
 
 export const V1ApiHandlers = HttpApiBuilder.group(CycleHttpApi, "v1", (handlers) =>
-  withAgentWorkHandlers(
+  withAgentTaskHandlers(
     withAgentHandlers(
       withAutocompleteHandlers(
         withAutomationHandlers(

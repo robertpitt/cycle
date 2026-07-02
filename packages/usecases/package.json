@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./agent-work": "./src/agent-work/index.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "test": "vitest run",

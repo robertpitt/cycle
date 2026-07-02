@@ -15,7 +15,7 @@ import type {
   UserProfileQuery,
 } from "@cycle/contracts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
-import { normalizeCreateTicketType } from "../lib/agentWork.ts";
+import { normalizeCreateTicketType } from "../lib/ticketTypes.ts";
 
 const usersQueryKey = (repositoryId: string | undefined) =>
   ["desktop", "api", "users", repositoryId] as const;

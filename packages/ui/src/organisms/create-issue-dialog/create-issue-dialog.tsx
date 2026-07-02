@@ -1,4 +1,5 @@
 import {
+  Bot,
   Box,
   CalendarPlus,
   ChevronRight,
@@ -9,10 +10,13 @@ import {
   CircleUserRound,
   Expand,
   FileText,
+  GitBranch,
   Link,
   Link2,
   MoreHorizontal,
+  PenLine,
   Repeat2,
+  SendHorizontal,
   Tag,
   Ticket,
 } from "lucide-react";
@@ -48,9 +52,12 @@ export type CreateIssueDialogChipId =
   | "more"
   | "priority"
   | "project"
+  | "repository"
   | "status"
   | "template"
   | "type";
+
+export type CreateIssueDialogMode = "agent" | "manual";
 
 export type CreateIssueDialogStatus = "backlog" | "canceled" | "done" | "in-progress" | "todo";
 
@@ -65,6 +72,11 @@ export type CreateIssueDialogProps = React.HTMLAttributes<HTMLDivElement> & {
   readonly defaultOpenChip?: CreateIssueDialogChipId;
   readonly description?: string;
   readonly descriptionPlaceholder?: string;
+  readonly draftDisabled?: boolean;
+  readonly draftInstructions?: string;
+  readonly draftPlaceholder?: string;
+  readonly draftSaving?: boolean;
+  readonly draftSubmitLabel?: string;
   readonly dueDate?: string;
   readonly error?: React.ReactNode;
   readonly estimate?: number | string | null;
@@ -72,20 +84,25 @@ export type CreateIssueDialogProps = React.HTMLAttributes<HTMLDivElement> & {
   readonly labels?: readonly string[];
   readonly labelSections?: readonly PropertyPickerSection[];
   readonly moreSections?: readonly PropertyPickerSection[];
+  readonly mode?: CreateIssueDialogMode;
   readonly onAttach?: React.MouseEventHandler<HTMLButtonElement>;
   readonly onAssigneeChange?: (assignee: string | null) => void;
   readonly onClose?: React.MouseEventHandler<HTMLButtonElement>;
   readonly onCreate?: React.FormEventHandler<HTMLFormElement>;
   readonly onCreateMoreChange?: (checked: boolean) => void;
   readonly onDescriptionChange?: (description: string) => void;
+  readonly onDraftInstructionsChange?: (instructions: string) => void;
+  readonly onDraftSubmit?: React.FormEventHandler<HTMLFormElement>;
   readonly onDueDateChange?: (dueDate: string) => void;
   readonly onEstimateChange?: (estimate: string) => void;
   readonly onExpand?: React.MouseEventHandler<HTMLButtonElement>;
   readonly onLabelsChange?: (labels: readonly string[]) => void;
+  readonly onModeChange?: (mode: CreateIssueDialogMode) => void;
   readonly onMoreAction?: (actionId: string, option: PropertyPickerOption) => void;
   readonly onOpenChipChange?: (chip: CreateIssueDialogChipId | undefined) => void;
   readonly onPriorityChange?: (priority: CreateIssueDialogPriority) => void;
   readonly onProjectChange?: (project: string | null) => void;
+  readonly onRepositoryChange?: (repository: string | null) => void;
   readonly onStatusChange?: (status: CreateIssueDialogStatus) => void;
   readonly onTagQueryChange?: (query: string) => void;
   readonly onTagSelect?: (suggestion: MarkdownEditorTagSuggestion) => void;
@@ -95,6 +112,8 @@ export type CreateIssueDialogProps = React.HTMLAttributes<HTMLDivElement> & {
   readonly prioritySections?: readonly PropertyPickerSection[];
   readonly project?: string | null;
   readonly projectSections?: readonly PropertyPickerSection[];
+  readonly repository?: string | null;
+  readonly repositorySections?: readonly PropertyPickerSection[];
   readonly saving?: boolean;
   readonly status?: CreateIssueDialogStatus;
   readonly statusSections?: readonly PropertyPickerSection[];
@@ -407,6 +426,11 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
       defaultOpenChip,
       description,
       descriptionPlaceholder = "Add description...",
+      draftDisabled = false,
+      draftInstructions = "",
+      draftPlaceholder = "Ask the agent to draft a ticket...",
+      draftSaving = false,
+      draftSubmitLabel = "Draft ticket",
       dueDate = "",
       error,
       estimate = "",
@@ -415,20 +439,25 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
       labelSections: labelPickerSections = labelSections,
       labels = [],
       moreSections: morePickerSections = moreSections,
+      mode = "agent",
       onAttach,
       onAssigneeChange,
       onClose,
       onCreate,
       onCreateMoreChange,
       onDescriptionChange,
+      onDraftInstructionsChange,
+      onDraftSubmit,
       onDueDateChange,
       onEstimateChange,
       onExpand,
       onLabelsChange,
+      onModeChange,
       onMoreAction,
       onOpenChipChange,
       onPriorityChange,
       onProjectChange,
+      onRepositoryChange,
       onStatusChange,
       onTagQueryChange,
       onTagSelect,
@@ -438,6 +467,8 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
       prioritySections: priorityPickerSections = prioritySections,
       project = null,
       projectSections: projectPickerSections = projectSections,
+      repository = null,
+      repositorySections: repositoryPickerSections = [],
       saving = false,
       status = "todo",
       statusSections: statusPickerSections = statusSections,
@@ -466,6 +497,26 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
       },
       [onOpenChipChange, openChip],
     );
+    const submitHandler: React.FormEventHandler<HTMLFormElement> = (event) => {
+      const handler = mode === "agent" ? onDraftSubmit : onCreate;
+      if (handler) {
+        handler(event);
+        return;
+      }
+      event.preventDefault();
+    };
+    const errorMessage = error ? (
+      <div className="rounded-md border border-destructive/25 bg-destructive/10 p-3 text-sm leading-5 text-destructive">
+        {error}
+      </div>
+    ) : null;
+    const modeButtonClassName = (buttonMode: CreateIssueDialogMode) =>
+      cn(
+        "inline-flex h-8 items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors",
+        mode === buttonMode
+          ? "bg-popover text-foreground shadow-sm"
+          : "text-muted-foreground hover:text-foreground",
+      );
 
     return (
       <DialogRoot open modal>
@@ -482,13 +533,28 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
               className="mx-auto min-h-[400px] max-w-[960px] overflow-visible rounded-2xl"
               width="xl"
             >
-              <form className="flex min-h-[400px] flex-col" onSubmit={onCreate}>
+              <form className="flex min-h-[400px] flex-col" onSubmit={submitHandler}>
                 <div className="flex items-center justify-between gap-4 px-5 py-4">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className="inline-flex h-8 shrink-0 items-center gap-2 rounded-full border border-border bg-subtle px-2.5 text-sm font-medium text-muted-foreground">
-                      <IssueTeamMark />
-                      {teamLabel}
-                    </span>
+                    {repositoryPickerSections.length > 0 ? (
+                      <PropertyPicker
+                        {...getControlledOpen(currentOpenChip, "repository", setOpenChip)}
+                        formatValueLabel={formatNullableLabel(teamLabel)}
+                        onValueChange={(value) => onRepositoryChange?.(getSingleValue(value))}
+                        placeholder={teamLabel}
+                        searchPlaceholder="Choose repository..."
+                        sections={repositoryPickerSections}
+                        triggerActive={Boolean(repository)}
+                        triggerIcon={<GitBranch aria-hidden className="size-4" strokeWidth={1.8} />}
+                        value={repository}
+                        widthClassName="w-[420px]"
+                      />
+                    ) : (
+                      <span className="inline-flex h-8 shrink-0 items-center gap-2 rounded-full border border-border bg-subtle px-2.5 text-sm font-medium text-muted-foreground">
+                        <IssueTeamMark />
+                        {teamLabel}
+                      </span>
+                    )}
                     <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                     <DialogTitle
                       className="truncate text-lg font-semibold tracking-normal text-foreground"
@@ -514,209 +580,281 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
                 </div>
 
                 <div className="flex flex-1 flex-col px-5 pb-5 sm:px-7 sm:pb-6">
-                  <div className="grid gap-3">
-                    <Input
-                      aria-label="Issue title"
-                      className="h-12 border-transparent bg-transparent px-0 text-2xl font-semibold tracking-normal shadow-none placeholder:text-muted-foreground/70 hover:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0 sm:text-3xl"
-                      name="title"
-                      onChange={(event) => onTitleChange?.(event.currentTarget.value)}
-                      placeholder={titlePlaceholder}
-                      required
-                      value={title}
-                    />
-                    <MarkdownEditor
-                      aria-label="Issue description"
-                      className="rounded-md"
-                      contentClassName="px-0 text-lg leading-7"
-                      editorClassName="border-transparent bg-transparent hover:bg-transparent focus-within:border-transparent focus-within:bg-transparent"
-                      minHeightClassName="min-h-[132px]"
-                      mode="ticket"
-                      onTagQueryChange={onTagQueryChange}
-                      onTagSelect={onTagSelect}
-                      onValueChange={onDescriptionChange}
-                      placeholder={descriptionPlaceholder}
-                      tagSuggestions={tagSuggestions}
-                      value={description}
-                    />
+                  <div className="mb-5 inline-flex w-fit items-center rounded-lg border border-border bg-subtle p-1">
+                    <button
+                      className={modeButtonClassName("agent")}
+                      onClick={() => onModeChange?.("agent")}
+                      type="button"
+                    >
+                      <Bot aria-hidden className="size-4" />
+                      Agent draft
+                    </button>
+                    <button
+                      className={modeButtonClassName("manual")}
+                      onClick={() => onModeChange?.("manual")}
+                      type="button"
+                    >
+                      <PenLine aria-hidden className="size-4" />
+                      Manual
+                    </button>
                   </div>
 
-                  <div className="mt-auto grid gap-12 pt-8">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <PropertyPicker
-                        {...getControlledOpen(currentOpenChip, "status", setOpenChip)}
-                        formatValueLabel={formatNullableLabel("Status")}
-                        onValueChange={(value) =>
-                          onStatusChange?.(getSingleValue(value) as CreateIssueDialogStatus)
-                        }
-                        placeholder="Status"
-                        searchPlaceholder="Change status..."
-                        searchShortcut="S"
-                        sections={statusPickerSections}
-                        triggerActive
-                        triggerIcon={<Circle aria-hidden className="size-4" strokeWidth={2.2} />}
-                        value={status}
-                        widthClassName="w-[414px]"
+                  {mode === "agent" ? (
+                    <div className="flex flex-1 flex-col">
+                      <MarkdownEditor
+                        aria-label="Ticket draft instructions"
+                        className="rounded-lg"
+                        contentClassName="text-base leading-7 sm:text-lg"
+                        editorClassName="border-border bg-subtle/45 hover:bg-subtle/60 focus-within:bg-popover"
+                        minHeightClassName="min-h-[220px]"
+                        mode="ticket"
+                        onTagQueryChange={onTagQueryChange}
+                        onTagSelect={onTagSelect}
+                        onValueChange={onDraftInstructionsChange}
+                        placeholder={draftPlaceholder}
+                        tagSuggestions={tagSuggestions}
+                        value={draftInstructions}
                       />
-                      {typePickerSections.length > 0 ? (
-                        <PropertyPicker
-                          {...getControlledOpen(currentOpenChip, "type", setOpenChip)}
-                          formatValueLabel={formatNullableLabel("Type")}
-                          onValueChange={(value) => {
-                            const selectedType = getSingleValue(value);
-                            if (selectedType) onTypeChange?.(selectedType);
-                          }}
-                          placeholder="Type"
-                          searchPlaceholder="Choose type..."
-                          sections={typePickerSections}
-                          triggerActive={Boolean(type)}
-                          triggerIcon={<Ticket aria-hidden className="size-4" strokeWidth={1.9} />}
-                          value={type}
-                          widthClassName="w-[350px]"
-                        />
-                      ) : null}
-                      <PropertyPicker
-                        {...getControlledOpen(currentOpenChip, "priority", setOpenChip)}
-                        formatValueLabel={formatNullableLabel("Priority")}
-                        onValueChange={(value) =>
-                          onPriorityChange?.(getSingleValue(value) as CreateIssueDialogPriority)
-                        }
-                        placeholder="Priority"
-                        searchPlaceholder="Set priority to..."
-                        searchShortcut="P"
-                        sections={priorityPickerSections}
-                        triggerIcon={<span className="font-semibold leading-none">---</span>}
-                        value={priority}
-                        widthClassName="w-[414px]"
-                      />
-                      <PropertyPicker
-                        {...getControlledOpen(currentOpenChip, "assignee", setOpenChip)}
-                        formatValueLabel={formatNullableLabel("Assignee")}
-                        onValueChange={(value) => {
-                          const selectedAssignee = getSingleValue(value);
-                          onAssigneeChange?.(selectedAssignee === "none" ? null : selectedAssignee);
-                        }}
-                        placeholder="Assignee"
-                        sections={assigneePickerSections}
-                        triggerIcon={
-                          <CircleUserRound aria-hidden className="size-4" strokeWidth={1.8} />
-                        }
-                        value={assignee ?? "none"}
-                        widthClassName="w-[350px]"
-                      />
-                      <PropertyPicker
-                        {...getControlledOpen(currentOpenChip, "project", setOpenChip)}
-                        align="end"
-                        formatValueLabel={formatNullableLabel("Project")}
-                        onValueChange={(value) => {
-                          const selectedProject = getSingleValue(value);
-                          onProjectChange?.(selectedProject === "none" ? null : selectedProject);
-                        }}
-                        placeholder="Project"
-                        sections={projectPickerSections}
-                        triggerIcon={<Box aria-hidden className="size-4" strokeWidth={1.8} />}
-                        value={project ?? "none"}
-                        widthClassName="w-[350px]"
-                      />
-                      <PropertyPicker
-                        {...getControlledOpen(currentOpenChip, "template", setOpenChip)}
-                        align="end"
-                        formatValueLabel={formatNullableLabel("Template")}
-                        onValueChange={(value) => {
-                          const selectedTemplate = getSingleValue(value);
-                          onTemplateChange?.(selectedTemplate === "none" ? null : selectedTemplate);
-                        }}
-                        placeholder="Template"
-                        searchPlaceholder="Apply template..."
-                        sections={templatePickerSections}
-                        triggerIcon={<FileText aria-hidden className="size-4" strokeWidth={1.8} />}
-                        value={template ?? "none"}
-                        widthClassName="w-[350px]"
-                      />
-                      <PropertyPicker
-                        {...getControlledOpen(currentOpenChip, "labels", setOpenChip)}
-                        align="end"
-                        formatValueLabel={formatLabelList}
-                        multiple
-                        onValueChange={(value) =>
-                          onLabelsChange?.(Array.isArray(value) ? value : value ? [value] : [])
-                        }
-                        placeholder="Labels"
-                        searchPlaceholder="Add labels..."
-                        searchShortcut="L"
-                        sections={labelPickerSections}
-                        triggerIcon={<Tag aria-hidden className="size-4" strokeWidth={1.8} />}
-                        value={labels}
-                        widthClassName="w-[414px]"
-                      />
-                      <label className="inline-flex h-9 min-w-[9.5rem] items-center gap-2 rounded-md border border-border bg-popover px-3 text-sm font-medium text-muted-foreground shadow-sm">
-                        <CalendarPlus aria-hidden className="size-4" />
-                        <span className="sr-only">Due date</span>
-                        <input
-                          className="min-w-0 bg-transparent text-foreground outline-none"
-                          onChange={(event) => onDueDateChange?.(event.currentTarget.value)}
-                          type="date"
-                          value={dueDate}
-                        />
-                      </label>
-                      <Input
-                        aria-label="Estimate"
-                        className="h-9 w-28 rounded-md"
-                        inputMode="decimal"
-                        onChange={(event) => onEstimateChange?.(event.currentTarget.value)}
-                        placeholder="Estimate"
-                        value={estimate ?? ""}
-                      />
-                      <PropertyPicker
-                        {...getControlledOpen(currentOpenChip, "more", setOpenChip)}
-                        align="end"
-                        onValueChange={(value, option) => {
-                          const actionId = getSingleValue(value);
-                          if (actionId) {
-                            onMoreAction?.(actionId, option);
-                          }
-                        }}
-                        placeholder={<span className="sr-only">More issue properties</span>}
-                        sections={morePickerSections}
-                        triggerIcon={
-                          <MoreHorizontal aria-hidden className="size-4" strokeWidth={1.8} />
-                        }
-                        triggerLabelText="More issue properties"
-                        value={null}
-                        widthClassName="w-[384px]"
-                      />
-                    </div>
 
-                    {error ? (
-                      <div className="rounded-md border border-destructive/25 bg-destructive/10 p-3 text-sm leading-5 text-destructive">
-                        {error}
-                      </div>
-                    ) : null}
+                      <div className="mt-auto grid gap-4 pt-6">
+                        {errorMessage}
 
-                    <div className="flex flex-wrap items-center justify-between gap-4">
-                      <IconButton
-                        icon={<Link aria-hidden className="size-4" />}
-                        label="Attach file"
-                        onClick={onAttach}
-                        title="Attach file"
-                        variant="outline"
-                      />
-                      <div className="flex flex-wrap items-center gap-4">
-                        <label className="inline-flex items-center gap-3 text-sm font-medium text-muted-foreground">
-                          <Switch checked={createMore} onCheckedChange={onCreateMoreChange} />
-                          {createMoreLabel}
-                        </label>
-                        <Button
-                          className="h-10 rounded-full px-5 text-base"
-                          disabled={createDisabled || saving}
-                          loading={saving}
-                          loadingLabel="Creating issue"
-                          type="submit"
-                        >
-                          {createLabel}
-                        </Button>
+                        <div className="flex flex-wrap items-center justify-between gap-4">
+                          <IconButton
+                            icon={<Link aria-hidden className="size-4" />}
+                            label="Attach file"
+                            onClick={onAttach}
+                            title="Attach file"
+                            variant="outline"
+                          />
+                          <Button
+                            className="h-10 rounded-full px-5 text-base"
+                            disabled={draftDisabled || draftSaving}
+                            leftIcon={<SendHorizontal aria-hidden className="size-4" />}
+                            loading={draftSaving}
+                            loadingLabel="Starting draft"
+                            type="submit"
+                          >
+                            {draftSubmitLabel}
+                          </Button>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div className="grid gap-3">
+                        <Input
+                          aria-label="Issue title"
+                          className="h-12 border-transparent bg-transparent px-0 text-2xl font-semibold tracking-normal shadow-none placeholder:text-muted-foreground/70 hover:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0 sm:text-3xl"
+                          name="title"
+                          onChange={(event) => onTitleChange?.(event.currentTarget.value)}
+                          placeholder={titlePlaceholder}
+                          required
+                          value={title}
+                        />
+                        <MarkdownEditor
+                          aria-label="Issue description"
+                          className="rounded-md"
+                          contentClassName="px-0 text-lg leading-7"
+                          editorClassName="border-transparent bg-transparent hover:bg-transparent focus-within:border-transparent focus-within:bg-transparent"
+                          minHeightClassName="min-h-[132px]"
+                          mode="ticket"
+                          onTagQueryChange={onTagQueryChange}
+                          onTagSelect={onTagSelect}
+                          onValueChange={onDescriptionChange}
+                          placeholder={descriptionPlaceholder}
+                          tagSuggestions={tagSuggestions}
+                          value={description}
+                        />
+                      </div>
+
+                      <div className="mt-auto grid gap-12 pt-8">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <PropertyPicker
+                            {...getControlledOpen(currentOpenChip, "status", setOpenChip)}
+                            formatValueLabel={formatNullableLabel("Status")}
+                            onValueChange={(value) =>
+                              onStatusChange?.(getSingleValue(value) as CreateIssueDialogStatus)
+                            }
+                            placeholder="Status"
+                            searchPlaceholder="Change status..."
+                            searchShortcut="S"
+                            sections={statusPickerSections}
+                            triggerActive
+                            triggerIcon={
+                              <Circle aria-hidden className="size-4" strokeWidth={2.2} />
+                            }
+                            value={status}
+                            widthClassName="w-[414px]"
+                          />
+                          {typePickerSections.length > 0 ? (
+                            <PropertyPicker
+                              {...getControlledOpen(currentOpenChip, "type", setOpenChip)}
+                              formatValueLabel={formatNullableLabel("Type")}
+                              onValueChange={(value) => {
+                                const selectedType = getSingleValue(value);
+                                if (selectedType) onTypeChange?.(selectedType);
+                              }}
+                              placeholder="Type"
+                              searchPlaceholder="Choose type..."
+                              sections={typePickerSections}
+                              triggerActive={Boolean(type)}
+                              triggerIcon={
+                                <Ticket aria-hidden className="size-4" strokeWidth={1.9} />
+                              }
+                              value={type}
+                              widthClassName="w-[350px]"
+                            />
+                          ) : null}
+                          <PropertyPicker
+                            {...getControlledOpen(currentOpenChip, "priority", setOpenChip)}
+                            formatValueLabel={formatNullableLabel("Priority")}
+                            onValueChange={(value) =>
+                              onPriorityChange?.(getSingleValue(value) as CreateIssueDialogPriority)
+                            }
+                            placeholder="Priority"
+                            searchPlaceholder="Set priority to..."
+                            searchShortcut="P"
+                            sections={priorityPickerSections}
+                            triggerIcon={<span className="font-semibold leading-none">---</span>}
+                            value={priority}
+                            widthClassName="w-[414px]"
+                          />
+                          <PropertyPicker
+                            {...getControlledOpen(currentOpenChip, "assignee", setOpenChip)}
+                            formatValueLabel={formatNullableLabel("Assignee")}
+                            onValueChange={(value) => {
+                              const selectedAssignee = getSingleValue(value);
+                              onAssigneeChange?.(
+                                selectedAssignee === "none" ? null : selectedAssignee,
+                              );
+                            }}
+                            placeholder="Assignee"
+                            sections={assigneePickerSections}
+                            triggerIcon={
+                              <CircleUserRound aria-hidden className="size-4" strokeWidth={1.8} />
+                            }
+                            value={assignee ?? "none"}
+                            widthClassName="w-[350px]"
+                          />
+                          <PropertyPicker
+                            {...getControlledOpen(currentOpenChip, "project", setOpenChip)}
+                            align="end"
+                            formatValueLabel={formatNullableLabel("Project")}
+                            onValueChange={(value) => {
+                              const selectedProject = getSingleValue(value);
+                              onProjectChange?.(
+                                selectedProject === "none" ? null : selectedProject,
+                              );
+                            }}
+                            placeholder="Project"
+                            sections={projectPickerSections}
+                            triggerIcon={<Box aria-hidden className="size-4" strokeWidth={1.8} />}
+                            value={project ?? "none"}
+                            widthClassName="w-[350px]"
+                          />
+                          <PropertyPicker
+                            {...getControlledOpen(currentOpenChip, "template", setOpenChip)}
+                            align="end"
+                            formatValueLabel={formatNullableLabel("Template")}
+                            onValueChange={(value) => {
+                              const selectedTemplate = getSingleValue(value);
+                              onTemplateChange?.(
+                                selectedTemplate === "none" ? null : selectedTemplate,
+                              );
+                            }}
+                            placeholder="Template"
+                            searchPlaceholder="Apply template..."
+                            sections={templatePickerSections}
+                            triggerIcon={
+                              <FileText aria-hidden className="size-4" strokeWidth={1.8} />
+                            }
+                            value={template ?? "none"}
+                            widthClassName="w-[350px]"
+                          />
+                          <PropertyPicker
+                            {...getControlledOpen(currentOpenChip, "labels", setOpenChip)}
+                            align="end"
+                            formatValueLabel={formatLabelList}
+                            multiple
+                            onValueChange={(value) =>
+                              onLabelsChange?.(Array.isArray(value) ? value : value ? [value] : [])
+                            }
+                            placeholder="Labels"
+                            searchPlaceholder="Add labels..."
+                            searchShortcut="L"
+                            sections={labelPickerSections}
+                            triggerIcon={<Tag aria-hidden className="size-4" strokeWidth={1.8} />}
+                            value={labels}
+                            widthClassName="w-[414px]"
+                          />
+                          <label className="inline-flex h-9 min-w-[9.5rem] items-center gap-2 rounded-md border border-border bg-popover px-3 text-sm font-medium text-muted-foreground shadow-sm">
+                            <CalendarPlus aria-hidden className="size-4" />
+                            <span className="sr-only">Due date</span>
+                            <input
+                              className="min-w-0 bg-transparent text-foreground outline-none"
+                              onChange={(event) => onDueDateChange?.(event.currentTarget.value)}
+                              type="date"
+                              value={dueDate}
+                            />
+                          </label>
+                          <Input
+                            aria-label="Estimate"
+                            className="h-9 w-28 rounded-md"
+                            inputMode="decimal"
+                            onChange={(event) => onEstimateChange?.(event.currentTarget.value)}
+                            placeholder="Estimate"
+                            value={estimate ?? ""}
+                          />
+                          <PropertyPicker
+                            {...getControlledOpen(currentOpenChip, "more", setOpenChip)}
+                            align="end"
+                            onValueChange={(value, option) => {
+                              const actionId = getSingleValue(value);
+                              if (actionId) {
+                                onMoreAction?.(actionId, option);
+                              }
+                            }}
+                            placeholder={<span className="sr-only">More issue properties</span>}
+                            sections={morePickerSections}
+                            triggerIcon={
+                              <MoreHorizontal aria-hidden className="size-4" strokeWidth={1.8} />
+                            }
+                            triggerLabelText="More issue properties"
+                            value={null}
+                            widthClassName="w-[384px]"
+                          />
+                        </div>
+
+                        {errorMessage}
+
+                        <div className="flex flex-wrap items-center justify-between gap-4">
+                          <IconButton
+                            icon={<Link aria-hidden className="size-4" />}
+                            label="Attach file"
+                            onClick={onAttach}
+                            title="Attach file"
+                            variant="outline"
+                          />
+                          <div className="flex flex-wrap items-center gap-4">
+                            <label className="inline-flex items-center gap-3 text-sm font-medium text-muted-foreground">
+                              <Switch checked={createMore} onCheckedChange={onCreateMoreChange} />
+                              {createMoreLabel}
+                            </label>
+                            <Button
+                              className="h-10 rounded-full px-5 text-base"
+                              disabled={createDisabled || saving}
+                              loading={saving}
+                              loadingLabel="Creating issue"
+                              type="submit"
+                            >
+                              {createLabel}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </form>
             </DialogPanel>

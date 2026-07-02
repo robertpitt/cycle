@@ -1,5 +1,5 @@
 export * from "./agentProviders.ts";
-export * from "./agentWork.ts";
+export * from "./agentTasks.ts";
 export * from "./appConfig.ts";
 export * from "./bootstrap.ts";
 export * from "./inbox.ts";

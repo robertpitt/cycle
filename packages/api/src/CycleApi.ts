@@ -16,6 +16,7 @@ import { CycleAuthorizationLive } from "./http/handlers/Authorization.ts";
 import { FrameworkErrorEnvelopeLive } from "./http/handlers/FrameworkErrors.ts";
 import { SystemApiHandlers } from "./http/handlers/System.ts";
 import { V1ApiHandlers } from "./http/handlers/V1.ts";
+import { makeAgentTaskWebSocketLayer } from "./http/handlers/v1/agentTasksWs.ts";
 import { makeChatWebSocketLayer } from "./http/handlers/v1/chat/ws.ts";
 import { CycleApiTracingLive } from "./http/tracing.ts";
 import {
@@ -105,7 +106,6 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
     agentProviderProfiles: options.agentProviderProfiles ?? listLocalAgentProviderProfiles,
     agentServices,
     ...(options.agentChatStore === undefined ? {} : { agentChatStore: options.agentChatStore }),
-    agentWork: options.agentWork,
     ...(options.agentSessionStore === undefined
       ? {}
       : { agentSessionStore: options.agentSessionStore }),
@@ -140,6 +140,7 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
     openapiPath: "/spec.json",
   }).pipe(Layer.provide(handlers)) as Layer.Layer<never, never, any>;
   const mcpLayer = makeHostedMcpLayer(options);
+  const agentTaskWebSocketLayer = makeAgentTaskWebSocketLayer(runtimeShape);
   const chatWebSocketLayer = makeChatWebSocketLayer(runtimeShape);
   const corsLayer = HttpRouter.cors({
     allowedMethods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
@@ -151,6 +152,7 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
     apiDocsLayer,
     apiLayer,
     mcpLayer,
+    agentTaskWebSocketLayer,
     chatWebSocketLayer,
     corsLayer,
     FrameworkErrorEnvelopeLive,

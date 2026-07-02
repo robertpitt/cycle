@@ -430,7 +430,7 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
             url: mcpUrl,
           },
           paths: {
-            agentWorktrees: join(diagnosticsCycleHome, "agent-worktrees"),
+            agentWorktrees: join(diagnosticsCycleHome, "agent-task-worktrees"),
             appConfig: diagnosticsAppConfigPath,
             cliConfig: diagnosticsCliConfigPath,
             cycleHome: diagnosticsCycleHome,

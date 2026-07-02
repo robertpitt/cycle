@@ -22,6 +22,7 @@ import {
   type UseCaseContext,
   type WorkflowPolicyShape,
 } from "./UseCaseDefinition.ts";
+import { AgentTaskUsecasesLive } from "./AgentTasks.ts";
 import {
   invalidInputFailure,
   mapDatabaseFailure,
@@ -799,7 +800,7 @@ export const WorkflowPolicyLive = Layer.succeed(
   } satisfies WorkflowPolicyShape),
 );
 
-export const UseCaseServicesLive = WorkflowPolicyLive;
+export const UseCaseServicesLive = Layer.mergeAll(WorkflowPolicyLive, AgentTaskUsecasesLive);
 
 export const UseCaseTest = (prefix?: string) =>
   Layer.mergeAll(DatabaseTest(prefix), UseCaseServicesLive);

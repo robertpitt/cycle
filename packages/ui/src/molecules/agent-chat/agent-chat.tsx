@@ -12,7 +12,6 @@ import {
   HelpCircle,
   Info,
   LoaderCircle,
-  MessageSquare,
   PencilLine,
   Radio,
   RefreshCw,
@@ -252,6 +251,22 @@ const statusTone = {
   error: "danger",
   waiting: "warning",
 } satisfies Record<AgentChatThreadStatus, ComponentTone>;
+
+const threadStatusLabel = {
+  active: "active",
+  archived: "archived",
+  draft: "draft",
+  error: "failed",
+  waiting: "waiting",
+} satisfies Record<AgentChatThreadStatus, string>;
+
+const threadStatusMarkerClassName = {
+  active: "bg-primary",
+  archived: "bg-muted-foreground/45",
+  draft: "bg-border",
+  error: "bg-destructive",
+  waiting: "bg-warning",
+} satisfies Record<AgentChatThreadStatus, string>;
 
 const turnStatusTone = {
   cancelled: "neutral",
@@ -833,13 +848,14 @@ export const AgentChatThreadListItem = ({
   thread,
 }: AgentChatThreadListItemProps) => {
   const source = originBadgeLabel(thread.origin);
+  const preview = thread.lastError ?? thread.summary;
 
   return (
     <div
       className={cn(
-        "group grid w-full grid-cols-[minmax(0,1fr)_auto] border-b border-border transition-colors last:border-b-0",
+        "group relative w-full border-b border-border transition-colors last:border-b-0",
         "hover:bg-subtle/70 focus-within:bg-subtle/70",
-        selected && "bg-primary/6",
+        selected && "bg-primary/6 shadow-[inset_2px_0_0_var(--cycle-color-primary)]",
         thread.status === "archived" && "text-muted-foreground",
         className,
       )}
@@ -848,68 +864,112 @@ export const AgentChatThreadListItem = ({
       <button
         aria-current={selected ? "page" : undefined}
         className={cn(
-          "grid min-w-0 grid-cols-[32px_minmax(0,1fr)] gap-3 px-4 py-3 text-left",
+          "block w-full min-w-0 px-3 py-2 text-left",
+          onThreadDelete && "pr-9",
           "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
         )}
         onClick={() => onThreadSelect?.(thread.id)}
         type="button"
       >
-        <span
-          className={cn(
-            "mt-0.5 grid size-8 place-items-center rounded-md border border-border bg-subtle text-muted-foreground",
-            selected && "border-primary/35 bg-primary/12 text-primary",
-            thread.status === "error" && "border-destructive/30 bg-destructive/10 text-destructive",
-            thread.status === "waiting" && "border-warning/30 bg-warning/12 text-warning",
-          )}
-        >
-          {thread.activeTurnId ? icon(LoaderCircle, "size-4 animate-spin") : icon(MessageSquare)}
-        </span>
-        <span className="min-w-0">
+        <span className="block min-w-0">
           <span className="flex min-w-0 items-center gap-2">
-            <Text as="span" className="min-w-0 flex-1" truncate variant="panelTitle">
+            <span className="grid size-3 shrink-0 place-items-center">
+              {thread.activeTurnId ? (
+                <LoaderCircle
+                  aria-hidden
+                  className="size-3 animate-spin text-primary"
+                  strokeWidth={2}
+                />
+              ) : (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "size-1.5 rounded-full",
+                    threadStatusMarkerClassName[thread.status],
+                  )}
+                />
+              )}
+            </span>
+            <Text as="span" className="min-w-0 flex-1" truncate variant="panelTitle" wrap="nowrap">
               {thread.title}
             </Text>
             {thread.unreadCount ? (
-              <span className="grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
+              <span className="grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground">
                 {thread.unreadCount}
               </span>
             ) : null}
-          </span>
-          {thread.summary ? (
-            <Text as="span" className="mt-1 block" tone="muted" truncate variant="meta">
-              {thread.summary}
-            </Text>
-          ) : null}
-          <span className="mt-2 flex min-w-0 items-center gap-2">
-            <Badge appearance="outline" tone={statusTone[thread.status]}>
-              {thread.status}
-            </Badge>
-            {source ? <Badge appearance="outline">{source}</Badge> : null}
-            {thread.providerId ? (
-              <Text as="span" className="min-w-0" tone="muted" truncate variant="meta">
-                {thread.providerId}
-                {thread.model ? ` / ${thread.model}` : ""}
-              </Text>
+            {thread.updatedAt ? (
+              <DateTime
+                className="shrink-0 text-[11px] font-medium leading-4 text-muted-foreground"
+                format="relative"
+                relativeBase={relativeBase}
+                value={thread.updatedAt}
+              />
             ) : null}
-            <DateTime
-              className="ml-auto shrink-0 text-xs text-muted-foreground"
-              fallback=""
-              format="relative"
-              relativeBase={relativeBase}
-              value={thread.updatedAt}
-            />
           </span>
-          {thread.lastError ? (
-            <Text as="span" className="mt-2 block" tone="danger" truncate variant="meta">
-              {thread.lastError}
+          <span className="mt-0.5 flex min-w-0 items-center gap-1.5">
+            <Text
+              as="span"
+              className="shrink-0"
+              tone={statusTone[thread.status]}
+              variant="meta"
+              wrap="nowrap"
+            >
+              {threadStatusLabel[thread.status]}
             </Text>
-          ) : null}
+            {source ? (
+              <>
+                <span aria-hidden className="size-1 rounded-full bg-border" />
+                <Text
+                  as="span"
+                  className="min-w-0 max-w-20 shrink-0"
+                  tone="muted"
+                  truncate
+                  variant="meta"
+                  wrap="nowrap"
+                >
+                  {source}
+                </Text>
+              </>
+            ) : null}
+            {thread.providerId ? (
+              <>
+                <span aria-hidden className="size-1 rounded-full bg-border" />
+                <Text
+                  as="span"
+                  className="min-w-0 max-w-28 shrink-0"
+                  tone="muted"
+                  truncate
+                  variant="meta"
+                  wrap="nowrap"
+                >
+                  {thread.providerId}
+                  {thread.model ? ` / ${thread.model}` : ""}
+                </Text>
+              </>
+            ) : null}
+            {preview ? (
+              <>
+                <span aria-hidden className="size-1 rounded-full bg-border" />
+                <Text
+                  as="span"
+                  className="min-w-0 flex-1"
+                  tone={thread.lastError ? "danger" : "muted"}
+                  truncate
+                  variant="meta"
+                  wrap="nowrap"
+                >
+                  {preview}
+                </Text>
+              </>
+            ) : null}
+          </span>
         </span>
       </button>
       {onThreadDelete ? (
         <IconButton
           className={cn(
-            "mr-3 mt-3 size-7 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
+            "absolute right-1.5 top-1/2 size-7 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
             thread.activeTurnId &&
               "opacity-45 group-hover:opacity-45 group-focus-within:opacity-45",
           )}

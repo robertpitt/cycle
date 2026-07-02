@@ -1,17 +1,22 @@
 import type { CreateIssueDialogPriority, CreateIssueDialogStatus } from "@cycle/ui/organisms";
 import * as React from "react";
-import { isCanonicalTicketType, type TicketTypeId } from "../../lib/agentWork.ts";
+import { isCanonicalTicketType, type TicketTypeId } from "../../lib/ticketTypes.ts";
+
+export type CreateIssueFormMode = "agent" | "manual";
 
 export type CreateIssueFormValues = {
   readonly assignee: string | null;
   readonly createMore: boolean;
   readonly description: string;
+  readonly draftInstructions: string;
   readonly dueDate: string;
   readonly error?: React.ReactNode;
   readonly estimate: string;
   readonly labels: readonly string[];
+  readonly mode: CreateIssueFormMode;
   readonly priority: CreateIssueDialogPriority;
   readonly project: string | null;
+  readonly repositoryId: string;
   readonly status: CreateIssueDialogStatus;
   readonly template: string | null;
   readonly title: string;
@@ -22,12 +27,15 @@ const initialCreateIssueFormValues = (): CreateIssueFormValues => ({
   assignee: null,
   createMore: false,
   description: "",
+  draftInstructions: "",
   dueDate: "",
   error: undefined,
   estimate: "",
   labels: [],
+  mode: "agent",
   priority: "none",
   project: null,
+  repositoryId: "",
   status: "todo",
   template: null,
   title: "",
@@ -80,10 +88,13 @@ export const useCreateIssueForm = () => {
     });
   }, []);
 
-  const openDialog = React.useCallback(() => {
-    reset();
-    setOpen(true);
-  }, [reset]);
+  const openDialog = React.useCallback(
+    (nextValues?: Partial<CreateIssueFormValues>) => {
+      reset(nextValues);
+      setOpen(true);
+    },
+    [reset],
+  );
 
   const closeDialog = React.useCallback(() => {
     setOpen(false);
@@ -93,21 +104,31 @@ export const useCreateIssueForm = () => {
   return {
     closeDialog,
     createDisabled: values.title.trim().length === 0 || !isCanonicalTicketType(values.type),
+    draftDisabled: values.draftInstructions.trim().length === 0 || values.repositoryId.length === 0,
     open,
     openDialog,
     reset,
     setAssignee: React.useCallback((assignee: string | null) => update({ assignee }), [update]),
     setCreateMore: React.useCallback((createMore: boolean) => update({ createMore }), [update]),
     setDescription: React.useCallback((description: string) => update({ description }), [update]),
+    setDraftInstructions: React.useCallback(
+      (draftInstructions: string) => update({ draftInstructions }),
+      [update],
+    ),
     setDueDate: React.useCallback((dueDate: string) => update({ dueDate }), [update]),
     setEstimate: React.useCallback((estimate: string) => update({ estimate }), [update]),
     setError: React.useCallback((error?: React.ReactNode) => update({ error }), [update]),
     setLabels: React.useCallback((labels: readonly string[]) => update({ labels }), [update]),
+    setMode: React.useCallback((mode: CreateIssueFormMode) => update({ mode }), [update]),
     setPriority: React.useCallback(
       (priority: CreateIssueDialogPriority) => update({ priority }),
       [update],
     ),
     setProject: React.useCallback((project: string | null) => update({ project }), [update]),
+    setRepositoryId: React.useCallback(
+      (repositoryId: string) => update({ repositoryId }),
+      [update],
+    ),
     setStatus: React.useCallback((status: CreateIssueDialogStatus) => update({ status }), [update]),
     setTemplate: React.useCallback((template: string | null) => update({ template }), [update]),
     setTitle: React.useCallback((title: string) => update({ title }), [update]),

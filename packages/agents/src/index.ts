@@ -5,5 +5,6 @@ export * from "./orchestration.ts";
 export * from "./providers.ts";
 export * from "./runtime-events.ts";
 export * from "./service.ts";
+export * from "./task/index.ts";
 export * from "./types.ts";
 export * as Runtime from "./runtime.ts";

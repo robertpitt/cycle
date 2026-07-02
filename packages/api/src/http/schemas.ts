@@ -1,4 +1,5 @@
 import { ContractSchemas } from "@cycle/contracts";
+import * as AgentTaskSchemas from "@cycle/agents/schemas";
 import { Schema } from "effect";
 import { HttpApiSchema } from "effect/unstable/httpapi";
 
@@ -180,7 +181,6 @@ export const AutocompleteOutput = Schema.Struct({
 export const AutocompleteResourceEnvelope = ResourceEnvelopeOf(AutocompleteOutput);
 
 export const AgentProviderId = ContractSchemas.AgentProviderId;
-export const AgentWorkJobType = ContractSchemas.AgentWorkJobType;
 export const AgentCapabilitiesOutput = ContractSchemas.AgentCapabilities;
 export const AgentProviderProfileOutput = ContractSchemas.AgentProviderProfile;
 export const AgentProvidersOutput = Schema.Struct({
@@ -188,52 +188,55 @@ export const AgentProvidersOutput = Schema.Struct({
 });
 export const AgentProvidersResourceEnvelope = ResourceEnvelopeOf(AgentProvidersOutput);
 
-export const AgentAuthorityMode = ContractSchemas.AgentWorkAuthorityMode;
-export const AgentJobStatus = ContractSchemas.AgentWorkJobStatus;
-export const AgentWorkTrigger = ContractSchemas.AgentWorkTrigger;
-export const AgentSettingsOutput = ContractSchemas.AgentWorkSettings;
-export const AgentSettingsPatchPayload = ContractSchemas.AgentWorkSettingsPatch;
-export const RepositoryAgentSettingsOutput = ContractSchemas.RepositoryAgentWorkSettings;
-export const RepositoryAgentSettingsPatchPayload = ContractSchemas.RepositoryAgentWorkSettingsPatch;
-export const AgentDelegateOutput = ContractSchemas.AgentWorkDelegate;
-export const AgentDelegateNullableOutput = Schema.NullOr(AgentDelegateOutput);
-export const AgentDelegatePutPayload = ContractSchemas.AgentWorkDelegateInput;
-export const AgentDelegateJobPayload = ContractSchemas.AgentWorkDelegateJobInput;
-export const AgentJobOutput = ContractSchemas.AgentWorkJob;
-export const AgentDelegateJobOutput = ContractSchemas.AgentWorkDelegateJob;
-export const AgentActivityOutput = ContractSchemas.AgentWorkActivity;
-export const AgentJobLogEntryOutput = ContractSchemas.AgentWorkJobLogEntry;
-export const AgentJobLogOutput = ContractSchemas.AgentWorkJobLog;
-export const AgentSettingsResourceEnvelope = ResourceEnvelopeOf(AgentSettingsOutput);
-export const RepositoryAgentSettingsResourceEnvelope = ResourceEnvelopeOf(
-  RepositoryAgentSettingsOutput,
+export const AgentTaskOutput = AgentTaskSchemas.AgentTask;
+export const AgentTaskEventOutput = AgentTaskSchemas.AgentTaskEvent;
+export const AgentTaskCreatePayload = AgentTaskSchemas.AgentTaskRequest;
+export const AgentTaskCancelPayload = AgentTaskSchemas.CancelAgentTaskInput;
+export const AgentTaskRetryPayload = AgentTaskSchemas.RetryAgentTaskInput;
+export const AgentTaskInputPayload = AgentTaskSchemas.AgentTaskInput;
+export const TicketAgentTaskCreatePayload = strictSchema(
+  Schema.Struct({
+    agentId: Schema.optional(Schema.String),
+    authority: Schema.optional(AgentTaskSchemas.AgentTaskAuthority),
+    idempotencyKey: Schema.optional(Schema.String),
+    input: Schema.optional(Schema.Union([Schema.String, AgentTaskSchemas.AgentTaskJsonObject])),
+    instructions: Schema.optional(Schema.String),
+    maxAttempts: Schema.optional(PositiveInteger),
+    metadata: Schema.optional(AgentTaskSchemas.AgentTaskJsonObject),
+    model: Schema.optional(Schema.String),
+    providerId: Schema.optional(Schema.String),
+    requestedBy: Schema.optional(Schema.String),
+    responseFormat: Schema.optional(AgentTaskSchemas.AgentTaskResponseFormat),
+    tools: Schema.optional(Schema.Array(AgentTaskSchemas.AgentTaskToolRequest)),
+    trigger: Schema.optional(Schema.String),
+    workspace: Schema.optional(AgentTaskSchemas.AgentTaskWorkspace),
+  }),
 );
-export const AgentDelegateResourceEnvelope = ResourceEnvelopeOf(AgentDelegateNullableOutput);
-export const AgentDelegateChangedEnvelope = ResourceEnvelopeOf(AgentDelegateOutput);
-export const AgentDelegateJobResourceEnvelope = ResourceEnvelopeOf(AgentDelegateJobOutput);
-export const AgentJobResourceEnvelope = ResourceEnvelopeOf(AgentJobOutput);
-export const AgentJobLogResourceEnvelope = ResourceEnvelopeOf(AgentJobLogOutput);
-export const AgentJobCollectionEnvelope = CollectionEnvelopeOf(AgentJobOutput);
-export const AgentActivityCollectionEnvelope = CollectionEnvelopeOf(AgentActivityOutput);
-export const AgentJobsQueryParams = {
-  "filter[status]": Schema.optional(Schema.String),
-  "filter[ticketId]": Schema.optional(Schema.String),
-  repositoryId: Schema.optional(Schema.String),
-  status: Schema.optional(Schema.String),
-  ticketId: Schema.optional(Schema.String),
-};
-export const AgentActivityQueryParams = {
-  after: Schema.optional(PositiveIntegerFromString),
-  "page[limit]": Schema.optional(PositiveIntegerFromString),
-  repositoryId: Schema.optional(Schema.String),
-};
-export const AgentJobParams = { jobId: Schema.String };
-export const AgentDelegateParams = {
+export const AgentTaskResourceEnvelope = ResourceEnvelopeOf(AgentTaskOutput);
+export const AgentTaskAcceptedEnvelope = AcceptedResourceEnvelopeOf(AgentTaskOutput);
+export const AgentTaskCollectionEnvelope = CollectionEnvelopeOf(AgentTaskOutput);
+export const AgentTaskEventCollectionEnvelope = CollectionEnvelopeOf(AgentTaskEventOutput);
+export const AgentTaskParams = { taskId: Schema.String };
+export const AgentTaskIssueParams = {
   issueId: Schema.String,
   repositoryId: Schema.String,
 };
-export const AgentJobCancelPayload = ContractSchemas.AgentWorkJobCancelPayload;
-export const AgentJobResumePayload = ContractSchemas.AgentWorkJobResumePayload;
+export const AgentTaskListQueryParams = {
+  "filter[originKind]": Schema.optional(Schema.String),
+  "filter[repositoryId]": Schema.optional(Schema.String),
+  "filter[status]": Schema.optional(AgentTaskSchemas.AgentTaskStatus),
+  "filter[ticketId]": Schema.optional(Schema.String),
+  "page[limit]": Schema.optional(PositiveIntegerFromString),
+  after: Schema.optional(PositiveIntegerFromString),
+  originKind: Schema.optional(Schema.String),
+  repositoryId: Schema.optional(Schema.String),
+  status: Schema.optional(AgentTaskSchemas.AgentTaskStatus),
+  ticketId: Schema.optional(Schema.String),
+};
+export const AgentTaskEventQueryParams = {
+  afterSequence: Schema.optional(PositiveIntegerFromString),
+  "page[limit]": Schema.optional(PositiveIntegerFromString),
+};
 
 export const ThemePreference = Schema.Literals(["light", "dark", "system"]);
 export type ThemePreference = typeof ThemePreference.Type;

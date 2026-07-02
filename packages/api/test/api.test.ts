@@ -1,5 +1,10 @@
 import { strict as assert } from "node:assert";
 import { defaultAgentCapabilities } from "@cycle/agents/providers";
+import {
+  AgentTaskServiceLive,
+  AgentTaskStore,
+  makeInMemoryAgentTaskStore,
+} from "@cycle/agents/task";
 import type { AgentProviderProfile, AgentService, AgentTurnRequest } from "@cycle/agents/types";
 import { DatabaseService, type DatabaseServiceShape } from "@cycle/database";
 import { type TicketDocument } from "@cycle/contracts";
@@ -17,15 +22,17 @@ import {
   type AgentChatStoreShape,
   type CycleApiRuntimeShape,
 } from "../src/index.ts";
-import {
-  makeHttpAgentWorkRuntimeFromStore,
-  makeInMemoryAgentWorkStore,
-} from "@cycle/usecases/agent-work";
 import { prepareChatTurn } from "../src/http/handlers/v1/chat/prepare.ts";
 
 const repository = { id: "test-repository" };
 const token = "test-token";
-const makeTestAgentWork = () => makeHttpAgentWorkRuntimeFromStore(makeInMemoryAgentWorkStore());
+
+const makeTestAgentTaskLayer = () =>
+  AgentTaskServiceLive().pipe(
+    Layer.provide(
+      Layer.succeed(AgentTaskStore, AgentTaskStore.of(makeInMemoryAgentTaskStore())),
+    ),
+  );
 
 const makeRepositoryStatus = () => ({
   activeGeneration: 1,
@@ -109,7 +116,6 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
   const calls: Array<string> = [];
   const issues: Array<TicketDocument> = [];
   const comments: Array<unknown> = [];
-  const agentWork = options.agentWork ?? makeTestAgentWork();
   const database = databaseStub({
     addComment: (_repositoryId, issueId, input) =>
       Effect.sync(() => {
@@ -227,9 +233,11 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
   return {
     api: makeCycleApi({
       ...options,
-      agentWork,
       staticToken: token,
-      useCaseLayer: Layer.succeed(DatabaseService, DatabaseService.of(database)),
+      useCaseLayer: Layer.mergeAll(
+        Layer.succeed(DatabaseService, DatabaseService.of(database)),
+        makeTestAgentTaskLayer(),
+      ),
     }),
     calls,
     comments,
@@ -634,15 +642,13 @@ describe("@cycle/api", () => {
       assert.doesNotMatch(serializedSpec, /AnyPayload|Schema\.Unknown/);
       assert.ok(body.paths?.["/v1/autocomplete"]);
       assert.ok(body.paths?.["/v1/agents/providers"]);
-      assert.ok(body.paths?.["/v1/agent-settings"]);
-      assert.ok(body.paths?.["/v1/agent-jobs"]);
-      assert.ok(body.paths?.["/v1/agent-activity"]);
+      assert.ok(body.paths?.["/v1/agent-tasks"]);
+      assert.ok(body.paths?.["/v1/agent-tasks/{taskId}"]);
+      assert.ok(body.paths?.["/v1/agent-tasks/{taskId}/events"]);
       assert.ok(body.paths?.["/v1/app-config"]);
       assert.ok(body.paths?.["/v1/repositories/{repositoryId}/issues"]);
-      assert.ok(body.paths?.["/v1/repositories/{repositoryId}/agent-settings"]);
-      assert.ok(body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/agent-delegate"]);
       assert.ok(
-        body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/agent-delegate/jobs"],
+        body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/agent-tasks"],
       );
       assert.equal(body.paths?.["/v1/chat/threads"], undefined);
       assert.equal(body.paths?.["/v1/chat/turns"], undefined);
@@ -669,9 +675,9 @@ describe("@cycle/api", () => {
       assert.match(providersSpec, /"providers"/);
       assert.match(providersSpec, /"supportedJobTypes"/);
       assert.match(providersSpec, /"capabilities"/);
-      assert.match(JSON.stringify(body.paths?.["/v1/agent-settings"]), /"maxConcurrentJobs"/);
-      assert.match(JSON.stringify(body.paths?.["/v1/agent-jobs"]), /"authorityMode"/);
-      assert.match(JSON.stringify(body.paths?.["/v1/agent-activity"]), /"eventType"/);
+      assert.match(JSON.stringify(body.paths?.["/v1/agent-tasks"]), /"createAgentTask"/);
+      assert.match(JSON.stringify(body.paths?.["/v1/agent-tasks/{taskId}"]), /"taskId"/);
+      assert.match(JSON.stringify(body.paths?.["/v1/agent-tasks/{taskId}/events"]), /"sequence"/);
 
       assert.match(JSON.stringify(body.paths?.["/v1/app-config"]), /"schemaVersion"/);
       assert.match(JSON.stringify(body.paths?.["/v1/app-config"]), /"localWorkspace"/);
@@ -874,826 +880,9 @@ describe("@cycle/api", () => {
     }
   });
 
-  it("serves local agent-work endpoints and records local activity", async () => {
-    const { api } = makeTestApi();
-
-    try {
-      const settings = await api.fetch(
-        new Request("http://cycle.test/v1/agent-settings", authed()),
-      );
-      const settingsBody = (await settings.json()) as {
-        data?: { defaultProviderId?: string; paused?: boolean };
-      };
-      assert.equal(settings.status, 200);
-      assert.equal(settingsBody.data?.defaultProviderId, "codex");
-      assert.equal(settingsBody.data?.paused, false);
-
-      const patched = await api.fetch(
-        new Request("http://cycle.test/v1/agent-settings", {
-          ...authed({ maxConcurrentJobs: 2, paused: true }),
-          method: "PATCH",
-        }),
-      );
-      const patchedBody = (await patched.json()) as {
-        data?: { maxConcurrentJobs?: number | null; paused?: boolean };
-      };
-      assert.equal(patched.status, 200);
-      assert.equal(patchedBody.data?.maxConcurrentJobs, 2);
-      assert.equal(patchedBody.data?.paused, true);
-
-      const unlimited = await api.fetch(
-        new Request("http://cycle.test/v1/agent-settings", {
-          ...authed({ maxConcurrentJobs: null }),
-          method: "PATCH",
-        }),
-      );
-      const unlimitedBody = (await unlimited.json()) as {
-        data?: { maxConcurrentJobs?: number | null };
-      };
-      assert.equal(unlimited.status, 200);
-      assert.equal(unlimitedBody.data?.maxConcurrentJobs, null);
-
-      const repositorySettings = await api.fetch(
-        new Request(`http://cycle.test/v1/repositories/${repository.id}/agent-settings`, {
-          ...authed({ agentWorkDisabled: true }),
-          method: "PATCH",
-        }),
-      );
-      const repositorySettingsBody = (await repositorySettings.json()) as {
-        data?: { agentWorkDisabled?: boolean; repositoryId?: string };
-      };
-      assert.equal(repositorySettings.status, 200);
-      assert.equal(repositorySettingsBody.data?.repositoryId, repository.id);
-      assert.equal(repositorySettingsBody.data?.agentWorkDisabled, true);
-
-      const delegate = await api.fetch(
-        new Request(
-          `http://cycle.test/v1/repositories/${repository.id}/issues/ISSUE-1/agent-delegate`,
-          {
-            ...authed({ agentId: "agent-a", notes: "local only" }),
-            method: "PUT",
-          },
-        ),
-      );
-      const delegateBody = (await delegate.json()) as {
-        data?: { agentId?: string; assignmentVersion?: number; providerId?: string };
-      };
-      assert.equal(delegate.status, 200);
-      assert.equal(delegateBody.data?.agentId, "agent-a");
-      assert.equal(delegateBody.data?.assignmentVersion, 1);
-      assert.equal(delegateBody.data?.providerId, "codex");
-
-      const activity = await api.fetch(
-        new Request("http://cycle.test/v1/agent-activity", authed()),
-      );
-      const activityBody = (await activity.json()) as {
-        data?: ReadonlyArray<{ eventType?: string }>;
-      };
-      assert.equal(activity.status, 200);
-      assert.ok(
-        activityBody.data?.some((event) => event.eventType === "local.agent_settings_changed"),
-      );
-      assert.ok(
-        activityBody.data?.some((event) => event.eventType === "local.agent_delegate_changed"),
-      );
-    } finally {
-      await api.dispose();
-    }
-  });
-
-  it("saves agent delegate assignment without starting a job", async () => {
-    const { api } = makeTestApi();
-
-    try {
-      const created = await api.fetch(
-        new Request(`http://cycle.test/v1/repositories/${repository.id}/issues`, {
-          ...authed({ body: "Body", title: "Assignment only", type: "task" }),
-          method: "POST",
-        }),
-      );
-      assert.equal(created.status, 201);
-
-      const delegate = await api.fetch(
-        new Request(
-          `http://cycle.test/v1/repositories/${repository.id}/issues/ISSUE-1/agent-delegate`,
-          {
-            ...authed({ agentId: "codex", notes: "store only" }),
-            method: "PUT",
-          },
-        ),
-      );
-      const delegateBody = (await delegate.json()) as {
-        data?: { agentId?: string; assignmentVersion?: number };
-      };
-      assert.equal(delegate.status, 200);
-      assert.equal(delegateBody.data?.agentId, "codex");
-      assert.equal(delegateBody.data?.assignmentVersion, 1);
-
-      const jobs = await api.fetch(new Request("http://cycle.test/v1/agent-jobs", authed()));
-      const jobsBody = (await jobs.json()) as { data?: readonly unknown[] };
-      assert.equal(jobs.status, 200);
-      assert.deepEqual(jobsBody.data, []);
-    } finally {
-      await api.dispose();
-    }
-  });
-
-  it("starts an implementation job through the explicit delegate endpoint", async () => {
-    const agentWork = makeHttpAgentWorkRuntimeFromStore(makeInMemoryAgentWorkStore(), {
-      executionPolicy: {
-        supportedAuthorityModes: ["ticket-context", "implementation-worktree"],
-      },
-    });
-    const { api } = makeTestApi({
-      agentWork,
-      worktreeService: makeFakeWorktreeService(),
-      worktreeStoragePath: "/tmp/cycle-agent-worktrees",
-    });
-
-    try {
-      const created = await api.fetch(
-        new Request(`http://cycle.test/v1/repositories/${repository.id}/issues`, {
-          ...authed({ body: "Body", title: "Delegate job", type: "task" }),
-          method: "POST",
-        }),
-      );
-      assert.equal(created.status, 201);
-
-      const delegated = await api.fetch(
-        new Request(
-          `http://cycle.test/v1/repositories/${repository.id}/issues/ISSUE-1/agent-delegate/jobs`,
-          {
-            ...authed({
-              agentId: "codex",
-              instructions: "Implement this ticket.",
-              providerId: "codex",
-            }),
-            method: "POST",
-          },
-        ),
-      );
-      const delegatedBody = (await delegated.json()) as {
-        data?: {
-          delegate?: { agentId?: string };
-          job?: { authorityMode?: string; status?: string; trigger?: string };
-        };
-      };
-      assert.equal(delegated.status, 202);
-      assert.equal(delegatedBody.data?.delegate?.agentId, "codex");
-      assert.equal(delegatedBody.data?.job?.authorityMode, "implementation-worktree");
-      assert.equal(delegatedBody.data?.job?.trigger, "agent-delegate");
-      assert.ok(["failed", "running", "suspended"].includes(delegatedBody.data?.job?.status ?? ""));
-    } finally {
-      await api.dispose();
-    }
-  });
-
-  it("emits ticket events only after successful writes and dedupes mention jobs", async () => {
-    const { api } = makeTestApi();
-
-    try {
-      const failed = await api.fetch(
-        new Request(`http://cycle.test/v1/repositories/${repository.id}/issues`, {
-          ...authed({ body: "Missing title" }),
-          method: "POST",
-        }),
-      );
-      assert.equal(failed.status, 400);
-
-      const initialActivity = await api.fetch(
-        new Request("http://cycle.test/v1/agent-activity", authed()),
-      );
-      const initialActivityBody = (await initialActivity.json()) as { data?: readonly unknown[] };
-      assert.equal(initialActivityBody.data?.length, 0);
-
-      const created = await api.fetch(
-        new Request(`http://cycle.test/v1/repositories/${repository.id}/issues`, {
-          ...authed({ body: "Body", title: "Write event", type: "task" }),
-          method: "POST",
-        }),
-      );
-      assert.equal(created.status, 201);
-
-      const typed = await api.fetch(
-        new Request(`http://cycle.test/v1/repositories/${repository.id}/issues/ISSUE-1`, {
-          ...authed({ frontmatter: { type: "bug" } }),
-          method: "PATCH",
-        }),
-      );
-      assert.equal(typed.status, 200);
-
-      const transitioned = await api.fetch(
-        new Request(
-          `http://cycle.test/v1/repositories/${repository.id}/issues/ISSUE-1/transitions`,
-          {
-            ...authed({ status: "in-progress" }),
-            method: "POST",
-          },
-        ),
-      );
-      assert.equal(transitioned.status, 200);
-
-      for (let index = 0; index < 2; index++) {
-        const commented = await api.fetch(
-          new Request(
-            `http://cycle.test/v1/repositories/${repository.id}/issues/ISSUE-1/comments`,
-            {
-              ...authed({ body: "Please look cycle-agent:agent-a and cycle-agent:agent-a" }),
-              method: "POST",
-            },
-          ),
-        );
-        assert.equal(commented.status, 201);
-      }
-
-      const activity = await api.fetch(
-        new Request("http://cycle.test/v1/agent-activity", authed()),
-      );
-      const activityBody = (await activity.json()) as {
-        data?: ReadonlyArray<{ eventType?: string }>;
-      };
-      const eventTypes = activityBody.data?.map((event) => event.eventType) ?? [];
-      assert.ok(eventTypes.includes("ticket.created"));
-      assert.ok(eventTypes.includes("ticket.updated"));
-      assert.ok(eventTypes.includes("ticket.type_changed"));
-      assert.ok(eventTypes.includes("ticket.status_changed"));
-      assert.ok(eventTypes.includes("ticket.comment_added"));
-      assert.equal(eventTypes.filter((type) => type === "local.agent_job_created").length, 1);
-
-      const jobs = await api.fetch(new Request("http://cycle.test/v1/agent-jobs", authed()));
-      const jobsBody = (await jobs.json()) as {
-        data?: ReadonlyArray<{ agentId?: string; authorityMode?: string; trigger?: string }>;
-      };
-      assert.equal(jobs.status, 200);
-      assert.equal(jobsBody.data?.length, 1);
-      assert.equal(jobsBody.data?.[0]?.agentId, "agent-a");
-      assert.equal(jobsBody.data?.[0]?.authorityMode, "ticket-context");
-      assert.equal(jobsBody.data?.[0]?.trigger, "agent-mention");
-    } finally {
-      await api.dispose();
-    }
-  });
-
-  it("filters agent jobs with renderer-style query parameters", async () => {
-    const { api } = makeTestApi();
-
-    try {
-      for (const issueId of ["ISSUE-1", "ISSUE-2"]) {
-        const commented = await api.fetch(
-          new Request(
-            `http://cycle.test/v1/repositories/${repository.id}/issues/${issueId}/comments`,
-            {
-              ...authed({ body: "Please look cycle-agent:agent-a" }),
-              method: "POST",
-            },
-          ),
-        );
-        assert.equal(commented.status, 201);
-      }
-
-      const byTicket = await api.fetch(
-        new Request(
-          `http://cycle.test/v1/agent-jobs?repositoryId=${repository.id}&filter%5BticketId%5D=ISSUE-2`,
-          authed(),
-        ),
-      );
-      const byTicketBody = (await byTicket.json()) as {
-        data?: ReadonlyArray<{ status?: string; ticketId?: string }>;
-      };
-      assert.equal(byTicket.status, 200);
-      assert.deepEqual(
-        byTicketBody.data?.map((job) => job.ticketId),
-        ["ISSUE-2"],
-      );
-
-      const byStatus = await api.fetch(
-        new Request(
-          `http://cycle.test/v1/agent-jobs?repositoryId=${repository.id}&filter%5BticketId%5D=ISSUE-2&filter%5Bstatus%5D=queued`,
-          authed(),
-        ),
-      );
-      const byStatusBody = (await byStatus.json()) as {
-        data?: ReadonlyArray<{ status?: string; ticketId?: string }>;
-      };
-      assert.equal(byStatus.status, 200);
-      assert.deepEqual(
-        byStatusBody.data?.map((job) => [job.ticketId, job.status]),
-        [["ISSUE-2", "queued"]],
-      );
-    } finally {
-      await api.dispose();
-    }
-  });
-
-  it("returns chronological agent job logs", async () => {
-    const { api } = makeTestApi();
-
-    try {
-      const commented = await api.fetch(
-        new Request(`http://cycle.test/v1/repositories/${repository.id}/issues/ISSUE-1/comments`, {
-          ...authed({ body: "Please look cycle-agent:agent-a" }),
-          method: "POST",
-        }),
-      );
-      assert.equal(commented.status, 201);
-
-      const jobs = await api.fetch(new Request("http://cycle.test/v1/agent-jobs", authed()));
-      const jobsBody = (await jobs.json()) as {
-        data?: ReadonlyArray<{ jobId?: string }>;
-      };
-      const jobId = jobsBody.data?.[0]?.jobId;
-      assert.equal(typeof jobId, "string");
-
-      const log = await api.fetch(
-        new Request(`http://cycle.test/v1/agent-jobs/${jobId}/logs`, authed()),
-      );
-      const logBody = (await log.json()) as {
-        data?: {
-          entries?: ReadonlyArray<{ kind?: string; status?: string; title?: string }>;
-          job?: { jobId?: string };
-        };
-      };
-      assert.equal(log.status, 200);
-      assert.equal(logBody.data?.job?.jobId, jobId);
-      assert.ok(logBody.data?.entries?.some((entry) => entry.kind === "status"));
-      assert.ok(
-        logBody.data?.entries?.some(
-          (entry) => entry.kind === "event" && entry.title === "local.agent_job_created",
-        ),
-      );
-    } finally {
-      await api.dispose();
-    }
-  });
-
-  it("runs V1.1 ticket-context mention jobs and records provider logs", async () => {
-    let captured:
-      | {
-          readonly request: AgentTurnRequest;
-          readonly sessionId: string;
-        }
-      | undefined;
-    const timestamp = new Date("2026-06-16T00:00:01.000Z");
-    const fakeAgent: AgentService = {
-      abortTurn: async () => ({ accepted: false, reason: "not_supported" }),
-      capabilities: () => defaultAgentCapabilities("codex"),
-      close: async () => undefined,
-      createSession: async () => ({
-        createdAt: timestamp,
-        harnessId: "codex",
-        id: "session_agent_work_test",
-        provider: "codex",
-        updatedAt: timestamp,
-      }),
-      provider: "codex",
-      resumeSession: async (sessionId) => ({
-        createdAt: timestamp,
-        harnessId: "codex",
-        id: sessionId,
-        provider: "codex",
-        updatedAt: timestamp,
-      }),
-      respondToApproval: async (sessionId, requestId) => ({
-        requestId,
-        sessionId,
-        status: "not_found",
-      }),
-      respondToUserInput: async (sessionId, requestId) => ({
-        requestId,
-        sessionId,
-        status: "not_found",
-      }),
-      run: async () => {
-        throw new Error("Agent Work runner test should not call run");
-      },
-      stream: async function* <TStructured = unknown>(
-        sessionId: string,
-        request: AgentTurnRequest<TStructured>,
-      ) {
-        captured = { request, sessionId };
-        yield {
-          at: timestamp,
-          provider: "codex",
-          sessionId,
-          turnId: "turn_agent_work_provider",
-          type: "turn.started",
-        };
-        yield {
-          at: new Date(timestamp.getTime() + 2500),
-          message: "Inspecting ticket context.",
-          sessionId,
-          turnId: "turn_agent_work_provider",
-          type: "progress",
-        };
-        yield {
-          at: new Date(timestamp.getTime() + 3000),
-          result: {
-            artifacts: [],
-            completedAt: timestamp,
-            createdAt: timestamp,
-            finishReason: "stop",
-            id: "turn_agent_work_provider",
-            provider: "codex",
-            sessionId,
-            status: "completed",
-            structured: {
-              response: "Agent Work inspected the ticket and found no blocker.",
-            } as TStructured,
-            text: JSON.stringify({
-              response: "Agent Work inspected the ticket and found no blocker.",
-            }),
-          },
-          sessionId,
-          turnId: "turn_agent_work_provider",
-          type: "turn.completed",
-        };
-      },
-    };
-    const agentChatStore = makeInMemoryAgentChatStore();
-    const agentWork = makeHttpAgentWorkRuntimeFromStore(makeInMemoryAgentWorkStore());
-    const { api, comments } = makeTestApi({
-      agentChatStore,
-      agentServices: {
-        serviceFor: () => Effect.succeed(fakeAgent),
-      },
-      agentWork,
-      mcp: {
-        enabled: true,
-        path: "/mcp",
-      },
-    });
-
-    try {
-      const commented = await api.fetch(
-        new Request(`http://cycle.test/v1/repositories/${repository.id}/issues/ISSUE-1/comments`, {
-          ...authed({ body: "Please inspect cycle-agent:codex" }),
-          method: "POST",
-        }),
-      );
-      assert.equal(commented.status, 201);
-
-      let job: { jobId?: string; status?: string } | undefined;
-      for (let attempt = 0; attempt < 40; attempt++) {
-        const jobs = await api.fetch(new Request("http://cycle.test/v1/agent-jobs", authed()));
-        const jobsBody = (await jobs.json()) as {
-          data?: ReadonlyArray<{ jobId?: string; status?: string }>;
-        };
-        job = jobsBody.data?.[0];
-        if (job?.status === "completed" || job?.status === "failed") break;
-        await delay(25);
-      }
-
-      assert.equal(job?.status, "completed");
-      assert.equal(captured?.sessionId, `agent-work-${job?.jobId}`);
-      assert.match(
-        String(captured?.request.input),
-        /cycle:\/\/repository\/test-repository\/tickets\/ISSUE-1/u,
-      );
-      assert.equal(captured?.request.responseFormat?.type, "json_schema");
-      assert.equal(comments.length, 2);
-      assert.deepEqual((comments[1] as any).payload, {
-        body: "Agent Work inspected the ticket and found no blocker.",
-      });
-      const threadId = `agent-work-${job?.jobId}`;
-      const chatThread = await agentChatStore.getThread?.(threadId);
-      const chatMessages = await agentChatStore.listMessages(threadId);
-      const chatActivities = (await agentChatStore.listActivities?.(threadId)) ?? [];
-      assert.equal(chatThread?.origin?.kind, "issue-comment");
-      assert.equal(chatThread?.origin?.commentId, "COMMENT-1");
-      assert.ok(
-        chatMessages.some(
-          (message) =>
-            message.actor === "user" &&
-            message.body.includes("Please inspect cycle-agent:codex") &&
-            message.body.includes("cycle://repository/test-repository/tickets/ISSUE-1"),
-        ),
-      );
-      assert.ok(
-        chatMessages.some(
-          (message) =>
-            message.actor === "agent" && message.body.includes("Agent Work inspected the ticket"),
-        ),
-      );
-      assert.ok(
-        chatActivities.some(
-          (activity) =>
-            activity.title === "Posted reply to issue" && activity.status === "completed",
-        ),
-      );
-
-      const log = await api.fetch(
-        new Request(`http://cycle.test/v1/agent-jobs/${job?.jobId}/logs`, authed()),
-      );
-      const logBody = (await log.json()) as {
-        data?: {
-          entries?: ReadonlyArray<{
-            kind?: string;
-            message?: string;
-            payload?: Readonly<Record<string, unknown>>;
-            status?: string;
-            title?: string;
-          }>;
-        };
-      };
-      assert.equal(log.status, 200);
-      assert.ok(
-        logBody.data?.entries?.some(
-          (entry) => entry.kind === "activity" && entry.message === "Provider turn started.",
-        ),
-      );
-      assert.ok(
-        logBody.data?.entries?.some(
-          (entry) => entry.kind === "status" && entry.status === "completed",
-        ),
-      );
-      assert.ok(
-        logBody.data?.entries?.some(
-          (entry) =>
-            entry.kind === "activity" &&
-            entry.title === "runtime-event" &&
-            String((entry.payload?.event as { _tag?: unknown } | undefined)?._tag) ===
-              "AgentRunCompleted",
-        ),
-      );
-    } finally {
-      await api.dispose();
-    }
-  });
-
-  it("runs delegated implementation jobs through worktree, commit, branch, and comment", async () => {
-    let captured:
-      | {
-          readonly request: AgentTurnRequest;
-          readonly sessionId: string;
-        }
-      | undefined;
-    const timestamp = new Date("2026-06-16T00:00:01.000Z");
-    const fakeAgent: AgentService = {
-      abortTurn: async () => ({ accepted: false, reason: "not_supported" }),
-      capabilities: () => defaultAgentCapabilities("codex"),
-      close: async () => undefined,
-      createSession: async () => ({
-        createdAt: timestamp,
-        harnessId: "codex",
-        id: "session_delegate_implementation",
-        provider: "codex",
-        updatedAt: timestamp,
-      }),
-      provider: "codex",
-      resumeSession: async (sessionId) => ({
-        createdAt: timestamp,
-        harnessId: "codex",
-        id: sessionId,
-        provider: "codex",
-        updatedAt: timestamp,
-      }),
-      respondToApproval: async (sessionId, requestId) => ({
-        requestId,
-        sessionId,
-        status: "not_found",
-      }),
-      respondToUserInput: async (sessionId, requestId) => ({
-        requestId,
-        sessionId,
-        status: "not_found",
-      }),
-      run: async () => {
-        throw new Error("Agent Work runner test should not call run");
-      },
-      stream: async function* <TStructured = unknown>(
-        sessionId: string,
-        request: AgentTurnRequest<TStructured>,
-      ) {
-        captured = { request, sessionId };
-        yield {
-          at: timestamp,
-          provider: "codex",
-          sessionId,
-          turnId: "turn_delegate_implementation",
-          type: "turn.started",
-        };
-        yield {
-          at: new Date(timestamp.getTime() + 3000),
-          result: {
-            artifacts: [],
-            completedAt: timestamp,
-            createdAt: timestamp,
-            finishReason: "stop",
-            id: "turn_delegate_implementation",
-            provider: "codex",
-            sessionId,
-            status: "completed",
-            structured: {
-              response: "Implemented the delegated ticket and ran focused tests.",
-            } as TStructured,
-            text: JSON.stringify({
-              response: "Implemented the delegated ticket and ran focused tests.",
-            }),
-          },
-          sessionId,
-          turnId: "turn_delegate_implementation",
-          type: "turn.completed",
-        };
-      },
-    };
-    const worktreeCalls: string[] = [];
-    const agentChatStore = makeInMemoryAgentChatStore();
-    const agentWork = makeHttpAgentWorkRuntimeFromStore(makeInMemoryAgentWorkStore(), {
-      executionPolicy: {
-        supportedAuthorityModes: ["ticket-context", "implementation-worktree"],
-      },
-    });
-    const { api, comments } = makeTestApi({
-      agentChatStore,
-      agentServices: {
-        serviceFor: () => Effect.succeed(fakeAgent),
-      },
-      agentWork,
-      mcp: {
-        enabled: true,
-        path: "/mcp",
-      },
-      worktreeService: makeFakeWorktreeService(worktreeCalls),
-      worktreeStoragePath: "/tmp/cycle-agent-worktrees",
-    });
-
-    try {
-      const created = await api.fetch(
-        new Request(`http://cycle.test/v1/repositories/${repository.id}/issues`, {
-          ...authed({ body: "Body", title: "Delegate implementation", type: "task" }),
-          method: "POST",
-        }),
-      );
-      assert.equal(created.status, 201);
-
-      const delegated = await api.fetch(
-        new Request(
-          `http://cycle.test/v1/repositories/${repository.id}/issues/ISSUE-1/agent-delegate/jobs`,
-          {
-            ...authed({
-              agentId: "codex",
-              instructions: "Keep the fix small.",
-              notes: "Run focused tests.",
-              providerId: "codex",
-            }),
-            method: "POST",
-          },
-        ),
-      );
-      assert.equal(delegated.status, 202);
-
-      let job:
-        | {
-            jobId?: string;
-            metadata?: Readonly<Record<string, unknown>>;
-            status?: string;
-            trigger?: string;
-          }
-        | undefined;
-      for (let attempt = 0; attempt < 80; attempt++) {
-        const jobs = await api.fetch(
-          new Request(
-            `http://cycle.test/v1/agent-jobs?repositoryId=${repository.id}&filter%5BticketId%5D=ISSUE-1`,
-            authed(),
-          ),
-        );
-        const jobsBody = (await jobs.json()) as {
-          data?: ReadonlyArray<{
-            jobId?: string;
-            metadata?: Readonly<Record<string, unknown>>;
-            status?: string;
-            trigger?: string;
-          }>;
-        };
-        job = jobsBody.data?.find((entry) => entry.trigger === "agent-delegate");
-        if (job?.status === "completed" || job?.status === "failed") break;
-        await delay(25);
-      }
-
-      assert.equal(job?.status, "completed");
-      assert.equal(captured?.sessionId, `agent-work-${job?.jobId}`);
-      assert.equal(captured?.request.runtimeMode, "workspace-write");
-      assert.equal(
-        isRecord(captured?.request.context) ? captured.request.context.cwd : undefined,
-        `/tmp/cycle-agent-worktrees/${job?.jobId}`,
-      );
-      assert.ok(
-        worktreeCalls.some((call) =>
-          call.startsWith("createImplementationWorktree:/tmp/cycle-test-repository:ISSUE-1"),
-        ),
-      );
-      assert.ok(worktreeCalls.includes(`commitWorktree:/tmp/cycle-agent-worktrees/${job?.jobId}`));
-      assert.ok(
-        worktreeCalls.includes("createOrUpdateBranch:cycle/task/ISSUE-1:commit-sha-1234567890"),
-      );
-      assert.ok(
-        worktreeCalls.includes(
-          `retainWorktree:implementation-completed:/tmp/cycle-agent-worktrees/${job?.jobId}`,
-        ),
-      );
-      assert.equal(job?.metadata?.branchName, "cycle/task/ISSUE-1");
-      assert.equal(job?.metadata?.commitSha, "commit-sha-1234567890");
-      assert.equal(job?.metadata?.worktreeStatus, "retained");
-      assert.equal(comments.length, 1);
-      const commentBody = String((comments[0] as any).payload?.body ?? "");
-      assert.match(commentBody, /Implemented the delegated ticket/u);
-      assert.match(commentBody, /Branch: cycle\/task\/ISSUE-1/u);
-      assert.match(commentBody, /Commit: commit-sha-1234567890/u);
-      assert.match(commentBody, new RegExp(`/tmp/cycle-agent-worktrees/${job?.jobId}`, "u"));
-    } finally {
-      await api.dispose();
-    }
-  });
-
-  it("holds ticket-context mention jobs without publishing a response when MCP is unavailable", async () => {
-    const fakeAgent: AgentService = {
-      abortTurn: async () => ({ accepted: false, reason: "not_supported" }),
-      capabilities: () => defaultAgentCapabilities("codex"),
-      close: async () => undefined,
-      createSession: async () => {
-        throw new Error("Agent Work must not start a provider turn without MCP.");
-      },
-      provider: "codex",
-      resumeSession: async () => {
-        throw new Error("Agent Work must not start a provider turn without MCP.");
-      },
-      respondToApproval: async (sessionId, requestId) => ({
-        requestId,
-        sessionId,
-        status: "not_found",
-      }),
-      respondToUserInput: async (sessionId, requestId) => ({
-        requestId,
-        sessionId,
-        status: "not_found",
-      }),
-      run: async () => {
-        throw new Error("Agent Work runner test should not call run");
-      },
-      stream: () => failingAgentStream("Agent Work must not stream without MCP."),
-    };
-    const agentWork = makeHttpAgentWorkRuntimeFromStore(makeInMemoryAgentWorkStore());
-    const { api, comments } = makeTestApi({
-      agentServices: {
-        serviceFor: () => Effect.succeed(fakeAgent),
-      },
-      agentWork,
-      mcp: false,
-    });
-
-    try {
-      const commented = await api.fetch(
-        new Request(`http://cycle.test/v1/repositories/${repository.id}/issues/ISSUE-1/comments`, {
-          ...authed({ body: "Please inspect cycle-agent:codex" }),
-          method: "POST",
-        }),
-      );
-      assert.equal(commented.status, 201);
-
-      let job: { jobId?: string; status?: string } | undefined;
-      for (let attempt = 0; attempt < 40; attempt++) {
-        const jobs = await api.fetch(new Request("http://cycle.test/v1/agent-jobs", authed()));
-        const jobsBody = (await jobs.json()) as {
-          data?: ReadonlyArray<{ jobId?: string; status?: string }>;
-        };
-        job = jobsBody.data?.[0];
-        if (job?.status === "completed" || job?.status === "failed" || job?.status === "retry-wait")
-          break;
-        await delay(25);
-      }
-
-      assert.equal(job?.status, "retry-wait");
-      assert.equal(comments.length, 1);
-
-      const log = await api.fetch(
-        new Request(`http://cycle.test/v1/agent-jobs/${job?.jobId}/logs`, authed()),
-      );
-      const logBody = (await log.json()) as {
-        data?: {
-          entries?: ReadonlyArray<{
-            payload?: Readonly<Record<string, unknown>>;
-            status?: string;
-          }>;
-        };
-      };
-      assert.equal(log.status, 200);
-      assert.ok(
-        logBody.data?.entries?.some(
-          (entry) =>
-            entry.status === "retry-wait" &&
-            isRecord(entry.payload?.error) &&
-            entry.payload.error.code === "mcp-unavailable",
-        ),
-      );
-    } finally {
-      await api.dispose();
-    }
-  });
-
   it("normalizes framework schema failures through the listening server", async () => {
     const calls: Array<string> = [];
     const handle = await startCycleApiServer({
-      agentWork: makeTestAgentWork(),
       staticToken: token,
       useCaseLayer: Layer.succeed(
         DatabaseService,
@@ -1960,7 +1149,6 @@ describe("@cycle/api", () => {
 
   it("hosts MCP on the same server without applying MCP auth globally", async () => {
     const handle = await startCycleApiServer({
-      agentWork: makeTestAgentWork(),
       mcp: {
         enabled: true,
       },
@@ -2142,7 +1330,6 @@ describe("@cycle/api", () => {
     });
 
     const handle = await startCycleApiServer({
-      agentWork: makeTestAgentWork(),
       agentChatStore,
       agentServices: {
         serviceFor: () => Effect.succeed(fakeAgent),
@@ -2176,7 +1363,6 @@ describe("@cycle/api", () => {
   it("rejects invalid chat WebSocket command payloads at the schema boundary", async () => {
     const agentChatStore = makeInMemoryAgentChatStore();
     const handle = await startCycleApiServer({
-      agentWork: makeTestAgentWork(),
       agentChatStore,
       useCaseLayer: unexpectedDatabaseLayer,
       staticToken: token,
@@ -2399,7 +1585,6 @@ describe("@cycle/api", () => {
       },
     };
     const handle = await startCycleApiServer({
-      agentWork: makeTestAgentWork(),
       agentChatStore,
       agentServices: {
         serviceFor: () => Effect.succeed(fakeAgent),
@@ -2736,7 +1921,6 @@ describe("@cycle/api", () => {
       },
     };
     const handle = await startCycleApiServer({
-      agentWork: makeTestAgentWork(),
       agentChatStore,
       agentServices: {
         serviceFor: () => Effect.succeed(fakeAgent),
@@ -2809,7 +1993,6 @@ describe("@cycle/api", () => {
   it("deletes chat threads over the WebSocket endpoint", async () => {
     const agentChatStore = makeInMemoryAgentChatStore();
     const handle = await startCycleApiServer({
-      agentWork: makeTestAgentWork(),
       agentChatStore,
       staticToken: token,
       useCaseLayer: unexpectedDatabaseLayer,
@@ -2911,7 +2094,6 @@ describe("@cycle/api", () => {
     const calls: Array<string> = [];
     const appLayer = (
       makeCycleApiLayer({
-        agentWork: makeTestAgentWork(),
         staticToken: token,
         useCaseLayer: issueCreateDatabaseLayer(calls),
       }) as Layer.Layer<never, unknown, any>
@@ -2965,7 +2147,6 @@ describe("@cycle/api", () => {
     const calls: Array<string> = [];
     const handle = await Effect.runPromise(
       startCycleApiServerEffect({
-        agentWork: makeTestAgentWork(),
         host: "127.0.0.1",
         logging: {
           console: false,

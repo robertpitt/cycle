@@ -16,7 +16,6 @@ import {
   useSyncRepositoryMutation,
   useUpdateRepositoryPreferencesMutation,
 } from "../mutations/index.ts";
-import { RepositoryAgentWorkSettingsPanel } from "./AgentWorkPanels.tsx";
 import type { DetectedAgentProvider } from "../../shared/AgentProviders.ts";
 
 type RepositorySettingsPanelProps = {
@@ -235,8 +234,6 @@ export const RepositorySettingsPanel = ({
           </p>
         ) : null}
       </SectionShell>
-
-      <RepositoryAgentWorkSettingsPanel providers={agentProviders} repositoryId={repository.id} />
 
       <SectionShell
         description={

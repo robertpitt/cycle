@@ -1,4 +1,4 @@
-export * from "./agentWork.ts";
+export * from "./agentTasks.ts";
 export * from "./metadata.ts";
 export * from "./repositories.ts";
 export * from "./settings.ts";

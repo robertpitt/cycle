@@ -35,24 +35,13 @@ import type { UpdateRepositoryPreferencesInput } from "../../shared/LocalWorkspa
 import type { CompleteOnboardingInput, ProfileUpdateInput } from "../../shared/Profile.ts";
 import { getDesktopBridge } from "./desktopBridge.ts";
 import {
-  parseAgentJob,
-  parseAgentJobLog,
-  parseAgentDelegate,
-  parseAgentDelegateJobResult,
-  parseAgentSettings,
-  parseRepositoryAgentSettings,
-  summarizeAgentActivity,
-  type AgentActivity,
-  type AgentDelegate,
-  type AgentDelegateJobResult,
-  type AgentSettings,
-  type AgentSettingsPatch,
-  type AgentJobLog,
-  type AgentWorkJob,
-  type RepositoryAgentSettings,
-  type RepositoryAgentSettingsPatch,
-  type StartAgentDelegateJobInput,
-} from "./agentWork.ts";
+  parseAgentTask,
+  parseAgentTaskEvent,
+  type AgentTask,
+  type AgentTaskEvent,
+  type CreateAgentTaskInput,
+  type StartIssueAgentTaskInput,
+} from "./agentTasks.ts";
 
 type SupportedCycleApiAlias = Extract<
   UseCaseAlias,
@@ -112,6 +101,16 @@ export type OpenRepositoryPathInput = {
   readonly displayName?: string;
   readonly path: string;
   readonly syncOnOpen?: boolean;
+};
+
+export type StartTicketDraftChatInput = {
+  readonly instructions: string;
+  readonly providerId?: "codex";
+  readonly repository: Pick<AppRepositoryRecord, "displayName" | "id" | "path">;
+};
+
+export type StartTicketDraftChatResult = {
+  readonly threadId: string;
 };
 
 const API_URL_STORAGE_KEY = "cycle.api.baseUrl";
@@ -278,6 +277,201 @@ export const chatWebSocketUrlForConnection = (
 
   httpUrl.protocol = httpUrl.protocol === "https:" ? "wss:" : "ws:";
   return httpUrl.toString();
+};
+
+type ChatSocketMessage = {
+  readonly commandId?: unknown;
+  readonly payload?: unknown;
+  readonly type?: unknown;
+};
+
+const chatRecord = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
+  isRecord(value) ? value : undefined;
+
+const chatString = (value: unknown): string | undefined =>
+  typeof value === "string" && value.length > 0 ? value : undefined;
+
+const chatCommandResult = (message: ChatSocketMessage): Readonly<Record<string, unknown>> => {
+  const payload = chatRecord(message.payload);
+  return chatRecord(payload?.result) ?? {};
+};
+
+const chatCommandError = (message: ChatSocketMessage): Error => {
+  const payload = chatRecord(message.payload);
+  return new Error(chatString(payload?.message) ?? "Agent chat command failed.");
+};
+
+const ticketDraftPrompt = ({ instructions, repository }: StartTicketDraftChatInput): string =>
+  [
+    `Target repository: cycle://repository/${repository.id} (${repository.displayName})`,
+    "Draft a Cycle ticket for the target repository.",
+    "Create a draft ticket rather than committing a final ticket unless the user explicitly asked you to create it.",
+    "Preserve and resolve any Cycle references from the request.",
+    "User request:",
+    instructions.trim(),
+  ].join("\n\n");
+
+const startTicketDraftChat = async (
+  input: StartTicketDraftChatInput,
+): Promise<StartTicketDraftChatResult> => {
+  const connection = await discoverCycleApiConnection();
+
+  return new Promise((resolve, reject) => {
+    const pendingCommands = new Map<string, (message: ChatSocketMessage) => void>();
+    const socket = new WebSocket(chatWebSocketUrlForConnection(connection));
+    let commandSequence = 0;
+    let settled = false;
+    let threadId: string | undefined;
+
+    const timeout = window.setTimeout(() => {
+      fail(new Error("Timed out while starting the ticket draft chat."));
+    }, 15_000);
+
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      pendingCommands.clear();
+      socket.close();
+    };
+
+    const finish = () => {
+      if (settled || threadId === undefined) return;
+      settled = true;
+      cleanup();
+      resolve({ threadId });
+    };
+
+    function fail(error: Error) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    }
+
+    const sendCommand = (
+      type: string,
+      payload: Readonly<Record<string, unknown>>,
+      onResponse?: (message: ChatSocketMessage) => void,
+    ) => {
+      const commandId = `ticket_draft_${++commandSequence}`;
+      if (onResponse !== undefined) pendingCommands.set(commandId, onResponse);
+      socket.send(
+        JSON.stringify({
+          commandId,
+          payload,
+          type,
+          version: 1,
+        }),
+      );
+    };
+
+    const sendTurn = () => {
+      if (threadId === undefined) {
+        fail(new Error("Ticket draft chat was not created."));
+        return;
+      }
+
+      sendCommand(
+        "turn.send",
+        {
+          message: ticketDraftPrompt(input),
+          providerId: input.providerId ?? "codex",
+          runtimeMode: "workspace-write",
+          thinkingLevel: "medium",
+          threadId,
+        },
+        (message) => {
+          if (message.type === "command.error") {
+            fail(chatCommandError(message));
+            return;
+          }
+          finish();
+        },
+      );
+    };
+
+    const createThread = () => {
+      sendCommand(
+        "thread.create",
+        {
+          origin: {
+            kind: "ticket-draft",
+            label: "Ticket draft",
+            repositoryId: input.repository.id,
+            trigger: "create-ticket-dialog",
+          },
+          providerId: input.providerId ?? "codex",
+          runtimeMode: "workspace-write",
+          thinkingLevel: "medium",
+          title: "Draft ticket",
+        },
+        (message) => {
+          if (message.type === "command.error") {
+            fail(chatCommandError(message));
+            return;
+          }
+
+          const thread = chatRecord(chatCommandResult(message).thread);
+          threadId = chatString(thread?.id);
+          if (threadId === undefined) {
+            fail(new Error("Ticket draft chat response did not include a thread id."));
+            return;
+          }
+          sendTurn();
+        },
+      );
+    };
+
+    socket.onopen = () => {
+      socket.send(
+        JSON.stringify({
+          payload: {
+            token: connection.token ?? "",
+          },
+          type: "connection.authenticate",
+          version: 1,
+        }),
+      );
+    };
+
+    socket.onmessage = (event) => {
+      let message: ChatSocketMessage;
+      try {
+        message = JSON.parse(String(event.data)) as ChatSocketMessage;
+      } catch {
+        fail(new Error("Agent chat returned an invalid response."));
+        return;
+      }
+
+      const commandId = chatString(message.commandId);
+      if (commandId !== undefined) {
+        const pending = pendingCommands.get(commandId);
+        if (pending !== undefined) {
+          pendingCommands.delete(commandId);
+          pending(message);
+          return;
+        }
+      }
+
+      if (message.type === "connection.ready") {
+        createThread();
+        return;
+      }
+
+      if (message.type === "command.error") {
+        fail(chatCommandError(message));
+      }
+    };
+
+    socket.onerror = () => {
+      fail(new Error("Unable to connect to the agent chat runtime."));
+    };
+
+    socket.onclose = () => {
+      if (!settled) {
+        fail(new Error("Agent chat connection closed before the ticket draft started."));
+      }
+    };
+  });
 };
 
 const StrictDecodeOptions = { onExcessProperty: "error" } as const;
@@ -825,86 +1019,60 @@ export const cycleApiClient = {
     return response.providers.map(detectedAgentProviderFromProfile);
   },
 
-  getAgentSettings: async (
-    providers: readonly DetectedAgentProvider[] = [],
-  ): Promise<AgentSettings> =>
-    parseAgentSettings(await unknownResource("GET", "/v1/agent-settings"), providers),
+  startTicketDraftChat,
 
-  updateAgentSettings: async (
-    input: AgentSettingsPatch,
-    providers: readonly DetectedAgentProvider[] = [],
-  ): Promise<AgentSettings> =>
-    parseAgentSettings(await unknownResource("PATCH", "/v1/agent-settings", input), providers),
+  createAgentTask: async (input: CreateAgentTaskInput): Promise<AgentTask | null> =>
+    parseAgentTask(await unknownResource("POST", "/v1/agent-tasks", input)),
 
-  getRepositoryAgentSettings: async (repositoryId: string): Promise<RepositoryAgentSettings> =>
-    parseRepositoryAgentSettings(
-      await unknownResource("GET", `${repositoryPath(repositoryId)}/agent-settings`),
-      repositoryId,
-    ),
-
-  updateRepositoryAgentSettings: async (
-    repositoryId: string,
-    input: RepositoryAgentSettingsPatch,
-  ): Promise<RepositoryAgentSettings> =>
-    parseRepositoryAgentSettings(
-      await unknownResource("PATCH", `${repositoryPath(repositoryId)}/agent-settings`, input),
-      repositoryId,
-    ),
-
-  getIssueAgentDelegate: async (
+  startIssueAgentTask: async (
     repositoryId: string,
     issueId: string,
-  ): Promise<AgentDelegate | null> =>
-    parseAgentDelegate(
-      await unknownResourceOrNull(
-        "GET",
-        `${repositoryPath(repositoryId)}/issues/${encodeSegment(issueId)}/agent-delegate`,
-      ),
-    ),
-
-  startIssueAgentDelegateJob: async (
-    repositoryId: string,
-    issueId: string,
-    input: StartAgentDelegateJobInput,
-  ): Promise<AgentDelegateJobResult | null> =>
-    parseAgentDelegateJobResult(
+    input: StartIssueAgentTaskInput,
+  ): Promise<AgentTask | null> =>
+    parseAgentTask(
       await unknownResource(
         "POST",
-        `${repositoryPath(repositoryId)}/issues/${encodeSegment(issueId)}/agent-delegate/jobs`,
-        input,
+        `${repositoryPath(repositoryId)}/issues/${encodeSegment(issueId)}/agent-tasks`,
+        {
+          ...input,
+          instructions: input.instructions ?? undefined,
+          model: input.model ?? undefined,
+        },
       ),
     ),
 
-  listAgentJobs: async (query: QueryInput = {}): Promise<ReadonlyArray<AgentWorkJob>> =>
-    (await unknownCollection("GET", withQuery("/v1/agent-jobs", query))).flatMap((entry) => {
-      const job = parseAgentJob(entry);
-      return job ? [job] : [];
+  listAgentTasks: async (query: QueryInput = {}): Promise<ReadonlyArray<AgentTask>> =>
+    (await unknownCollection("GET", withQuery("/v1/agent-tasks", query))).flatMap((entry) => {
+      const task = parseAgentTask(entry);
+      return task ? [task] : [];
     }),
 
-  getAgentJob: async (jobId: string): Promise<AgentWorkJob | null> => {
-    const job = parseAgentJob(
-      await unknownResourceOrNull("GET", `/v1/agent-jobs/${encodeSegment(jobId)}`),
-    );
-    return job;
-  },
+  getAgentTask: async (taskId: string): Promise<AgentTask | null> =>
+    parseAgentTask(await unknownResourceOrNull("GET", `/v1/agent-tasks/${encodeSegment(taskId)}`)),
 
-  getAgentJobLog: async (jobId: string): Promise<AgentJobLog | null> =>
-    parseAgentJobLog(
-      await unknownResourceOrNull("GET", `/v1/agent-jobs/${encodeSegment(jobId)}/logs`),
+  listAgentTaskEvents: async (
+    taskId: string,
+    query: QueryInput = {},
+  ): Promise<ReadonlyArray<AgentTaskEvent>> =>
+    (
+      await unknownCollection(
+        "GET",
+        withQuery(`/v1/agent-tasks/${encodeSegment(taskId)}/events`, query),
+      )
+    ).flatMap((entry) => {
+      const event = parseAgentTaskEvent(entry);
+      return event ? [event] : [];
+    }),
+
+  cancelAgentTask: async (taskId: string): Promise<AgentTask | null> =>
+    parseAgentTask(
+      await unknownResource("POST", `/v1/agent-tasks/${encodeSegment(taskId)}/cancel`, {}),
     ),
 
-  resumeAgentJob: async (jobId: string): Promise<AgentWorkJob | null> =>
-    parseAgentJob(
-      await unknownResource("POST", `/v1/agent-jobs/${encodeSegment(jobId)}/resume`, {}),
+  retryAgentTask: async (taskId: string): Promise<AgentTask | null> =>
+    parseAgentTask(
+      await unknownResource("POST", `/v1/agent-tasks/${encodeSegment(taskId)}/retry`, {}),
     ),
-
-  cancelAgentJob: async (jobId: string): Promise<AgentWorkJob | null> =>
-    parseAgentJob(
-      await unknownResource("POST", `/v1/agent-jobs/${encodeSegment(jobId)}/cancel`, {}),
-    ),
-
-  getAgentActivity: async (): Promise<AgentActivity> =>
-    summarizeAgentActivity(await unknownCollection("GET", "/v1/agent-jobs")),
 
   openRepositoryPath: (input: OpenRepositoryPathInput): Promise<RepositoryStatus> =>
     resource("POST", "/v1/repositories", ContractSchemas.RepositoryStatusOutput, input),

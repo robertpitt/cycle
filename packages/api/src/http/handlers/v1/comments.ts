@@ -15,7 +15,6 @@ import {
   scoped,
   urlFromRequest,
 } from "../shared.ts";
-import { handleSuccessfulComment, idFromResult } from "./agentWorkEvents.ts";
 
 export const withCommentHandlers = (handlers: any) =>
   handlers
@@ -69,15 +68,6 @@ export const withCommentHandlers = (handlers: any) =>
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(CommentAdd, input, meta(requestId));
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
-        yield* handleSuccessfulComment({
-          body: input.input.body,
-          comment: result,
-          commentId: idFromResult(result, requestId),
-          origin: urlFromRequest(request).origin,
-          repositoryId: params.repositoryId,
-          requestId,
-          ticketId: params.issueId,
-        });
 
         return resourceResponse(requestId, 201, result);
       }),

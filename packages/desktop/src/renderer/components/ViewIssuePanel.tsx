@@ -30,16 +30,15 @@ import type {
 } from "@cycle/contracts";
 import {
   useAddIssueCommentMutation,
-  useCancelAgentJobMutation,
+  useCancelAgentTaskMutation,
   useCreateIssueMutation,
-  useResumeAgentJobMutation,
-  useStartIssueAgentDelegateJobMutation,
+  useRetryAgentTaskMutation,
+  useStartIssueAgentTaskMutation,
   useUpdateIssueMutation,
 } from "../mutations/index.ts";
 import {
-  useAgentJobsQuery,
+  useAgentTasksQuery,
   useInitiativeProgressQuery,
-  useIssueAgentDelegateQuery,
   useIssueDetailQuery,
   useIssueHistoryQuery,
   useIssueListQuery,
@@ -52,11 +51,12 @@ import { labelColorClassName } from "../screens/workspace/createIssueOptions.tsx
 import type { RepositoryRecord } from "../../shared/AppConfig.ts";
 import type { DetectedAgentProvider } from "../../shared/AgentProviders.ts";
 import {
-  jobStatusTone,
+  taskStatusTone,
   statusLabel,
-  type AgentDelegate,
-  type AgentWorkJob,
-} from "../lib/agentWork.ts";
+  terminalAgentTaskStatuses,
+  resumableAgentTaskStatuses,
+  type AgentTask,
+} from "../lib/agentTasks.ts";
 
 type ViewIssuePanelProps = {
   readonly agentProviders?: readonly DetectedAgentProvider[];
@@ -360,31 +360,24 @@ const IssueEstimateControl = ({
   );
 };
 
-const terminalAgentJobStatuses = new Set(["cancelled", "completed", "failed"]);
-const resumableAgentJobStatuses = new Set([
-  "retry-wait",
-  "suspended",
-  "waiting-for-input",
-]);
-
-const agentJobTime = (job: AgentWorkJob): number => {
-  const value = job.updatedAt ?? job.startedAt ?? job.createdAt;
+const agentTaskTime = (task: AgentTask): number => {
+  const value = task.updatedAt ?? task.startedAt ?? task.createdAt;
   if (!value) return 0;
   const time = new Date(value).getTime();
   return Number.isFinite(time) ? time : 0;
 };
 
-const latestAgentJob = (jobs: readonly AgentWorkJob[]): AgentWorkJob | undefined =>
-  [...jobs].sort((left, right) => agentJobTime(right) - agentJobTime(left))[0];
+const latestAgentTask = (tasks: readonly AgentTask[]): AgentTask | undefined =>
+  [...tasks].sort((left, right) => agentTaskTime(right) - agentTaskTime(left))[0];
 
-const activeAgentJob = (jobs: readonly AgentWorkJob[]): AgentWorkJob | undefined =>
-  latestAgentJob(jobs.filter((job) => !terminalAgentJobStatuses.has(job.status)));
+const activeAgentTask = (tasks: readonly AgentTask[]): AgentTask | undefined =>
+  latestAgentTask(tasks.filter((task) => !terminalAgentTaskStatuses.has(task.status)));
 
 const metadataString = (
-  job: AgentWorkJob | undefined,
+  task: AgentTask | undefined,
   key: string,
 ): string | undefined => {
-  const value = job?.metadata?.[key];
+  const value = task?.metadata?.[key];
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 };
 
@@ -394,65 +387,58 @@ const providerName = (
 ): string =>
   providers.find((provider) => provider.id === providerId)?.name ?? providerId ?? "Agent";
 
-const AgentDelegateSidebar = ({
+const AgentTaskSidebar = ({
   cancelPending,
-  delegate,
-  jobs,
+  tasks,
   onCancel,
-  onResume,
+  onRetry,
   providers,
-  resumePending,
+  retryPending,
 }: {
   readonly cancelPending: boolean;
-  readonly delegate?: AgentDelegate | null;
-  readonly jobs: readonly AgentWorkJob[];
-  readonly onCancel: (jobId: string) => void;
-  readonly onResume: (jobId: string) => void;
+  readonly tasks: readonly AgentTask[];
+  readonly onCancel: (taskId: string) => void;
+  readonly onRetry: (taskId: string) => void;
   readonly providers: readonly DetectedAgentProvider[];
-  readonly resumePending: boolean;
+  readonly retryPending: boolean;
 }) => {
-  const currentJob = activeAgentJob(jobs) ?? latestAgentJob(jobs);
-  const branchName = metadataString(currentJob, "branchName");
-  const commitSha = metadataString(currentJob, "commitSha");
-  const worktreePath = metadataString(currentJob, "worktreePath");
-  const canCancel = currentJob !== undefined && !terminalAgentJobStatuses.has(currentJob.status);
-  const canResume = currentJob !== undefined && resumableAgentJobStatuses.has(currentJob.status);
+  const currentTask = activeAgentTask(tasks) ?? latestAgentTask(tasks);
+  const branchName = metadataString(currentTask, "branchName");
+  const commitSha = metadataString(currentTask, "commitSha");
+  const worktreePath = currentTask?.workspace?.path ?? metadataString(currentTask, "worktreePath");
+  const canCancel = currentTask !== undefined && !terminalAgentTaskStatuses.has(currentTask.status);
+  const canRetry = currentTask !== undefined && resumableAgentTaskStatuses.has(currentTask.status);
 
   return (
     <div className="grid gap-3 text-sm">
       <div className="grid gap-1">
         <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Assigned agent
+          Agent task
         </div>
         <div className="truncate font-medium text-foreground">
-          {delegate
-            ? providerName(providers, delegate.providerId)
-            : "No agent assigned"}
+          {currentTask ? providerName(providers, currentTask.providerId) : "No task started"}
         </div>
-        {delegate?.model ? (
-          <div className="truncate text-xs text-muted-foreground">{delegate.model}</div>
+        {currentTask?.model ? (
+          <div className="truncate text-xs text-muted-foreground">{currentTask.model}</div>
         ) : null}
       </div>
 
-      {currentJob ? (
+      {currentTask ? (
         <div className="grid gap-2 rounded-md border border-border bg-subtle/45 p-3">
           <div className="flex min-w-0 items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
               <StatusIndicator
-                label={statusLabel(currentJob.status)}
-                tone={jobStatusTone(currentJob.status)}
+                label={statusLabel(currentTask.status)}
+                tone={taskStatusTone(currentTask.status)}
               />
-              <span className="truncate font-medium">{statusLabel(currentJob.status)}</span>
+              <span className="truncate font-medium">{statusLabel(currentTask.status)}</span>
             </div>
             <span className="shrink-0 rounded-sm bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">
-              Implementation
+              Task
             </span>
           </div>
-          {currentJob.currentGate ? (
-            <div className="text-xs text-warning">{currentJob.currentGate}</div>
-          ) : null}
-          {currentJob.lastError ? (
-            <div className="text-xs text-destructive">{currentJob.lastError}</div>
+          {currentTask.lastError ? (
+            <div className="text-xs text-destructive">{currentTask.lastError.message}</div>
           ) : null}
           {branchName ? (
             <div className="grid gap-1">
@@ -472,12 +458,12 @@ const AgentDelegateSidebar = ({
               <span className="break-all text-xs text-foreground">{worktreePath}</span>
             </div>
           ) : null}
-          {canCancel || canResume ? (
+          {canCancel || canRetry ? (
             <div className="flex flex-wrap items-center gap-2 pt-1">
               {canCancel ? (
                 <Button
                   loading={cancelPending}
-                  onClick={() => onCancel(currentJob.jobId)}
+                  onClick={() => onCancel(currentTask.taskId)}
                   size="sm"
                   tone="danger"
                   variant="outline"
@@ -485,36 +471,34 @@ const AgentDelegateSidebar = ({
                   Cancel
                 </Button>
               ) : null}
-              {canResume ? (
+              {canRetry ? (
                 <Button
-                  loading={resumePending}
-                  onClick={() => onResume(currentJob.jobId)}
+                  loading={retryPending}
+                  onClick={() => onRetry(currentTask.taskId)}
                   size="sm"
                   variant="outline"
                 >
-                  Resume
+                  Retry
                 </Button>
               ) : null}
             </div>
           ) : null}
         </div>
       ) : (
-        <div className="text-sm text-muted-foreground">No delegate jobs yet.</div>
+        <div className="text-sm text-muted-foreground">No agent tasks yet.</div>
       )}
     </div>
   );
 };
 
-const DelegateToAgentDialog = ({
+const StartAgentTaskDialog = ({
   agentId,
   error,
   instructions,
   model,
-  notes,
   onAgentIdChange,
   onInstructionsChange,
   onModelChange,
-  onNotesChange,
   onOpenChange,
   onProviderIdChange,
   onSubmit,
@@ -527,11 +511,9 @@ const DelegateToAgentDialog = ({
   readonly error?: string;
   readonly instructions: string;
   readonly model: string;
-  readonly notes: string;
   readonly onAgentIdChange: (value: string) => void;
   readonly onInstructionsChange: (value: string) => void;
   readonly onModelChange: (value: string) => void;
-  readonly onNotesChange: (value: string) => void;
   readonly onOpenChange: (open: boolean) => void;
   readonly onProviderIdChange: (value: string) => void;
   readonly onSubmit: () => void;
@@ -555,9 +537,9 @@ const DelegateToAgentDialog = ({
           <DialogPanel width="md">
             <DialogHeader>
               <div>
-                <DialogTitle>Delegate to agent</DialogTitle>
+                <DialogTitle>Start agent task</DialogTitle>
                 <DialogDescription>
-                  Start an implementation job in an isolated worktree.
+                  Queue a task from this issue's current context.
                 </DialogDescription>
               </div>
               <DialogCloseButton />
@@ -607,15 +589,6 @@ const DelegateToAgentDialog = ({
                   />
                 </label>
                 <label className="grid gap-1.5 text-sm font-medium text-foreground">
-                  Notes
-                  <Input
-                    disabled={pending}
-                    onChange={(event) => onNotesChange(event.currentTarget.value)}
-                    placeholder="Optional assignment note"
-                    value={notes}
-                  />
-                </label>
-                <label className="grid gap-1.5 text-sm font-medium text-foreground">
                   Instructions
                   <Textarea
                     disabled={pending}
@@ -644,7 +617,7 @@ const DelegateToAgentDialog = ({
                   loading={pending}
                   type="submit"
                 >
-                  Delegate
+                  Start task
                 </Button>
               </DialogFooter>
             </form>
@@ -673,8 +646,7 @@ export const ViewIssuePanel = ({
   const labelsQuery = useLabelListQuery(repositoryId, {
     archived: false,
   });
-  const delegateQuery = useIssueAgentDelegateQuery(repositoryId, issueId);
-  const agentJobsQuery = useAgentJobsQuery({
+  const agentTasksQuery = useAgentTasksQuery({
     repositoryId,
     ticketId: issueId,
   });
@@ -689,12 +661,12 @@ export const ViewIssuePanel = ({
     issueId,
     repositoryId,
   });
-  const startDelegateJob = useStartIssueAgentDelegateJobMutation({
+  const startAgentTask = useStartIssueAgentTaskMutation({
     issueId,
     repositoryId,
   });
-  const cancelAgentJob = useCancelAgentJobMutation();
-  const resumeAgentJob = useResumeAgentJobMutation();
+  const cancelAgentTask = useCancelAgentTaskMutation();
+  const retryAgentTask = useRetryAgentTaskMutation();
   const initiativeProgressQuery = useInitiativeProgressQuery(
     repositoryId,
     issueQuery.data?.type === "initiative" ? issueQuery.data.id : undefined,
@@ -707,46 +679,43 @@ export const ViewIssuePanel = ({
     availableAgentProviders.find((provider) => provider.id === "codex")?.id ??
     availableAgentProviders[0]?.id ??
     "";
-  const [delegateDialogOpen, setDelegateDialogOpen] = React.useState(false);
-  const [delegateAgentId, setDelegateAgentId] = React.useState<string>(defaultAgentProviderId);
-  const [delegateProviderId, setDelegateProviderId] =
+  const [agentTaskDialogOpen, setAgentTaskDialogOpen] = React.useState(false);
+  const [agentTaskAgentId, setAgentTaskAgentId] = React.useState<string>(defaultAgentProviderId);
+  const [agentTaskProviderId, setAgentTaskProviderId] =
     React.useState<string>(defaultAgentProviderId);
-  const [delegateModel, setDelegateModel] = React.useState("");
-  const [delegateNotes, setDelegateNotes] = React.useState("");
-  const [delegateInstructions, setDelegateInstructions] = React.useState("");
+  const [agentTaskModel, setAgentTaskModel] = React.useState("");
+  const [agentTaskInstructions, setAgentTaskInstructions] = React.useState("");
 
   React.useEffect(() => {
-    if (!delegateDialogOpen || !defaultAgentProviderId) return;
-    if (!delegateAgentId) setDelegateAgentId(defaultAgentProviderId);
-    if (!delegateProviderId) setDelegateProviderId(defaultAgentProviderId);
-  }, [defaultAgentProviderId, delegateAgentId, delegateDialogOpen, delegateProviderId]);
+    if (!agentTaskDialogOpen || !defaultAgentProviderId) return;
+    if (!agentTaskAgentId) setAgentTaskAgentId(defaultAgentProviderId);
+    if (!agentTaskProviderId) setAgentTaskProviderId(defaultAgentProviderId);
+  }, [agentTaskAgentId, agentTaskDialogOpen, agentTaskProviderId, defaultAgentProviderId]);
 
-  const openDelegateDialog = () => {
-    const delegate = delegateQuery.data;
-    const fallbackProviderId = delegate?.providerId ?? defaultAgentProviderId;
-    setDelegateProviderId(fallbackProviderId);
-    setDelegateAgentId(delegate?.agentId ?? fallbackProviderId);
-    setDelegateModel(delegate?.model ?? "");
-    setDelegateNotes(delegate?.notes ?? "");
-    setDelegateInstructions("");
-    setDelegateDialogOpen(true);
+  const openAgentTaskDialog = () => {
+    setAgentTaskProviderId(defaultAgentProviderId);
+    setAgentTaskAgentId(defaultAgentProviderId);
+    setAgentTaskModel("");
+    setAgentTaskInstructions("");
+    setAgentTaskDialogOpen(true);
   };
 
-  const submitDelegateJob = () => {
-    const agentId = delegateAgentId.trim();
-    const providerId = delegateProviderId.trim();
+  const submitAgentTask = () => {
+    const agentId = agentTaskAgentId.trim();
+    const providerId = agentTaskProviderId.trim();
     if (!agentId || !providerId) return;
 
-    startDelegateJob.mutate(
+    startAgentTask.mutate(
       {
+        authority: { mode: "read-only" },
         agentId,
-        instructions: delegateInstructions.trim() || undefined,
-        model: delegateModel.trim() || undefined,
-        notes: delegateNotes.trim() || undefined,
+        instructions: agentTaskInstructions.trim() || undefined,
+        model: agentTaskModel.trim() || undefined,
         providerId,
+        requestedBy: "user",
       },
       {
-        onSuccess: () => setDelegateDialogOpen(false),
+        onSuccess: () => setAgentTaskDialogOpen(false),
       },
     );
   };
@@ -771,9 +740,7 @@ export const ViewIssuePanel = ({
 
   const users = usersQuery.data?.entries ?? [];
   const labels = labelsQuery.data?.entries ?? [];
-  const delegateJobs = (agentJobsQuery.data ?? []).filter(
-    (job) => job.trigger === "agent-delegate" || job.authorityMode === "implementation-worktree",
-  );
+  const agentTasks = agentTasksQuery.data ?? [];
   const tagSuggestions = createMarkdownTagSuggestions({
     agentProviders,
     issues: issueListQuery.data?.entries,
@@ -957,14 +924,13 @@ export const ViewIssuePanel = ({
       <ViewIssue
         activityEvents={issueActivity(issue, issueHistoryQuery.data?.entries ?? [])}
         agentWork={
-          <AgentDelegateSidebar
-            cancelPending={cancelAgentJob.isPending}
-            delegate={delegateQuery.data}
-            jobs={delegateJobs}
-            onCancel={(jobId) => cancelAgentJob.mutate(jobId)}
-            onResume={(jobId) => resumeAgentJob.mutate(jobId)}
+          <AgentTaskSidebar
+            cancelPending={cancelAgentTask.isPending}
+            tasks={agentTasks}
+            onCancel={(taskId) => cancelAgentTask.mutate(taskId)}
+            onRetry={(taskId) => retryAgentTask.mutate(taskId)}
             providers={agentProviders}
-            resumePending={resumeAgentJob.isPending}
+            retryPending={retryAgentTask.isPending}
           />
         }
         assignee={
@@ -987,7 +953,7 @@ export const ViewIssuePanel = ({
           id: labelId,
           label: labelMap.get(labelId)?.name ?? labelId,
         }))}
-        onAgentDelegate={openDelegateDialog}
+        onAgentDelegate={openAgentTaskDialog}
         onCommentCreate={(comment) => addComment.mutate(comment)}
         onDescriptionSave={updateDescription}
         onFilesSelect={(files) => {
@@ -1020,22 +986,20 @@ export const ViewIssuePanel = ({
           name: issue.frontmatter.createdBy.name,
         }}
       />
-      <DelegateToAgentDialog
-        agentId={delegateAgentId}
-        error={startDelegateJob.error instanceof Error ? startDelegateJob.error.message : undefined}
-        instructions={delegateInstructions}
-        model={delegateModel}
-        notes={delegateNotes}
-        onAgentIdChange={setDelegateAgentId}
-        onInstructionsChange={setDelegateInstructions}
-        onModelChange={setDelegateModel}
-        onNotesChange={setDelegateNotes}
-        onOpenChange={setDelegateDialogOpen}
-        onProviderIdChange={setDelegateProviderId}
-        onSubmit={submitDelegateJob}
-        open={delegateDialogOpen}
-        pending={startDelegateJob.isPending}
-        providerId={delegateProviderId}
+      <StartAgentTaskDialog
+        agentId={agentTaskAgentId}
+        error={startAgentTask.error instanceof Error ? startAgentTask.error.message : undefined}
+        instructions={agentTaskInstructions}
+        model={agentTaskModel}
+        onAgentIdChange={setAgentTaskAgentId}
+        onInstructionsChange={setAgentTaskInstructions}
+        onModelChange={setAgentTaskModel}
+        onOpenChange={setAgentTaskDialogOpen}
+        onProviderIdChange={setAgentTaskProviderId}
+        onSubmit={submitAgentTask}
+        open={agentTaskDialogOpen}
+        pending={startAgentTask.isPending}
+        providerId={agentTaskProviderId}
         providers={agentProviders}
       />
     </>

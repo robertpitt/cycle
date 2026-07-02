@@ -13,6 +13,8 @@
     "./providers": "./src/providers.ts",
     "./runtime": "./src/runtime.ts",
     "./runtime-events": "./src/runtime-events.ts",
+    "./schemas": "./src/task/schemas.ts",
+    "./task": "./src/task/index.ts",
     "./providers/codex": "./src/providers/codex/index.ts",
     "./service": "./src/service.ts",
     "./types": "./src/types.ts"

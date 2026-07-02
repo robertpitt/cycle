@@ -1,8 +1,9 @@
 import { startCycleApiServer, type RepositoryOpenRequest } from "@cycle/api";
 import {
-  makeHttpAgentWorkRuntimeFromStore,
-  makeNodeSqliteAgentWorkStore,
-} from "@cycle/usecases/agent-work";
+  AgentTaskServiceLive,
+  AgentTaskStore,
+  makeNodeSqliteAgentTaskStore,
+} from "@cycle/agents/task";
 import type { RepositoryInput, RepositoryMetadata } from "@cycle/contracts";
 import { DatabaseService, cycleDatabasePath, cycleHomeDirectory } from "@cycle/database";
 import { GitRepository, type GitRepositoryMetadata } from "@cycle/git";
@@ -181,18 +182,17 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
       try: async () => {
         const agentChatStore = makeDesktopAgentChatStore(cycleDatabasePath());
         const agentSessionStore = makeDesktopAgentSessionStore(cycleDatabasePath());
-        const agentWorkStore = makeNodeSqliteAgentWorkStore(cycleDatabasePath());
-        const agentWork = makeHttpAgentWorkRuntimeFromStore(agentWorkStore, {
-          executionPolicy: {
-            supportedAuthorityModes: ["ticket-context", "implementation-worktree"],
-          },
-        });
+        const agentTaskStore = makeNodeSqliteAgentTaskStore(cycleDatabasePath());
+        const agentTaskLayer = AgentTaskServiceLive().pipe(
+          Layer.provide(
+            Layer.succeed(AgentTaskStore, AgentTaskStore.of(agentTaskStore)),
+          ),
+        );
 
         try {
           const handle = await startCycleApiServer({
             agentChatStore,
             agentSessionStore,
-            agentWork,
             host: config.api.host,
             localSettings: {
               completeOnboarding: (input) =>
@@ -259,14 +259,17 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
             },
             runtimeFile: desktopApiRuntimeDiscoveryPath(),
             staticToken: config.api.staticToken,
-            useCaseLayer: Layer.succeed(DatabaseService, DatabaseService.of(database)),
+            useCaseLayer: Layer.mergeAll(
+              Layer.succeed(DatabaseService, DatabaseService.of(database)),
+              agentTaskLayer,
+            ),
             worktreeService,
-            worktreeStoragePath: join(cycleHomeDirectory(), "agent-worktrees"),
+            worktreeStoragePath: join(cycleHomeDirectory(), "agent-task-worktrees"),
           });
 
-          return { agentChatStore, agentSessionStore, agentWorkStore, handle };
+          return { agentChatStore, agentSessionStore, agentTaskStore, handle };
         } catch (error) {
-          await agentWorkStore.close?.();
+          await Effect.runPromise(agentTaskStore.close());
           await agentChatStore.close?.();
           await agentSessionStore.close?.();
           throw error;
@@ -279,11 +282,11 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
           operation: "start api server",
         }),
     }),
-    ({ agentChatStore, agentSessionStore, agentWorkStore, handle }) =>
+    ({ agentChatStore, agentSessionStore, agentTaskStore, handle }) =>
       Effect.tryPromise({
         try: async () => {
           await handle.close();
-          await agentWorkStore.close?.();
+          await Effect.runPromise(agentTaskStore.close());
           await agentChatStore.close?.();
           await agentSessionStore.close?.();
         },

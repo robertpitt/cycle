@@ -40,12 +40,6 @@ import {
   useCaseInvocation,
   urlFromRequest,
 } from "../shared.ts";
-import {
-  emitTicketEvent,
-  evaluateAssignmentPickup,
-  handleSuccessfulComment,
-  idFromResult,
-} from "./agentWorkEvents.ts";
 
 export const withIssueHandlers = (handlers: any) =>
   handlers
@@ -122,13 +116,6 @@ export const withIssueHandlers = (handlers: any) =>
           meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
-        yield* emitTicketEvent({
-          eventType: "ticket.created",
-          payload: { requestId, ticket: result },
-          repositoryId: params.repositoryId,
-          requestId,
-          ticketId: idFromResult(result, ""),
-        });
 
         return resourceResponse(requestId, 201, result);
       }),
@@ -167,26 +154,6 @@ export const withIssueHandlers = (handlers: any) =>
           meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
-        yield* emitTicketEvent({
-          eventType: "ticket.updated",
-          payload: { patch: input.patch, requestId, ticket: result },
-          repositoryId: params.repositoryId,
-          requestId,
-          ticketId: params.issueId,
-        });
-        if (typeof input.patch.frontmatter?.["type"] === "string") {
-          yield* emitTicketEvent({
-            eventType: "ticket.type_changed",
-            payload: {
-              requestId,
-              ticket: result,
-              type: input.patch.frontmatter["type"],
-            },
-            repositoryId: params.repositoryId,
-            requestId,
-            ticketId: params.issueId,
-          });
-        }
 
         return resourceResponse(requestId, 200, result);
       }),
@@ -210,23 +177,6 @@ export const withIssueHandlers = (handlers: any) =>
           meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
-        yield* emitTicketEvent({
-          eventType: "ticket.status_changed",
-          payload: { requestId, status: input.status, ticket: result },
-          repositoryId: params.repositoryId,
-          requestId,
-          ticketId: params.issueId,
-        });
-        yield* evaluateAssignmentPickup({
-          origin: urlFromRequest(request).origin,
-          repositoryId: params.repositoryId,
-          requestId,
-          ticketId: params.issueId,
-          ticketStatus:
-            typeof (result as { readonly status?: unknown }).status === "string"
-              ? (result as { readonly status: string }).status
-              : input.status,
-        });
 
         return resourceResponse(requestId, 200, result);
       }),
@@ -463,27 +413,7 @@ export const withIssueHandlers = (handlers: any) =>
           meta(requestId),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
-        if (input.recordType === "comment") {
-          const commentId = idFromResult(result, requestId);
-          yield* handleSuccessfulComment({
-            body: commentBodyFrom(input.payload),
-            comment: result,
-            commentId,
-            origin: urlFromRequest(request).origin,
-            repositoryId: params.repositoryId,
-            requestId,
-            ticketId: params.issueId,
-          });
-        }
 
         return resourceResponse(requestId, 201, result);
       }),
     );
-
-const commentBodyFrom = (payload: unknown): string => {
-  if (typeof payload === "string") return payload;
-  if (typeof payload !== "object" || payload === null) return "";
-  const record = payload as Readonly<Record<string, unknown>>;
-  const body = record.body ?? record.text ?? record.markdown ?? record.comment;
-  return typeof body === "string" ? body : "";
-};

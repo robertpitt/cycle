@@ -21,7 +21,6 @@ import type {
   AgentActiveTurnBeginResult,
   AgentActiveTurnDirectoryShape,
 } from "../../agents/services/AgentActiveTurnDirectory.ts";
-import type { AgentWorkService } from "@cycle/usecases/agent-work";
 
 export type ApiConfig = {
   readonly enabled: boolean;
@@ -108,7 +107,6 @@ export type CycleApiOptions = {
   readonly agentServices?: AgentServiceRegistryShape;
   readonly agentOrchestration?: AgentOrchestrationServiceShape;
   readonly agentChatStore?: AgentChatStoreShape;
-  readonly agentWork: AgentWorkService;
   readonly agentProviderProfiles?: () => Promise<readonly AgentProviderProfile[]>;
   readonly agentSessionStore?: AgentSessionStore;
   readonly apiVersion?: string;
@@ -135,7 +133,6 @@ export type CycleApiRuntimeShape = {
   readonly agentServices: AgentServiceRegistryShape;
   readonly agentOrchestration: AgentOrchestrationServiceShape;
   readonly agentChatStore?: AgentChatStoreShape;
-  readonly agentWork: AgentWorkService;
   readonly agentProviderProfiles: () => Promise<readonly AgentProviderProfile[]>;
   readonly agentSessionStore?: AgentSessionStore;
   readonly activeAgentTurns: AgentActiveTurnDirectoryShape;

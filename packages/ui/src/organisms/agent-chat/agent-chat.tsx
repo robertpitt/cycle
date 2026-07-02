@@ -271,37 +271,58 @@ export const AgentChatThreadList = ({
   threads,
 }: AgentChatThreadListProps) => {
   const activeCount = threads.filter((thread) => thread.activeTurnId).length;
+  const failedCount = threads.filter((thread) => thread.status === "error").length;
   const unreadCount = threads.reduce((count, thread) => count + (thread.unreadCount ?? 0), 0);
+  const waitingCount = threads.filter((thread) => thread.status === "waiting").length;
 
   return (
-    <WorkspaceSurface className={cn("flex h-full min-h-0 flex-col overflow-hidden", className)}>
-      <div className="shrink-0 border-b border-border px-4 py-3">
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <div className="min-w-0">
+    <WorkspaceSurface
+      className={cn(
+        "flex h-full min-h-0 flex-col overflow-hidden rounded-lg bg-surface shadow-none",
+        className,
+      )}
+    >
+      <div className="shrink-0 border-b border-border px-3 py-2">
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
             <Text as="h2" truncate variant="sectionTitle">
               Threads
             </Text>
-            <Text as="p" className="mt-0.5" tone="muted" variant="meta">
-              {threads.length} total, {activeCount} active
-            </Text>
+            <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+              <Text as="span" tone="muted" variant="meta">
+                {threads.length} total
+              </Text>
+              {activeCount > 0 ? (
+                <Text as="span" tone="info" variant="meta">
+                  {activeCount} active
+                </Text>
+              ) : null}
+              {unreadCount > 0 ? (
+                <Text as="span" tone="info" variant="meta">
+                  {unreadCount} unread
+                </Text>
+              ) : null}
+              {waitingCount > 0 ? (
+                <Text as="span" tone="warning" variant="meta">
+                  {waitingCount} waiting
+                </Text>
+              ) : null}
+              {failedCount > 0 ? (
+                <Text as="span" tone="danger" variant="meta">
+                  {failedCount} failed
+                </Text>
+              ) : null}
+            </div>
           </div>
           <IconButton
+            className="size-7"
             disabled={!onCreateThread}
             icon={<Plus aria-hidden className="size-4" />}
             label="Create thread"
             onClick={onCreateThread}
             size="sm"
-            variant="outline"
+            variant="ghost"
           />
-        </div>
-        <div className="mt-3 flex min-w-0 flex-wrap gap-2">
-          <Badge appearance="outline">{unreadCount} unread</Badge>
-          <Badge appearance="outline">
-            {threads.filter((thread) => thread.status === "waiting").length} waiting
-          </Badge>
-          <Badge appearance="outline">
-            {threads.filter((thread) => thread.status === "error").length} failed
-          </Badge>
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
@@ -773,7 +794,7 @@ export const AgentChatShell = ({
   return (
     <div
       className={cn(
-        "grid h-full min-h-0 min-w-0 grid-rows-[minmax(220px,0.38fr)_minmax(0,1fr)] gap-4 lg:grid-cols-[360px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]",
+        "grid h-full min-h-0 min-w-0 grid-rows-[minmax(220px,0.38fr)_minmax(0,1fr)] gap-4 lg:grid-cols-[320px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]",
         className,
       )}
     >

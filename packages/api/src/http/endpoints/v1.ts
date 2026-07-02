@@ -2,23 +2,18 @@ import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { CycleAuthorization } from "../authorization.ts";
 import {
   AgentProvidersResourceEnvelope,
-  AgentActivityCollectionEnvelope,
-  AgentActivityQueryParams,
-  AgentDelegateChangedEnvelope,
-  AgentDelegateJobPayload,
-  AgentDelegateJobResourceEnvelope,
-  AgentDelegateParams,
-  AgentDelegatePutPayload,
-  AgentDelegateResourceEnvelope,
-  AgentJobCancelPayload,
-  AgentJobCollectionEnvelope,
-  AgentJobLogResourceEnvelope,
-  AgentJobParams,
-  AgentJobResourceEnvelope,
-  AgentJobResumePayload,
-  AgentJobsQueryParams,
-  AgentSettingsPatchPayload,
-  AgentSettingsResourceEnvelope,
+  AgentTaskAcceptedEnvelope,
+  AgentTaskCancelPayload,
+  AgentTaskCollectionEnvelope,
+  AgentTaskCreatePayload,
+  AgentTaskEventCollectionEnvelope,
+  AgentTaskEventQueryParams,
+  AgentTaskInputPayload,
+  AgentTaskIssueParams,
+  AgentTaskListQueryParams,
+  AgentTaskParams,
+  AgentTaskResourceEnvelope,
+  AgentTaskRetryPayload,
   ApiStatusResourceEnvelope,
   AppConfigResourceEnvelope,
   AutocompleteQueryParams,
@@ -91,8 +86,6 @@ import {
   RepositoryStatusResourceEnvelope,
   RepositoryWarningCollectionEnvelope,
   RepositoryPreferencesPayload,
-  RepositoryAgentSettingsPatchPayload,
-  RepositoryAgentSettingsResourceEnvelope,
   RecordListQueryParams,
   TemplateCreatePayload,
   TemplateCreatedEnvelope,
@@ -101,6 +94,7 @@ import {
   TemplateUpdatePayload,
   ThemePreferencePayload,
   TicketDocumentResourceEnvelope,
+  TicketAgentTaskCreatePayload,
   UserParams,
   UserPayload,
   UserQueryParams,
@@ -152,89 +146,46 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
     HttpApiEndpoint.get("listAgentProviders", "/v1/agents/providers", {
       success: AgentProvidersResourceEnvelope,
     }),
-    HttpApiEndpoint.get("getAgentSettings", "/v1/agent-settings", {
-      success: AgentSettingsResourceEnvelope,
+    HttpApiEndpoint.post("createAgentTask", "/v1/agent-tasks", {
+      payload: AgentTaskCreatePayload,
+      success: AgentTaskAcceptedEnvelope,
     }),
-    HttpApiEndpoint.patch("patchAgentSettings", "/v1/agent-settings", {
-      payload: AgentSettingsPatchPayload,
-      success: AgentSettingsResourceEnvelope,
-    }),
-    HttpApiEndpoint.get(
-      "getRepositoryAgentSettings",
-      "/v1/repositories/:repositoryId/agent-settings",
-      {
-        params: RepositoryParams,
-        success: RepositoryAgentSettingsResourceEnvelope,
-      },
-    ),
-    HttpApiEndpoint.patch(
-      "patchRepositoryAgentSettings",
-      "/v1/repositories/:repositoryId/agent-settings",
-      {
-        params: RepositoryParams,
-        payload: RepositoryAgentSettingsPatchPayload,
-        success: RepositoryAgentSettingsResourceEnvelope,
-      },
-    ),
-    HttpApiEndpoint.get(
-      "getIssueAgentDelegate",
-      "/v1/repositories/:repositoryId/issues/:issueId/agent-delegate",
-      {
-        params: AgentDelegateParams,
-        success: AgentDelegateResourceEnvelope,
-      },
-    ),
-    HttpApiEndpoint.put(
-      "putIssueAgentDelegate",
-      "/v1/repositories/:repositoryId/issues/:issueId/agent-delegate",
-      {
-        params: AgentDelegateParams,
-        payload: AgentDelegatePutPayload,
-        success: AgentDelegateChangedEnvelope,
-      },
-    ),
-    HttpApiEndpoint.make("DELETE")(
-      "deleteIssueAgentDelegate",
-      "/v1/repositories/:repositoryId/issues/:issueId/agent-delegate",
-      {
-        params: AgentDelegateParams,
-        success: AgentDelegateResourceEnvelope,
-      },
-    ),
     HttpApiEndpoint.post(
-      "createIssueAgentDelegateJob",
-      "/v1/repositories/:repositoryId/issues/:issueId/agent-delegate/jobs",
+      "createIssueAgentTask",
+      "/v1/repositories/:repositoryId/issues/:issueId/agent-tasks",
       {
-        params: AgentDelegateParams,
-        payload: AgentDelegateJobPayload,
-        success: AgentDelegateJobResourceEnvelope,
+        params: AgentTaskIssueParams,
+        payload: TicketAgentTaskCreatePayload,
+        success: AgentTaskAcceptedEnvelope,
       },
     ),
-    HttpApiEndpoint.get("listAgentJobs", "/v1/agent-jobs", {
-      query: AgentJobsQueryParams,
-      success: AgentJobCollectionEnvelope,
+    HttpApiEndpoint.get("listAgentTasks", "/v1/agent-tasks", {
+      query: AgentTaskListQueryParams,
+      success: AgentTaskCollectionEnvelope,
     }),
-    HttpApiEndpoint.get("getAgentJob", "/v1/agent-jobs/:jobId", {
-      params: AgentJobParams,
-      success: AgentJobResourceEnvelope,
+    HttpApiEndpoint.get("getAgentTask", "/v1/agent-tasks/:taskId", {
+      params: AgentTaskParams,
+      success: AgentTaskResourceEnvelope,
     }),
-    HttpApiEndpoint.get("getAgentJobLog", "/v1/agent-jobs/:jobId/logs", {
-      params: AgentJobParams,
-      success: AgentJobLogResourceEnvelope,
+    HttpApiEndpoint.get("listAgentTaskEvents", "/v1/agent-tasks/:taskId/events", {
+      params: AgentTaskParams,
+      query: AgentTaskEventQueryParams,
+      success: AgentTaskEventCollectionEnvelope,
     }),
-    HttpApiEndpoint.post("resumeAgentJob", "/v1/agent-jobs/:jobId/resume", {
-      params: AgentJobParams,
-      payload: AgentJobResumePayload,
-      success: AgentJobResourceEnvelope,
+    HttpApiEndpoint.post("appendAgentTaskInput", "/v1/agent-tasks/:taskId/input", {
+      params: AgentTaskParams,
+      payload: AgentTaskInputPayload,
+      success: AgentTaskResourceEnvelope,
     }),
-    HttpApiEndpoint.post("cancelAgentJob", "/v1/agent-jobs/:jobId/cancel", {
-      params: AgentJobParams,
-      payload: AgentJobCancelPayload,
-      success: AgentJobResourceEnvelope,
+    HttpApiEndpoint.post("cancelAgentTask", "/v1/agent-tasks/:taskId/cancel", {
+      params: AgentTaskParams,
+      payload: AgentTaskCancelPayload,
+      success: AgentTaskResourceEnvelope,
     }),
-    HttpApiEndpoint.get("listAgentActivity", "/v1/agent-activity", {
-      query: AgentActivityQueryParams,
-      success: AgentActivityCollectionEnvelope,
+    HttpApiEndpoint.post("retryAgentTask", "/v1/agent-tasks/:taskId/retry", {
+      params: AgentTaskParams,
+      payload: AgentTaskRetryPayload,
+      success: AgentTaskResourceEnvelope,
     }),
   )
   .add(

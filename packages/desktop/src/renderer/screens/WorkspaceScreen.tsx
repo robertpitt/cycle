@@ -9,14 +9,13 @@ import {
   type AppShellNavSection,
   type InitialSetupStep,
 } from "@cycle/ui/organisms";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { IconButton, StatusIndicator } from "@cycle/ui/atoms";
-import { ArrowLeft, FolderPlus, History, Plus } from "lucide-react";
+import { ArrowLeft, FolderPlus, GitBranch, History, Plus, Square } from "lucide-react";
 import * as React from "react";
 import { useLocation, useNavigate, type NavigateOptions } from "react-router";
 import {
   AddRepositoryStep,
-  AgentActivityIndicator,
   ApplicationSettingsPanel,
   BootloaderScreen,
   ChatPanel,
@@ -28,12 +27,12 @@ import {
   RepositorySettingsPanel,
   SettingsSidebar,
   SetupScreen,
-  ticketTypeSections,
   ViewIssuePanel,
   ViewsPanel,
 } from "../components/index.ts";
 import { fallbackAgentProviders, toSetupHarnesses } from "../lib/agentProviders.ts";
-import { normalizeCreateTicketType } from "../lib/agentWork.ts";
+import { canonicalTicketTypes, normalizeCreateTicketType } from "../lib/ticketTypes.ts";
+import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 import { createMarkdownTagSuggestions } from "../lib/markdownTagSuggestions.ts";
 import {
@@ -86,6 +85,18 @@ import {
 } from "./workspace/workspaceRoute.ts";
 import { useMacTrackpadSwipeNavigation } from "./workspace/macTrackpadSwipeNavigation.ts";
 import type { AgentProviderId } from "../../shared/AgentProviders.ts";
+
+const ticketTypeSections = [
+  {
+    id: "type",
+    options: canonicalTicketTypes.map((type) => ({
+      icon: <Square aria-hidden className="size-4" strokeWidth={2} />,
+      id: type.id,
+      label: type.label,
+      rightMeta: type.description,
+    })),
+  },
+];
 
 const defaultWorkspaceLocation: WorkspaceLocation = {
   page: "inbox",
@@ -247,6 +258,10 @@ export const WorkspaceScreen = () => {
       : repositories.find((repository) => repository.id === routeRepositoryId);
   const issueRepository =
     isIssuesPage || isInitiativesPage || isViewsPage ? activeRepository : undefined;
+  const createIssueRepositoryId =
+    createIssueForm.values.repositoryId || issueRepository?.id || repositories[0]?.id;
+  const createIssueRepository =
+    repositories.find((repository) => repository.id === createIssueRepositoryId) ?? issueRepository;
   const selectedIssueId =
     workspaceLocation.scope === "repository" &&
     (workspaceLocation.page === "issues" || workspaceLocation.page === "views")
@@ -297,14 +312,26 @@ export const WorkspaceScreen = () => {
   });
 
   const createIssue = useCreateIssueMutation({
-    repositoryId: issueRepository?.id,
+    repositoryId: createIssueRepository?.id,
+  });
+  const createTicketDraftChat = useMutation({
+    mutationFn: (input: { readonly instructions: string }) => {
+      if (!createIssueRepository) {
+        throw new Error("Choose a repository before drafting an issue.");
+      }
+
+      return cycleApiClient.startTicketDraftChat({
+        instructions: input.instructions,
+        repository: createIssueRepository,
+      });
+    },
   });
   const repositoryStatusQuery = useRepositoryStatusQuery(activeRepository?.id);
   const materializationWarningsQuery = useMaterializationWarningsQuery(activeRepository?.id);
-  const userListQuery = useUserListQuery(issueRepository?.id, {
+  const userListQuery = useUserListQuery(createIssueRepository?.id, {
     disabled: false,
   });
-  const createIssueSuggestionsQuery = useIssueListQuery(issueRepository?.id);
+  const createIssueSuggestionsQuery = useIssueListQuery(createIssueRepository?.id);
   const inboxSummaryQuery = useInboxSummaryQuery(
     appConfigQuery.data?.profile.email
       ? {
@@ -315,10 +342,10 @@ export const WorkspaceScreen = () => {
         }
       : undefined,
   );
-  const labelListQuery = useLabelListQuery(issueRepository?.id, {
+  const labelListQuery = useLabelListQuery(createIssueRepository?.id, {
     archived: false,
   });
-  const templateListQuery = useIssueTemplateListQuery(issueRepository?.id, {
+  const templateListQuery = useIssueTemplateListQuery(createIssueRepository?.id, {
     active: true,
   });
   const selectedSavedViewQuery = useSavedViewDetailQuery(issueRepository?.id, selectedSavedViewId);
@@ -346,18 +373,32 @@ export const WorkspaceScreen = () => {
       userListQuery.data?.entries,
     ],
   );
+  const createIssueRepositorySections = React.useMemo(
+    () => [
+      {
+        id: "repositories",
+        options: repositories.map((repository) => ({
+          icon: <GitBranch aria-hidden className="size-5" strokeWidth={2} />,
+          id: repository.id,
+          label: repository.displayName,
+          rightMeta: repository.id,
+        })),
+      },
+    ],
+    [repositories],
+  );
   const createIssueOptions = React.useMemo(
     () =>
       createIssueDialogOptionSections({
         labels: labelListQuery.data?.entries,
         profile: appConfigQuery.data?.profile,
-        repository: issueRepository,
+        repository: createIssueRepository,
         templates: templateListQuery.data?.entries,
         users: userListQuery.data?.entries,
       }),
     [
       appConfigQuery.data?.profile,
-      issueRepository,
+      createIssueRepository,
       labelListQuery.data?.entries,
       templateListQuery.data?.entries,
       userListQuery.data?.entries,
@@ -862,20 +903,60 @@ export const WorkspaceScreen = () => {
 
   const chooseRepositoryFolder = () => addRepository.mutate();
   const openCreateIssueDialog = () => {
-    createIssueForm.openDialog();
-    if (isInitiativesPage) {
-      createIssueForm.setType("epic");
-    }
+    createIssueForm.openDialog({
+      mode: "agent",
+      repositoryId: issueRepository?.id ?? repositories[0]?.id ?? "",
+      type: isInitiativesPage ? "epic" : "task",
+    });
   };
   const closeCreateIssueDialog = () => {
-    if (createIssue.isPending) return;
+    if (createIssue.isPending || createTicketDraftChat.isPending) return;
 
     createIssueForm.closeDialog();
+  };
+  const selectCreateIssueRepository = (repositoryId: string | null) => {
+    createIssueForm.setRepositoryId(repositoryId ?? "");
+    createIssueForm.setProject(null);
+    createIssueForm.setLabels([]);
+    createIssueForm.setTemplate(null);
+  };
+  const submitCreateIssueDraft = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!createIssueRepository) {
+      createIssueForm.setError("Choose a repository before drafting an issue.");
+      return;
+    }
+
+    const instructions = createIssueForm.values.draftInstructions.trim();
+    if (instructions.length === 0) {
+      createIssueForm.setError("Tell the agent what ticket to draft.");
+      return;
+    }
+
+    createIssueForm.setError(undefined);
+    createTicketDraftChat.mutate(
+      { instructions },
+      {
+        onError: (error) => {
+          createIssueForm.setError(
+            error instanceof Error ? error.message : "Unable to start ticket draft.",
+          );
+        },
+        onSuccess: () => {
+          createIssueForm.closeDialog();
+          navigateWorkspace({
+            page: "chat",
+            scope: "workspace",
+          });
+        },
+      },
+    );
   };
   const submitCreateIssue = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!issueRepository) {
+    if (!createIssueRepository) {
       createIssueForm.setError("Choose a repository before creating an issue.");
       return;
     }
@@ -910,6 +991,8 @@ export const WorkspaceScreen = () => {
           if (createIssueForm.values.createMore) {
             createIssueForm.reset({
               createMore: true,
+              mode: "manual",
+              repositoryId: createIssueRepository.id,
             });
             return;
           }
@@ -973,15 +1056,6 @@ export const WorkspaceScreen = () => {
     repositoryStatusText;
   const pageHeaderActions = (
     <>
-      <AgentActivityIndicator
-        onOpenChat={() =>
-          navigateWorkspace({
-            page: "chat",
-            scope: "workspace",
-          })
-        }
-        providers={detectedAgentProviders}
-      />
       {activeRepository ? (
         <div
           className="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-subtle px-2 text-xs font-medium text-muted-foreground"
@@ -1023,7 +1097,9 @@ export const WorkspaceScreen = () => {
       ) : null}
       {isWorkItemsPage ? (
         <IconButton
-          disabled={createIssue.isPending || !issueRepository}
+          disabled={
+            createIssue.isPending || createTicketDraftChat.isPending || repositories.length === 0
+          }
           icon={<Plus aria-hidden className="size-4" />}
           label="Create issue"
           onClick={openCreateIssueDialog}
@@ -1196,7 +1272,7 @@ export const WorkspaceScreen = () => {
               ) : hasRepositories && isWorkItemsPage ? (
                 <IssuesPanel
                   loadingRepository={repositoryColdSyncing}
-                  onCreateIssue={issueRepository ? openCreateIssueDialog : undefined}
+                  onCreateIssue={repositories.length > 0 ? openCreateIssueDialog : undefined}
                   onIssueSelect={(selection) => {
                     const repositoryId = selection.repositoryId ?? issueRepository?.id;
                     if (!repositoryId) return;
@@ -1303,28 +1379,36 @@ export const WorkspaceScreen = () => {
         <CreateIssueDialog
           assignee={createIssueForm.values.assignee}
           assigneeSections={createIssueOptions.assigneeSections}
-          createDisabled={createIssueForm.createDisabled}
+          createDisabled={createIssueForm.createDisabled || !createIssueRepository}
           createMore={createIssueForm.values.createMore}
           description={createIssueForm.values.description}
+          draftDisabled={createIssueForm.draftDisabled || !createIssueRepository}
+          draftInstructions={createIssueForm.values.draftInstructions}
+          draftSaving={createTicketDraftChat.isPending}
           dueDate={createIssueForm.values.dueDate}
           error={createIssueForm.values.error}
           estimate={createIssueForm.values.estimate}
           labelSections={createIssueOptions.labelSections}
           labels={createIssueForm.values.labels}
           moreSections={createIssueOptions.moreSections}
+          mode={createIssueForm.values.mode}
           onAssigneeChange={createIssueForm.setAssignee}
           onClose={closeCreateIssueDialog}
           onCreate={submitCreateIssue}
           onCreateMoreChange={createIssueForm.setCreateMore}
           onDescriptionChange={createIssueForm.setDescription}
+          onDraftInstructionsChange={createIssueForm.setDraftInstructions}
+          onDraftSubmit={submitCreateIssueDraft}
           onDueDateChange={createIssueForm.setDueDate}
           onEstimateChange={createIssueForm.setEstimate}
           onLabelsChange={createIssueForm.setLabels}
+          onModeChange={createIssueForm.setMode}
           onMoreAction={(actionId) =>
             createIssueForm.setError(defaultCreateIssueMoreActionMessage(actionId))
           }
           onPriorityChange={createIssueForm.setPriority}
           onProjectChange={createIssueForm.setProject}
+          onRepositoryChange={selectCreateIssueRepository}
           onStatusChange={createIssueForm.setStatus}
           onTemplateChange={applyIssueTemplate}
           onTitleChange={createIssueForm.setTitle}
@@ -1333,11 +1417,13 @@ export const WorkspaceScreen = () => {
           prioritySections={createIssueOptions.prioritySections}
           project={createIssueForm.values.project}
           projectSections={createIssueOptions.projectSections}
+          repository={createIssueRepository?.id ?? null}
+          repositorySections={createIssueRepositorySections}
           saving={createIssue.isPending}
           status={createIssueForm.values.status}
           statusSections={createIssueOptions.statusSections}
           tagSuggestions={createIssueTagSuggestions}
-          teamLabel={issueRepository?.displayName ?? "Repository"}
+          teamLabel={createIssueRepository?.displayName ?? "Repository"}
           template={createIssueForm.values.template}
           templateSections={createIssueOptions.templateSections}
           title={createIssueForm.values.title}

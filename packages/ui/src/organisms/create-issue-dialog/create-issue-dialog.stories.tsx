@@ -22,12 +22,36 @@ const renderDialog = (props?: React.ComponentProps<typeof CreateIssueDialog>) =>
   </div>
 );
 
+const repositorySections = [
+  {
+    id: "repositories",
+    options: [
+      {
+        id: "cycle",
+        label: "Cycle",
+        rightMeta: "repo-cycle",
+      },
+      {
+        id: "desktop",
+        label: "Desktop",
+        rightMeta: "repo-desktop",
+      },
+    ],
+  },
+];
+
 export const Default: Story = {
-  render: () => renderDialog(),
+  render: () =>
+    renderDialog({
+      draftInstructions: "Create a ticket for improving issue creation from chat prompts.",
+      repository: "cycle",
+      repositorySections,
+      teamLabel: "Cycle",
+    }),
 };
 
 export const StatusOpen: Story = {
-  render: () => renderDialog({ defaultOpenChip: "status" }),
+  render: () => renderDialog({ defaultOpenChip: "status", mode: "manual" }),
 };
 
 export const DarkStatusOpen: Story = {
@@ -37,6 +61,7 @@ export const DarkStatusOpen: Story = {
   render: () =>
     renderDialog({
       defaultOpenChip: "status",
+      mode: "manual",
       teamLabel: "Cycle UI",
       title: "Check create issue theme",
     }),
@@ -49,6 +74,7 @@ export const Filled: Story = {
       description:
         "Add a first-class issue dialog API with data-driven property pickers and reusable footer actions.",
       labels: ["feature"],
+      mode: "manual",
       priority: "high",
       status: "in-progress",
       teamLabel: "Cycle UI",
@@ -60,6 +86,7 @@ export const Saving: Story = {
   render: () =>
     renderDialog({
       createMore: true,
+      mode: "manual",
       saving: true,
       teamLabel: "Cycle UI",
       title: "Persist the new issue draft",
@@ -70,6 +97,7 @@ export const Error: Story = {
   render: () =>
     renderDialog({
       error: "Unable to create the issue. Check the repository connection and try again.",
+      mode: "manual",
       teamLabel: "Cycle UI",
       title: "Handle repository write failures",
     }),
@@ -82,6 +110,7 @@ export const NarrowViewport: Story = {
         className="absolute"
         description="Narrow layouts should keep title, property chips, errors, and footer actions readable."
         labels={["improvement"]}
+        mode="manual"
         priority="medium"
         status="todo"
         teamLabel="Cycle UI"
