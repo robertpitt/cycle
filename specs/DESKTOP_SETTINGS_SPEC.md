@@ -214,14 +214,14 @@ full-width panel when horizontal grouping is useful.
 
 Every setting MUST have exactly one scope:
 
-| Scope | Meaning | Examples |
-| --- | --- | --- |
-| `application` | Applies to the local desktop profile. | theme, density, profile, cache clear |
-| `agent-global` | Applies to all agent work unless overridden. | global pause, max jobs |
-| `harness` | Applies to one detected agent harness/provider. | enabled, default model, reasoning effort |
-| `repository` | Applies to one registered repository. | commit style, auto sync, repo actions |
-| `repository-agent` | Applies to agent work for one repository. | repo pause, provider override |
-| `diagnostic` | Read-only runtime or filesystem status. | API URL, log path, bootstrap phase |
+| Scope              | Meaning                                         | Examples                                 |
+| ------------------ | ----------------------------------------------- | ---------------------------------------- |
+| `application`      | Applies to the local desktop profile.           | theme, density, profile, cache clear     |
+| `agent-global`     | Applies to all agent work unless overridden.    | global pause, max jobs                   |
+| `harness`          | Applies to one detected agent harness/provider. | enabled, default model, reasoning effort |
+| `repository`       | Applies to one registered repository.           | commit style, auto sync, repo actions    |
+| `repository-agent` | Applies to agent work for one repository.       | repo pause, provider override            |
+| `diagnostic`       | Read-only runtime or filesystem status.         | API URL, log path, bootstrap phase       |
 
 Settings with different scopes MUST NOT be persisted through the same mutation unless the mutation
 is explicitly an aggregate adapter that delegates to each scope owner.
@@ -763,18 +763,18 @@ services.
 
 Settings MUST handle these failure classes:
 
-| Failure | Required behavior |
-| --- | --- |
-| App config read fails | Show blocking settings load error with retry. |
-| Section query fails | Show scoped error and keep other sections usable. |
-| Mutation fails | Keep previous persisted value, preserve draft where applicable, show scoped error. |
-| Provider detection fails | Show provider status unavailable and keep saved agent settings visible when possible. |
-| API unavailable | Show endpoint unavailable and disable API-backed actions. |
-| Repository status unavailable | Show repository registered but status unavailable. |
-| Repository sync/push fails | Show last error and leave action retryable. |
-| Bootstrap failed | Show phase and error in Advanced and affected repository pages. |
-| Runtime discovery missing | Show endpoint status unknown or unavailable without crashing. |
-| Invalid route repository ID | Navigate to repository index or show not-found state. |
+| Failure                       | Required behavior                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------------------- |
+| App config read fails         | Show blocking settings load error with retry.                                         |
+| Section query fails           | Show scoped error and keep other sections usable.                                     |
+| Mutation fails                | Keep previous persisted value, preserve draft where applicable, show scoped error.    |
+| Provider detection fails      | Show provider status unavailable and keep saved agent settings visible when possible. |
+| API unavailable               | Show endpoint unavailable and disable API-backed actions.                             |
+| Repository status unavailable | Show repository registered but status unavailable.                                    |
+| Repository sync/push fails    | Show last error and leave action retryable.                                           |
+| Bootstrap failed              | Show phase and error in Advanced and affected repository pages.                       |
+| Runtime discovery missing     | Show endpoint status unknown or unavailable without crashing.                         |
+| Invalid route repository ID   | Navigate to repository index or show not-found state.                                 |
 
 Failures in diagnostic sections MUST NOT corrupt persisted settings.
 
@@ -893,22 +893,22 @@ discovery when that is more reliable in Electron.
 
 ## 18. Test and Validation Matrix
 
-| Area | Required validation |
-| --- | --- |
-| Settings routes | `/settings` defaults to General; known sections render; unknown sections fail safely; legacy repository settings route redirects. |
-| Sidebar hierarchy | Sections appear in required order and repository pages are reachable. |
-| Profile | Valid save updates config; invalid input blocks save; failed mutation preserves draft. |
-| General | Clear cache calls bridge/API once, reports pending/success/error, preserves config; theme and density persist and apply without restart. |
-| Agents | Provider detection renders available/missing states; enablement mutation updates agent settings; missing harness controls are disabled. |
-| Capability UI | Provider-specific controls appear only when capabilities/config schema allow them. |
-| Repositories index | Registered repos render with status, branch, remote, warnings, and error state. |
-| Repository preferences | Commit style, auto sync, and sidebar preference mutations persist correctly. |
-| Repository actions | Sync/pull, push, and remove call the correct API/service and invalidate affected queries. |
-| Repository removal | Requires confirmation, unregisters only, and navigates away from removed detail page. |
-| Endpoints | Shows API/MCP URLs and redacted auth status without token leakage. |
-| Advanced | Shows config, database, log, runtime, and worktree paths from services. |
-| Failure isolation | Provider/API/repository failures do not break unrelated sections. |
-| Security | Tests assert secrets are redacted and renderer has no direct filesystem writes. |
+| Area                   | Required validation                                                                                                                      |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Settings routes        | `/settings` defaults to General; known sections render; unknown sections fail safely; legacy repository settings route redirects.        |
+| Sidebar hierarchy      | Sections appear in required order and repository pages are reachable.                                                                    |
+| Profile                | Valid save updates config; invalid input blocks save; failed mutation preserves draft.                                                   |
+| General                | Clear cache calls bridge/API once, reports pending/success/error, preserves config; theme and density persist and apply without restart. |
+| Agents                 | Provider detection renders available/missing states; enablement mutation updates agent settings; missing harness controls are disabled.  |
+| Capability UI          | Provider-specific controls appear only when capabilities/config schema allow them.                                                       |
+| Repositories index     | Registered repos render with status, branch, remote, warnings, and error state.                                                          |
+| Repository preferences | Commit style, auto sync, and sidebar preference mutations persist correctly.                                                             |
+| Repository actions     | Sync/pull, push, and remove call the correct API/service and invalidate affected queries.                                                |
+| Repository removal     | Requires confirmation, unregisters only, and navigates away from removed detail page.                                                    |
+| Endpoints              | Shows API/MCP URLs and redacted auth status without token leakage.                                                                       |
+| Advanced               | Shows config, database, log, runtime, and worktree paths from services.                                                                  |
+| Failure isolation      | Provider/API/repository failures do not break unrelated sections.                                                                        |
+| Security               | Tests assert secrets are redacted and renderer has no direct filesystem writes.                                                          |
 
 ## 19. Implementation Checklist
 

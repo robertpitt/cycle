@@ -168,9 +168,9 @@ const inflate = (
     try: () => new Uint8Array(inflateSync(bytes)),
     catch: (cause) =>
       new GitAdapterError({
-        operation: operation,
+        operation,
         message: "Could not inflate Git object",
-        ...{ cause },
+        cause,
       }),
   });
 
@@ -181,5 +181,9 @@ const deflate = (
   Effect.try({
     try: () => new Uint8Array(deflateSync(bytes)),
     catch: (cause) =>
-      new GitAdapterError({ operation: operation, message: errorMessage(cause), ...{ cause } }),
+      new GitAdapterError({
+        operation,
+        message: errorMessage(cause),
+        cause,
+      }),
   });

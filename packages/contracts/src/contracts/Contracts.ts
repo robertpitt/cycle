@@ -69,10 +69,9 @@ import {
 import type { UseCaseContract, UseCaseMeta } from "./Types.ts";
 
 const NonEmptyTrimmedString = Schema.String.check(
-  Schema.makeFilter<string>(
-    (value) => value.trim().length > 0 || "a non-empty string",
-    { expected: "a non-empty string" },
-  ),
+  Schema.makeFilter<string>((value) => value.trim().length > 0 || "a non-empty string", {
+    expected: "a non-empty string",
+  }),
 );
 
 export const UseCaseFailureTag = Schema.Literals([

@@ -1019,22 +1019,22 @@ Requirements:
 
 Core conformance tests MUST cover:
 
-| Area | Required validation |
-| --- | --- |
-| Runtime API | `start`, `resume`, `cancel`, `steer`, `inspect`, and `events` are Effect-first and typed. |
-| Durability | Runs, sessions, attempts, interactions, and events survive process restart simulation. |
-| Reconciliation | Active stale attempts become `interrupted`; explicit resume creates a new attempt. |
-| Idempotency | Duplicate start requests with the same key do not create concurrent runs. |
-| Event ordering | Events are appended before emission and replay in sequence order. |
-| Authority | `ticket-context` rejects workspace writes; `implementation-worktree` requires a worktree. |
-| MCP | HTTP MCP attachment passes scoped configuration to Codex without persisting tokens. |
-| Codex | Native thread IDs persist and resume through the harness binding. |
-| Interactions | Approval and user-input requests persist, resolve, and replay after refresh. |
-| Cancellation | Cancellation interrupts live Codex attempts and reaches a terminal state. |
-| Steering | Supported steering succeeds; unsupported steering emits a rejected event. |
-| Prompt templates | Inputs decode through Schema and render deterministic prompt bundles. |
-| Errors | Provider, MCP, timeout, parse, auth, and storage failures map to stable codes. |
-| Redaction | Tokens and secret-like environment values are absent from events and logs. |
+| Area             | Required validation                                                                       |
+| ---------------- | ----------------------------------------------------------------------------------------- |
+| Runtime API      | `start`, `resume`, `cancel`, `steer`, `inspect`, and `events` are Effect-first and typed. |
+| Durability       | Runs, sessions, attempts, interactions, and events survive process restart simulation.    |
+| Reconciliation   | Active stale attempts become `interrupted`; explicit resume creates a new attempt.        |
+| Idempotency      | Duplicate start requests with the same key do not create concurrent runs.                 |
+| Event ordering   | Events are appended before emission and replay in sequence order.                         |
+| Authority        | `ticket-context` rejects workspace writes; `implementation-worktree` requires a worktree. |
+| MCP              | HTTP MCP attachment passes scoped configuration to Codex without persisting tokens.       |
+| Codex            | Native thread IDs persist and resume through the harness binding.                         |
+| Interactions     | Approval and user-input requests persist, resolve, and replay after refresh.              |
+| Cancellation     | Cancellation interrupts live Codex attempts and reaches a terminal state.                 |
+| Steering         | Supported steering succeeds; unsupported steering emits a rejected event.                 |
+| Prompt templates | Inputs decode through Schema and render deterministic prompt bundles.                     |
+| Errors           | Provider, MCP, timeout, parse, auth, and storage failures map to stable codes.            |
+| Redaction        | Tokens and secret-like environment values are absent from events and logs.                |
 
 Integration tests SHOULD cover:
 

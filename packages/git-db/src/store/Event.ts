@@ -53,9 +53,7 @@ export const canonicalJson = (value: unknown): Effect.Effect<string, GitDbError>
     catch: (cause) =>
       new InvalidJsonDocumentError({
         message: cause instanceof Error ? cause.message : "Cannot encode event JSON",
-        ...{
-          cause,
-        },
+        cause,
       }),
     try: () => JSON.stringify(normalizeJson(value)),
   });

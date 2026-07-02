@@ -1,9 +1,5 @@
 import type { DatabaseFailure } from "@cycle/database";
-import type {
-  UseCaseFailure,
-  UseCaseFailureTag,
-  UseCaseName,
-} from "@cycle/contracts/contracts";
+import type { UseCaseFailure, UseCaseFailureTag, UseCaseName } from "@cycle/contracts/contracts";
 
 export type { UseCaseFailure, UseCaseFailureTag } from "@cycle/contracts/contracts";
 

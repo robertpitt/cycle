@@ -7,9 +7,7 @@ export const encodeValue = (value: unknown): Effect.Effect<Uint8Array, InvalidJs
     catch: (cause) =>
       new InvalidJsonDocumentError({
         message: cause instanceof Error ? cause.message : "Cannot encode document",
-        ...{
-          cause,
-        },
+        cause,
       }),
     try: () => {
       if (value instanceof Uint8Array) return value;

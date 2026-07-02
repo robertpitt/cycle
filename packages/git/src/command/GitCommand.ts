@@ -41,11 +41,9 @@ export const git = <E extends GitRunError = GitAdapterError>(
     new GitAdapterError({
       operation: formatOperation(failedArgs),
       message: formatGitFailure(failedArgs, result, cause),
-      ...{
-        cause,
-        status: result?.status,
-        stderr: result === undefined ? undefined : sanitizeStderr(bytesToString(result.stderr)),
-      },
+      cause,
+      status: result?.status,
+      stderr: result === undefined ? undefined : sanitizeStderr(bytesToString(result.stderr)),
     })) as (args: ReadonlyArray<string>, result: GitRunResult | undefined, cause: unknown) => E,
 ): Effect.Effect<GitRunResult, E> =>
   runGit(spawner, cwd, ["--git-dir", gitDir, ...args], options, makeError, {
@@ -66,11 +64,9 @@ export const gitRaw = <E extends GitRunError = GitAdapterError>(
     new GitAdapterError({
       operation: formatOperation(failedArgs),
       message: formatGitFailure(failedArgs, result, cause),
-      ...{
-        cause,
-        status: result?.status,
-        stderr: result === undefined ? undefined : sanitizeStderr(bytesToString(result.stderr)),
-      },
+      cause,
+      status: result?.status,
+      stderr: result === undefined ? undefined : sanitizeStderr(bytesToString(result.stderr)),
     })) as (args: ReadonlyArray<string>, result: GitRunResult | undefined, cause: unknown) => E,
 ): Effect.Effect<GitRunResult, E> => runGit(spawner, cwd, args, options, makeError);
 

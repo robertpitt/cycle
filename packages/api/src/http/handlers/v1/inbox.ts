@@ -1,7 +1,4 @@
-import {
-  ContractSchemas,
-  type InboxQuery,
-} from "@cycle/contracts";
+import { ContractSchemas, type InboxQuery } from "@cycle/contracts";
 import {
   InboxArchive,
   InboxList,

@@ -18,9 +18,7 @@ export const parseTree = (raw: string): Effect.Effect<ReadonlyArray<TreeEntry>, 
           new GitAdapterError({
             operation: "git ls-tree",
             message: `Unexpected ls-tree record: ${record}`,
-            ...{
-              stderr: record,
-            },
+            stderr: record,
           }),
         )
       : Effect.succeed({

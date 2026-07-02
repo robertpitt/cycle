@@ -36,12 +36,16 @@ export type AgentTaskServiceShape = {
     taskId: string,
     input?: CancelAgentTaskInput,
   ) => Effect.Effect<AgentTask | undefined, AgentTaskServiceError>;
-  readonly createTask: (request: AgentTaskRequest) => Effect.Effect<AgentTask, AgentTaskServiceError>;
+  readonly createTask: (
+    request: AgentTaskRequest,
+  ) => Effect.Effect<AgentTask, AgentTaskServiceError>;
   readonly getTask: (taskId: string) => Effect.Effect<AgentTask | undefined, AgentTaskServiceError>;
   readonly listEvents: (
     query: AgentTaskEventQuery,
   ) => Effect.Effect<readonly AgentTaskEvent[], AgentTaskServiceError>;
-  readonly listTasks: (query?: AgentTaskListQuery) => Effect.Effect<AgentTaskPage, AgentTaskServiceError>;
+  readonly listTasks: (
+    query?: AgentTaskListQuery,
+  ) => Effect.Effect<AgentTaskPage, AgentTaskServiceError>;
   readonly reconcile: () => Effect.Effect<AgentTaskReconcileResult, AgentTaskServiceError>;
   readonly retryTask: (
     taskId: string,
@@ -180,7 +184,9 @@ export const makeAgentTaskService = (
           metadata,
           ...(request.origin === undefined ? {} : { origin: request.origin }),
           requestedBy: request.requestedBy,
-          ...(request.responseFormat === undefined ? {} : { responseFormat: request.responseFormat }),
+          ...(request.responseFormat === undefined
+            ? {}
+            : { responseFormat: request.responseFormat }),
           ...(request.tools === undefined ? {} : { tools: request.tools }),
         };
         const task: AgentTask = {
@@ -298,7 +304,9 @@ export const AgentTaskServiceLive = (
 ): Layer.Layer<AgentTaskService, never, AgentTaskStore> =>
   Layer.effect(
     AgentTaskService,
-    Effect.map(AgentTaskStore, (store) => AgentTaskService.of(makeAgentTaskService(store, options))),
+    Effect.map(AgentTaskStore, (store) =>
+      AgentTaskService.of(makeAgentTaskService(store, options)),
+    ),
   );
 
 export const agentTaskNotFound = (taskId: string): AgentTaskFailure =>

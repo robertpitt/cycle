@@ -235,9 +235,7 @@ const inflatePackData = (
         new GitAdapterError({
           operation: "filesystem pack read",
           message: `Could not inflate packed object: ${packPath}`,
-          ...{
-            cause,
-          },
+          cause,
         }),
     }),
     (inflated) => {

@@ -182,8 +182,14 @@ describe("AgentTask API", () => {
       );
       const body = (await created.json()) as {
         readonly data?: {
-          readonly origin?: { readonly kind?: string; readonly repositoryId?: string; readonly ticketId?: string };
-          readonly request?: { readonly context?: { readonly ticket?: { readonly title?: string } } };
+          readonly origin?: {
+            readonly kind?: string;
+            readonly repositoryId?: string;
+            readonly ticketId?: string;
+          };
+          readonly request?: {
+            readonly context?: { readonly ticket?: { readonly title?: string } };
+          };
           readonly status?: string;
         };
       };

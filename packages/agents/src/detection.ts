@@ -77,7 +77,7 @@ const AgentProviderDetectorWithResolverLive = Layer.effect(
               executable: provider.executable,
               ...(result?.executablePath === undefined
                 ? {}
-                  : { executablePath: result.executablePath }),
+                : { executablePath: result.executablePath }),
               id: provider.id,
               ...(provider.packageName === undefined ? {} : { packageName: provider.packageName }),
               ...(provider.id === claudeCodeProviderId && !claudeSdkAvailable

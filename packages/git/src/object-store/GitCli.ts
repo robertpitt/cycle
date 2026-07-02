@@ -35,12 +35,10 @@ export const layer = Layer.effect(
               remote: input.remote,
               operation: formatOperation(args),
               message: formatGitFailure(args, result, cause),
-              ...{
-                cause,
-                status: result?.status,
-                stderr:
-                  result === undefined ? undefined : sanitizeStderr(bytesToString(result.stderr)),
-              },
+              cause,
+              status: result?.status,
+              stderr:
+                result === undefined ? undefined : sanitizeStderr(bytesToString(result.stderr)),
             }),
         ).pipe(Effect.asVoid),
       isAncestor: (store, ancestor, descendant) =>
@@ -63,10 +61,8 @@ export const layer = Layer.effect(
               new GitAdapterError({
                 operation: "git merge-base --is-ancestor",
                 message: stderr || "git merge-base failed",
-                ...{
-                  status: result.status,
-                  stderr,
-                },
+                status: result.status,
+                stderr,
               }),
             );
           }),
@@ -124,12 +120,10 @@ export const layer = Layer.effect(
               remote: input.remote,
               operation: formatOperation(args),
               message: formatGitFailure(args, result, cause),
-              ...{
-                cause,
-                status: result?.status,
-                stderr:
-                  result === undefined ? undefined : sanitizeStderr(bytesToString(result.stderr)),
-              },
+              cause,
+              status: result?.status,
+              stderr:
+                result === undefined ? undefined : sanitizeStderr(bytesToString(result.stderr)),
             }),
         ).pipe(Effect.asVoid),
       readBlob: (store, id) =>

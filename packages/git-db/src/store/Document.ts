@@ -27,10 +27,8 @@ export const parseDocumentJson = <T = unknown>(
     catch: (cause) =>
       new InvalidJsonDocumentError({
         message: `Invalid JSON document at ${document.path}`,
-        ...{
-          cause,
-          path: document.path,
-        },
+        cause,
+        path: document.path,
       }),
     try: () => document.json<T>(),
   });

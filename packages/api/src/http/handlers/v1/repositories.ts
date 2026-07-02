@@ -1,6 +1,4 @@
-import {
-  type RepositoryStatus,
-} from "@cycle/contracts";
+import { type RepositoryStatus } from "@cycle/contracts";
 import {
   RepositoryHistoryList,
   RepositoryList,

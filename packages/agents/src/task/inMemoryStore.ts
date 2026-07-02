@@ -66,8 +66,15 @@ export const makeInMemoryAgentTaskStore = (): AgentTaskStoreShape => {
               task.origin.kind === query.originKind
             );
           })
-          .filter((task) => originField(task, "repositoryId") === (query.repositoryId ?? originField(task, "repositoryId")))
-          .filter((task) => originField(task, "ticketId") === (query.ticketId ?? originField(task, "ticketId")))
+          .filter(
+            (task) =>
+              originField(task, "repositoryId") ===
+              (query.repositoryId ?? originField(task, "repositoryId")),
+          )
+          .filter(
+            (task) =>
+              originField(task, "ticketId") === (query.ticketId ?? originField(task, "ticketId")),
+          )
           .slice(0, query.limit)
           .map((task) => clone(task)),
       ),

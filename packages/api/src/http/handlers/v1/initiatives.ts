@@ -1,11 +1,5 @@
-import {
-  contractFor,
-} from "@cycle/contracts";
-import {
-  InitiativeCreate,
-  InitiativeProgressGet,
-  InitiativeUpdateAdd,
-} from "@cycle/usecases";
+import { contractFor } from "@cycle/contracts";
+import { InitiativeCreate, InitiativeProgressGet, InitiativeUpdateAdd } from "@cycle/usecases";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {

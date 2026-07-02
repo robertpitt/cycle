@@ -25,7 +25,12 @@ export const mapClaudeCodeSdkMessage = (
 
   switch (input.message.type) {
     case "assistant":
-      return assistantMessageEvents(input.message.message.content, input.sessionId, input.turnId, at);
+      return assistantMessageEvents(
+        input.message.message.content,
+        input.sessionId,
+        input.turnId,
+        at,
+      );
     case "stream_event":
       return streamEventEvents(input.message.event, input.sessionId, input.turnId, at);
     case "result":
@@ -207,17 +212,18 @@ const resultEvents = (
   at: Date,
 ): readonly AgentEvent[] => {
   const usage = usageFromResult(message);
-  const events: AgentEvent[] = usage === undefined
-    ? []
-    : [
-        {
-          at,
-          sessionId,
-          turnId,
-          type: "usage",
-          usage,
-        },
-      ];
+  const events: AgentEvent[] =
+    usage === undefined
+      ? []
+      : [
+          {
+            at,
+            sessionId,
+            turnId,
+            type: "usage",
+            usage,
+          },
+        ];
 
   if (message.subtype === "success") {
     events.push({
@@ -448,9 +454,7 @@ const numberValue = (value: unknown): number | undefined =>
 
 const sumDefined = (values: readonly (number | undefined)[]): number | undefined => {
   const numbers = values.filter((value): value is number => value !== undefined);
-  return numbers.length === 0
-    ? undefined
-    : numbers.reduce((total, value) => total + value, 0);
+  return numbers.length === 0 ? undefined : numbers.reduce((total, value) => total + value, 0);
 };
 
 const jsonObject = (value: Readonly<Record<string, unknown>>): JsonObject =>

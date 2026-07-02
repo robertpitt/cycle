@@ -99,15 +99,10 @@ export const withSettingsHandlers = (handlers: any) =>
     .handle("updateAgentProviderPreference", ({ params, payload, request }: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
-        const input = yield* decodeHttpValue(
-          AgentProviderPreferencePayload,
-          payload,
-          requestId,
-          {
-            code: "INVALID_LOCAL_SETTINGS_INPUT",
-            message: "Invalid agent provider preference payload.",
-          },
-        );
+        const input = yield* decodeHttpValue(AgentProviderPreferencePayload, payload, requestId, {
+          code: "INVALID_LOCAL_SETTINGS_INPUT",
+          message: "Invalid agent provider preference payload.",
+        });
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
 
         return yield* runLocalSettings(

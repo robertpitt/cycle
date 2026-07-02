@@ -128,21 +128,23 @@ arguments, terminal I/O, or adapter-specific serialization libraries.
 Each public usecase MUST be exported as a named definition with a generated `run` method:
 
 ```ts
-import { IssueCreate } from "@cycle/usecases"
+import { IssueCreate } from "@cycle/usecases";
 
-const ticket = yield* IssueCreate.run(
-  {
-    repository: { id: "cycle-local" },
-    input: {
-      title: "Document the usecase layer",
-      type: "task"
-    }
-  },
-  {
-    requestId: "req-1",
-    source: "cli"
-  }
-)
+const ticket =
+  yield *
+  IssueCreate.run(
+    {
+      repository: { id: "cycle-local" },
+      input: {
+        title: "Document the usecase layer",
+        type: "task",
+      },
+    },
+    {
+      requestId: "req-1",
+      source: "cli",
+    },
+  );
 ```
 
 The primary `run` signature MUST be:
@@ -178,14 +180,14 @@ export const IssueCreate = defineUseCase({
   repositoryScope: "single",
   handler: (input, ctx) =>
     Effect.gen(function* () {
-      const db = yield* DatabaseService
-      const policy = yield* WorkflowPolicy
+      const db = yield* DatabaseService;
+      const policy = yield* WorkflowPolicy;
 
-      yield* policy.validateIssueCreate(input, ctx)
+      yield* policy.validateIssueCreate(input, ctx);
 
-      return yield* db.createTicket(input.repository.id, input.input)
-    })
-})
+      return yield* db.createTicket(input.repository.id, input.input);
+    }),
+});
 ```
 
 The definition MUST include:
@@ -269,9 +271,9 @@ Effect services.
 Handlers MUST yield dependencies directly from the Effect environment:
 
 ```ts
-const db = yield* DatabaseService
-const policy = yield* WorkflowPolicy
-const clock = yield* Clock.Clock
+const db = yield * DatabaseService;
+const policy = yield * WorkflowPolicy;
+const clock = yield * Clock.Clock;
 ```
 
 Application entrypoints MUST provide the required services with Effect layers. Test code MUST be able
@@ -394,7 +396,7 @@ decode failures to unexpected defect failures.
 Adapters MUST import concrete named usecases:
 
 ```ts
-import { IssueCreate, RepositoryStatusGet } from "@cycle/usecases"
+import { IssueCreate, RepositoryStatusGet } from "@cycle/usecases";
 ```
 
 Adapters MUST provide Effect layers that satisfy the services required by the invoked usecases.

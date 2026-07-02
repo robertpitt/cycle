@@ -35,7 +35,8 @@ export const claudeCodeConfigurationSchema: JsonSchema = {
     },
     sdkOptions: {
       additionalProperties: true,
-      description: "Redacted non-secret SDK options reserved for future provider-specific settings.",
+      description:
+        "Redacted non-secret SDK options reserved for future provider-specific settings.",
       type: "object",
     },
     systemPromptMode: {
@@ -54,9 +55,7 @@ export const defaultClaudeCodeProviderConfig = (): ClaudeCodeProviderConfig => (
   systemPromptMode: "cycle-default",
 });
 
-export const decodeClaudeCodeProviderConfig = (
-  value: unknown,
-): ClaudeCodeProviderConfig => {
+export const decodeClaudeCodeProviderConfig = (value: unknown): ClaudeCodeProviderConfig => {
   if (!isRecord(value)) return defaultClaudeCodeProviderConfig();
 
   const permissionMode = isClaudeCodePermissionMode(value.permissionMode)
@@ -83,9 +82,7 @@ export const decodeClaudeCodeProviderConfig = (
   };
 };
 
-export const isClaudeCodePermissionMode = (
-  value: unknown,
-): value is ClaudeCodePermissionMode =>
+export const isClaudeCodePermissionMode = (value: unknown): value is ClaudeCodePermissionMode =>
   value === "default" ||
   value === "acceptEdits" ||
   value === "bypassPermissions" ||

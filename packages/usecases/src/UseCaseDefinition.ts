@@ -1,11 +1,4 @@
-import {
-  Cause,
-  Context,
-  Duration,
-  Effect,
-  Result,
-  Schema,
-} from "effect";
+import { Cause, Context, Duration, Effect, Result, Schema } from "effect";
 import type { DatabaseService, IssueRelation, TicketDocument } from "@cycle/database";
 import {
   contractFor,
@@ -19,10 +12,7 @@ import {
   type UseCaseSideEffect,
   type UseCaseSuccess,
 } from "@cycle/contracts/contracts";
-import {
-  invalidInputFailure,
-  useCaseFailure,
-} from "./UseCaseFailure.ts";
+import { invalidInputFailure, useCaseFailure } from "./UseCaseFailure.ts";
 
 const StrictDecodeOptions = { onExcessProperty: "error" } as const;
 
@@ -226,7 +216,10 @@ export const defineContractUseCase = <Name extends UseCaseName, R>(
 };
 
 const useCaseContext = <Name extends UseCaseName>(
-  definition: Pick<DefineUseCaseOptions<Name, Schema.Top, Schema.Top, never>, "name" | "sideEffect">,
+  definition: Pick<
+    DefineUseCaseOptions<Name, Schema.Top, Schema.Top, never>,
+    "name" | "sideEffect"
+  >,
   meta: typeof UseCaseMetaSchema.Type,
   fallbackRequestId: string,
   input: UseCaseInput<Name>,
@@ -273,7 +266,9 @@ const validateMetadata = <Name extends UseCaseName>(
 
   if (
     context.dryRun &&
-    (context.sideEffect === "push" || context.sideEffect === "sync" || context.sideEffect === "write")
+    (context.sideEffect === "push" ||
+      context.sideEffect === "sync" ||
+      context.sideEffect === "write")
   ) {
     return Effect.fail(
       invalidInputFailure({
@@ -318,8 +313,9 @@ const applyDeadline = <A, E, R, Name extends UseCaseName>(
   );
 };
 
-const deadlineFromInput = <Name extends UseCaseName>(context: UseCaseContext<Name>): number | undefined =>
-  context.deadline;
+const deadlineFromInput = <Name extends UseCaseName>(
+  context: UseCaseContext<Name>,
+): number | undefined => context.deadline;
 
 const useCaseAnnotations = <Name extends UseCaseName>(
   context: UseCaseContext<Name>,
