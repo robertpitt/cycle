@@ -46,9 +46,9 @@ export const runUseCase = <Name extends UseCaseName>(
   Effect.gen(function* () {
     const runtime = yield* CycleApiRuntime;
     const result = yield* Effect.result(
-      definition.run(input, useCaseMeta).pipe(
-        Effect.provide(runtime.useCaseLayer),
-      ) as Effect.Effect<unknown, UseCaseFailure>,
+      definition
+        .run(input, useCaseMeta)
+        .pipe(Effect.provide(runtime.useCaseLayer)) as Effect.Effect<unknown, UseCaseFailure>,
     );
     const fields = {
       requestId: useCaseMeta?.requestId ?? null,

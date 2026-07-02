@@ -118,15 +118,19 @@ export const InboxArchive = defineContractUseCase("InboxArchive", (input, contex
 
 export const IssueCreate = defineContractUseCase("IssueCreate", (input, context) =>
   database(context, (db) =>
-    db.createTicket(input.repository.id, input.input).pipe(Effect.map(normalizeTicketDocumentForRead)),
+    db
+      .createTicket(input.repository.id, input.input)
+      .pipe(Effect.map(normalizeTicketDocumentForRead)),
   ),
 );
 
 export const IssueGet = defineContractUseCase("IssueGet", (input, context) =>
   database(context, (db) =>
-    db.getTicket(input.repository.id, input.input.id).pipe(
-      Effect.map((ticket) => (ticket === null ? null : normalizeTicketDocumentForRead(ticket))),
-    ),
+    db
+      .getTicket(input.repository.id, input.input.id)
+      .pipe(
+        Effect.map((ticket) => (ticket === null ? null : normalizeTicketDocumentForRead(ticket))),
+      ),
   ),
 );
 
@@ -149,21 +153,23 @@ export const IssueList = defineContractUseCase("IssueList", (input, context) =>
 
 export const IssueSearch = defineContractUseCase("IssueSearch", (input, context) =>
   database(context, (db) =>
-    db.searchTickets({
-      ...input.input,
-      repositoryIds:
-        input.input.repositoryIds !== undefined && input.input.repositoryIds.length > 0
-          ? input.input.repositoryIds
-          : [input.repository.id],
-    }).pipe(
-      Effect.map((page) => ({
-        ...page,
-        entries: page.entries.map((entry) => ({
-          ...entry,
-          ticket: normalizeTicketDocumentForRead(entry.ticket),
+    db
+      .searchTickets({
+        ...input.input,
+        repositoryIds:
+          input.input.repositoryIds !== undefined && input.input.repositoryIds.length > 0
+            ? input.input.repositoryIds
+            : [input.repository.id],
+      })
+      .pipe(
+        Effect.map((page) => ({
+          ...page,
+          entries: page.entries.map((entry) => ({
+            ...entry,
+            ticket: normalizeTicketDocumentForRead(entry.ticket),
+          })),
         })),
-      })),
-    ),
+      ),
   ),
 );
 
@@ -198,25 +204,25 @@ export const IssueTransition = defineContractUseCase("IssueTransition", (input, 
 
 export const IssueArchive = defineContractUseCase("IssueArchive", (input, context) =>
   database(context, (db) =>
-    db.archiveTicket(input.repository.id, input.input.id, { reason: input.input.reason }).pipe(
-      Effect.map(normalizeTicketDocumentForRead),
-    ),
+    db
+      .archiveTicket(input.repository.id, input.input.id, { reason: input.input.reason })
+      .pipe(Effect.map(normalizeTicketDocumentForRead)),
   ),
 );
 
 export const IssueRestore = defineContractUseCase("IssueRestore", (input, context) =>
   database(context, (db) =>
-    db.restoreTicket(input.repository.id, input.input.id, { reason: input.input.reason }).pipe(
-      Effect.map(normalizeTicketDocumentForRead),
-    ),
+    db
+      .restoreTicket(input.repository.id, input.input.id, { reason: input.input.reason })
+      .pipe(Effect.map(normalizeTicketDocumentForRead)),
   ),
 );
 
 export const IssueDelete = defineContractUseCase("IssueDelete", (input, context) =>
   database(context, (db) =>
-    db.deleteTicket(input.repository.id, input.input.id, { reason: input.input.reason }).pipe(
-      Effect.map(normalizeTicketDocumentForRead),
-    ),
+    db
+      .deleteTicket(input.repository.id, input.input.id, { reason: input.input.reason })
+      .pipe(Effect.map(normalizeTicketDocumentForRead)),
   ),
 );
 
@@ -261,9 +267,9 @@ export const IssueRelationAdd = defineContractUseCase("IssueRelationAdd", (input
 
 export const IssueRelationRemove = defineContractUseCase("IssueRelationRemove", (input, context) =>
   database(context, (db) =>
-    db.removeIssueRelation(input.repository.id, input.input.id, input.input.relation).pipe(
-      Effect.map(normalizeTicketDocumentForRead),
-    ),
+    db
+      .removeIssueRelation(input.repository.id, input.input.id, input.input.relation)
+      .pipe(Effect.map(normalizeTicketDocumentForRead)),
   ),
 );
 
@@ -283,7 +289,9 @@ export const DraftUpdate = defineContractUseCase("DraftUpdate", (input, context)
 
 export const DraftCommit = defineContractUseCase("DraftCommit", (input, context) =>
   database(context, (db) =>
-    db.commitDraft(input.repository.id, input.input).pipe(Effect.map(normalizeTicketDocumentForRead)),
+    db
+      .commitDraft(input.repository.id, input.input)
+      .pipe(Effect.map(normalizeTicketDocumentForRead)),
   ),
 );
 
@@ -319,7 +327,8 @@ export const InitiativeCreate = defineContractUseCase("InitiativeCreate", (input
 
 export const InitiativeProgressGet = defineContractUseCase(
   "InitiativeProgressGet",
-  (input, context) => database(context, (db) => db.initiativeProgress(input.repository.id, input.input.id)),
+  (input, context) =>
+    database(context, (db) => db.initiativeProgress(input.repository.id, input.input.id)),
 );
 
 export const InitiativeUpdateAdd = defineContractUseCase("InitiativeUpdateAdd", (input, context) =>
@@ -365,9 +374,7 @@ export const ViewList = defineContractUseCase("ViewList", (input, context) =>
 );
 
 export const ViewUpdate = defineContractUseCase("ViewUpdate", (input, context) =>
-  database(context, (db) =>
-    db.updateView(input.repository.id, input.input.id, input.input.patch),
-  ),
+  database(context, (db) => db.updateView(input.repository.id, input.input.id, input.input.patch)),
 );
 
 export const ViewDelete = defineContractUseCase("ViewDelete", (input, context) =>
@@ -536,7 +543,11 @@ const validateIssueUpdate = (
     }
 
     if (Object.hasOwn(patch.frontmatter ?? {}, "type")) {
-      yield* validateTicketTypeWritePolicy(context, patch.frontmatter?.["type"], "patch.frontmatter.type");
+      yield* validateTicketTypeWritePolicy(
+        context,
+        patch.frontmatter?.["type"],
+        "patch.frontmatter.type",
+      );
     }
   });
 
@@ -634,7 +645,9 @@ const validateRelationAdd = (
       : Effect.void;
 };
 
-const evaluateRepository = (context: UseCaseContext): Effect.Effect<AutomationEvaluation, UseCaseFailure, DatabaseService> =>
+const evaluateRepository = (
+  context: UseCaseContext,
+): Effect.Effect<AutomationEvaluation, UseCaseFailure, DatabaseService> =>
   Effect.gen(function* () {
     if (context.repositoryId === undefined) {
       return yield* Effect.fail(
@@ -647,7 +660,9 @@ const evaluateRepository = (context: UseCaseContext): Effect.Effect<AutomationEv
     }
 
     const status = yield* database(context, (db) => db.repositoryStatus(context.repositoryId!));
-    const warnings = yield* database(context, (db) => db.materializationWarnings(context.repositoryId!));
+    const warnings = yield* database(context, (db) =>
+      db.materializationWarnings(context.repositoryId!),
+    );
     const violations: Array<AutomationViolation> = [];
 
     if (status.status === "failed") {
@@ -709,7 +724,9 @@ const evaluateIssues = (
             })),
           );
 
-    const warnings = yield* database(context, (db) => db.materializationWarnings(context.repositoryId!));
+    const warnings = yield* database(context, (db) =>
+      db.materializationWarnings(context.repositoryId!),
+    );
     const violations = page.entries.flatMap(issueViolations);
 
     if (warnings.length > 0) {

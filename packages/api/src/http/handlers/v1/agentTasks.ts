@@ -79,24 +79,21 @@ export const withAgentTaskHandlers = (handlers: any) =>
 const taskResponse = (
   request: { readonly headers: any; readonly url: string },
   status: number,
-  operation: (
-    usecases: AgentTaskUsecasesShape,
-  ) => Effect.Effect<unknown, AgentTaskFailure, any>,
+  operation: (usecases: AgentTaskUsecasesShape) => Effect.Effect<unknown, AgentTaskFailure, any>,
 ) =>
   Effect.gen(function* () {
     const requestId = yield* requestIdFromHeaders(request.headers);
     const result = yield* runTaskUsecase(requestId, operation);
     if (HttpServerResponse.isHttpServerResponse(result)) return result;
-    if (result === undefined) return errorResponse(requestId, 404, "NOT_FOUND", "Agent task not found.");
+    if (result === undefined)
+      return errorResponse(requestId, 404, "NOT_FOUND", "Agent task not found.");
 
     return resourceResponse(requestId, status, result);
   });
 
 const runTaskUsecase = <A>(
   requestId: string,
-  operation: (
-    usecases: AgentTaskUsecasesShape,
-  ) => Effect.Effect<A, AgentTaskFailure, any>,
+  operation: (usecases: AgentTaskUsecasesShape) => Effect.Effect<A, AgentTaskFailure, any>,
 ): Effect.Effect<A | HttpServerResponse.HttpServerResponse, never, CycleApiRuntime> =>
   Effect.gen(function* () {
     const runtime = yield* CycleApiRuntime;

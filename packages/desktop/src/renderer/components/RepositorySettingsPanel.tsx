@@ -82,7 +82,6 @@ const SectionShell = ({
 );
 
 export const RepositorySettingsPanel = ({
-  agentProviders = [],
   appConfig,
   bootstrapStatus,
   onRemoved,

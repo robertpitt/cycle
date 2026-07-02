@@ -75,11 +75,9 @@ export const mapFsError =
   (operation: string, target: string) =>
   (cause: unknown): GitAdapterError =>
     new GitAdapterError({
-      operation: operation,
+      operation,
       message: `${operation} failed for ${target}: ${errorMessage(cause)}`,
-      ...{
-        cause,
-      },
+      cause,
     });
 
 export const errorMessage = (cause: unknown): string =>

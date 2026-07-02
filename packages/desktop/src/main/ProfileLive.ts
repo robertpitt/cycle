@@ -62,7 +62,10 @@ export const ProfileLive = Layer.effect(
             ...current,
             agentProviders: {
               preferences: supportedAgentProviders.map((provider) =>
-                defaultAgentProviderPreference(provider.id, enabledAgentProviderIds.has(provider.id)),
+                defaultAgentProviderPreference(
+                  provider.id,
+                  enabledAgentProviderIds.has(provider.id),
+                ),
               ),
             },
             onboarding: {

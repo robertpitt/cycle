@@ -45,8 +45,7 @@ export const makeCodexHarnessAdapter = (
           reason: result.reason ?? reason,
         })),
       ),
-    execute: (request) =>
-      Stream.fromAsyncIterable(executeCodex(service, request), harnessError),
+    execute: (request) => Stream.fromAsyncIterable(executeCodex(service, request), harnessError),
     harnessId: "codex",
     openSession: ({ attempt, run, session }) =>
       Effect.tryPromise({
@@ -149,4 +148,3 @@ const isJsonValue = (value: unknown): value is JsonObject[string] => {
   if (typeof value !== "object") return false;
   return Object.values(value).every(isJsonValue);
 };
-

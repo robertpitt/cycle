@@ -1,7 +1,4 @@
-import {
-  type RepositoryStatus,
-  type TicketDocument,
-} from "@cycle/contracts";
+import { type RepositoryStatus, type TicketDocument } from "@cycle/contracts";
 import { IssueList, IssueSearch, RepositoryList } from "@cycle/usecases";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";

@@ -13,7 +13,6 @@ import type {
 } from "@cycle/agents/types";
 import { DatabaseService, type DatabaseServiceShape } from "@cycle/database";
 import { type TicketDocument } from "@cycle/contracts";
-import type { BranchAssociation, WorktreeRecord, WorktreeServiceShape } from "@cycle/git/worktree";
 import { Effect, Layer, Tracer } from "effect";
 import { NodeServices } from "@effect/platform-node";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
@@ -272,111 +271,6 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
     }),
     calls,
     comments,
-  };
-};
-
-const makeFakeWorktreeService = (calls: string[] = []): WorktreeServiceShape => {
-  const timestamp = "2026-06-12T00:00:01.000Z";
-  const worktreeFor = (input: {
-    readonly jobId: string;
-    readonly repositoryId: string;
-    readonly ticketId: string;
-  }): WorktreeRecord => ({
-    baseRef: "refs/heads/main",
-    baseSha: "base-sha",
-    branchName: `cycle/task/${input.ticketId}`,
-    branchRef: `refs/heads/cycle/task/${input.ticketId}`,
-    createdAt: timestamp,
-    jobId: input.jobId,
-    mode: "implementation",
-    path: `/tmp/cycle-agent-worktrees/${input.jobId}`,
-    repositoryId: input.repositoryId,
-    status: "active",
-    updatedAt: timestamp,
-    worktreeId: `worktree-${input.jobId}`,
-  });
-
-  return {
-    cleanupWorktree: ({ worktree }) =>
-      Effect.sync(() => {
-        calls.push("cleanupWorktree");
-        return {
-          ...worktree,
-          cleanedAt: timestamp,
-          status: "cleaned" as const,
-          updatedAt: timestamp,
-        };
-      }),
-    commitWorktree: ({ message, worktree }) =>
-      Effect.sync(() => {
-        calls.push(`commitWorktree:${worktree.path}`);
-        assert.match(message, /Implement ISSUE-1/u);
-        return {
-          authorEmail: "agent@example.com",
-          authorName: "Cycle Agent",
-          message,
-          sha: "commit-sha-1234567890",
-        };
-      }),
-    createDisposableWorktree: () => Effect.die("not implemented"),
-    createImplementationWorktree: (input) =>
-      Effect.sync(() => {
-        calls.push(`createImplementationWorktree:${input.repositoryPath}:${input.ticketId}`);
-        return worktreeFor(input);
-      }),
-    createOrUpdateBranch: (input) =>
-      Effect.sync(() => {
-        calls.push(`createOrUpdateBranch:${input.desiredBranchName}:${input.targetSha}`);
-        const association: BranchAssociation = {
-          baseSha: input.baseSha,
-          branchAssociationId: `branch-${input.jobId}`,
-          branchName: input.desiredBranchName,
-          branchRef: `refs/heads/${input.desiredBranchName}`,
-          createdAt: timestamp,
-          headSha: input.targetSha,
-          jobId: input.jobId,
-          repositoryId: input.repositoryId,
-          status: "active",
-          ticketId: input.ticketId,
-          updatedAt: timestamp,
-        };
-        return {
-          association,
-          collision: {
-            branchName: association.branchName,
-            branchRef: association.branchRef,
-            type: "none" as const,
-          },
-        };
-      }),
-    diffWorktree: ({ path }) =>
-      Effect.sync(() => {
-        calls.push(`diffWorktree:${path}`);
-        return {
-          dirty: true,
-          patch: "diff --git a/file.txt b/file.txt\n+implemented",
-          path,
-          statusPorcelain: " M file.txt",
-        };
-      }),
-    inspectWorktree: ({ path }) =>
-      Effect.succeed({
-        branchName: "cycle/task/ISSUE-1",
-        dirty: true,
-        headSha: "commit-sha-1234567890",
-        path,
-        statusPorcelain: " M file.txt",
-      }),
-    retainWorktree: ({ reason, worktree }) =>
-      Effect.sync(() => {
-        calls.push(`retainWorktree:${reason}:${worktree.path}`);
-        return {
-          ...worktree,
-          retentionReason: reason,
-          status: "retained" as const,
-          updatedAt: timestamp,
-        };
-      }),
   };
 };
 

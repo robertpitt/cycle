@@ -134,7 +134,10 @@ describe("@cycle/agents runtime contracts", () => {
   it("declares Claude Code as a workspace-capable provider", () => {
     const capabilities = defaultAgentCapabilities("claude-code");
 
-    assert.equal(supportedAgentProviders.some((provider) => provider.id === "claude-code"), true);
+    assert.equal(
+      supportedAgentProviders.some((provider) => provider.id === "claude-code"),
+      true,
+    );
     assert.equal(capabilities.provider, "claude-code");
     assert.equal(capabilities.streaming, true);
     assert.equal(capabilities.structuredOutput, true);

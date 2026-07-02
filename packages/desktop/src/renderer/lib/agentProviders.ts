@@ -2,7 +2,6 @@ import type { InitialSetupHarness } from "@cycle/ui/organisms";
 import {
   isAgentProviderId,
   supportedAgentProviders,
-  type AgentProviderId,
   type DetectedAgentProvider,
 } from "../../shared/AgentProviders.ts";
 

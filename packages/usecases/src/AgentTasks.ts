@@ -67,10 +67,9 @@ export type AgentTaskUsecasesShape = {
   ) => Stream.Stream<AgentTaskEvent, AgentTaskFailure, AgentTaskService>;
 };
 
-export class AgentTaskUsecases extends Context.Service<
-  AgentTaskUsecases,
-  AgentTaskUsecasesShape
->()("@cycle/usecases/AgentTaskUsecases") {}
+export class AgentTaskUsecases extends Context.Service<AgentTaskUsecases, AgentTaskUsecasesShape>()(
+  "@cycle/usecases/AgentTaskUsecases",
+) {}
 
 export const makeAgentTaskUsecases = (): AgentTaskUsecasesShape => ({
   appendTaskInput: (taskId, input) =>
@@ -113,8 +112,7 @@ export const makeAgentTaskUsecases = (): AgentTaskUsecasesShape => ({
         }),
       );
     }),
-  getTask: (taskId) =>
-    AgentTaskService.pipe(Effect.flatMap((service) => service.getTask(taskId))),
+  getTask: (taskId) => AgentTaskService.pipe(Effect.flatMap((service) => service.getTask(taskId))),
   listEvents: (query) =>
     AgentTaskService.pipe(Effect.flatMap((service) => service.listEvents(query))),
   listTasks: (query) =>
@@ -122,9 +120,7 @@ export const makeAgentTaskUsecases = (): AgentTaskUsecasesShape => ({
   retryTask: (taskId, input) =>
     AgentTaskService.pipe(Effect.flatMap((service) => service.retryTask(taskId, input))),
   subscribe: (query) =>
-    Stream.unwrap(
-      AgentTaskService.pipe(Effect.map((service) => service.subscribe(query))),
-    ),
+    Stream.unwrap(AgentTaskService.pipe(Effect.map((service) => service.subscribe(query)))),
 });
 
 export const AgentTaskUsecasesLive = Layer.succeed(

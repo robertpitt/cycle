@@ -27,8 +27,8 @@
   "devDependencies": {
     "@effect/language-service": "0.86.2",
     "@types/node": "^25.9.2",
-    "oxfmt": "^0.53.0",
-    "oxlint": "^1.68.0",
+    "oxfmt": "^0.55.0",
+    "oxlint": "^1.70.0",
     "typescript": "^6.0.3"
   },
   "packageManager": "pnpm@10.33.3"

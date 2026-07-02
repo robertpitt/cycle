@@ -499,17 +499,17 @@ returns no production references.
 
 ## 14. Validation Matrix
 
-| Area | Required validation |
-| --- | --- |
-| Contract ownership | A test or lint check proves Agent Work public DTO schemas are exported from `@cycle/contracts` and not declared in `@cycle/api`. |
-| Package boundaries | Static checks fail if `@cycle/usecases`, `@cycle/database`, or renderer code imports from `@cycle/api` for Agent Work types. |
-| Legacy deletion | Static checks fail if `packages/api/src/agentWork/runtime.ts` exists or any code imports `../agentWork/runtime.ts`. |
-| HTTP behavior | Existing Agent Work endpoint tests pass with the same response JSON shape and status codes unless a deliberate schema change is documented. |
-| Service behavior | Unit tests cover delegate CRUD, job creation/dedupe, settings validation, pause/resume, cancellation, assignment pickup, comment mention handling, and job log projection at the service boundary. |
-| Persistence | Store tests cover event append/replay, job list filters, non-terminal dedupe lookup, status history, leases, checkpoints, worktrees, branch associations, activity, and settings. |
-| Runner migration | Tests prove HTTP handlers do not run provider turns directly and can request job execution through the service. |
-| Failure mapping | API tests cover invalid payload, not found job, conflict/duplicate job, storage failure, and best-effort ticket event emission failure logging. |
-| Desktop composition | A desktop or integration test proves desktop starts API with lower-package Agent Work store/service construction and closes the store on shutdown. |
+| Area                | Required validation                                                                                                                                                                                |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Contract ownership  | A test or lint check proves Agent Work public DTO schemas are exported from `@cycle/contracts` and not declared in `@cycle/api`.                                                                   |
+| Package boundaries  | Static checks fail if `@cycle/usecases`, `@cycle/database`, or renderer code imports from `@cycle/api` for Agent Work types.                                                                       |
+| Legacy deletion     | Static checks fail if `packages/api/src/agentWork/runtime.ts` exists or any code imports `../agentWork/runtime.ts`.                                                                                |
+| HTTP behavior       | Existing Agent Work endpoint tests pass with the same response JSON shape and status codes unless a deliberate schema change is documented.                                                        |
+| Service behavior    | Unit tests cover delegate CRUD, job creation/dedupe, settings validation, pause/resume, cancellation, assignment pickup, comment mention handling, and job log projection at the service boundary. |
+| Persistence         | Store tests cover event append/replay, job list filters, non-terminal dedupe lookup, status history, leases, checkpoints, worktrees, branch associations, activity, and settings.                  |
+| Runner migration    | Tests prove HTTP handlers do not run provider turns directly and can request job execution through the service.                                                                                    |
+| Failure mapping     | API tests cover invalid payload, not found job, conflict/duplicate job, storage failure, and best-effort ticket event emission failure logging.                                                    |
+| Desktop composition | A desktop or integration test proves desktop starts API with lower-package Agent Work store/service construction and closes the store on shutdown.                                                 |
 
 ## 15. Definition Of Done
 

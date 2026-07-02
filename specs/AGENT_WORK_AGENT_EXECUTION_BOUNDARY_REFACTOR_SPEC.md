@@ -702,20 +702,20 @@ file handles, or unredacted user credentials.
 
 ## 19. Validation Matrix
 
-| Area | Required validation |
-| --- | --- |
-| Package boundaries | Static checks prove `@cycle/agents` imports neither `@cycle/api` nor `@cycle/usecases`, and production code imports nothing from `@cycle/usecases/agent-work`. |
-| Schema safety | Renderer can import `@cycle/agents/schemas` without Node-only provider dependencies. |
-| Task lifecycle | Unit tests cover create, queue, start, running, waiting, cancel, complete, fail, retry, and terminal state behavior. |
-| Idempotency | Duplicate active creates with the same idempotency key return or identify the existing task. |
-| Persistence | Store tests cover task CRUD, event sequence ordering, replay, leases, checkpoints, idempotency records, and close/dispose behavior. |
-| Restart recovery | Integration tests prove queued and recoverable running tasks resume automatically after service restart. |
-| Usecase mapping | Usecase tests prove ticket/domain inputs are mapped to generic `AgentTaskRequest` without leaking ticket-specific fields into first-class agent task fields. |
-| Workspace boundary | Tests prove usecases provision workspaces and `@cycle/agents` only receives generic workspace authority. |
-| API polling | HTTP tests cover create, get, list, event replay, cancel, retry, and error mapping. |
-| WebSocket streaming | WebSocket tests cover snapshot on connect, ordered events, resume from sequence, terminal event delivery, and auth failure. |
-| Renderer behavior | UI tests or integration tests prove frontend can poll and subscribe to task streams using the new schemas. |
-| Legacy deletion | Static tests fail if `packages/usecases/src/agent-work`, `agentWorkRunner.ts` execution paths, or old wrapper exports return. |
+| Area                | Required validation                                                                                                                                            |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Package boundaries  | Static checks prove `@cycle/agents` imports neither `@cycle/api` nor `@cycle/usecases`, and production code imports nothing from `@cycle/usecases/agent-work`. |
+| Schema safety       | Renderer can import `@cycle/agents/schemas` without Node-only provider dependencies.                                                                           |
+| Task lifecycle      | Unit tests cover create, queue, start, running, waiting, cancel, complete, fail, retry, and terminal state behavior.                                           |
+| Idempotency         | Duplicate active creates with the same idempotency key return or identify the existing task.                                                                   |
+| Persistence         | Store tests cover task CRUD, event sequence ordering, replay, leases, checkpoints, idempotency records, and close/dispose behavior.                            |
+| Restart recovery    | Integration tests prove queued and recoverable running tasks resume automatically after service restart.                                                       |
+| Usecase mapping     | Usecase tests prove ticket/domain inputs are mapped to generic `AgentTaskRequest` without leaking ticket-specific fields into first-class agent task fields.   |
+| Workspace boundary  | Tests prove usecases provision workspaces and `@cycle/agents` only receives generic workspace authority.                                                       |
+| API polling         | HTTP tests cover create, get, list, event replay, cancel, retry, and error mapping.                                                                            |
+| WebSocket streaming | WebSocket tests cover snapshot on connect, ordered events, resume from sequence, terminal event delivery, and auth failure.                                    |
+| Renderer behavior   | UI tests or integration tests prove frontend can poll and subscribe to task streams using the new schemas.                                                     |
+| Legacy deletion     | Static tests fail if `packages/usecases/src/agent-work`, `agentWorkRunner.ts` execution paths, or old wrapper exports return.                                  |
 
 ## 20. Definition Of Done
 

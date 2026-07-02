@@ -33,9 +33,7 @@ export const layer = Layer.effect(
               operation: args.join(" "),
               path: cwd,
               message: "Unable to inspect Git repository.",
-              ...{
-                cause,
-              },
+              cause,
             }),
         ),
       );
@@ -82,9 +80,7 @@ export const layer = Layer.effect(
                 operation: "git rev-parse",
                 path: cwd,
                 message: "Unable to inspect Git repository.",
-                ...{
-                  cause,
-                },
+                cause,
               }),
           ),
         );
@@ -94,9 +90,7 @@ export const layer = Layer.effect(
             operation: "git rev-parse",
             path: cwd,
             message: "Path is not a Git repository.",
-            ...{
-              cause: bytesToString(result.stderr).trim(),
-            },
+            cause: bytesToString(result.stderr).trim(),
           });
         }
 
@@ -133,9 +127,7 @@ export const layer = Layer.effect(
                   operation: "git init",
                   path: cwd,
                   message: "Unable to initialise Git repository.",
-                  ...{
-                    cause,
-                  },
+                  cause,
                 }),
             ),
           );

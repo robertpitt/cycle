@@ -70,7 +70,9 @@ const completedProviderEvents = (): readonly AgentEvent[] => [
   },
 ];
 
-const makeHarness = (events: readonly AgentEvent[] = completedProviderEvents()): AgentHarnessAdapter => ({
+const makeHarness = (
+  events: readonly AgentEvent[] = completedProviderEvents(),
+): AgentHarnessAdapter => ({
   capabilities: Effect.succeed({
     approvalRequests: true,
     interrupt: true,
@@ -176,7 +178,10 @@ describe("@cycle/agents AgentRuntime", () => {
         "AgentRuntimeRunCompleted",
       ],
     );
-    assert.equal(events.every((event) => event.runId === handle.runId), true);
+    assert.equal(
+      events.every((event) => event.runId === handle.runId),
+      true,
+    );
     assert.deepEqual(
       events.map((event) => event.sequence),
       [1, 2, 3, 4, 5],
@@ -253,4 +258,3 @@ describe("@cycle/agents AgentRuntime", () => {
     assert.equal(reconciled[0]?.run.status, "interrupted");
   });
 });
-

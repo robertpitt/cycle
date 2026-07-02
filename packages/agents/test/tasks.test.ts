@@ -49,9 +49,8 @@ const makeLayer = () =>
     Layer.provide(AgentTaskStoreInMemory),
   );
 
-const runTaskEffect = <A, E>(
-  effect: Effect.Effect<A, E, AgentTaskService>,
-): Promise<A> => Effect.runPromise(effect.pipe(Effect.provide(makeLayer())));
+const runTaskEffect = <A, E>(effect: Effect.Effect<A, E, AgentTaskService>): Promise<A> =>
+  Effect.runPromise(effect.pipe(Effect.provide(makeLayer())));
 
 describe("@cycle/agents AgentTask", () => {
   it("schema-decodes provider-neutral task requests", () => {

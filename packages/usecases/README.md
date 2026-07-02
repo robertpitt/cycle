@@ -15,19 +15,21 @@ types, and boundary contracts from `@cycle/contracts` or
 ```ts
 import { IssueCreate } from "@cycle/usecases";
 
-const result = yield* IssueCreate.run(
-  {
-    repository: { id: "cycle" },
-    input: {
-      title: "Wire usecases through layers",
-      type: "task",
+const result =
+  yield *
+  IssueCreate.run(
+    {
+      repository: { id: "cycle" },
+      input: {
+        title: "Wire usecases through layers",
+        type: "task",
+      },
     },
-  },
-  {
-    requestId: "req_123",
-    source: "api",
-  },
-);
+    {
+      requestId: "req_123",
+      source: "api",
+    },
+  );
 ```
 
 `run()` returns an `Effect` whose environment is the services required by that

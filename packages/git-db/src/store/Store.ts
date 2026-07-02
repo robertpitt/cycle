@@ -639,9 +639,7 @@ const randomSeedHex = (runtime: StoreRuntime): Effect.Effect<string, GitDbError>
         new GitAdapterError({
           operation: "gitdb identity seed",
           message: "Unable to generate repository identity seed.",
-          ...{
-            cause,
-          },
+          cause,
         }),
     ),
   );
