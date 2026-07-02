@@ -133,6 +133,49 @@ describe("@cycle/codex-app-server protocol", () => {
     await assert.rejects(response, CodexAppServerSchemaDecodeError);
   });
 
+  it("decodes typed model list responses", async () => {
+    const input = new Pushable<string>();
+    const outgoing: string[] = [];
+    const client = makeCodexAppServerClient({
+      transport: {
+        input,
+        send: (line) => {
+          outgoing.push(line);
+        },
+      },
+    });
+    const response = client.request("model/list", { includeHidden: false });
+    const request = parseLine(outgoing[0] ?? "");
+
+    assert.equal(request.method, "model/list");
+    assert.deepEqual(request.params, { includeHidden: false });
+
+    input.push(
+      JSON.stringify({
+        id: request.id,
+        result: {
+          data: [
+            {
+              displayName: "GPT-5 Codex",
+              hidden: false,
+              id: "model_gpt_5_codex",
+              isDefault: true,
+              model: "gpt-5-codex",
+            },
+          ],
+          nextCursor: null,
+        },
+      }) + "\n",
+    );
+
+    const result = await response;
+    assert.deepEqual(
+      result.data.map((model) => model.model),
+      ["gpt-5-codex"],
+    );
+    assert.equal(result.nextCursor, null);
+  });
+
   it("rejects undeclared JSON-RPC frame fields before dispatch", async () => {
     const input = new Pushable<string>();
     const errors: unknown[] = [];

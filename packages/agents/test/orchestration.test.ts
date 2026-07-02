@@ -50,6 +50,13 @@ const makeService = (
       },
       workspace: "provider-defined",
     }) as never,
+  listModels: async () => ({
+    defaultModelId: null,
+    fetchedAt: new Date("2026-06-22T00:00:00.000Z").toISOString(),
+    models: [],
+    provider: "codex",
+    source: "unsupported",
+  }),
   close: async () => {},
   createSession: async () => makeSession(),
   provider: "codex",

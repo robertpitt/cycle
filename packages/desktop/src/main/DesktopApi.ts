@@ -7,7 +7,7 @@ import {
   supportedAgentProviders,
 } from "@cycle/agents/providers";
 import { makeDefaultAgentServiceRegistry } from "@cycle/agents/service";
-import type { AgentProviderId, AgentProviderProfile } from "@cycle/agents/types";
+import type { AgentModelCatalog, AgentProviderId, AgentProviderProfile } from "@cycle/agents/types";
 import {
   AgentTaskServiceLive,
   AgentTaskStore,
@@ -164,11 +164,9 @@ const profileWithPreference = (
     ...(preference.executablePath === null || preference.executablePath === undefined
       ? {}
       : { configuredExecutablePath: preference.executablePath }),
-    defaultModel: preference.defaultModel ?? null,
+    defaultModel: preference.defaultModel ?? profile.defaultModel ?? null,
     maxConcurrentRuns: preference.maxConcurrentRuns,
-    message: enabled
-      ? profile.message
-      : `${profile.displayName} is disabled in Cycle settings.`,
+    message: enabled ? profile.message : `${profile.displayName} is disabled in Cycle settings.`,
     status: enabled ? profile.status : "disabled",
   };
 };
@@ -180,6 +178,73 @@ const preferenceForProvider = (config: AppConfigState, providerId: AgentProvider
     defaultAgentProviderPreference(providerId, definition.defaultEnabled ?? false)
   );
 };
+
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+const modelCatalogStatus = (
+  catalog: AgentModelCatalog,
+): "available" | "unsupported" | "unavailable" =>
+  catalog.source === "unsupported"
+    ? "unsupported"
+    : catalog.source === "unavailable"
+      ? "unavailable"
+      : "available";
+
+const profileWithModelCatalog = (
+  profile: AgentProviderProfile,
+  config: AppConfigState,
+  providerId: AgentProviderId,
+  catalog: AgentModelCatalog,
+): AgentProviderProfile => {
+  const preference = preferenceForProvider(config, providerId);
+  const models = catalog.models
+    .filter((model) => model.status !== "hidden" && model.disabled !== true)
+    .map((model) => model.id);
+  const preferredModel =
+    typeof preference.defaultModel === "string" && preference.defaultModel.trim().length > 0
+      ? preference.defaultModel.trim()
+      : undefined;
+
+  return {
+    ...profile,
+    configuration: {
+      ...profile.configuration,
+      modelCatalog: {
+        defaultReasoningEffortId: catalog.defaultReasoningEffortId ?? null,
+        fetchedAt: catalog.fetchedAt,
+        modelCount: models.length,
+        reasoningEffortCount: catalog.reasoningEfforts?.length ?? 0,
+        source: catalog.source,
+        status: modelCatalogStatus(catalog),
+        stale: catalog.stale === true,
+      },
+    },
+    defaultModel:
+      preferredModel ?? catalog.defaultModelId ?? models[0] ?? profile.defaultModel ?? null,
+    defaultReasoningEffortId:
+      catalog.defaultReasoningEffortId ?? profile.defaultReasoningEffortId ?? null,
+    models,
+    ...(catalog.reasoningEfforts === undefined
+      ? {}
+      : { reasoningEfforts: catalog.reasoningEfforts }),
+  };
+};
+
+const profileWithModelCatalogFailure = (
+  profile: AgentProviderProfile,
+  error: unknown,
+): AgentProviderProfile => ({
+  ...profile,
+  configuration: {
+    ...profile.configuration,
+    modelCatalog: {
+      checkedAt: new Date().toISOString(),
+      error: errorMessage(error),
+      status: "failed",
+    },
+  },
+});
 
 export const startDesktopApi = Effect.fnUntraced(function* () {
   const appConfig = yield* AppConfig;
@@ -268,32 +333,54 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
           const detected = await Effect.runPromise(detectAgentProviders(process.env));
           const detectedById = new Map(detected.map((provider) => [provider.id, provider]));
 
-          return supportedAgentProviders.map((definition) => {
-            const detectedProvider = detectedById.get(definition.id);
-            const baseProfile =
-              detectedProvider === undefined
-                ? {
-                    ...agentProviderProfileFromDetection({
-                      capabilities:
-                        definition.capabilities ??
-                        agentProviderDefinitionById(definition.id).capabilities,
-                      detectedAt: new Date().toISOString(),
-                      executable: definition.executable,
-                      id: definition.id,
-                      name: definition.name,
-                      packageName: definition.packageName,
-                      status: "missing",
-                    }),
-                    message: `${definition.name} provider status has not been checked.`,
-                  }
-                : agentProviderProfileFromDetection(detectedProvider);
-            return profileWithPreference(baseProfile, currentConfig, definition.id);
-          });
+          return Promise.all(
+            supportedAgentProviders.map(async (definition) => {
+              const detectedProvider = detectedById.get(definition.id);
+              const baseProfile =
+                detectedProvider === undefined
+                  ? {
+                      ...agentProviderProfileFromDetection({
+                        capabilities:
+                          definition.capabilities ??
+                          agentProviderDefinitionById(definition.id).capabilities,
+                        detectedAt: new Date().toISOString(),
+                        executable: definition.executable,
+                        id: definition.id,
+                        name: definition.name,
+                        packageName: definition.packageName,
+                        status: "missing",
+                      }),
+                      message: `${definition.name} provider status has not been checked.`,
+                    }
+                  : agentProviderProfileFromDetection(detectedProvider);
+              const preferredProfile = profileWithPreference(
+                baseProfile,
+                currentConfig,
+                definition.id,
+              );
+              if (preferredProfile.status !== "available") return preferredProfile;
+
+              try {
+                const service = await Effect.runPromise(agentServices.serviceFor(definition.id));
+                const catalog = await service.listModels();
+                return profileWithModelCatalog(
+                  preferredProfile,
+                  currentConfig,
+                  definition.id,
+                  catalog,
+                );
+              } catch (error) {
+                logError("api", "agent provider model listing failed", {
+                  error: errorMessage(error),
+                  providerId: definition.id,
+                });
+                return profileWithModelCatalogFailure(preferredProfile, error);
+              }
+            }),
+          );
         };
         const agentTaskLayer = AgentTaskServiceLive().pipe(
-          Layer.provide(
-            Layer.succeed(AgentTaskStore, AgentTaskStore.of(agentTaskStore)),
-          ),
+          Layer.provide(Layer.succeed(AgentTaskStore, AgentTaskStore.of(agentTaskStore))),
         );
 
         try {

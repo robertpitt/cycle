@@ -74,6 +74,7 @@ export type AgentChatThinkingLevelOption = {
 export type AgentChatProviderProfile = {
   readonly availability?: AgentChatProviderAvailability;
   readonly defaultModel?: string | null;
+  readonly defaultThinkingLevel?: string | null;
   readonly description?: string | null;
   readonly id: string;
   readonly label: string;

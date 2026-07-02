@@ -47,6 +47,14 @@ export const AgentCapabilities = Schema.Struct({
 });
 export type AgentCapabilities = typeof AgentCapabilities.Type;
 
+export const AgentReasoningEffort = Schema.Struct({
+  description: Schema.optional(Schema.String),
+  disabled: Schema.optional(Schema.Boolean),
+  id: Schema.String,
+  label: Schema.String,
+});
+export type AgentReasoningEffort = typeof AgentReasoningEffort.Type;
+
 export const AgentHarnessStatus = Schema.Literals([
   "available",
   "missing",
@@ -64,6 +72,7 @@ export const DetectedAgentProvider = Schema.Struct({
   configuredExecutablePath: Schema.optional(Schema.String),
   detectedAt: Schema.String,
   defaultModel: Schema.optional(Schema.NullOr(Schema.String)),
+  defaultReasoningEffortId: Schema.optional(Schema.NullOr(Schema.String)),
   executable: Schema.String,
   executablePath: Schema.optional(Schema.String),
   id: AgentProviderId,
@@ -72,6 +81,7 @@ export const DetectedAgentProvider = Schema.Struct({
   models: Schema.optional(Schema.Array(Schema.String)),
   name: Schema.String,
   packageName: Schema.optional(Schema.String),
+  reasoningEfforts: Schema.optional(Schema.Array(AgentReasoningEffort)),
   status: Schema.Literals(["available", "missing", "degraded", "disabled", "unsupported"]),
 });
 export type DetectedAgentProvider = typeof DetectedAgentProvider.Type;
@@ -84,6 +94,7 @@ export const AgentProviderProfile = Schema.Struct({
   configuration: JsonObject,
   configuredExecutablePath: Schema.optional(Schema.String),
   defaultModel: Schema.optional(Schema.NullOr(Schema.String)),
+  defaultReasoningEffortId: Schema.optional(Schema.NullOr(Schema.String)),
   displayName: Schema.String,
   executableName: Schema.String,
   executablePath: Schema.optional(Schema.String),
@@ -92,6 +103,7 @@ export const AgentProviderProfile = Schema.Struct({
   models: Schema.Array(Schema.String),
   packageName: Schema.optional(Schema.String),
   provider: AgentProviderId,
+  reasoningEfforts: Schema.optional(Schema.Array(AgentReasoningEffort)),
   status: AgentHarnessStatus,
 });
 export type AgentProviderProfile = typeof AgentProviderProfile.Type;

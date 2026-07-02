@@ -179,6 +179,11 @@ const selectedRuntimeMode = (
   fallback ??
   defaultRuntimeMode;
 
+const reasoningEffortFromRequest = (request: AgentTurnRequest): string | undefined => {
+  const effort = request.metadata?.thinkingLevel ?? request.context?.thinkingLevel;
+  return typeof effort === "string" && effort.trim().length > 0 ? effort.trim() : undefined;
+};
+
 const bearerTokenFromMcp = (mcp: AgentMcpAttachment | undefined): string | undefined => {
   if (mcp?.mode !== "http") return undefined;
 
@@ -880,65 +885,59 @@ const registerHandlers = (
     active.queue.end();
   });
 
-  sessionRuntime.client.handleServerRequest(
-    "item/commandExecution/requestApproval",
-    async () => {
-      const active = current();
-      if (active === undefined) {
-        throw CodexAppServerRequestError.internalError(
-          "No active Cycle turn for Codex approval request.",
-        );
-      }
-      active.refreshTimeout();
-      // Cycle uses Codex sandbox modes as the command safety boundary. Command approvals are
-      // therefore non-interactive so chat turns cannot hang waiting for an approval UI.
-      return {
-        decision: "accept",
-      };
-    },
-  );
+  sessionRuntime.client.handleServerRequest("item/commandExecution/requestApproval", async () => {
+    const active = current();
+    if (active === undefined) {
+      throw CodexAppServerRequestError.internalError(
+        "No active Cycle turn for Codex approval request.",
+      );
+    }
+    active.refreshTimeout();
+    // Cycle uses Codex sandbox modes as the command safety boundary. Command approvals are
+    // therefore non-interactive so chat turns cannot hang waiting for an approval UI.
+    return {
+      decision: "accept",
+    };
+  });
 
-  sessionRuntime.client.handleServerRequest(
-    "item/fileChange/requestApproval",
-    async (payload) => {
-      const active = current();
-      if (active === undefined) {
-        throw CodexAppServerRequestError.internalError(
-          "No active Cycle turn for Codex approval request.",
-        );
-      }
-      active.refreshTimeout();
-      const requestId = newCodexId("approval");
-      const request = approvalRequestFromFileChange(active.sessionId, requestId, payload);
-      const resumeTimeout = active.suspendTimeout();
-      const decision = await new Promise<AgentApprovalDecision>((resolve) => {
-        runtime.pendingApprovals.set(`${active.sessionId}:${requestId}`, {
-          decision: resolve,
-          request,
-        });
-        active.queue.push({
-          at: now(),
-          request,
-          sessionId: active.sessionId,
-          turnId: active.turnId,
-          type: "approval.requested",
-        });
-      }).finally(resumeTimeout);
-      runtime.resolvedInteractions.add(`${active.sessionId}:${requestId}`);
-      runtime.pendingApprovals.delete(`${active.sessionId}:${requestId}`);
+  sessionRuntime.client.handleServerRequest("item/fileChange/requestApproval", async (payload) => {
+    const active = current();
+    if (active === undefined) {
+      throw CodexAppServerRequestError.internalError(
+        "No active Cycle turn for Codex approval request.",
+      );
+    }
+    active.refreshTimeout();
+    const requestId = newCodexId("approval");
+    const request = approvalRequestFromFileChange(active.sessionId, requestId, payload);
+    const resumeTimeout = active.suspendTimeout();
+    const decision = await new Promise<AgentApprovalDecision>((resolve) => {
+      runtime.pendingApprovals.set(`${active.sessionId}:${requestId}`, {
+        decision: resolve,
+        request,
+      });
       active.queue.push({
         at: now(),
-        decision,
-        requestId,
+        request,
         sessionId: active.sessionId,
         turnId: active.turnId,
-        type: "approval.resolved",
+        type: "approval.requested",
       });
-      return {
-        decision: approvalDecisionToCodexFileDecision(decision),
-      };
-    },
-  );
+    }).finally(resumeTimeout);
+    runtime.resolvedInteractions.add(`${active.sessionId}:${requestId}`);
+    runtime.pendingApprovals.delete(`${active.sessionId}:${requestId}`);
+    active.queue.push({
+      at: now(),
+      decision,
+      requestId,
+      sessionId: active.sessionId,
+      turnId: active.turnId,
+      type: "approval.resolved",
+    });
+    return {
+      decision: approvalDecisionToCodexFileDecision(decision),
+    };
+  });
 
   sessionRuntime.client.handleServerRequest("item/tool/requestUserInput", async (payload) => {
     const active = current();
@@ -1189,8 +1188,10 @@ export async function* streamCodexAppServerTurn<TStructured = unknown>(
         runtimeMode,
       );
       session = opened.session;
+      const reasoningEffort = reasoningEffortFromRequest(request);
       const response = await sessionRuntime.client.request("turn/start", {
         approvalPolicy: runtimeModeToCodexThreadConfig(runtimeMode).approvalPolicy,
+        ...(reasoningEffort === undefined ? {} : { effort: reasoningEffort }),
         input: [{ text: buildPrompt(request), text_elements: [], type: "text" }],
         ...(request.model?.id === undefined ? {} : { model: request.model.id }),
         ...(request.responseFormat?.type === "json_schema"

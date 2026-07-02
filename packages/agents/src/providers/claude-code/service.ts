@@ -1,9 +1,15 @@
-import { query, type McpServerConfig, type Options, type Query } from "@anthropic-ai/claude-agent-sdk";
+import {
+  query,
+  type McpServerConfig,
+  type Options,
+  type Query,
+} from "@anthropic-ai/claude-agent-sdk";
 import type {
   AbortTurnResult,
   AgentCapabilities,
   AgentEvent,
   AgentMcpAttachment,
+  AgentModelCatalog,
   AgentResponseFormat,
   AgentRuntimeMode,
   AgentService,
@@ -16,10 +22,7 @@ import type {
   JsonObject,
 } from "../../types.ts";
 import { claudeCodeAgentCapabilities } from "./capabilities.ts";
-import {
-  decodeClaudeCodeProviderConfig,
-  type ClaudeCodeProviderConfig,
-} from "./config.ts";
+import { decodeClaudeCodeProviderConfig, type ClaudeCodeProviderConfig } from "./config.ts";
 import { claudeCodeNow, claudeCodeProviderId, newClaudeCodeId } from "./constants.ts";
 import { claudeCodeError, mapClaudeCodeSdkMessage } from "./events.ts";
 
@@ -138,6 +141,13 @@ export const makeClaudeCodeAgentService = (
       return { accepted: true, reason: "cancel_requested" };
     },
     capabilities: () => capabilities,
+    listModels: async (): Promise<AgentModelCatalog> => ({
+      defaultModelId: null,
+      fetchedAt: new Date().toISOString(),
+      models: [],
+      provider: claudeCodeProviderId,
+      source: "unsupported",
+    }),
     close: async () => {
       for (const active of activeTurns.values()) {
         active.abortController.abort(new Error("Claude Code service closed."));
@@ -399,10 +409,7 @@ const outputFormatFromResponseFormat = (
       }
     : undefined;
 
-const bridgeAbort = (
-  source: AbortSignal | undefined,
-  target: AbortController,
-): (() => void) => {
+const bridgeAbort = (source: AbortSignal | undefined, target: AbortController): (() => void) => {
   if (source === undefined) return () => undefined;
   if (source.aborted) {
     target.abort(source.reason);

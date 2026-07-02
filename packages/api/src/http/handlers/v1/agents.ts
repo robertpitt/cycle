@@ -56,14 +56,31 @@ export const withAgentHandlers = (handlers: any) =>
             },
             checkedAt: provider.checkedAt,
             configuration: provider.configuration,
+            ...(provider.configurationSchema === undefined
+              ? {}
+              : { configurationSchema: provider.configurationSchema }),
+            ...(provider.configuredExecutablePath === undefined
+              ? {}
+              : { configuredExecutablePath: provider.configuredExecutablePath }),
+            ...(provider.defaultModel === undefined ? {} : { defaultModel: provider.defaultModel }),
+            ...(provider.defaultReasoningEffortId === undefined
+              ? {}
+              : { defaultReasoningEffortId: provider.defaultReasoningEffortId }),
             displayName: provider.displayName,
             executableName: provider.executableName,
             ...(provider.executablePath === undefined
               ? {}
               : { executablePath: provider.executablePath }),
+            ...(provider.maxConcurrentRuns === undefined
+              ? {}
+              : { maxConcurrentRuns: provider.maxConcurrentRuns }),
             ...(provider.message === undefined ? {} : { message: provider.message }),
             models: provider.models,
+            ...(provider.packageName === undefined ? {} : { packageName: provider.packageName }),
             provider: provider.provider,
+            ...(provider.reasoningEfforts === undefined
+              ? {}
+              : { reasoningEfforts: provider.reasoningEfforts }),
             status: provider.status,
           })),
         },

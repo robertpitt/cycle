@@ -43,9 +43,7 @@ type TestAgentProviderPreference = {
 
 const makeTestAgentTaskLayer = () =>
   AgentTaskServiceLive().pipe(
-    Layer.provide(
-      Layer.succeed(AgentTaskStore, AgentTaskStore.of(makeInMemoryAgentTaskStore())),
-    ),
+    Layer.provide(Layer.succeed(AgentTaskStore, AgentTaskStore.of(makeInMemoryAgentTaskStore()))),
   );
 
 const makeRepositoryStatus = () => ({
@@ -680,9 +678,7 @@ describe("@cycle/api", () => {
       assert.ok(body.paths?.["/v1/agent-tasks/{taskId}/events"]);
       assert.ok(body.paths?.["/v1/app-config"]);
       assert.ok(body.paths?.["/v1/repositories/{repositoryId}/issues"]);
-      assert.ok(
-        body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/agent-tasks"],
-      );
+      assert.ok(body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/agent-tasks"]);
       assert.equal(body.paths?.["/v1/chat/threads"], undefined);
       assert.equal(body.paths?.["/v1/chat/turns"], undefined);
       assert.equal(body.paths?.["/v1/chat/turns/stream"], undefined);
@@ -1174,10 +1170,9 @@ describe("@cycle/api", () => {
           };
         };
       };
-      const claudePreference =
-        providerPreferenceBody.data?.agentProviders?.preferences?.find(
-          (preference) => preference.id === "claude-code",
-        );
+      const claudePreference = providerPreferenceBody.data?.agentProviders?.preferences?.find(
+        (preference) => preference.id === "claude-code",
+      );
       assert.equal(providerPreference.status, 200);
       assert.equal(claudePreference?.enabled, true);
       assert.equal(claudePreference?.defaultModel, "claude-sonnet-4-20250514");
@@ -1401,6 +1396,13 @@ describe("@cycle/api", () => {
     const fakeAgent = (provider: AgentProviderId): AgentService => ({
       abortTurn: async () => ({ accepted: false, reason: "not_supported" }),
       capabilities: () => defaultAgentCapabilities(provider),
+      listModels: async () => ({
+        defaultModelId: null,
+        fetchedAt: timestamp.toISOString(),
+        models: [],
+        provider,
+        source: "unsupported",
+      }),
       close: async () => undefined,
       createSession: async () => ({
         createdAt: timestamp,
@@ -1555,6 +1557,13 @@ describe("@cycle/api", () => {
     const fakeAgent: AgentService = {
       abortTurn: async () => ({ accepted: false, reason: "not_found" }),
       capabilities: () => defaultAgentCapabilities("codex"),
+      listModels: async () => ({
+        defaultModelId: null,
+        fetchedAt: timestamp,
+        models: [],
+        provider: "codex",
+        source: "unsupported",
+      }),
       close: async () => undefined,
       createSession: async () => {
         throw new Error("Stale cancel test should not create a provider session.");
@@ -1680,6 +1689,13 @@ describe("@cycle/api", () => {
     const fakeAgent: AgentService = {
       abortTurn: async () => ({ accepted: false, reason: "not_supported" }),
       capabilities: () => defaultAgentCapabilities("codex"),
+      listModels: async () => ({
+        defaultModelId: null,
+        fetchedAt: timestamp.toISOString(),
+        models: [],
+        provider: "codex",
+        source: "unsupported",
+      }),
       close: async () => undefined,
       createSession: async () => ({
         createdAt: timestamp,
@@ -2072,6 +2088,13 @@ describe("@cycle/api", () => {
     const fakeAgent: AgentService = {
       abortTurn: async () => ({ accepted: false, reason: "not_supported" }),
       capabilities: () => defaultAgentCapabilities("codex"),
+      listModels: async () => ({
+        defaultModelId: null,
+        fetchedAt: timestamp.toISOString(),
+        models: [],
+        provider: "codex",
+        source: "unsupported",
+      }),
       close: async () => undefined,
       createSession: async () => ({
         createdAt: timestamp,

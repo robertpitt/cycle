@@ -989,6 +989,7 @@ const detectedAgentProviderFromProfile = (
   configuredExecutablePath: profile.configuredExecutablePath,
   detectedAt: profile.checkedAt,
   defaultModel: profile.defaultModel,
+  defaultReasoningEffortId: profile.defaultReasoningEffortId,
   executable: profile.executableName,
   ...(profile.executablePath === undefined ? {} : { executablePath: profile.executablePath }),
   id: profile.provider,
@@ -997,6 +998,7 @@ const detectedAgentProviderFromProfile = (
   models: profile.models,
   name: profile.displayName,
   packageName: profile.packageName,
+  reasoningEfforts: profile.reasoningEfforts,
   status: profile.status,
 });
 

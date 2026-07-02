@@ -19,6 +19,7 @@ import {
   streamCodexAppServerTurn,
   type CodexTurnRuntimeWithInteractions,
 } from "./app-server/runtime.ts";
+import { listCodexModels } from "./app-server/models.ts";
 import { codexAgentCapabilities } from "./capabilities.ts";
 import { codexProviderId, newCodexId, now } from "./constants.ts";
 import { bindingFromSession, sessionFromBinding, withNativeThreadId } from "./session.ts";
@@ -147,6 +148,7 @@ export const makeCodexAgentService = (options: CodexAgentServiceOptions = {}): A
       return { accepted: true, reason: "cancel_requested" };
     },
     capabilities: () => capabilities,
+    listModels: (request) => listCodexModels(options, request),
     close: async () => {
       for (const activeTurn of activeTurns.values()) {
         if (!activeTurn.controller.signal.aborted) {

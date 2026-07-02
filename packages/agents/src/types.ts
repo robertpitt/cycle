@@ -34,6 +34,48 @@ export type AgentModelRef = {
   readonly id: string;
 };
 
+export type AgentReasoningEffort = {
+  readonly id: string;
+  readonly label: string;
+  readonly description?: string;
+  readonly disabled?: boolean;
+};
+
+export type AgentModelStatus = "available" | "hidden" | "unavailable" | "deprecated";
+
+export type AgentModelDescriptor = {
+  readonly id: string;
+  readonly provider: AgentProviderId;
+  readonly label: string;
+  readonly description?: string;
+  readonly status: AgentModelStatus;
+  readonly isDefault?: boolean;
+  readonly disabled?: boolean;
+  readonly supportedReasoningEfforts?: readonly AgentReasoningEffort[];
+  readonly defaultReasoningEffortId?: string | null;
+  readonly metadata?: JsonObject;
+};
+
+export type AgentModelCatalogSource = "dynamic" | "static" | "unsupported" | "unavailable";
+
+export type AgentModelCatalog = {
+  readonly provider: AgentProviderId;
+  readonly models: readonly AgentModelDescriptor[];
+  readonly defaultModelId: string | null;
+  readonly reasoningEfforts?: readonly AgentReasoningEffort[];
+  readonly defaultReasoningEffortId?: string | null;
+  readonly source: AgentModelCatalogSource;
+  readonly fetchedAt: string;
+  readonly stale?: boolean;
+};
+
+export type AgentListModelsRequest = {
+  readonly includeHidden?: boolean;
+  readonly refresh?: boolean;
+  readonly signal?: AbortSignal;
+  readonly timeoutMs?: number;
+};
+
 export type AgentWorkJobType = ContractAgentWorkJobType;
 
 export type AgentProviderFeatureCapabilities = {
@@ -584,6 +626,7 @@ export type AbortTurnResult = {
 export type AgentService = {
   readonly provider: AgentProvider;
   capabilities(): AgentCapabilities;
+  listModels(request?: AgentListModelsRequest): Promise<AgentModelCatalog>;
   createSession(input?: CreateAgentSessionInput): Promise<AgentSession>;
   resumeSession(sessionId: string): Promise<AgentSession>;
   run<TStructured = unknown>(

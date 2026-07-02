@@ -44,12 +44,6 @@ const defaultModelsByProvider: Record<AgentProviderId, readonly string[]> = {
   codex: [],
 };
 
-const thinkingLevels = [
-  { id: "low", label: "Low" },
-  { id: "medium", label: "Medium" },
-  { id: "high", label: "High" },
-];
-
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -296,6 +290,7 @@ const protocolProvider = (value: unknown): AgentChatProviderProfile | undefined 
   return {
     availability: providerAvailability(value.availability),
     defaultModel: stringOrNull(value.defaultModel),
+    defaultThinkingLevel: stringOrNull(value.defaultThinkingLevel),
     description: stringOrNull(value.description),
     id,
     label,
@@ -333,6 +328,7 @@ const detectedProviderProfile = (provider: DetectedAgentProvider): AgentChatProv
   return {
     availability,
     defaultModel: provider.defaultModel ?? models[0] ?? null,
+    defaultThinkingLevel: provider.defaultReasoningEffortId ?? null,
     description: availability === "available" ? null : (provider.message ?? null),
     id: provider.id,
     label: provider.name,
@@ -342,7 +338,13 @@ const detectedProviderProfile = (provider: DetectedAgentProvider): AgentChatProv
       label: model,
     })),
     statusLabel: provider.status,
-    thinkingLevels: provider.id === "codex" ? thinkingLevels : [],
+    thinkingLevels:
+      provider.reasoningEfforts?.map((effort) => ({
+        description: effort.description ?? null,
+        disabled: effort.disabled,
+        id: effort.id,
+        label: effort.label,
+      })) ?? [],
   };
 };
 
@@ -365,6 +367,21 @@ const supportedModelForProvider = (
   return provider.models.some((candidate) => candidate.id === model && candidate.disabled !== true)
     ? model
     : null;
+};
+
+const providerDefaultThinkingLevel = (
+  providers: readonly AgentChatProviderProfile[],
+  providerId: string | null | undefined,
+): string | null => {
+  const provider = providers.find((candidate) => candidate.id === providerId);
+  const defaultThinkingLevel = provider?.defaultThinkingLevel;
+  if (
+    defaultThinkingLevel &&
+    provider?.thinkingLevels?.some((level) => level.id === defaultThinkingLevel) === true
+  ) {
+    return defaultThinkingLevel;
+  }
+  return null;
 };
 
 const firstAvailableProviderId = (providers: readonly AgentChatProviderProfile[]): string | null =>
@@ -1040,7 +1057,7 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
   const selectedThinkingLevel =
     selectedThread?.thinkingLevel ??
     draftThinkingLevel ??
-    (selectedProviderId === "codex" ? "medium" : null);
+    providerDefaultThinkingLevel(providers, selectedProviderId);
 
   const patchSelectedThreadSettings = React.useCallback(
     (patch: {
@@ -1278,12 +1295,14 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
   const updateProvider = React.useCallback(
     (providerId: string | null) => {
       const model = providerDefaultModel(providers, providerId);
+      const thinkingLevel = providerDefaultThinkingLevel(providers, providerId);
       setDraftProviderId(providerId);
       setDraftModel(model);
-      patchSelectedThreadSettings({ model, providerId });
+      setDraftThinkingLevel(thinkingLevel);
+      patchSelectedThreadSettings({ model, providerId, thinkingLevel });
       const threadId = selectedThreadIdRef.current;
       if (threadId !== null) {
-        sendCommand("thread.update_settings", { model, providerId, threadId });
+        sendCommand("thread.update_settings", { model, providerId, thinkingLevel, threadId });
       }
     },
     [patchSelectedThreadSettings, providers, sendCommand],

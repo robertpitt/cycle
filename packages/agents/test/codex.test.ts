@@ -124,8 +124,15 @@ const completeStartup = async (
   });
 };
 
-const startTurn = async (peer: ReturnType<typeof makeMockPeer>) => {
+const startTurn = async (
+  peer: ReturnType<typeof makeMockPeer>,
+  options: {
+    readonly effort?: string;
+  } = {},
+) => {
   const turnStart = await peer.expectRequest("turn/start");
+  const params = turnStart.params as Record<string, unknown>;
+  if (options.effort !== undefined) assert.equal(params.effort, options.effort);
   peer.respond(turnStart.id, {
     turn: {
       id: "native_turn",
@@ -163,6 +170,181 @@ describe("@cycle/agents codex app-server adapter", () => {
       title: "Plan",
     });
     assert.throws(() => parseStructured(format, JSON.stringify({ debug: true, title: "Plan" })));
+  });
+
+  it("lists Codex models through AgentService", async () => {
+    const peer = makeMockPeer();
+    const service = makeCodexAgentService({ appServerClient: peer.client });
+    const catalogPromise = service.listModels();
+
+    const initialize = await peer.expectRequest("initialize");
+    peer.respond(initialize.id, {
+      platformFamily: "unix",
+      platformOs: "macos",
+      userAgent: "mock-codex",
+    });
+    await peer.expectNotification("initialized");
+
+    const firstPage = await peer.expectRequest("model/list");
+    assert.deepEqual(firstPage.params, {
+      includeHidden: false,
+      limit: 100,
+    });
+    peer.respond(firstPage.id, {
+      data: [
+        {
+          description: "Primary Codex model",
+          displayName: "GPT-5 Codex",
+          hidden: false,
+          id: "model_gpt_5_codex",
+          isDefault: true,
+          model: "gpt-5-codex",
+          defaultReasoningEffort: "medium",
+          supportedReasoningEfforts: [
+            {
+              description: "Fast responses.",
+              reasoningEffort: "low",
+            },
+            {
+              description: "Balanced reasoning.",
+              reasoningEffort: "medium",
+            },
+          ],
+        },
+        {
+          displayName: "Hidden",
+          hidden: true,
+          id: "hidden",
+          isDefault: false,
+          model: "hidden-model",
+        },
+      ],
+      nextCursor: "next",
+    });
+
+    const secondPage = await peer.expectRequest("model/list");
+    assert.deepEqual(secondPage.params, {
+      cursor: "next",
+      includeHidden: false,
+      limit: 100,
+    });
+    peer.respond(secondPage.id, {
+      data: [
+        {
+          displayName: "O4 Mini",
+          hidden: false,
+          id: "model_o4_mini",
+          isDefault: false,
+          model: "o4-mini",
+          defaultReasoningEffort: "low",
+          supportedReasoningEfforts: [
+            {
+              description: "Fast responses.",
+              reasoningEffort: "low",
+            },
+          ],
+        },
+      ],
+      nextCursor: null,
+    });
+
+    const catalog = await catalogPromise;
+    assert.equal(catalog.provider, "codex");
+    assert.equal(catalog.source, "dynamic");
+    assert.equal(catalog.defaultModelId, "gpt-5-codex");
+    assert.deepEqual(
+      catalog.models.map((model) => model.id),
+      ["gpt-5-codex", "o4-mini"],
+    );
+    assert.deepEqual(
+      catalog.models.map((model) => model.label),
+      ["GPT-5 Codex", "O4 Mini"],
+    );
+    assert.equal(catalog.defaultReasoningEffortId, "medium");
+    assert.deepEqual(catalog.reasoningEfforts, [
+      {
+        description: "Fast responses.",
+        id: "low",
+        label: "Low",
+      },
+      {
+        description: "Balanced reasoning.",
+        id: "medium",
+        label: "Medium",
+      },
+    ]);
+  });
+
+  it("includes hidden Codex models only when requested", async () => {
+    const peer = makeMockPeer();
+    const service = makeCodexAgentService({ appServerClient: peer.client });
+    const catalogPromise = service.listModels({ includeHidden: true });
+
+    const initialize = await peer.expectRequest("initialize");
+    peer.respond(initialize.id, {
+      platformFamily: "unix",
+      platformOs: "macos",
+      userAgent: "mock-codex",
+    });
+    await peer.expectNotification("initialized");
+
+    const request = await peer.expectRequest("model/list");
+    assert.deepEqual(request.params, {
+      includeHidden: true,
+      limit: 100,
+    });
+    peer.respond(request.id, {
+      data: [
+        {
+          displayName: "Hidden",
+          hidden: true,
+          id: "hidden",
+          isDefault: false,
+          model: "hidden-model",
+          defaultReasoningEffort: "minimal",
+          supportedReasoningEfforts: [
+            {
+              description: "Minimal reasoning.",
+              reasoningEffort: "minimal",
+            },
+          ],
+        },
+      ],
+      nextCursor: null,
+    });
+
+    const catalog = await catalogPromise;
+    assert.deepEqual(
+      catalog.models.map((model) => [model.id, model.status]),
+      [["hidden-model", "hidden"]],
+    );
+  });
+
+  it("passes selected thinking level to Codex turn effort", async () => {
+    const peer = makeMockPeer();
+    const service = makeCodexAgentService({ appServerClient: peer.client });
+    const session = await service.createSession();
+    const eventsPromise = collect(
+      service.stream(session.id, {
+        input: "Use more reasoning",
+        metadata: {
+          thinkingLevel: "high",
+        },
+      }),
+    );
+
+    await completeStartup(peer);
+    await startTurn(peer, { effort: "high" });
+    peer.notify("turn/completed", {
+      threadId: "native_thread",
+      turn: {
+        id: "native_turn",
+        status: "completed",
+      },
+    });
+
+    const events = await eventsPromise;
+    assert.equal(events.at(-1)?.type, "turn.completed");
   });
 
   it("streams normalized events and persists app-server session binding state", async () => {

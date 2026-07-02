@@ -901,9 +901,7 @@ const runProviderTurn = async (input: {
     return;
   }
 
-  const service = await Effect.runPromise(
-    input.runtime.agentServices.serviceFor(providerId),
-  );
+  const service = await Effect.runPromise(input.runtime.agentServices.serviceFor(providerId));
   const activeTurn = input.runtime.activeAgentTurns.begin({
     provider: providerId,
     requestId: input.turn.id,
@@ -2379,6 +2377,7 @@ const providerProfileForChat = (
   return {
     availability,
     defaultModel: profile.defaultModel ?? models[0] ?? null,
+    defaultThinkingLevel: profile.defaultReasoningEffortId ?? null,
     description: profile.message ?? profile.executableName,
     id: profile.provider,
     label: profile.displayName,
@@ -2389,13 +2388,12 @@ const providerProfileForChat = (
     })),
     statusLabel: profile.status,
     thinkingLevels:
-      profile.provider === "codex"
-        ? [
-            { id: "low", label: "Low" },
-            { id: "medium", label: "Medium" },
-            { id: "high", label: "High" },
-          ]
-        : [],
+      profile.reasoningEfforts?.map((effort) => ({
+        description: effort.description ?? null,
+        disabled: effort.disabled === true,
+        id: effort.id,
+        label: effort.label,
+      })) ?? [],
   };
 };
 
