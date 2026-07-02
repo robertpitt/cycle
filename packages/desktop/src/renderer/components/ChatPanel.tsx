@@ -40,6 +40,7 @@ type ChatPanelProps = {
 type PendingCommand = (message: ChatProtocolMessage) => void;
 
 const defaultModelsByProvider: Record<AgentProviderId, readonly string[]> = {
+  "claude-code": [],
   codex: [],
 };
 
@@ -322,22 +323,17 @@ const isDefined = <A,>(value: A | undefined): value is A => value !== undefined;
 
 const detectedProviderProfile = (provider: DetectedAgentProvider): AgentChatProviderProfile => {
   const availability =
-    provider.id === "codex"
-      ? provider.status === "available"
-        ? "available"
-        : "unavailable"
-      : "unsupported";
-  const models = defaultModelsByProvider[provider.id];
+    provider.status === "available"
+      ? "available"
+      : provider.status === "unsupported"
+        ? "unsupported"
+        : "unavailable";
+  const models = provider.models ?? defaultModelsByProvider[provider.id];
 
   return {
     availability,
-    defaultModel: models[0] ?? null,
-    description:
-      availability === "available"
-        ? null
-        : provider.id === "codex"
-          ? `${provider.name} executable was not found.`
-          : `${provider.name} execution is not supported yet.`,
+    defaultModel: provider.defaultModel ?? models[0] ?? null,
+    description: availability === "available" ? null : (provider.message ?? null),
     id: provider.id,
     label: provider.name,
     models: models.map((model) => ({

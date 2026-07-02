@@ -2,6 +2,8 @@ import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { CycleAuthorization } from "../authorization.ts";
 import {
   AgentProvidersResourceEnvelope,
+  AgentProviderId,
+  AgentProviderPreferencePayload,
   AgentTaskAcceptedEnvelope,
   AgentTaskCancelPayload,
   AgentTaskCollectionEnvelope,
@@ -146,6 +148,15 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
     HttpApiEndpoint.get("listAgentProviders", "/v1/agents/providers", {
       success: AgentProvidersResourceEnvelope,
     }),
+    HttpApiEndpoint.patch(
+      "updateAgentProviderPreference",
+      "/v1/agents/providers/:providerId/preferences",
+      {
+        params: { providerId: AgentProviderId },
+        payload: AgentProviderPreferencePayload,
+        success: AppConfigResourceEnvelope,
+      },
+    ),
     HttpApiEndpoint.post("createAgentTask", "/v1/agent-tasks", {
       payload: AgentTaskCreatePayload,
       success: AgentTaskAcceptedEnvelope,

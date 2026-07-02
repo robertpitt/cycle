@@ -3,7 +3,7 @@ import type { DetectedAgentProvider } from "../../shared/AgentProviders.ts";
 import { fallbackAgentProviders } from "../lib/agentProviders.ts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 
-const agentProvidersQueryKey = ["desktop", "agentProviders"] as const;
+export const agentProvidersQueryKey = ["desktop", "agentProviders"] as const;
 
 const detectAgentProvidersForRenderer = async (): Promise<ReadonlyArray<DetectedAgentProvider>> => {
   try {

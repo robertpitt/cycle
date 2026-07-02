@@ -3,6 +3,7 @@ import {
   defaultAppConfig,
   isInterfaceDensity,
   isThemePreference,
+  type AgentProviderPreference,
   type AppConfigState,
   type InterfaceDensity,
   type ProfileConfig,
@@ -12,6 +13,8 @@ import type { ProfileUpdateInput } from "../../shared/Profile.ts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 import { appConfigQueryKey } from "../queries/appConfig.ts";
+import { agentProvidersQueryKey } from "../queries/agentProviders.ts";
+import type { AgentProviderId } from "../../shared/AgentProviders.ts";
 
 type SettingsMutationOptions = {
   readonly appConfig?: AppConfigState;
@@ -76,3 +79,19 @@ export const useClearCacheMutation = () =>
       await getDesktopBridge()?.clearCache();
     },
   });
+
+export const useUpdateAgentProviderPreferenceMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: {
+      readonly providerId: AgentProviderId;
+      readonly preference: Partial<Omit<AgentProviderPreference, "id">>;
+    }): Promise<AppConfigState> =>
+      cycleApiClient.updateAgentProviderPreference(input.providerId, input.preference),
+    onSuccess: (next) => {
+      queryClient.setQueryData(appConfigQueryKey, next);
+      void queryClient.invalidateQueries({ queryKey: agentProvidersQueryKey });
+    },
+  });
+};

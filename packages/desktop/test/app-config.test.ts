@@ -202,8 +202,16 @@ describe("desktop app config", () => {
     assert.equal(typeof result.completed.onboarding.completedAt, "string");
     assert.deepEqual(result.completed.agentProviders.preferences, [
       {
+        config: {},
         enabled: true,
         id: "codex",
+        maxConcurrentRuns: 1,
+      },
+      {
+        config: {},
+        enabled: false,
+        id: "claude-code",
+        maxConcurrentRuns: 1,
       },
     ]);
     assert.equal(result.completed.theme.preference, "dark");

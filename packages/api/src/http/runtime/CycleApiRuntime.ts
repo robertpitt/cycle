@@ -55,6 +55,19 @@ export type LocalSettingsRepositoryPreferencesInput = {
   readonly preferences: LocalSettingsRepositoryPreferences;
 };
 
+export type LocalSettingsAgentProviderPreferencePatch = {
+  readonly config?: Readonly<Record<string, unknown>>;
+  readonly defaultModel?: string | null;
+  readonly enabled?: boolean;
+  readonly executablePath?: string | null;
+  readonly maxConcurrentRuns?: number | null;
+};
+
+export type LocalSettingsAgentProviderPreferenceInput = {
+  readonly providerId: AgentProviderId;
+  readonly preference: LocalSettingsAgentProviderPreferencePatch;
+};
+
 export type LocalSettingsProviderShape = {
   readonly completeOnboarding?: (input: LocalSettingsOnboardingInput) => Promise<unknown>;
   readonly read: () => Promise<unknown>;
@@ -64,6 +77,9 @@ export type LocalSettingsProviderShape = {
   readonly updateProfile?: (input: LocalSettingsProfileUpdateInput) => Promise<unknown>;
   readonly updateRepositoryPreferences?: (
     input: LocalSettingsRepositoryPreferencesInput,
+  ) => Promise<unknown>;
+  readonly updateAgentProviderPreference?: (
+    input: LocalSettingsAgentProviderPreferenceInput,
   ) => Promise<unknown>;
 };
 

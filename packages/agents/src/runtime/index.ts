@@ -9,6 +9,8 @@ export * from "./service.ts";
 
 import { Layer } from "effect";
 import type { CodexAgentServiceOptions } from "../providers/codex/types.ts";
+import { makeClaudeCodeHarnessAdapter } from "../providers/claude-code/harness.ts";
+import type { ClaudeCodeAgentServiceOptions } from "../providers/claude-code/service.ts";
 import { makeCodexHarnessAdapter } from "./codex-harness.ts";
 import { AgentDurabilityInMemory } from "./durability.ts";
 import { AgentHarnessRegistryLive } from "./harness.ts";
@@ -17,6 +19,7 @@ import { PromptAssemblerLive, PromptTemplateRegistryLive } from "./prompt.ts";
 import { AgentRuntimeLive, type AgentRuntimeOptions } from "./service.ts";
 
 export type DefaultAgentRuntimeLayerOptions = {
+  readonly claudeCode?: ClaudeCodeAgentServiceOptions;
   readonly codex?: CodexAgentServiceOptions;
   readonly config?: AgentRuntimeOptions["config"];
   readonly makeId?: (prefix: string) => string;
@@ -35,7 +38,10 @@ export const AgentRuntimeDefault = (options: DefaultAgentRuntimeLayerOptions = {
     Layer.provide([
       AgentAuthorityPolicyLive,
       AgentDurabilityInMemory,
-      AgentHarnessRegistryLive([makeCodexHarnessAdapter(options.codex)]),
+      AgentHarnessRegistryLive([
+        makeCodexHarnessAdapter(options.codex),
+        makeClaudeCodeHarnessAdapter(options.claudeCode),
+      ]),
       AgentMcpConnectorLive,
       PromptAssemblerLive({ makeId, now }),
       PromptTemplateRegistryLive,
@@ -45,4 +51,3 @@ export const AgentRuntimeDefault = (options: DefaultAgentRuntimeLayerOptions = {
 
 const defaultId = (prefix: string): string =>
   `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-

@@ -1,5 +1,6 @@
 import { Context, Effect, Layer } from "effect";
 import { defaultAgentCapabilities, supportedAgentProviders } from "./providers.ts";
+import { claudeCodePackageName, claudeCodeProviderId } from "./providers/claude-code/constants.ts";
 import { ExecutableResolver, ExecutableResolverLive, resolveExecutables } from "./executables.ts";
 import type { ExecutableResolverEnvironment, ExecutableResolverOptions } from "./executables.ts";
 import type { DetectedAgentProvider } from "./types.ts";
@@ -27,9 +28,13 @@ export const detectAgentProviders = (
         env,
       },
     );
+    const claudeSdkAvailable = yield* detectClaudeCodeSdkAvailability();
 
     return supportedAgentProviders.map((provider) => {
       const result = executableResults.get(provider.executable);
+      const hasExecutable = result?.available === true;
+      const sdkBacked = provider.id === claudeCodeProviderId && claudeSdkAvailable;
+      const available = hasExecutable || sdkBacked;
 
       return {
         capabilities: defaultAgentCapabilities(provider.id),
@@ -37,8 +42,12 @@ export const detectAgentProviders = (
         executable: provider.executable,
         ...(result?.executablePath === undefined ? {} : { executablePath: result.executablePath }),
         id: provider.id,
+        ...(provider.packageName === undefined ? {} : { packageName: provider.packageName }),
+        ...(provider.id === claudeCodeProviderId && !claudeSdkAvailable
+          ? { message: `${provider.name} SDK package '${claudeCodePackageName}' is not available.` }
+          : {}),
         name: provider.name,
-        status: result?.available === true ? "available" : "missing",
+        status: available ? "available" : "missing",
       } satisfies DetectedAgentProvider;
     });
   });
@@ -54,9 +63,13 @@ const AgentProviderDetectorWithResolverLive = Layer.effect(
           const executableResults = yield* executableResolver.resolveMany(
             supportedAgentProviders.map((provider) => provider.executable),
           );
+          const claudeSdkAvailable = yield* detectClaudeCodeSdkAvailability();
 
           return supportedAgentProviders.map((provider) => {
             const result = executableResults.get(provider.executable);
+            const hasExecutable = result?.available === true;
+            const sdkBacked = provider.id === claudeCodeProviderId && claudeSdkAvailable;
+            const available = hasExecutable || sdkBacked;
 
             return {
               capabilities: defaultAgentCapabilities(provider.id),
@@ -64,10 +77,16 @@ const AgentProviderDetectorWithResolverLive = Layer.effect(
               executable: provider.executable,
               ...(result?.executablePath === undefined
                 ? {}
-                : { executablePath: result.executablePath }),
+                  : { executablePath: result.executablePath }),
               id: provider.id,
+              ...(provider.packageName === undefined ? {} : { packageName: provider.packageName }),
+              ...(provider.id === claudeCodeProviderId && !claudeSdkAvailable
+                ? {
+                    message: `${provider.name} SDK package '${claudeCodePackageName}' is not available.`,
+                  }
+                : {}),
               name: provider.name,
-              status: result?.available === true ? "available" : "missing",
+              status: available ? "available" : "missing",
             } satisfies DetectedAgentProvider;
           });
         }),
@@ -78,3 +97,12 @@ const AgentProviderDetectorWithResolverLive = Layer.effect(
 export const AgentProviderDetectorLive = AgentProviderDetectorWithResolverLive.pipe(
   Layer.provide(ExecutableResolverLive),
 );
+
+const detectClaudeCodeSdkAvailability = (): Effect.Effect<boolean> =>
+  Effect.tryPromise({
+    try: async () => {
+      await import("@anthropic-ai/claude-agent-sdk");
+      return true;
+    },
+    catch: (cause) => cause,
+  }).pipe(Effect.catch(() => Effect.succeed(false)));

@@ -275,6 +275,7 @@ const makeLayer = (
       removeRepository: () => Effect.succeed(config),
       setInterfaceDensity: () => Effect.succeed(config),
       setThemePreference: () => Effect.succeed(config),
+      updateAgentProviderPreference: () => Effect.succeed(config),
       shouldAutoSyncRepository: () =>
         Effect.sync(() => {
           events.push("shouldAutoSyncRepository");

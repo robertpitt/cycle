@@ -131,6 +131,22 @@ describe("@cycle/agents runtime contracts", () => {
     assert.equal(capabilities.supportedJobTypes.includes("implement_issue"), true);
   });
 
+  it("declares Claude Code as a workspace-capable provider", () => {
+    const capabilities = defaultAgentCapabilities("claude-code");
+
+    assert.equal(supportedAgentProviders.some((provider) => provider.id === "claude-code"), true);
+    assert.equal(capabilities.provider, "claude-code");
+    assert.equal(capabilities.streaming, true);
+    assert.equal(capabilities.structuredOutput, true);
+    assert.equal(capabilities.supports.mcp, true);
+    assert.equal(capabilities.providerFeatures?.commandExecution, true);
+    assert.equal(capabilities.providerFeatures?.workspaceWriteMode, true);
+    assert.equal(capabilitySupportsAuthorityMode(capabilities, "ticket-context"), true);
+    assert.equal(capabilitySupportsAuthorityMode(capabilities, "disposable-worktree"), true);
+    assert.equal(capabilitySupportsAuthorityMode(capabilities, "implementation-worktree"), true);
+    assert.equal(capabilities.supportedJobTypes.includes("implement_issue"), true);
+  });
+
   it("builds provider request metadata for job-scoped turns", () => {
     assert.deepEqual(
       makeAgentJobRequestMetadata({

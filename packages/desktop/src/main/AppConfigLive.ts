@@ -1,3 +1,4 @@
+import type { JsonObject } from "@cycle/contracts/schemas";
 import { Config, ConfigProvider, Crypto, Effect, FileSystem, Layer, Path, Schema } from "effect";
 import {
   ApiConfig,
@@ -11,6 +12,7 @@ import {
   ProfileConfig,
   RepositoryRecord,
   ThemeConfig,
+  defaultAgentProviderPreference,
   defaultAppConfig,
   defaultApiConfig,
   defaultRepositoryPreferences,
@@ -26,6 +28,7 @@ import {
   type ThemeConfig as ThemeConfigType,
   type ThemePreference,
 } from "../shared/AppConfig.ts";
+import { isAgentProviderId, supportedAgentProviders } from "../shared/AgentProviders.ts";
 import { cycleAppConfigFileName, cycleAppConfigPath } from "./CycleDirectory.ts";
 
 const isNodeError = (cause: unknown): cause is NodeJS.ErrnoException =>
@@ -294,6 +297,64 @@ const salvageTheme = (value: unknown, fallback: ThemeConfigType): ThemeConfigTyp
   return { density, preference };
 };
 
+const normalizeProviderPreferenceCandidate = (candidate: unknown) => {
+  if (!isRecord(candidate) || typeof candidate.id !== "string") return undefined;
+  if (!isAgentProviderId(candidate.id)) return undefined;
+
+  const fallback = defaultAgentProviderPreference(candidate.id, candidate.enabled === true);
+  const maxConcurrentRuns =
+    candidate.maxConcurrentRuns === null
+      ? null
+      : typeof candidate.maxConcurrentRuns === "number" &&
+          Number.isInteger(candidate.maxConcurrentRuns) &&
+          candidate.maxConcurrentRuns >= 1
+        ? candidate.maxConcurrentRuns
+        : fallback.maxConcurrentRuns;
+  const defaultModel =
+    typeof candidate.defaultModel === "string" && candidate.defaultModel.trim().length > 0
+      ? candidate.defaultModel.trim()
+      : null;
+  const executablePath =
+    typeof candidate.executablePath === "string" && candidate.executablePath.trim().length > 0
+      ? candidate.executablePath.trim()
+      : null;
+  const config = isJsonObject(candidate.config) ? candidate.config : {};
+
+  return {
+    ...fallback,
+    config,
+    defaultModel,
+    enabled: candidate.enabled === true,
+    executablePath,
+    maxConcurrentRuns,
+  };
+};
+
+const salvageAgentProviders = (
+  value: unknown,
+  fallback: AgentProvidersConfigType,
+): Effect.Effect<AgentProvidersConfigType, AppConfigError> =>
+  parseSection(AgentProvidersConfig, value).pipe(
+    Effect.catch(() =>
+      Effect.sync(() => {
+        if (!isRecord(value) || !Array.isArray(value.preferences)) return fallback;
+
+        const byId = new Map(
+          value.preferences
+            .map(normalizeProviderPreferenceCandidate)
+            .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined)
+            .map((entry) => [entry.id, entry] as const),
+        );
+
+        return {
+          preferences: supportedAgentProviders
+            .map((provider) => byId.get(provider.id))
+            .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined),
+        };
+      }),
+    ),
+  );
+
 const salvageAppConfig = (raw: unknown): Effect.Effect<AppConfigState, AppConfigError> =>
   Effect.gen(function* () {
     const defaults = defaultAppConfig();
@@ -302,8 +363,9 @@ const salvageAppConfig = (raw: unknown): Effect.Effect<AppConfigState, AppConfig
     const onboarding = yield* parseSection(OnboardingConfig, raw.onboarding).pipe(
       Effect.catch(() => Effect.succeed(defaults.onboarding as OnboardingConfigType)),
     );
-    const agentProviders = yield* parseSection(AgentProvidersConfig, raw.agentProviders).pipe(
-      Effect.catch(() => Effect.succeed(defaults.agentProviders as AgentProvidersConfigType)),
+    const agentProviders = yield* salvageAgentProviders(
+      raw.agentProviders,
+      defaults.agentProviders as AgentProvidersConfigType,
     );
     const profile = yield* parseSection(ProfileConfig, raw.profile).pipe(
       Effect.catch(() => Effect.succeed(defaults.profile as ProfileConfigType)),
@@ -329,6 +391,24 @@ const salvageAppConfig = (raw: unknown): Effect.Effect<AppConfigState, AppConfig
       theme,
     };
   });
+
+const isJsonObject = (value: unknown): value is JsonObject => {
+  if (!isRecord(value)) return false;
+  return Object.values(value).every(isJsonValue);
+};
+
+const isJsonValue = (value: unknown): boolean => {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return true;
+  }
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  return isJsonObject(value);
+};
 
 const readJsonConfig = (text: string): Effect.Effect<unknown, AppConfigError> =>
   Effect.try({

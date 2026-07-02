@@ -675,10 +675,7 @@ export const ViewIssuePanel = ({
     () => agentProviders.filter((provider) => provider.status === "available"),
     [agentProviders],
   );
-  const defaultAgentProviderId =
-    availableAgentProviders.find((provider) => provider.id === "codex")?.id ??
-    availableAgentProviders[0]?.id ??
-    "";
+  const defaultAgentProviderId = availableAgentProviders[0]?.id ?? "";
   const [agentTaskDialogOpen, setAgentTaskDialogOpen] = React.useState(false);
   const [agentTaskAgentId, setAgentTaskAgentId] = React.useState<string>(defaultAgentProviderId);
   const [agentTaskProviderId, setAgentTaskProviderId] =

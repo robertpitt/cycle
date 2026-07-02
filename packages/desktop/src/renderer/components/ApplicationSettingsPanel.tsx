@@ -15,13 +15,14 @@ import {
   useClearCacheMutation,
   useSetInterfaceDensityMutation,
   useSetThemePreferenceMutation,
+  useUpdateAgentProviderPreferenceMutation,
   useUpdateProfileMutation,
 } from "../mutations/index.ts";
 import type { DetectedAgentProvider } from "../../shared/AgentProviders.ts";
 import type { BootstrapStatus } from "../../shared/Bootstrap.ts";
 import { useSettingsDiagnosticsQuery } from "../queries/index.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
-import { Button, StatusIndicator } from "@cycle/ui/atoms";
+import { Button, Input, StatusIndicator } from "@cycle/ui/atoms";
 import { ExternalLink } from "lucide-react";
 import type { SettingsDiagnostics } from "../../ipc/Channels.ts";
 
@@ -298,6 +299,217 @@ const AdvancedSettingsPanel = ({
   );
 };
 
+const detectedStatus = (provider: DetectedAgentProvider): string =>
+  typeof provider.configuration?.detectedStatus === "string"
+    ? provider.configuration.detectedStatus
+    : provider.status;
+
+const providerEnabled = (provider: DetectedAgentProvider, appConfig: AppConfigState): boolean =>
+  appConfig.agentProviders.preferences.find((preference) => preference.id === provider.id)
+    ?.enabled ??
+  provider.status === "available";
+
+const AgentsSettingsPanel = ({
+  appConfig,
+  providers,
+}: {
+  readonly appConfig: AppConfigState;
+  readonly providers: readonly DetectedAgentProvider[];
+}) => {
+  const updateProviderPreference = useUpdateAgentProviderPreferenceMutation();
+
+  return (
+    <PageShell {...settingPageCopy.agents}>
+      {providers.map((provider) => (
+        <AgentProviderSettingsCard
+          appConfig={appConfig}
+          key={provider.id}
+          onSave={(preference) =>
+            updateProviderPreference.mutate({
+              preference,
+              providerId: provider.id,
+            })
+          }
+          pending={updateProviderPreference.isPending}
+          provider={provider}
+        />
+      ))}
+      {providers.length === 0 ? (
+        <SectionShell title="Providers">
+          <p className="text-sm text-muted-foreground">No agent providers were reported.</p>
+        </SectionShell>
+      ) : null}
+    </PageShell>
+  );
+};
+
+const AgentProviderSettingsCard = ({
+  appConfig,
+  onSave,
+  pending,
+  provider,
+}: {
+  readonly appConfig: AppConfigState;
+  readonly onSave: (preference: {
+    readonly defaultModel?: string | null;
+    readonly enabled?: boolean;
+    readonly executablePath?: string | null;
+    readonly maxConcurrentRuns?: number | null;
+  }) => void;
+  readonly pending: boolean;
+  readonly provider: DetectedAgentProvider;
+}) => {
+  const preference = appConfig.agentProviders.preferences.find((entry) => entry.id === provider.id);
+  const enabled = preference?.enabled ?? providerEnabled(provider, appConfig);
+  const [draftEnabled, setDraftEnabled] = React.useState(enabled);
+  const [defaultModel, setDefaultModel] = React.useState(
+    preference?.defaultModel ?? provider.defaultModel ?? "",
+  );
+  const [executablePath, setExecutablePath] = React.useState(
+    preference?.executablePath ?? provider.configuredExecutablePath ?? "",
+  );
+  const [maxConcurrentRuns, setMaxConcurrentRuns] = React.useState(
+    String(preference?.maxConcurrentRuns ?? provider.maxConcurrentRuns ?? 1),
+  );
+  const originalStatus = detectedStatus(provider);
+  const enableBlocked =
+    !draftEnabled && (originalStatus === "missing" || originalStatus === "unsupported");
+  const canEnable = !(originalStatus === "missing" || originalStatus === "unsupported");
+  const capabilities = provider.capabilities?.supports;
+  const maxConcurrentValue = maxConcurrentRuns.trim();
+  const parsedMaxConcurrentRuns =
+    maxConcurrentValue.length === 0 ? null : Number.parseInt(maxConcurrentValue, 10);
+  const maxConcurrentValid =
+    parsedMaxConcurrentRuns === null ||
+    (Number.isInteger(parsedMaxConcurrentRuns) && parsedMaxConcurrentRuns >= 1);
+
+  React.useEffect(() => {
+    setDraftEnabled(enabled);
+    setDefaultModel(preference?.defaultModel ?? provider.defaultModel ?? "");
+    setExecutablePath(preference?.executablePath ?? provider.configuredExecutablePath ?? "");
+    setMaxConcurrentRuns(String(preference?.maxConcurrentRuns ?? provider.maxConcurrentRuns ?? 1));
+  }, [
+    enabled,
+    preference?.defaultModel,
+    preference?.executablePath,
+    preference?.maxConcurrentRuns,
+    provider.configuredExecutablePath,
+    provider.defaultModel,
+    provider.maxConcurrentRuns,
+  ]);
+
+  return (
+    <SectionShell
+      description={provider.message ?? `${provider.executable} provider integration.`}
+      title={provider.name}
+    >
+      <div className="grid gap-4">
+        <div className="grid gap-2 sm:grid-cols-[160px_minmax(0,1fr)]">
+          <div className="text-xs font-medium uppercase text-muted-foreground">Status</div>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <StatusIndicator label={provider.status} tone={statusTone(provider.status)} />
+            <span className="text-muted-foreground">{provider.id}</span>
+          </div>
+          <div className="text-xs font-medium uppercase text-muted-foreground">Executable</div>
+          <div className="min-w-0 break-words text-sm">
+            <span className="font-medium">{provider.executable}</span>
+            {provider.executablePath ? (
+              <span className="ml-2 text-muted-foreground">{provider.executablePath}</span>
+            ) : null}
+          </div>
+          <div className="text-xs font-medium uppercase text-muted-foreground">SDK</div>
+          <div className="min-w-0 break-words text-sm">
+            {provider.packageName ?? "Provider native"}
+          </div>
+          <div className="text-xs font-medium uppercase text-muted-foreground">Checked</div>
+          <div className="text-sm text-muted-foreground">{provider.detectedAt}</div>
+          <div className="text-xs font-medium uppercase text-muted-foreground">Capabilities</div>
+          <div className="flex flex-wrap gap-1.5 text-xs">
+            {capabilities
+              ? Object.entries(capabilities)
+                  .filter(([, supported]) => supported)
+                  .map(([capability]) => (
+                    <span
+                      className="rounded-sm bg-subtle px-1.5 py-0.5 text-muted-foreground"
+                      key={capability}
+                    >
+                      {capability}
+                    </span>
+                  ))
+              : "No capabilities reported"}
+          </div>
+        </div>
+
+        <div className="grid gap-4 border-t border-border pt-4 sm:grid-cols-2">
+          <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <input
+              checked={draftEnabled}
+              disabled={pending || (!draftEnabled && !canEnable)}
+              onChange={(event) => setDraftEnabled(event.currentTarget.checked)}
+              type="checkbox"
+            />
+            Enabled
+          </label>
+          <label className="grid gap-1.5 text-sm font-medium text-foreground">
+            Max concurrent runs
+            <Input
+              disabled={pending}
+              min={1}
+              onChange={(event) => setMaxConcurrentRuns(event.currentTarget.value)}
+              placeholder="Unlimited"
+              type="number"
+              value={maxConcurrentRuns}
+            />
+          </label>
+          <label className="grid gap-1.5 text-sm font-medium text-foreground">
+            Default model
+            <Input
+              disabled={pending}
+              onChange={(event) => setDefaultModel(event.currentTarget.value)}
+              placeholder="Provider default"
+              value={defaultModel}
+            />
+          </label>
+          <label className="grid gap-1.5 text-sm font-medium text-foreground">
+            Executable override
+            <Input
+              disabled={pending}
+              onChange={(event) => setExecutablePath(event.currentTarget.value)}
+              placeholder="SDK/provider discovery"
+              value={executablePath}
+            />
+          </label>
+        </div>
+        {enableBlocked ? (
+          <p className="text-sm text-warning">
+            This provider cannot be enabled until it is available on this machine.
+          </p>
+        ) : null}
+        {!maxConcurrentValid ? (
+          <p className="text-sm text-destructive">Max concurrent runs must be empty or at least 1.</p>
+        ) : null}
+        <div className="flex justify-end">
+          <Button
+            disabled={pending || !maxConcurrentValid || enableBlocked}
+            loading={pending}
+            onClick={() =>
+              onSave({
+                defaultModel: defaultModel.trim().length === 0 ? null : defaultModel.trim(),
+                enabled: draftEnabled,
+                executablePath: executablePath.trim().length === 0 ? null : executablePath.trim(),
+                maxConcurrentRuns: parsedMaxConcurrentRuns,
+              })
+            }
+            size="sm"
+          >
+            Save
+          </Button>
+        </div>
+      </div>
+    </SectionShell>
+  );
+};
+
 export const ApplicationSettingsPanel = ({
   agentProviders = [],
   appConfig,
@@ -335,7 +547,7 @@ export const ApplicationSettingsPanel = ({
   };
 
   if (section === "agents") {
-    return <PageShell {...settingPageCopy.agents} />;
+    return <AgentsSettingsPanel appConfig={appConfig} providers={agentProviders} />;
   }
 
   if (section === "endpoints") {

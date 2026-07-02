@@ -280,12 +280,28 @@ export const OnboardingConfigOutput = Schema.Struct({
   completedAt: Schema.optional(Schema.String),
 });
 export const AgentProviderPreferenceOutput = Schema.Struct({
+  config: Schema.optional(JsonObject),
+  defaultModel: Schema.optional(Schema.NullOr(Schema.String)),
   enabled: Schema.Boolean,
+  executablePath: Schema.optional(Schema.NullOr(Schema.String)),
   id: AgentProviderId,
+  maxConcurrentRuns: Schema.NullOr(PositiveInteger),
 });
 export const AgentProvidersConfigOutput = Schema.Struct({
   preferences: Schema.Array(AgentProviderPreferenceOutput),
 });
+export const AgentProviderPreferencePatch = Schema.Struct({
+  config: Schema.optional(JsonObject),
+  defaultModel: Schema.optional(Schema.NullOr(Schema.String)),
+  enabled: Schema.optional(Schema.Boolean),
+  executablePath: Schema.optional(Schema.NullOr(Schema.String)),
+  maxConcurrentRuns: Schema.optional(Schema.NullOr(PositiveInteger)),
+});
+export const AgentProviderPreferencePayload = strictSchema(
+  Schema.Struct({
+    preference: AgentProviderPreferencePatch,
+  }),
+);
 export const ThemeConfigOutput = Schema.Struct({
   density: InterfaceDensity,
   preference: ThemePreference,
@@ -331,7 +347,7 @@ export const AppConfigOutput = Schema.Struct({
   localWorkspace: LocalWorkspaceConfigOutput,
   onboarding: OnboardingConfigOutput,
   profile: ProfileOutput,
-  schemaVersion: Schema.Literal(3),
+  schemaVersion: Schema.Literal(4),
   theme: ThemeConfigOutput,
 });
 export const AppConfigResourceEnvelope = ResourceEnvelopeOf(AppConfigOutput);

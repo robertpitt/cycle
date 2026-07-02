@@ -6,11 +6,14 @@ export type JsonValue = typeof JsonValue.Type;
 export const JsonObject = Schema.Record(Schema.String, JsonValue);
 export type JsonObject = typeof JsonObject.Type;
 
-export const AgentProviderId = Schema.Literal("codex");
+export const AgentProviderId = Schema.Literals(["codex", "claude-code"]);
 export type AgentProviderId = typeof AgentProviderId.Type;
 
 export const AgentProvider = AgentProviderId;
 export type AgentProvider = AgentProviderId;
+
+const NonNegativeInteger = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+const PositiveInteger = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
 
 export const AgentWorkJobType = Schema.Literals([
   "chat",
@@ -54,25 +57,40 @@ export const AgentHarnessStatus = Schema.Literals([
 export type AgentHarnessStatus = typeof AgentHarnessStatus.Type;
 
 export const DetectedAgentProvider = Schema.Struct({
+  activeRunCount: Schema.optional(NonNegativeInteger),
   capabilities: Schema.optional(AgentCapabilities),
+  configuration: Schema.optional(JsonObject),
+  configurationSchema: Schema.optional(JsonObject),
+  configuredExecutablePath: Schema.optional(Schema.String),
   detectedAt: Schema.String,
+  defaultModel: Schema.optional(Schema.NullOr(Schema.String)),
   executable: Schema.String,
   executablePath: Schema.optional(Schema.String),
   id: AgentProviderId,
+  maxConcurrentRuns: Schema.optional(Schema.NullOr(PositiveInteger)),
+  message: Schema.optional(Schema.String),
+  models: Schema.optional(Schema.Array(Schema.String)),
   name: Schema.String,
-  status: Schema.Literals(["available", "missing"]),
+  packageName: Schema.optional(Schema.String),
+  status: Schema.Literals(["available", "missing", "degraded", "disabled", "unsupported"]),
 });
 export type DetectedAgentProvider = typeof DetectedAgentProvider.Type;
 
 export const AgentProviderProfile = Schema.Struct({
+  activeRunCount: Schema.optional(NonNegativeInteger),
   capabilities: AgentCapabilities,
   checkedAt: Schema.String,
+  configurationSchema: Schema.optional(JsonObject),
   configuration: JsonObject,
+  configuredExecutablePath: Schema.optional(Schema.String),
+  defaultModel: Schema.optional(Schema.NullOr(Schema.String)),
   displayName: Schema.String,
   executableName: Schema.String,
   executablePath: Schema.optional(Schema.String),
+  maxConcurrentRuns: Schema.optional(Schema.NullOr(PositiveInteger)),
   message: Schema.optional(Schema.String),
   models: Schema.Array(Schema.String),
+  packageName: Schema.optional(Schema.String),
   provider: AgentProviderId,
   status: AgentHarnessStatus,
 });

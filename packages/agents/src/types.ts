@@ -97,9 +97,15 @@ export type AgentHarnessStatus = ContractAgentHarnessStatus;
 export type AgentProviderProfile = ContractAgentProviderProfile;
 
 export type AgentProviderDefinition = {
+  readonly capabilities?: AgentCapabilities;
+  readonly configurationSchema?: JsonSchema;
+  readonly defaultEnabled?: boolean;
+  readonly defaultMaxConcurrentRuns?: number | null;
+  readonly documentationUrl?: string;
   readonly executable: string;
   readonly id: AgentProviderId;
   readonly name: string;
+  readonly packageName?: string;
 };
 
 export type DetectedAgentProvider = ContractDetectedAgentProvider;

@@ -160,6 +160,7 @@ const makeLayer = (config: AppConfigState) =>
               preference,
             },
           }),
+        updateAgentProviderPreference: () => Effect.succeed(config),
         shouldAutoSyncRepository: () => Effect.succeed(false),
         startThemeLifecycleSupervision: () => Effect.void,
         syncThemePreference: () =>

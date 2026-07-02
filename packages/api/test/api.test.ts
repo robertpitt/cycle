@@ -5,7 +5,12 @@ import {
   AgentTaskStore,
   makeInMemoryAgentTaskStore,
 } from "@cycle/agents/task";
-import type { AgentProviderProfile, AgentService, AgentTurnRequest } from "@cycle/agents/types";
+import type {
+  AgentProviderId,
+  AgentProviderProfile,
+  AgentService,
+  AgentTurnRequest,
+} from "@cycle/agents/types";
 import { DatabaseService, type DatabaseServiceShape } from "@cycle/database";
 import { type TicketDocument } from "@cycle/contracts";
 import type { BranchAssociation, WorktreeRecord, WorktreeServiceShape } from "@cycle/git/worktree";
@@ -26,6 +31,15 @@ import { prepareChatTurn } from "../src/http/handlers/v1/chat/prepare.ts";
 
 const repository = { id: "test-repository" };
 const token = "test-token";
+
+type TestAgentProviderPreference = {
+  readonly config: Readonly<Record<string, unknown>>;
+  readonly defaultModel: string | null;
+  readonly enabled: boolean;
+  readonly executablePath: string | null;
+  readonly id: AgentProviderId;
+  readonly maxConcurrentRuns: number | null;
+};
 
 const makeTestAgentTaskLayer = () =>
   AgentTaskServiceLive().pipe(
@@ -951,7 +965,7 @@ describe("@cycle/api", () => {
   it("serves local app config and profile updates through the authenticated API", async () => {
     let appConfig = {
       agentProviders: {
-        preferences: [],
+        preferences: [] as TestAgentProviderPreference[],
       },
       api: {
         enabled: true,
@@ -982,7 +996,7 @@ describe("@cycle/api", () => {
         displayName: "Desktop User",
         email: "desktop@example.com",
       },
-      schemaVersion: 3,
+      schemaVersion: 4,
       theme: {
         density: "compact",
         preference: "system",
@@ -1021,6 +1035,47 @@ describe("@cycle/api", () => {
             },
           };
           return appConfig.profile;
+        },
+        updateAgentProviderPreference: async ({ preference, providerId }) => {
+          const currentPreference = appConfig.agentProviders.preferences.find(
+            (candidate) => candidate.id === providerId,
+          ) ?? {
+            config: {},
+            defaultModel: null,
+            enabled: false,
+            executablePath: null,
+            id: providerId,
+            maxConcurrentRuns: 1,
+          };
+          const nextPreference = {
+            ...currentPreference,
+            ...preference,
+            config: preference.config ?? currentPreference.config,
+            defaultModel:
+              preference.defaultModel === undefined
+                ? currentPreference.defaultModel
+                : preference.defaultModel,
+            executablePath:
+              preference.executablePath === undefined
+                ? currentPreference.executablePath
+                : preference.executablePath,
+            maxConcurrentRuns:
+              preference.maxConcurrentRuns === undefined
+                ? currentPreference.maxConcurrentRuns
+                : preference.maxConcurrentRuns,
+          };
+          appConfig = {
+            ...appConfig,
+            agentProviders: {
+              preferences: [
+                ...appConfig.agentProviders.preferences.filter(
+                  (candidate) => candidate.id !== providerId,
+                ),
+                nextPreference,
+              ],
+            },
+          };
+          return appConfig;
         },
       },
     });
@@ -1070,6 +1125,45 @@ describe("@cycle/api", () => {
       };
       assert.equal(density.status, 200);
       assert.equal(densityBody.data?.theme?.density, "spacious");
+
+      const providerPreference = await api.fetch(
+        new Request("http://cycle.test/v1/agents/providers/claude-code/preferences", {
+          ...authed({
+            preference: {
+              config: {
+                permissionMode: "default",
+              },
+              defaultModel: "claude-sonnet-4-20250514",
+              enabled: true,
+              executablePath: "/usr/local/bin/claude",
+              maxConcurrentRuns: 2,
+            },
+          }),
+          method: "PATCH",
+        }),
+      );
+      const providerPreferenceBody = (await providerPreference.json()) as {
+        data?: {
+          agentProviders?: {
+            preferences?: ReadonlyArray<{
+              defaultModel?: string | null;
+              enabled?: boolean;
+              executablePath?: string | null;
+              id?: string;
+              maxConcurrentRuns?: number | null;
+            }>;
+          };
+        };
+      };
+      const claudePreference =
+        providerPreferenceBody.data?.agentProviders?.preferences?.find(
+          (preference) => preference.id === "claude-code",
+        );
+      assert.equal(providerPreference.status, 200);
+      assert.equal(claudePreference?.enabled, true);
+      assert.equal(claudePreference?.defaultModel, "claude-sonnet-4-20250514");
+      assert.equal(claudePreference?.executablePath, "/usr/local/bin/claude");
+      assert.equal(claudePreference?.maxConcurrentRuns, 2);
 
       const removed = await api.fetch(
         new Request("http://cycle.test/v1/repositories/cycle", {

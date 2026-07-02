@@ -1,15 +1,16 @@
-import { AgentProviderId } from "@cycle/contracts/schemas";
+import { AgentProviderId, JsonObject } from "@cycle/contracts/schemas";
 import { Config, ConfigProvider, Context, Effect, Schema } from "effect";
 import { AppConfigError } from "../errors/index.ts";
 
 export { AppConfigError } from "../errors/index.ts";
 
-export const CURRENT_APP_CONFIG_SCHEMA_VERSION = 3;
+export const CURRENT_APP_CONFIG_SCHEMA_VERSION = 4;
 export const DEFAULT_API_PORT = 4738;
 const ApiPort = Schema.Int.check(
   Schema.isGreaterThanOrEqualTo(1),
   Schema.isLessThanOrEqualTo(65535),
 );
+const PositiveInteger = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
 
 export const ThemePreference = Schema.Literals(["light", "dark", "system"]);
 export type ThemePreference = typeof ThemePreference.Type;
@@ -36,8 +37,12 @@ export const ProfileConfig = Schema.Struct({
 export type ProfileConfig = typeof ProfileConfig.Type;
 
 export const AgentProviderPreference = Schema.Struct({
+  config: Schema.optional(JsonObject),
+  defaultModel: Schema.optional(Schema.NullOr(Schema.String)),
   enabled: Schema.Boolean,
+  executablePath: Schema.optional(Schema.NullOr(Schema.String)),
   id: AgentProviderId,
+  maxConcurrentRuns: Schema.NullOr(PositiveInteger),
 });
 export type AgentProviderPreference = typeof AgentProviderPreference.Type;
 
@@ -133,6 +138,18 @@ export const defaultAppConfig = (): AppConfigState => ({
     density: "compact",
     preference: "system",
   },
+});
+
+export const defaultAgentProviderPreference = (
+  id: AgentProviderPreference["id"],
+  enabled = false,
+): AgentProviderPreference => ({
+  config: {},
+  defaultModel: null,
+  enabled,
+  executablePath: null,
+  id,
+  maxConcurrentRuns: 1,
 });
 
 export const parseAppConfig = (value: unknown): Effect.Effect<AppConfigState, AppConfigError> =>

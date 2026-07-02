@@ -1,4 +1,13 @@
 import { startCycleApiServer, type RepositoryOpenRequest } from "@cycle/api";
+import { mcpBearerTokenEnvVar } from "@cycle/agents/codex";
+import { detectAgentProviders } from "@cycle/agents/detection";
+import {
+  agentProviderDefinitionById,
+  agentProviderProfileFromDetection,
+  supportedAgentProviders,
+} from "@cycle/agents/providers";
+import { makeDefaultAgentServiceRegistry } from "@cycle/agents/service";
+import type { AgentProviderId, AgentProviderProfile } from "@cycle/agents/types";
 import {
   AgentTaskServiceLive,
   AgentTaskStore,
@@ -16,7 +25,13 @@ import { join } from "node:path";
 import { Effect, FileSystem, Layer, Path, Schema } from "effect";
 import { DesktopApiError } from "../errors/index.ts";
 import { DesktopRuntime } from "../platform/DesktopRuntime.ts";
-import { AppConfig, AppConfigError, type RepositoryRecord } from "../shared/AppConfig.ts";
+import {
+  AppConfig,
+  AppConfigError,
+  defaultAgentProviderPreference,
+  type AppConfigState,
+  type RepositoryRecord,
+} from "../shared/AppConfig.ts";
 import { DesktopBootstrap } from "../shared/Bootstrap.ts";
 import { LocalWorkspace } from "../shared/LocalWorkspace.ts";
 import { cycleCliConfigPathFromHome } from "./CycleDirectory.ts";
@@ -121,6 +136,51 @@ const repositoryById = (
 ): RepositoryRecord | undefined =>
   repositories.find((repository) => repository.id === repositoryId);
 
+const profileWithPreference = (
+  profile: AgentProviderProfile,
+  config: AppConfigState,
+  providerId: AgentProviderId,
+): AgentProviderProfile => {
+  const definition = agentProviderDefinitionById(providerId);
+  const preference =
+    config.agentProviders.preferences.find((entry) => entry.id === providerId) ??
+    defaultAgentProviderPreference(providerId, definition.defaultEnabled ?? false);
+  const enabled = preference.enabled;
+
+  return {
+    ...profile,
+    activeRunCount: profile.activeRunCount ?? 0,
+    configuration: {
+      ...profile.configuration,
+      detectedStatus: profile.status,
+      preference: {
+        config: preference.config ?? {},
+        defaultModel: preference.defaultModel ?? null,
+        enabled: preference.enabled,
+        executablePath: preference.executablePath ?? null,
+        maxConcurrentRuns: preference.maxConcurrentRuns,
+      },
+    },
+    ...(preference.executablePath === null || preference.executablePath === undefined
+      ? {}
+      : { configuredExecutablePath: preference.executablePath }),
+    defaultModel: preference.defaultModel ?? null,
+    maxConcurrentRuns: preference.maxConcurrentRuns,
+    message: enabled
+      ? profile.message
+      : `${profile.displayName} is disabled in Cycle settings.`,
+    status: enabled ? profile.status : "disabled",
+  };
+};
+
+const preferenceForProvider = (config: AppConfigState, providerId: AgentProviderId) => {
+  const definition = agentProviderDefinitionById(providerId);
+  return (
+    config.agentProviders.preferences.find((entry) => entry.id === providerId) ??
+    defaultAgentProviderPreference(providerId, definition.defaultEnabled ?? false)
+  );
+};
+
 export const startDesktopApi = Effect.fnUntraced(function* () {
   const appConfig = yield* AppConfig;
   const bootstrap = yield* DesktopBootstrap;
@@ -183,6 +243,53 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
         const agentChatStore = makeDesktopAgentChatStore(cycleDatabasePath());
         const agentSessionStore = makeDesktopAgentSessionStore(cycleDatabasePath());
         const agentTaskStore = makeNodeSqliteAgentTaskStore(cycleDatabasePath());
+        const codexPreference = preferenceForProvider(config, "codex");
+        const claudeCodePreference = preferenceForProvider(config, "claude-code");
+        const agentServices = makeDefaultAgentServiceRegistry({
+          env: {
+            ...process.env,
+            [mcpBearerTokenEnvVar]: config.api.staticToken,
+          },
+          ...(codexPreference.executablePath === null ||
+          codexPreference.executablePath === undefined
+            ? {}
+            : { executablePath: codexPreference.executablePath }),
+          claudeCode: {
+            config: claudeCodePreference.config ?? {},
+            executablePath: claudeCodePreference.executablePath ?? null,
+          },
+          sessionStore: agentSessionStore,
+        });
+        const listAgentProviderProfiles = async (): Promise<readonly AgentProviderProfile[]> => {
+          const currentConfig = await runtime.runPromise(
+            "api.agentProviderProfiles.config",
+            appConfig.read(),
+          );
+          const detected = await Effect.runPromise(detectAgentProviders(process.env));
+          const detectedById = new Map(detected.map((provider) => [provider.id, provider]));
+
+          return supportedAgentProviders.map((definition) => {
+            const detectedProvider = detectedById.get(definition.id);
+            const baseProfile =
+              detectedProvider === undefined
+                ? {
+                    ...agentProviderProfileFromDetection({
+                      capabilities:
+                        definition.capabilities ??
+                        agentProviderDefinitionById(definition.id).capabilities,
+                      detectedAt: new Date().toISOString(),
+                      executable: definition.executable,
+                      id: definition.id,
+                      name: definition.name,
+                      packageName: definition.packageName,
+                      status: "missing",
+                    }),
+                    message: `${definition.name} provider status has not been checked.`,
+                  }
+                : agentProviderProfileFromDetection(detectedProvider);
+            return profileWithPreference(baseProfile, currentConfig, definition.id);
+          });
+        };
         const agentTaskLayer = AgentTaskServiceLive().pipe(
           Layer.provide(
             Layer.succeed(AgentTaskStore, AgentTaskStore.of(agentTaskStore)),
@@ -192,6 +299,8 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
         try {
           const handle = await startCycleApiServer({
             agentChatStore,
+            agentProviderProfiles: listAgentProviderProfiles,
+            agentServices,
             agentSessionStore,
             host: config.api.host,
             localSettings: {
@@ -232,6 +341,14 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
                   preferences.updateRepositoryPreferences({
                     id: input.id,
                     preferences: input.preferences,
+                  }),
+                ),
+              updateAgentProviderPreference: (input) =>
+                runtime.runPromise(
+                  "api.localSettings.updateAgentProviderPreference",
+                  preferences.updateAgentProviderPreference({
+                    preference: input.preference,
+                    providerId: input.providerId,
                   }),
                 ),
             },

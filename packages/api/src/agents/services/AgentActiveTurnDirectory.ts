@@ -20,6 +20,7 @@ export type AgentActiveTurnBeginResult =
 
 export type AgentActiveTurnDirectoryShape = {
   readonly begin: (input: AgentActiveTurnBeginInput) => AgentActiveTurnBeginResult;
+  readonly countByProvider: (provider: AgentProviderId) => number;
   readonly finish: (
     provider: AgentProviderId,
     sessionId: string,
@@ -63,6 +64,8 @@ export const makeAgentActiveTurnDirectory = (): AgentActiveTurnDirectoryShape =>
       records.set(key, record);
       return { active: true, record };
     },
+    countByProvider: (provider) =>
+      [...records.values()].filter((record) => record.provider === provider).length,
     finish: (provider, sessionId) => {
       records.delete(activeTurnKey(provider, sessionId));
     },

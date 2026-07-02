@@ -25,12 +25,13 @@ import {
   ProfileConfig as ProfileConfigSchema,
   RepositoryRecord as AppRepositoryRecordSchema,
   type AppConfigState,
+  type AgentProviderPreference,
   type InterfaceDensity,
   type ProfileConfig,
   type RepositoryRecord as AppRepositoryRecord,
   type ThemePreference,
 } from "../../shared/AppConfig.ts";
-import type { DetectedAgentProvider } from "../../shared/AgentProviders.ts";
+import type { AgentProviderId, DetectedAgentProvider } from "../../shared/AgentProviders.ts";
 import type { UpdateRepositoryPreferencesInput } from "../../shared/LocalWorkspace.ts";
 import type { CompleteOnboardingInput, ProfileUpdateInput } from "../../shared/Profile.ts";
 import { getDesktopBridge } from "./desktopBridge.ts";
@@ -105,7 +106,7 @@ export type OpenRepositoryPathInput = {
 
 export type StartTicketDraftChatInput = {
   readonly instructions: string;
-  readonly providerId?: "codex";
+  readonly providerId?: AgentProviderId;
   readonly repository: Pick<AppRepositoryRecord, "displayName" | "id" | "path">;
 };
 
@@ -981,13 +982,22 @@ const addIssueRecord = async (repositoryId: string, input: QueryInput): Promise<
 const detectedAgentProviderFromProfile = (
   profile: ApiAgentProviderProfile,
 ): DetectedAgentProvider => ({
+  activeRunCount: profile.activeRunCount,
   capabilities: profile.capabilities,
+  configuration: profile.configuration,
+  configurationSchema: profile.configurationSchema,
+  configuredExecutablePath: profile.configuredExecutablePath,
   detectedAt: profile.checkedAt,
+  defaultModel: profile.defaultModel,
   executable: profile.executableName,
   ...(profile.executablePath === undefined ? {} : { executablePath: profile.executablePath }),
   id: profile.provider,
+  maxConcurrentRuns: profile.maxConcurrentRuns,
+  message: profile.message,
+  models: profile.models,
   name: profile.displayName,
-  status: profile.status === "available" ? "available" : "missing",
+  packageName: profile.packageName,
+  status: profile.status,
 });
 
 export const cycleApiClient = {
@@ -1013,6 +1023,17 @@ export const cycleApiClient = {
 
   getAppConfig: (): Promise<AppConfigState> =>
     resource("GET", "/v1/app-config", AppConfigStateSchema),
+
+  updateAgentProviderPreference: (
+    providerId: AgentProviderId,
+    preference: Partial<Omit<AgentProviderPreference, "id">>,
+  ): Promise<AppConfigState> =>
+    resource(
+      "PATCH",
+      `/v1/agents/providers/${encodeSegment(providerId)}/preferences`,
+      AppConfigStateSchema,
+      { preference },
+    ),
 
   listAgentProviders: async (): Promise<ReadonlyArray<DetectedAgentProvider>> => {
     const response = await resource("GET", "/v1/agents/providers", AgentProvidersOutputSchema);

@@ -1,3 +1,4 @@
+import type { JsonObject } from "@cycle/contracts/schemas";
 import { session } from "electron";
 import { Context, Effect, Layer, Scope } from "effect";
 import { ElectronError } from "../platform/ElectronError.ts";
@@ -10,11 +11,14 @@ import {
   AppConfig,
   type AppConfigError,
   type AppConfigState,
+  defaultAgentProviderPreference,
   type InterfaceDensity,
   type ProfileConfig,
   type RepositoryRecord,
   type ThemePreference,
 } from "../shared/AppConfig.ts";
+import type { AgentProviderId } from "../shared/AgentProviders.ts";
+import { supportedAgentProviders } from "../shared/AgentProviders.ts";
 import { LocalWorkspace, type UpdateRepositoryPreferencesInput } from "../shared/LocalWorkspace.ts";
 import {
   Profile,
@@ -52,6 +56,16 @@ export type ElectronPreferencesService = {
   readonly updateRepositoryPreferences: (
     input: UpdateRepositoryPreferencesInput,
   ) => Effect.Effect<RepositoryRecord | null, AppConfigError>;
+  readonly updateAgentProviderPreference: (input: {
+    readonly providerId: AgentProviderId;
+    readonly preference: {
+      readonly config?: Readonly<Record<string, unknown>>;
+      readonly defaultModel?: string | null;
+      readonly enabled?: boolean;
+      readonly executablePath?: string | null;
+      readonly maxConcurrentRuns?: number | null;
+    };
+  }) => Effect.Effect<AppConfigState, AppConfigError>;
 };
 
 export class ElectronPreferences extends Context.Service<
@@ -110,9 +124,69 @@ export class ElectronPreferences extends Context.Service<
         themeState: electronTheme.current,
         updateProfile: (input) => profile.updateProfile(input),
         updateRepositoryPreferences: (input) => localWorkspace.updateRepositoryPreferences(input),
+        updateAgentProviderPreference: (input) =>
+          appConfig.update((current) => {
+            const knownProvider = supportedAgentProviders.find(
+              (provider) => provider.id === input.providerId,
+            );
+            const fallback = defaultAgentProviderPreference(
+              input.providerId,
+              knownProvider?.defaultEnabled ?? false,
+            );
+            const currentPreference =
+              current.agentProviders.preferences.find(
+                (preference) => preference.id === input.providerId,
+              ) ?? fallback;
+            const nextPreference = {
+              ...currentPreference,
+              ...input.preference,
+              config:
+                input.preference.config === undefined
+                  ? (currentPreference.config ?? {})
+                  : jsonObject(input.preference.config),
+              defaultModel:
+                input.preference.defaultModel === undefined
+                  ? (currentPreference.defaultModel ?? null)
+                  : normalizeNullableText(input.preference.defaultModel),
+              executablePath:
+                input.preference.executablePath === undefined
+                  ? (currentPreference.executablePath ?? null)
+                  : normalizeNullableText(input.preference.executablePath),
+              maxConcurrentRuns:
+                input.preference.maxConcurrentRuns === undefined
+                  ? currentPreference.maxConcurrentRuns
+                  : input.preference.maxConcurrentRuns,
+            };
+            const preferences = [
+              ...current.agentProviders.preferences.filter(
+                (preference) => preference.id !== input.providerId,
+              ),
+              nextPreference,
+            ].sort(
+              (left, right) =>
+                supportedAgentProviders.findIndex((provider) => provider.id === left.id) -
+                supportedAgentProviders.findIndex((provider) => provider.id === right.id),
+            );
+
+            return {
+              ...current,
+              agentProviders: {
+                preferences,
+              },
+            };
+          }),
       };
     }),
   );
 }
 
 export const ElectronPreferencesLive = ElectronPreferences.defaultLayer;
+
+const normalizeNullableText = (value: string | null): string | null => {
+  if (value === null) return null;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+};
+
+const jsonObject = (value: Readonly<Record<string, unknown>>): JsonObject =>
+  JSON.parse(JSON.stringify(value)) as JsonObject;

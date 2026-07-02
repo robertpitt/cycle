@@ -1,5 +1,10 @@
 import { Effect, Layer } from "effect";
-import { AppConfig, AppConfigError, type ProfileConfig } from "../shared/AppConfig.ts";
+import {
+  AppConfig,
+  AppConfigError,
+  defaultAgentProviderPreference,
+  type ProfileConfig,
+} from "../shared/AppConfig.ts";
 import {
   Profile,
   type CompleteOnboardingInput,
@@ -56,10 +61,9 @@ export const ProfileLive = Layer.effect(
           return yield* appConfig.update((current) => ({
             ...current,
             agentProviders: {
-              preferences: supportedAgentProviders.map((provider) => ({
-                enabled: enabledAgentProviderIds.has(provider.id),
-                id: provider.id,
-              })),
+              preferences: supportedAgentProviders.map((provider) =>
+                defaultAgentProviderPreference(provider.id, enabledAgentProviderIds.has(provider.id)),
+              ),
             },
             onboarding: {
               completed: true,

@@ -2,12 +2,6 @@ import type { AgentCapabilities, AgentProviderDefinition } from "../../types.ts"
 import { codexAuthorityCapabilities } from "../capabilities.ts";
 import { planningJobTypes } from "../shared.ts";
 
-export const codexProviderDefinition: AgentProviderDefinition = {
-  executable: "codex",
-  id: "codex",
-  name: "Codex",
-};
-
 export const codexAgentCapabilities: AgentCapabilities = {
   authorityModes: codexAuthorityCapabilities,
   provider: "codex",
@@ -38,4 +32,19 @@ export const codexAgentCapabilities: AgentCapabilities = {
     usage: true,
   },
   workspace: "provider-defined",
+};
+
+export const codexProviderDefinition: AgentProviderDefinition = {
+  capabilities: codexAgentCapabilities,
+  configurationSchema: {
+    additionalProperties: false,
+    properties: {},
+    type: "object",
+  },
+  defaultEnabled: true,
+  defaultMaxConcurrentRuns: 1,
+  executable: "codex",
+  id: "codex",
+  name: "Codex",
+  packageName: "@cycle/codex-app-server",
 };

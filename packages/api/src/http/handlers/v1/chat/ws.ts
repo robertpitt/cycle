@@ -894,11 +894,18 @@ const runProviderTurn = async (input: {
   readonly turn: AgentChatTurnRecord;
   readonly userMessage: AgentChatMessageRecord;
 }): Promise<void> => {
+  const providerId = input.turn.providerId as AgentProviderId;
+  const providerBlocker = await providerExecutionBlocker(input.runtime, providerId);
+  if (providerBlocker !== undefined) {
+    await failTurn(input, providerBlocker);
+    return;
+  }
+
   const service = await Effect.runPromise(
-    input.runtime.agentServices.serviceFor(input.turn.providerId as AgentProviderId),
+    input.runtime.agentServices.serviceFor(providerId),
   );
   const activeTurn = input.runtime.activeAgentTurns.begin({
-    provider: input.turn.providerId as AgentProviderId,
+    provider: providerId,
     requestId: input.turn.id,
     sessionId: input.thread.sessionId ?? input.thread.id,
     threadId: input.thread.id,
@@ -1402,6 +1409,30 @@ const runProviderTurn = async (input: {
       input.thread.sessionId ?? input.thread.id,
     );
   }
+};
+
+const providerExecutionBlocker = async (
+  runtime: CycleApiRuntimeShape,
+  providerId: AgentProviderId,
+): Promise<string | undefined> => {
+  const profiles = await runtime.agentProviderProfiles().catch(() => []);
+  const profile = profiles.find((candidate) => candidate.provider === providerId);
+  if (profile === undefined) return `Agent provider '${providerId}' is not configured.`;
+  if (profile.status === "disabled") return `${profile.displayName} is disabled in Cycle settings.`;
+  if (profile.status !== "available") {
+    return profile.message ?? `${profile.displayName} is not available.`;
+  }
+
+  const maxConcurrentRuns = profile.maxConcurrentRuns;
+  if (
+    maxConcurrentRuns !== null &&
+    maxConcurrentRuns !== undefined &&
+    runtime.activeAgentTurns.countByProvider(providerId) >= maxConcurrentRuns
+  ) {
+    return `${profile.displayName} has reached its configured concurrency limit.`;
+  }
+
+  return undefined;
 };
 
 const updateTurn = async (
@@ -2347,7 +2378,7 @@ const providerProfileForChat = (
 
   return {
     availability,
-    defaultModel: models[0] ?? null,
+    defaultModel: profile.defaultModel ?? models[0] ?? null,
     description: profile.message ?? profile.executableName,
     id: profile.provider,
     label: profile.displayName,

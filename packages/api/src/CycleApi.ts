@@ -100,10 +100,17 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
       agentServices,
       now: options.now,
     });
+  const listAgentProviderProfiles = async () => {
+    const profiles = await (options.agentProviderProfiles ?? listLocalAgentProviderProfiles)();
+    return profiles.map((profile) => ({
+      ...profile,
+      activeRunCount: activeAgentTurns.countByProvider(profile.provider),
+    }));
+  };
   const runtimeShape: CycleApiRuntimeShape = {
     activeAgentTurns,
     agentOrchestration,
-    agentProviderProfiles: options.agentProviderProfiles ?? listLocalAgentProviderProfiles,
+    agentProviderProfiles: listAgentProviderProfiles,
     agentServices,
     ...(options.agentChatStore === undefined ? {} : { agentChatStore: options.agentChatStore }),
     ...(options.agentSessionStore === undefined

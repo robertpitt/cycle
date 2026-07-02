@@ -1,4 +1,3 @@
-import { isAgentProviderId, supportedAgentProviders } from "@cycle/agents/providers";
 import {
   AgentCapabilities as ContractAgentCapabilities,
   AgentProviderId as ContractAgentProviderId,
@@ -6,11 +5,36 @@ import {
   DetectedAgentProvider as ContractDetectedAgentProvider,
 } from "@cycle/contracts/schemas";
 
-export type { AgentProviderDefinition } from "@cycle/agents/types";
-export { isAgentProviderId, supportedAgentProviders };
-
 export const AgentProviderId = ContractAgentProviderId;
 export type AgentProviderId = typeof AgentProviderId.Type;
+
+export type AgentProviderDefinition = {
+  readonly defaultEnabled?: boolean;
+  readonly defaultMaxConcurrentRuns?: number | null;
+  readonly executable: string;
+  readonly id: AgentProviderId;
+  readonly name: string;
+};
+
+export const supportedAgentProviders = [
+  {
+    defaultEnabled: true,
+    defaultMaxConcurrentRuns: 1,
+    executable: "codex",
+    id: "codex",
+    name: "Codex",
+  },
+  {
+    defaultEnabled: true,
+    defaultMaxConcurrentRuns: 1,
+    executable: "claude",
+    id: "claude-code",
+    name: "Claude Code",
+  },
+] as const satisfies readonly AgentProviderDefinition[];
+
+export const isAgentProviderId = (value: unknown): value is AgentProviderId =>
+  supportedAgentProviders.some((provider) => provider.id === value);
 
 export const AgentWorkJobType = ContractAgentWorkJobType;
 export type AgentWorkJobType = typeof AgentWorkJobType.Type;
