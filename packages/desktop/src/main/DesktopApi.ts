@@ -4,6 +4,7 @@ import { detectAgentProviders } from "@cycle/agents/detection";
 import {
   agentProviderDefinitionById,
   agentProviderProfileFromDetection,
+  enrichAgentProviderProfileWithModels,
   supportedAgentProviders,
 } from "@cycle/agents/providers";
 import { makeDefaultAgentServiceRegistry } from "@cycle/agents/service";
@@ -164,7 +165,7 @@ const profileWithPreference = (
     ...(preference.executablePath === null || preference.executablePath === undefined
       ? {}
       : { configuredExecutablePath: preference.executablePath }),
-    defaultModel: preference.defaultModel ?? null,
+    defaultModel: preference.defaultModel ?? profile.defaultModel ?? null,
     maxConcurrentRuns: preference.maxConcurrentRuns,
     message: enabled
       ? profile.message
@@ -268,27 +269,40 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
           const detected = await Effect.runPromise(detectAgentProviders(process.env));
           const detectedById = new Map(detected.map((provider) => [provider.id, provider]));
 
-          return supportedAgentProviders.map((definition) => {
-            const detectedProvider = detectedById.get(definition.id);
-            const baseProfile =
-              detectedProvider === undefined
-                ? {
-                    ...agentProviderProfileFromDetection({
-                      capabilities:
-                        definition.capabilities ??
-                        agentProviderDefinitionById(definition.id).capabilities,
-                      detectedAt: new Date().toISOString(),
-                      executable: definition.executable,
-                      id: definition.id,
-                      name: definition.name,
-                      packageName: definition.packageName,
-                      status: "missing",
-                    }),
-                    message: `${definition.name} provider status has not been checked.`,
-                  }
-                : agentProviderProfileFromDetection(detectedProvider);
-            return profileWithPreference(baseProfile, currentConfig, definition.id);
-          });
+          return Promise.all(
+            supportedAgentProviders.map(async (definition) => {
+              const detectedProvider = detectedById.get(definition.id);
+              const baseProfile =
+                detectedProvider === undefined
+                  ? {
+                      ...agentProviderProfileFromDetection({
+                        capabilities:
+                          definition.capabilities ??
+                          agentProviderDefinitionById(definition.id).capabilities,
+                        detectedAt: new Date().toISOString(),
+                        executable: definition.executable,
+                        id: definition.id,
+                        name: definition.name,
+                        packageName: definition.packageName,
+                        status: "missing",
+                      }),
+                      message: `${definition.name} provider status has not been checked.`,
+                    }
+                  : agentProviderProfileFromDetection(detectedProvider);
+              const preferredProfile = profileWithPreference(
+                baseProfile,
+                currentConfig,
+                definition.id,
+              );
+              return enrichAgentProviderProfileWithModels(preferredProfile, {
+                env: process.env,
+                executablePath:
+                  preferredProfile.configuredExecutablePath ??
+                  preferredProfile.executablePath ??
+                  preferredProfile.executableName,
+              });
+            }),
+          );
         };
         const agentTaskLayer = AgentTaskServiceLive().pipe(
           Layer.provide(

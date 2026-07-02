@@ -22,7 +22,7 @@ import type { DetectedAgentProvider } from "../../shared/AgentProviders.ts";
 import type { BootstrapStatus } from "../../shared/Bootstrap.ts";
 import { useSettingsDiagnosticsQuery } from "../queries/index.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
-import { Button, Input, StatusIndicator } from "@cycle/ui/atoms";
+import { Button, Input, Select, StatusIndicator } from "@cycle/ui/atoms";
 import { ExternalLink } from "lucide-react";
 import type { SettingsDiagnostics } from "../../ipc/Channels.ts";
 
@@ -144,6 +144,8 @@ const statusTone = (status: string): React.ComponentProps<typeof StatusIndicator
   if (status === "missing" || status === "unavailable" || status === "failed") return "warning";
   return "neutral";
 };
+
+const providerDefaultModelValue = "__cycle_provider_default_model__";
 
 const DiagnosticRow = ({
   actionUrl,
@@ -362,9 +364,7 @@ const AgentProviderSettingsCard = ({
   const preference = appConfig.agentProviders.preferences.find((entry) => entry.id === provider.id);
   const enabled = preference?.enabled ?? providerEnabled(provider, appConfig);
   const [draftEnabled, setDraftEnabled] = React.useState(enabled);
-  const [defaultModel, setDefaultModel] = React.useState(
-    preference?.defaultModel ?? provider.defaultModel ?? "",
-  );
+  const [defaultModel, setDefaultModel] = React.useState(preference?.defaultModel ?? "");
   const [executablePath, setExecutablePath] = React.useState(
     preference?.executablePath ?? provider.configuredExecutablePath ?? "",
   );
@@ -382,10 +382,38 @@ const AgentProviderSettingsCard = ({
   const maxConcurrentValid =
     parsedMaxConcurrentRuns === null ||
     (Number.isInteger(parsedMaxConcurrentRuns) && parsedMaxConcurrentRuns >= 1);
+  const providerModels = provider.models ?? [];
+  const hasProviderModels = providerModels.length > 0;
+  const modelSelectItems = React.useMemo(() => {
+    const items = [
+      {
+        label: "Provider default",
+        value: providerDefaultModelValue,
+      },
+      ...providerModels.map((model) => ({
+        label: model,
+        value: model,
+      })),
+    ];
+    const savedModel = defaultModel.trim();
+    if (
+      savedModel.length > 0 &&
+      savedModel !== providerDefaultModelValue &&
+      !providerModels.includes(savedModel)
+    ) {
+      items.push({
+        label: `${savedModel} (saved)`,
+        value: savedModel,
+      });
+    }
+    return items;
+  }, [defaultModel, providerModels]);
+  const modelSelectValue =
+    defaultModel.trim().length === 0 ? providerDefaultModelValue : defaultModel.trim();
 
   React.useEffect(() => {
     setDraftEnabled(enabled);
-    setDefaultModel(preference?.defaultModel ?? provider.defaultModel ?? "");
+    setDefaultModel(preference?.defaultModel ?? "");
     setExecutablePath(preference?.executablePath ?? provider.configuredExecutablePath ?? "");
     setMaxConcurrentRuns(String(preference?.maxConcurrentRuns ?? provider.maxConcurrentRuns ?? 1));
   }, [
@@ -394,7 +422,6 @@ const AgentProviderSettingsCard = ({
     preference?.executablePath,
     preference?.maxConcurrentRuns,
     provider.configuredExecutablePath,
-    provider.defaultModel,
     provider.maxConcurrentRuns,
   ]);
 
@@ -461,15 +488,31 @@ const AgentProviderSettingsCard = ({
               value={maxConcurrentRuns}
             />
           </label>
-          <label className="grid gap-1.5 text-sm font-medium text-foreground">
-            Default model
-            <Input
-              disabled={pending}
-              onChange={(event) => setDefaultModel(event.currentTarget.value)}
-              placeholder="Provider default"
-              value={defaultModel}
-            />
-          </label>
+          {hasProviderModels ? (
+            <div className="grid gap-1.5">
+              <Select
+                disabled={pending}
+                items={modelSelectItems}
+                label="Default model"
+                onValueChange={(value) => {
+                  if (value === null) return;
+                  setDefaultModel(value === providerDefaultModelValue ? "" : value);
+                }}
+                placeholder="Provider default"
+                value={modelSelectValue}
+              />
+            </div>
+          ) : (
+            <label className="grid gap-1.5 text-sm font-medium text-foreground">
+              Default model
+              <Input
+                disabled={pending}
+                onChange={(event) => setDefaultModel(event.currentTarget.value)}
+                placeholder="Provider default"
+                value={defaultModel}
+              />
+            </label>
+          )}
           <label className="grid gap-1.5 text-sm font-medium text-foreground">
             Executable override
             <Input

@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { makeCodexAppServerClient, type CodexAppServerClient } from "@cycle/codex-app-server";
 import { Schema } from "effect";
 import { describe, it, vi } from "vitest";
-import { makeCodexAgentService } from "../src/codex.ts";
+import { listCodexModelCatalog, makeCodexAgentService } from "../src/codex.ts";
 import { makeAgentJobRequestMetadata } from "../src/providers/capabilities.ts";
 import { parseStructured } from "../src/providers/codex/structured.ts";
 import type { AgentEvent, AgentSessionBinding, AgentSessionStore } from "../src/types.ts";
@@ -163,6 +163,59 @@ describe("@cycle/agents codex app-server adapter", () => {
       title: "Plan",
     });
     assert.throws(() => parseStructured(format, JSON.stringify({ debug: true, title: "Plan" })));
+  });
+
+  it("lists Codex models through app-server", async () => {
+    const peer = makeMockPeer();
+    const catalogPromise = listCodexModelCatalog({
+      appServerClient: peer.client,
+    });
+
+    const initialize = await peer.expectRequest("initialize");
+    peer.respond(initialize.id, {
+      platformFamily: "unix",
+      platformOs: "macos",
+      userAgent: "mock-codex",
+    });
+    await peer.expectNotification("initialized");
+
+    const firstPage = await peer.expectRequest("model/list");
+    assert.deepEqual(firstPage.params, {
+      includeHidden: false,
+      limit: 100,
+    });
+    peer.respond(firstPage.id, {
+      data: [
+        {
+          id: "gpt-5-codex",
+          isDefault: true,
+          model: "gpt-5-codex",
+        },
+      ],
+      nextCursor: "next",
+    });
+
+    const secondPage = await peer.expectRequest("model/list");
+    assert.deepEqual(secondPage.params, {
+      cursor: "next",
+      includeHidden: false,
+      limit: 100,
+    });
+    peer.respond(secondPage.id, {
+      data: [
+        {
+          id: "o4-mini",
+          isDefault: false,
+          model: "o4-mini",
+        },
+      ],
+      nextCursor: null,
+    });
+
+    assert.deepEqual(await catalogPromise, {
+      defaultModel: "gpt-5-codex",
+      models: ["gpt-5-codex", "o4-mini"],
+    });
   });
 
   it("streams normalized events and persists app-server session binding state", async () => {

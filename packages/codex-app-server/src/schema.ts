@@ -24,6 +24,9 @@ import type {
   ListMcpServerStatusParams as GeneratedListMcpServerStatusParams,
   ListMcpServerStatusResponse as GeneratedListMcpServerStatusResponse,
   McpServerRefreshResponse as GeneratedMcpServerRefreshResponse,
+  Model as GeneratedModel,
+  ModelListParams as GeneratedModelListParams,
+  ModelListResponse as GeneratedModelListResponse,
   PlanDeltaNotification as GeneratedPlanDeltaNotification,
   ReasoningSummaryTextDeltaNotification as GeneratedReasoningSummaryTextDeltaNotification,
   ReasoningTextDeltaNotification as GeneratedReasoningTextDeltaNotification,
@@ -96,6 +99,14 @@ export type McpServerRefreshResponse = GeneratedMcpServerRefreshResponse;
 export type ListMcpServerStatusParams = GeneratedListMcpServerStatusParams;
 
 export type ListMcpServerStatusResponse = WithUnknownFields<GeneratedListMcpServerStatusResponse>;
+
+export type Model = WithUnknownFields<GeneratedModel>;
+
+export type ModelListParams = GeneratedModelListParams;
+
+export type ModelListResponse = Omit<GeneratedModelListResponse, "data"> & {
+  readonly data: readonly Model[];
+};
 
 export type Thread = WithUnknownFields<GeneratedThread>;
 
@@ -287,6 +298,41 @@ const listMcpServerStatusParams: Validator<ListMcpServerStatusParams> = (value) 
   return object as ListMcpServerStatusParams;
 };
 
+const modelListParams: Validator<ModelListParams> = (value) => {
+  const object = value === undefined || value === null ? {} : passObject(value);
+  readOptionalString(object.cursor, "cursor");
+  if (object.limit !== undefined && object.limit !== null && typeof object.limit !== "number") {
+    throw new Error("limit must be a number");
+  }
+  if (
+    object.includeHidden !== undefined &&
+    object.includeHidden !== null &&
+    typeof object.includeHidden !== "boolean"
+  ) {
+    throw new Error("includeHidden must be a boolean");
+  }
+  return object as ModelListParams;
+};
+
+const model = (value: unknown, path = "model"): Model => {
+  const object = passObject<Model>(value, path);
+  readString(object.id, `${path}.id`);
+  readString(object.model, `${path}.model`);
+  return object;
+};
+
+const modelListResponse: Validator<ModelListResponse> = (value) => {
+  const object = passObject(value);
+  const data = readArray(object.data, "data").map((item, index) =>
+    model(item, `data[${index}]`),
+  );
+  return {
+    ...object,
+    data,
+    nextCursor: readOptionalString(object.nextCursor, "nextCursor") ?? null,
+  } as ModelListResponse;
+};
+
 const thread = (value: unknown, path = "thread"): Thread => {
   const object = passObject<Thread>(value, path);
   readString(object.id, `${path}.id`);
@@ -432,6 +478,7 @@ const clientRequestParams = {
   "thread/resume": threadResumeParams,
   "config/mcpServer/reload": undefinedParams,
   "mcpServerStatus/list": listMcpServerStatusParams,
+  "model/list": modelListParams,
   "turn/start": turnStartParams,
   "turn/interrupt": turnInterruptParams,
 } satisfies Record<ClientRequestMethod, Validator<unknown>>;
@@ -442,6 +489,7 @@ const clientRequestResponses = {
   "thread/resume": threadResumeResponse,
   "config/mcpServer/reload": emptyResponse,
   "mcpServerStatus/list": listMcpServerStatusResponse,
+  "model/list": modelListResponse,
   "turn/start": turnStartResponse,
   "turn/interrupt": emptyResponse,
 } satisfies Record<ClientRequestMethod, Validator<unknown>>;

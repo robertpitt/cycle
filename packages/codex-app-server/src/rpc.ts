@@ -17,6 +17,8 @@ import type {
   ListMcpServerStatusParams,
   ListMcpServerStatusResponse,
   McpServerRefreshResponse,
+  ModelListParams,
+  ModelListResponse,
   ServerRequestResolvedNotification,
   ThreadResumeParams,
   ThreadResumeResponse,
@@ -42,6 +44,7 @@ export const CLIENT_REQUEST_METHODS = {
   "thread/resume": "thread/resume",
   "config/mcpServer/reload": "config/mcpServer/reload",
   "mcpServerStatus/list": "mcpServerStatus/list",
+  "model/list": "model/list",
   "turn/start": "turn/start",
   "turn/interrupt": "turn/interrupt",
 } as const;
@@ -86,6 +89,7 @@ export type ClientRequestParamsByMethod = {
   readonly "thread/resume": ThreadResumeParams;
   readonly "config/mcpServer/reload": undefined;
   readonly "mcpServerStatus/list": ListMcpServerStatusParams;
+  readonly "model/list": ModelListParams;
   readonly "turn/start": TurnStartParams;
   readonly "turn/interrupt": TurnInterruptParams;
 };
@@ -96,6 +100,7 @@ export type ClientRequestResponsesByMethod = {
   readonly "thread/resume": ThreadResumeResponse;
   readonly "config/mcpServer/reload": McpServerRefreshResponse;
   readonly "mcpServerStatus/list": ListMcpServerStatusResponse;
+  readonly "model/list": ModelListResponse;
   readonly "turn/start": TurnStartResponse;
   readonly "turn/interrupt": TurnInterruptResponse;
 };

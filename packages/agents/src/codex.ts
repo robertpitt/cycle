@@ -5,3 +5,4 @@ export * from "./providers/codex/service.ts";
 export * from "./providers/codex/session.ts";
 export * from "./providers/codex/structured.ts";
 export * from "./providers/codex/types.ts";
+export * from "./providers/codex/app-server/modelCatalog.ts";
