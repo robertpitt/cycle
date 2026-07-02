@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { Circle, CircleCheck, CircleDashed, Tag, UserRound } from "lucide-react";
+import { Circle, CircleCheck, CircleDashed, Square, Tag, UserRound } from "lucide-react";
 import { Avatar, AvatarFallback } from "../../atoms/avatar/index.ts";
 import { PropertyPicker, type PropertyPickerSection } from "./index.ts";
 
@@ -90,6 +90,56 @@ const assigneeSections: readonly PropertyPickerSection[] = [
   },
 ];
 
+const ticketTypeSections: readonly PropertyPickerSection[] = [
+  {
+    id: "type",
+    options: [
+      {
+        icon: <Square aria-hidden className="size-4" />,
+        id: "auto",
+        label: "Auto",
+        rightMeta: "Let the agent choose; manual create defaults to task",
+      },
+      {
+        icon: <Square aria-hidden className="size-4" />,
+        id: "epic",
+        label: "Epic",
+        rightMeta: "Large outcome or parent workstream",
+      },
+      {
+        icon: <Square aria-hidden className="size-4" />,
+        id: "feature",
+        label: "Feature",
+        rightMeta: "New user-facing capability",
+      },
+      {
+        icon: <Square aria-hidden className="size-4" />,
+        id: "story",
+        label: "Story",
+        rightMeta: "User workflow or product behavior slice",
+      },
+      {
+        icon: <Square aria-hidden className="size-4" />,
+        id: "bug",
+        label: "Bug",
+        rightMeta: "Incorrect behavior or regression",
+      },
+      {
+        icon: <Square aria-hidden className="size-4" />,
+        id: "task",
+        label: "Task",
+        rightMeta: "Implementation or maintenance work",
+      },
+      {
+        icon: <Square aria-hidden className="size-4" />,
+        id: "spec",
+        label: "Spec",
+        rightMeta: "Requirements, contracts, or implementation spec",
+      },
+    ],
+  },
+];
+
 const meta = {
   args: {
     placeholder: "Status",
@@ -156,5 +206,17 @@ export const CustomLabel: Story = {
     sections: labelSections,
     triggerIcon: <Tag aria-hidden className="size-4" />,
     value: ["bug", "feature", "improvement"],
+  },
+};
+
+export const LongMetadata: Story = {
+  args: {
+    defaultOpen: true,
+    placeholder: "Type",
+    searchPlaceholder: "Choose type...",
+    sections: ticketTypeSections,
+    triggerIcon: <Square aria-hidden className="size-4" />,
+    value: "auto",
+    widthClassName: "w-[350px]",
   },
 };

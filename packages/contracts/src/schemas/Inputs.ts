@@ -464,6 +464,8 @@ export const IssueTemplateKind = Schema.Literals([
   "implementation",
   "initiative",
   "qa",
+  "specification",
+  "story",
 ]);
 export const IssueTemplateQuery = Schema.Struct({
   active: Schema.optional(Schema.Boolean),

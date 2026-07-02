@@ -76,8 +76,12 @@ export const branchTypeSegment = (ticketType: string | null | undefined): string
       return "epic";
     case "feature":
       return "feature";
+    case "story":
+      return "story";
     case "bug":
       return "bug";
+    case "specification":
+      return "specification";
     case "task":
     case "issue":
     case undefined:

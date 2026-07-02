@@ -205,13 +205,13 @@ describe("desktop app config", () => {
         config: {},
         enabled: true,
         id: "codex",
-        maxConcurrentRuns: 1,
+        maxConcurrentRuns: null,
       },
       {
         config: {},
         enabled: false,
         id: "claude-code",
-        maxConcurrentRuns: 1,
+        maxConcurrentRuns: null,
       },
     ]);
     assert.equal(result.completed.theme.preference, "dark");

@@ -42,7 +42,7 @@ export const AgentProviderPreference = Schema.Struct({
   enabled: Schema.Boolean,
   executablePath: Schema.optional(Schema.NullOr(Schema.String)),
   id: AgentProviderId,
-  maxConcurrentRuns: Schema.NullOr(PositiveInteger),
+  maxConcurrentRuns: Schema.optional(Schema.NullOr(PositiveInteger)),
 });
 export type AgentProviderPreference = typeof AgentProviderPreference.Type;
 
@@ -149,12 +149,13 @@ export const defaultAgentProviderPreference = (
   enabled,
   executablePath: null,
   id,
-  maxConcurrentRuns: 1,
+  maxConcurrentRuns: null,
 });
 
 export const parseAppConfig = (value: unknown): Effect.Effect<AppConfigState, AppConfigError> =>
   Config.schema(AppConfigState)
     .parse(ConfigProvider.fromUnknown(value))
+    .pipe(Effect.map(normalizeAppConfigState))
     .pipe(
       Effect.mapError(
         (cause) =>
@@ -165,6 +166,16 @@ export const parseAppConfig = (value: unknown): Effect.Effect<AppConfigState, Ap
           }),
       ),
     );
+
+const normalizeAppConfigState = (config: AppConfigState): AppConfigState => ({
+  ...config,
+  agentProviders: {
+    preferences: config.agentProviders.preferences.map((preference) => ({
+      ...preference,
+      maxConcurrentRuns: preference.maxConcurrentRuns ?? null,
+    })),
+  },
+});
 
 export type AppConfigService = {
   readonly configPath: Effect.Effect<string, AppConfigError>;

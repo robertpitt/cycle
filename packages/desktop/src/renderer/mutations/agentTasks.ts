@@ -1,4 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { TicketDocument } from "@cycle/contracts";
+import type { RepositoryRecord } from "../../shared/AppConfig.ts";
 import type { StartIssueAgentTaskInput } from "../lib/agentTasks.ts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { agentTaskEventsQueryKey, agentTasksQueryKey } from "../queries/agentTasks.ts";
@@ -60,12 +62,35 @@ export const useStartIssueAgentTaskMutation = (input: {
         void queryClient.invalidateQueries({
           queryKey: agentTasksQueryKey({ repositoryId, ticketId: issueId }),
         });
-        void queryClient.invalidateQueries({ queryKey: issueHistoryQueryKey(repositoryId, issueId) });
-        void queryClient.invalidateQueries({ queryKey: issueRecordsQueryKey(repositoryId, issueId) });
+        void queryClient.invalidateQueries({
+          queryKey: issueHistoryQueryKey(repositoryId, issueId),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: issueRecordsQueryKey(repositoryId, issueId),
+        });
       }
     },
   });
 };
+
+export const useStartIssueAgentChatMutation = (input: {
+  readonly issue?: Pick<TicketDocument, "id" | "status" | "title" | "type"> | null;
+  readonly repository?: Pick<RepositoryRecord, "displayName" | "id" | "path"> | null;
+}) =>
+  useMutation({
+    mutationFn: (payload: StartIssueAgentTaskInput) => {
+      if (!input.repository || !input.issue) {
+        throw new Error("Choose an issue before starting an agent chat.");
+      }
+      return cycleApiClient.startIssueAgentChat({
+        instructions: payload.instructions,
+        issue: input.issue,
+        model: payload.model,
+        providerId: payload.providerId,
+        repository: input.repository,
+      });
+    },
+  });
 
 const originField = (
   task: { readonly origin?: Readonly<Record<string, unknown>> } | null | undefined,

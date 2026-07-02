@@ -147,6 +147,9 @@ const statusTone = (status: string): React.ComponentProps<typeof StatusIndicator
 
 const providerDefaultModelValue = "__cycle_provider_default_model__";
 
+const maxConcurrentInputValue = (value: number | null | undefined): string =>
+  value === null || value === undefined ? "" : String(value);
+
 const DiagnosticRow = ({
   actionUrl,
   label,
@@ -368,7 +371,11 @@ const AgentProviderSettingsCard = ({
     preference?.executablePath ?? provider.configuredExecutablePath ?? "",
   );
   const [maxConcurrentRuns, setMaxConcurrentRuns] = React.useState(
-    String(preference?.maxConcurrentRuns ?? provider.maxConcurrentRuns ?? 1),
+    maxConcurrentInputValue(
+      preference?.maxConcurrentRuns === undefined
+        ? provider.maxConcurrentRuns
+        : preference.maxConcurrentRuns,
+    ),
   );
   const originalStatus = detectedStatus(provider);
   const enableBlocked =
@@ -414,7 +421,13 @@ const AgentProviderSettingsCard = ({
     setDraftEnabled(enabled);
     setDefaultModel(preference?.defaultModel ?? "");
     setExecutablePath(preference?.executablePath ?? provider.configuredExecutablePath ?? "");
-    setMaxConcurrentRuns(String(preference?.maxConcurrentRuns ?? provider.maxConcurrentRuns ?? 1));
+    setMaxConcurrentRuns(
+      maxConcurrentInputValue(
+        preference?.maxConcurrentRuns === undefined
+          ? provider.maxConcurrentRuns
+          : preference.maxConcurrentRuns,
+      ),
+    );
   }, [
     enabled,
     preference?.defaultModel,

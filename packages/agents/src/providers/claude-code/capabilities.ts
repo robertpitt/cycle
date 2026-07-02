@@ -1,10 +1,6 @@
 import type { AgentCapabilities, AgentProviderDefinition } from "../../types.ts";
 import { planningJobTypes } from "../shared.ts";
-import {
-  claudeCodeExecutable,
-  claudeCodePackageName,
-  claudeCodeProviderId,
-} from "./constants.ts";
+import { claudeCodeExecutable, claudeCodePackageName, claudeCodeProviderId } from "./constants.ts";
 import { claudeCodeConfigurationSchema } from "./config.ts";
 
 const claudeCodeAuthorityCapabilities = {
@@ -49,7 +45,7 @@ export const claudeCodeProviderDefinition: AgentProviderDefinition = {
   capabilities: claudeCodeAgentCapabilities,
   configurationSchema: claudeCodeConfigurationSchema,
   defaultEnabled: true,
-  defaultMaxConcurrentRuns: 1,
+  defaultMaxConcurrentRuns: null,
   documentationUrl: "https://code.claude.com/docs/en/agent-sdk/typescript",
   executable: claudeCodeExecutable,
   id: claudeCodeProviderId,

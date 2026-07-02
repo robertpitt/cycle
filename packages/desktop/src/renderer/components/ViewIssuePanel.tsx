@@ -33,7 +33,7 @@ import {
   useCancelAgentTaskMutation,
   useCreateIssueMutation,
   useRetryAgentTaskMutation,
-  useStartIssueAgentTaskMutation,
+  useStartIssueAgentChatMutation,
   useUpdateIssueMutation,
 } from "../mutations/index.ts";
 import {
@@ -61,6 +61,7 @@ import {
 type ViewIssuePanelProps = {
   readonly agentProviders?: readonly DetectedAgentProvider[];
   readonly issueId?: string;
+  readonly onChatOpen?: () => void;
   readonly repositories?: readonly RepositoryRecord[];
   readonly repositoryId?: string;
 };
@@ -373,10 +374,7 @@ const latestAgentTask = (tasks: readonly AgentTask[]): AgentTask | undefined =>
 const activeAgentTask = (tasks: readonly AgentTask[]): AgentTask | undefined =>
   latestAgentTask(tasks.filter((task) => !terminalAgentTaskStatuses.has(task.status)));
 
-const metadataString = (
-  task: AgentTask | undefined,
-  key: string,
-): string | undefined => {
+const metadataString = (task: AgentTask | undefined, key: string): string | undefined => {
   const value = task?.metadata?.[key];
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 };
@@ -537,9 +535,9 @@ const StartAgentTaskDialog = ({
           <DialogPanel width="md">
             <DialogHeader>
               <div>
-                <DialogTitle>Start agent task</DialogTitle>
+                <DialogTitle>Start agent chat</DialogTitle>
                 <DialogDescription>
-                  Queue a task from this issue's current context.
+                  Open an implementation chat from this issue's current context.
                 </DialogDescription>
               </div>
               <DialogCloseButton />
@@ -617,7 +615,7 @@ const StartAgentTaskDialog = ({
                   loading={pending}
                   type="submit"
                 >
-                  Start task
+                  Start chat
                 </Button>
               </DialogFooter>
             </form>
@@ -631,6 +629,7 @@ const StartAgentTaskDialog = ({
 export const ViewIssuePanel = ({
   agentProviders = [],
   issueId,
+  onChatOpen,
   repositories = [],
   repositoryId,
 }: ViewIssuePanelProps) => {
@@ -661,9 +660,10 @@ export const ViewIssuePanel = ({
     issueId,
     repositoryId,
   });
-  const startAgentTask = useStartIssueAgentTaskMutation({
-    issueId,
-    repositoryId,
+  const issueRepository = repositories.find((repository) => repository.id === repositoryId) ?? null;
+  const startAgentChat = useStartIssueAgentChatMutation({
+    issue: issueQuery.data ?? null,
+    repository: issueRepository,
   });
   const cancelAgentTask = useCancelAgentTaskMutation();
   const retryAgentTask = useRetryAgentTaskMutation();
@@ -702,9 +702,9 @@ export const ViewIssuePanel = ({
     const providerId = agentTaskProviderId.trim();
     if (!agentId || !providerId) return;
 
-    startAgentTask.mutate(
+    startAgentChat.mutate(
       {
-        authority: { mode: "read-only" },
+        authority: { mode: "workspace-write" },
         agentId,
         instructions: agentTaskInstructions.trim() || undefined,
         model: agentTaskModel.trim() || undefined,
@@ -712,7 +712,10 @@ export const ViewIssuePanel = ({
         requestedBy: "user",
       },
       {
-        onSuccess: () => setAgentTaskDialogOpen(false),
+        onSuccess: () => {
+          setAgentTaskDialogOpen(false);
+          onChatOpen?.();
+        },
       },
     );
   };
@@ -985,7 +988,7 @@ export const ViewIssuePanel = ({
       />
       <StartAgentTaskDialog
         agentId={agentTaskAgentId}
-        error={startAgentTask.error instanceof Error ? startAgentTask.error.message : undefined}
+        error={startAgentChat.error instanceof Error ? startAgentChat.error.message : undefined}
         instructions={agentTaskInstructions}
         model={agentTaskModel}
         onAgentIdChange={setAgentTaskAgentId}
@@ -995,7 +998,7 @@ export const ViewIssuePanel = ({
         onProviderIdChange={setAgentTaskProviderId}
         onSubmit={submitAgentTask}
         open={agentTaskDialogOpen}
-        pending={startAgentTask.isPending}
+        pending={startAgentChat.isPending}
         providerId={agentTaskProviderId}
         providers={agentProviders}
       />

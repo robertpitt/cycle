@@ -114,6 +114,18 @@ export type StartTicketDraftChatResult = {
   readonly threadId: string;
 };
 
+export type StartIssueAgentChatInput = {
+  readonly instructions?: string | null;
+  readonly issue: Pick<TicketDocument, "id" | "status" | "title" | "type">;
+  readonly model?: string | null;
+  readonly providerId?: string;
+  readonly repository: Pick<AppRepositoryRecord, "displayName" | "id" | "path">;
+};
+
+export type StartIssueAgentChatResult = {
+  readonly threadId: string;
+};
+
 const API_URL_STORAGE_KEY = "cycle.api.baseUrl";
 const API_TOKEN_STORAGE_KEY = "cycle.api.token";
 const DEV_PROXY_BASE_URL = "/cycle-api";
@@ -302,6 +314,20 @@ const chatCommandError = (message: ChatSocketMessage): Error => {
   return new Error(chatString(payload?.message) ?? "Agent chat command failed.");
 };
 
+type StartAgentChatThreadInput = {
+  readonly closedMessage: string;
+  readonly commandPrefix: string;
+  readonly message: string;
+  readonly missingThreadMessage: string;
+  readonly model?: string | null;
+  readonly origin: Readonly<Record<string, unknown>>;
+  readonly providerId?: string;
+  readonly runtimeMode: "full-access" | "read-only" | "workspace-write";
+  readonly thinkingLevel?: string;
+  readonly timeoutMessage: string;
+  readonly title: string;
+};
+
 const ticketDraftPrompt = ({ instructions, repository }: StartTicketDraftChatInput): string =>
   [
     `Target repository: cycle://repository/${repository.id} (${repository.displayName})`,
@@ -312,8 +338,27 @@ const ticketDraftPrompt = ({ instructions, repository }: StartTicketDraftChatInp
     instructions.trim(),
   ].join("\n\n");
 
-const startTicketDraftChat = async (
-  input: StartTicketDraftChatInput,
+const issueAgentChatPrompt = ({
+  instructions,
+  issue,
+  repository,
+}: StartIssueAgentChatInput): string =>
+  [
+    `Target repository: cycle://repository/${repository.id} (${repository.displayName})`,
+    `Ticket: cycle://repository/${repository.id}/tickets/${issue.id}`,
+    `Ticket title: ${issue.title}`,
+    `Ticket type: ${issue.type}`,
+    `Ticket status: ${issue.status}`,
+    "Work on this Cycle ticket in implementation mode.",
+    "Use Cycle MCP tools to inspect the ticket and repository context before making claims.",
+    instructions?.trim() ? "User instructions:" : undefined,
+    instructions?.trim() ? instructions.trim() : undefined,
+  ]
+    .filter((part): part is string => part !== undefined)
+    .join("\n\n");
+
+const startAgentChatThread = async (
+  input: StartAgentChatThreadInput,
 ): Promise<StartTicketDraftChatResult> => {
   const connection = await discoverCycleApiConnection();
 
@@ -325,7 +370,7 @@ const startTicketDraftChat = async (
     let threadId: string | undefined;
 
     const timeout = window.setTimeout(() => {
-      fail(new Error("Timed out while starting the ticket draft chat."));
+      fail(new Error(input.timeoutMessage));
     }, 15_000);
 
     const cleanup = () => {
@@ -353,7 +398,7 @@ const startTicketDraftChat = async (
       payload: Readonly<Record<string, unknown>>,
       onResponse?: (message: ChatSocketMessage) => void,
     ) => {
-      const commandId = `ticket_draft_${++commandSequence}`;
+      const commandId = `${input.commandPrefix}_${++commandSequence}`;
       if (onResponse !== undefined) pendingCommands.set(commandId, onResponse);
       socket.send(
         JSON.stringify({
@@ -367,17 +412,18 @@ const startTicketDraftChat = async (
 
     const sendTurn = () => {
       if (threadId === undefined) {
-        fail(new Error("Ticket draft chat was not created."));
+        fail(new Error(input.missingThreadMessage));
         return;
       }
 
       sendCommand(
         "turn.send",
         {
-          message: ticketDraftPrompt(input),
+          message: input.message,
+          ...(input.model === null || input.model === undefined ? {} : { model: input.model }),
           providerId: input.providerId ?? "codex",
-          runtimeMode: "workspace-write",
-          thinkingLevel: "medium",
+          runtimeMode: input.runtimeMode,
+          thinkingLevel: input.thinkingLevel ?? "medium",
           threadId,
         },
         (message) => {
@@ -394,16 +440,12 @@ const startTicketDraftChat = async (
       sendCommand(
         "thread.create",
         {
-          origin: {
-            kind: "ticket-draft",
-            label: "Ticket draft",
-            repositoryId: input.repository.id,
-            trigger: "create-ticket-dialog",
-          },
+          origin: input.origin,
+          ...(input.model === null || input.model === undefined ? {} : { model: input.model }),
           providerId: input.providerId ?? "codex",
-          runtimeMode: "workspace-write",
-          thinkingLevel: "medium",
-          title: "Draft ticket",
+          runtimeMode: input.runtimeMode,
+          thinkingLevel: input.thinkingLevel ?? "medium",
+          title: input.title,
         },
         (message) => {
           if (message.type === "command.error") {
@@ -414,7 +456,7 @@ const startTicketDraftChat = async (
           const thread = chatRecord(chatCommandResult(message).thread);
           threadId = chatString(thread?.id);
           if (threadId === undefined) {
-            fail(new Error("Ticket draft chat response did not include a thread id."));
+            fail(new Error("Agent chat response did not include a thread id."));
             return;
           }
           sendTurn();
@@ -469,11 +511,54 @@ const startTicketDraftChat = async (
 
     socket.onclose = () => {
       if (!settled) {
-        fail(new Error("Agent chat connection closed before the ticket draft started."));
+        fail(new Error(input.closedMessage));
       }
     };
   });
 };
+
+const startTicketDraftChat = async (
+  input: StartTicketDraftChatInput,
+): Promise<StartTicketDraftChatResult> =>
+  startAgentChatThread({
+    closedMessage: "Agent chat connection closed before the ticket draft started.",
+    commandPrefix: "ticket_draft",
+    message: ticketDraftPrompt(input),
+    missingThreadMessage: "Ticket draft chat was not created.",
+    origin: {
+      kind: "ticket-draft",
+      label: "Ticket draft",
+      repositoryId: input.repository.id,
+      trigger: "create-ticket-dialog",
+    },
+    providerId: input.providerId,
+    runtimeMode: "workspace-write",
+    timeoutMessage: "Timed out while starting the ticket draft chat.",
+    title: "Draft ticket",
+  });
+
+const startIssueAgentChat = async (
+  input: StartIssueAgentChatInput,
+): Promise<StartIssueAgentChatResult> =>
+  startAgentChatThread({
+    closedMessage: "Agent chat connection closed before the ticket work chat started.",
+    commandPrefix: "ticket_work",
+    message: issueAgentChatPrompt(input),
+    missingThreadMessage: "Ticket work chat was not created.",
+    model: input.model,
+    origin: {
+      issueId: input.issue.id,
+      kind: "ticket-agent-work",
+      label: `Work on ${input.issue.id}`,
+      repositoryId: input.repository.id,
+      ticketId: input.issue.id,
+      trigger: "ticket-view",
+    },
+    providerId: input.providerId,
+    runtimeMode: "workspace-write",
+    timeoutMessage: "Timed out while starting the ticket work chat.",
+    title: `Work on ${input.issue.id}`,
+  });
 
 const StrictDecodeOptions = { onExcessProperty: "error" } as const;
 
@@ -1043,6 +1128,7 @@ export const cycleApiClient = {
   },
 
   startTicketDraftChat,
+  startIssueAgentChat,
 
   createAgentTask: async (input: CreateAgentTaskInput): Promise<AgentTask | null> =>
     parseAgentTask(await unknownResource("POST", "/v1/agent-tasks", input)),

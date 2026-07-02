@@ -142,7 +142,7 @@ export const ChipSelect = React.forwardRef<HTMLDivElement, ChipSelectProps>(func
                       <button
                         aria-selected={selected}
                         className={cn(
-                          "grid min-h-11 grid-cols-[1.5rem_minmax(0,1fr)_auto_auto] items-center gap-3 rounded-lg px-2 text-left text-base text-foreground transition-colors hover:bg-subtle",
+                          "grid min-h-11 grid-cols-[1.5rem_minmax(0,1fr)] items-center gap-3 rounded-lg px-2 text-left text-base text-foreground transition-colors hover:bg-subtle",
                           selected && "bg-subtle",
                           option.disabled && "pointer-events-none opacity-45",
                           focusRing,
@@ -161,15 +161,19 @@ export const ChipSelect = React.forwardRef<HTMLDivElement, ChipSelectProps>(func
                         <span className="grid size-6 place-items-center text-muted-foreground">
                           {option.icon}
                         </span>
-                        <span className="min-w-0 truncate font-medium">{option.label}</span>
-                        <span className="grid size-5 place-items-center text-muted-foreground">
-                          {selected ? <Check aria-hidden className="size-5" /> : null}
-                        </span>
-                        {option.rightMeta ? (
-                          <span className="min-w-5 text-right text-sm font-medium text-muted-foreground">
-                            {option.rightMeta}
+                        <span className="flex min-w-0 items-center gap-3">
+                          <span className="min-w-0 flex-1 truncate font-medium">
+                            {option.label}
                           </span>
-                        ) : null}
+                          <span className="grid size-5 shrink-0 place-items-center text-muted-foreground">
+                            {selected ? <Check aria-hidden className="size-5" /> : null}
+                          </span>
+                          {option.rightMeta ? (
+                            <span className="min-w-0 max-w-[55%] shrink overflow-hidden break-words text-right text-sm font-medium leading-5 text-muted-foreground">
+                              {option.rightMeta}
+                            </span>
+                          ) : null}
+                        </span>
                       </button>
                     );
                   })}

@@ -158,14 +158,14 @@ const profileWithPreference = (
         defaultModel: preference.defaultModel ?? null,
         enabled: preference.enabled,
         executablePath: preference.executablePath ?? null,
-        maxConcurrentRuns: preference.maxConcurrentRuns,
+        maxConcurrentRuns: preference.maxConcurrentRuns ?? null,
       },
     },
     ...(preference.executablePath === null || preference.executablePath === undefined
       ? {}
       : { configuredExecutablePath: preference.executablePath }),
     defaultModel: preference.defaultModel ?? profile.defaultModel ?? null,
-    maxConcurrentRuns: preference.maxConcurrentRuns,
+    maxConcurrentRuns: preference.maxConcurrentRuns ?? null,
     message: enabled ? profile.message : `${profile.displayName} is disabled in Cycle settings.`,
     status: enabled ? profile.status : "disabled",
   };

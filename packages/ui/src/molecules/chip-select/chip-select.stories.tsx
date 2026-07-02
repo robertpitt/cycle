@@ -9,6 +9,7 @@ import {
   Link2,
   MoreHorizontal,
   Repeat2,
+  Square,
   Tag,
 } from "lucide-react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
@@ -222,6 +223,57 @@ const moreSections: readonly ChipSelectSection[] = [
   },
 ];
 
+const ticketTypeSections: readonly ChipSelectSection[] = [
+  {
+    id: "type",
+    options: [
+      {
+        icon: <Square aria-hidden className="size-4" />,
+        id: "auto",
+        label: "Auto",
+        rightMeta: "Let the agent choose; manual create defaults to task",
+        selected: true,
+      },
+      {
+        icon: <Square aria-hidden className="size-4" />,
+        id: "epic",
+        label: "Epic",
+        rightMeta: "Large outcome or parent workstream",
+      },
+      {
+        icon: <Square aria-hidden className="size-4" />,
+        id: "feature",
+        label: "Feature",
+        rightMeta: "New user-facing capability",
+      },
+      {
+        icon: <Square aria-hidden className="size-4" />,
+        id: "story",
+        label: "Story",
+        rightMeta: "User workflow or product behavior slice",
+      },
+      {
+        icon: <Square aria-hidden className="size-4" />,
+        id: "bug",
+        label: "Bug",
+        rightMeta: "Incorrect behavior or regression",
+      },
+      {
+        icon: <Square aria-hidden className="size-4" />,
+        id: "task",
+        label: "Task",
+        rightMeta: "Implementation or maintenance work",
+      },
+      {
+        icon: <Square aria-hidden className="size-4" />,
+        id: "spec",
+        label: "Spec",
+        rightMeta: "Requirements, contracts, or implementation spec",
+      },
+    ],
+  },
+];
+
 const meta = {
   args: {
     sections: [],
@@ -333,5 +385,21 @@ export const MoreOpen: Story = {
         widthClassName="w-[384px]"
       />
     </Frame>
+  ),
+};
+
+export const LongMetadataOpen: Story = {
+  render: () => (
+    <div className="min-h-[620px] p-4">
+      <ChipSelect
+        defaultOpen
+        searchPlaceholder="Choose type..."
+        sections={ticketTypeSections}
+        triggerActive
+        triggerIcon={<Square aria-hidden className="size-4" />}
+        triggerLabel="Auto"
+        widthClassName="w-[350px]"
+      />
+    </div>
   ),
 };

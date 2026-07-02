@@ -56,7 +56,7 @@ export const agentProviderProfileFromDetection = (
     displayName: detected.name,
     executableName: detected.executable,
     ...(detected.executablePath === undefined ? {} : { executablePath: detected.executablePath }),
-    maxConcurrentRuns: definition.defaultMaxConcurrentRuns ?? 1,
+    maxConcurrentRuns: definition.defaultMaxConcurrentRuns ?? null,
     message:
       detected.message ??
       (detected.status === "available" ? undefined : `${detected.name} is not available.`),
@@ -85,7 +85,7 @@ export const staticAgentProviderProfile = (
     },
     displayName: definition.name,
     executableName: definition.executable,
-    maxConcurrentRuns: definition.defaultMaxConcurrentRuns ?? 1,
+    maxConcurrentRuns: definition.defaultMaxConcurrentRuns ?? null,
     message: `${definition.name} executable status has not been checked.`,
     models: [],
     ...(definition.packageName === undefined ? {} : { packageName: definition.packageName }),

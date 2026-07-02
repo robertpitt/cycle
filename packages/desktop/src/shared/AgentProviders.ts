@@ -19,14 +19,14 @@ export type AgentProviderDefinition = {
 export const supportedAgentProviders = [
   {
     defaultEnabled: true,
-    defaultMaxConcurrentRuns: 1,
+    defaultMaxConcurrentRuns: null,
     executable: "codex",
     id: "codex",
     name: "Codex",
   },
   {
     defaultEnabled: true,
-    defaultMaxConcurrentRuns: 1,
+    defaultMaxConcurrentRuns: null,
     executable: "claude",
     id: "claude-code",
     name: "Claude Code",

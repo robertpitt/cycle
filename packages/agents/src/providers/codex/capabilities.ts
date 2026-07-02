@@ -42,7 +42,7 @@ export const codexProviderDefinition: AgentProviderDefinition = {
     type: "object",
   },
   defaultEnabled: true,
-  defaultMaxConcurrentRuns: 1,
+  defaultMaxConcurrentRuns: null,
   executable: "codex",
   id: "codex",
   name: "Codex",

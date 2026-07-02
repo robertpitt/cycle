@@ -1,6 +1,13 @@
 import { Schema } from "effect";
 
-export const CanonicalTicketTypeIds = ["epic", "feature", "bug", "task"] as const;
+export const CanonicalTicketTypeIds = [
+  "epic",
+  "feature",
+  "story",
+  "bug",
+  "task",
+  "specification",
+] as const;
 
 export type TicketTypeId = (typeof CanonicalTicketTypeIds)[number];
 
@@ -10,7 +17,25 @@ export type TicketTypeDefinition = {
   readonly branchSegment: string;
 };
 
-export const TicketTypeId = Schema.Literals(["epic", "feature", "bug", "task"]);
+export const TicketTypeId = Schema.Literals([
+  "epic",
+  "feature",
+  "story",
+  "bug",
+  "task",
+  "specification",
+]);
+
+export const TicketTypeSelection = Schema.Literals([
+  "auto",
+  "epic",
+  "feature",
+  "story",
+  "bug",
+  "task",
+  "specification",
+]);
+export type TicketTypeSelection = typeof TicketTypeSelection.Type;
 
 export const TicketTypeRegistry = {
   bug: {
@@ -27,6 +52,16 @@ export const TicketTypeRegistry = {
     branchSegment: "feature",
     displayLabel: "Feature",
     id: "feature",
+  },
+  specification: {
+    branchSegment: "specification",
+    displayLabel: "Specification",
+    id: "specification",
+  },
+  story: {
+    branchSegment: "story",
+    displayLabel: "Story",
+    id: "story",
   },
   task: {
     branchSegment: "task",

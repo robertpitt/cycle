@@ -157,7 +157,14 @@ export type SavedViewPage = {
   readonly nextCursor?: string;
 };
 
-export type IssueTemplateKind = "bug" | "feature" | "implementation" | "initiative" | "qa";
+export type IssueTemplateKind =
+  | "bug"
+  | "feature"
+  | "implementation"
+  | "initiative"
+  | "qa"
+  | "specification"
+  | "story";
 
 export type IssueTemplateDefaults = Partial<CreateTicketInput>;
 

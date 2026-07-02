@@ -96,6 +96,22 @@ describe("@cycle/git WorktreeService", () => {
       }),
       "cycle/epic/CYC-789-plan-rollout",
     );
+    assert.equal(
+      implementationBranchName({
+        ticketId: "CYC-901",
+        ticketSlugSource: "Checkout workflow",
+        ticketType: "story",
+      }),
+      "cycle/story/CYC-901-checkout-workflow",
+    );
+    assert.equal(
+      implementationBranchName({
+        ticketId: "CYC-902",
+        ticketSlugSource: "Prompt system",
+        ticketType: "specification",
+      }),
+      "cycle/specification/CYC-902-prompt-system",
+    );
   });
 
   it("resolves branch collisions for same-ticket updates or renamed branches", () => {

@@ -169,12 +169,15 @@ describe("renderer cycle API client", () => {
         }
 
         if (message.type === "thread.create") {
+          const payload = message.payload as { readonly origin?: { readonly kind?: string } };
+          const threadId =
+            payload.origin?.kind === "ticket-agent-work" ? "thread-work" : "thread-draft";
           this.reply({
             commandId: message.commandId,
             payload: {
               result: {
                 thread: {
-                  id: "thread-draft",
+                  id: threadId,
                 },
               },
               type: "thread.create",
@@ -250,6 +253,41 @@ describe("renderer cycle API client", () => {
       /Target repository: cycle:\/\/repository\/repo-cycle \(Cycle\)/u,
     );
     assert.match(sendTurn?.payload.message, /Draft login bug/u);
+
+    const workResult = await cycleApiClient.startIssueAgentChat({
+      instructions: "Implement this with tests",
+      issue: {
+        id: "CYC-123",
+        status: "todo",
+        title: "Fix login redirect",
+        type: "bug",
+      },
+      model: "gpt-test",
+      providerId: "codex",
+      repository: {
+        displayName: "Cycle",
+        id: "repo-cycle",
+        path: "/tmp/cycle",
+      },
+    });
+
+    assert.deepEqual(workResult, { threadId: "thread-work" });
+
+    const workSent = sockets[1]?.sent.map((raw) => JSON.parse(raw) as any) ?? [];
+    const workCreateThread = workSent.find((message) => message.type === "thread.create");
+    const workSendTurn = workSent.find((message) => message.type === "turn.send");
+
+    assert.equal(workCreateThread?.payload.origin.kind, "ticket-agent-work");
+    assert.equal(workCreateThread?.payload.origin.repositoryId, "repo-cycle");
+    assert.equal(workCreateThread?.payload.origin.issueId, "CYC-123");
+    assert.equal(workCreateThread?.payload.runtimeMode, "workspace-write");
+    assert.equal(workCreateThread?.payload.model, "gpt-test");
+    assert.equal(workSendTurn?.payload.threadId, "thread-work");
+    assert.match(
+      workSendTurn?.payload.message,
+      /Ticket: cycle:\/\/repository\/repo-cycle\/tickets\/CYC-123/u,
+    );
+    assert.match(workSendTurn?.payload.message, /Implement this with tests/u);
   });
 });
 

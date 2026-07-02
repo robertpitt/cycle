@@ -3911,7 +3911,11 @@ const validateSavedViewGroup = (value: string): void => {
 };
 
 const validateIssueTemplateKind = (value: string): void => {
-  if (!["bug", "feature", "implementation", "initiative", "qa"].includes(value)) {
+  if (
+    !["bug", "feature", "implementation", "initiative", "qa", "specification", "story"].includes(
+      value,
+    )
+  ) {
     throw new Error("template kind is invalid");
   }
 };

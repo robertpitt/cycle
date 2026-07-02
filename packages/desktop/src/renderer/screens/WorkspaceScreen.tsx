@@ -31,7 +31,7 @@ import {
   ViewsPanel,
 } from "../components/index.ts";
 import { fallbackAgentProviders, toSetupHarnesses } from "../lib/agentProviders.ts";
-import { canonicalTicketTypes, normalizeCreateTicketType } from "../lib/ticketTypes.ts";
+import { authoringTicketTypes, normalizeCreateTicketType } from "../lib/ticketTypes.ts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 import { createMarkdownTagSuggestions } from "../lib/markdownTagSuggestions.ts";
@@ -89,7 +89,7 @@ import type { AgentProviderId } from "../../shared/AgentProviders.ts";
 const ticketTypeSections = [
   {
     id: "type",
-    options: canonicalTicketTypes.map((type) => ({
+    options: authoringTicketTypes.map((type) => ({
       icon: <Square aria-hidden className="size-4" strokeWidth={2} />,
       id: type.id,
       label: type.label,
@@ -446,6 +446,8 @@ export const WorkspaceScreen = () => {
         createIssueForm.setType(normalizeCreateTicketType(defaults.type) ?? "task");
       } else if (template.kind === "initiative") {
         createIssueForm.setType("epic");
+      } else if (template.kind === "story" || template.kind === "specification") {
+        createIssueForm.setType(template.kind);
       } else {
         createIssueForm.setType("task");
       }
@@ -906,7 +908,7 @@ export const WorkspaceScreen = () => {
     createIssueForm.openDialog({
       mode: "agent",
       repositoryId: issueRepository?.id ?? repositories[0]?.id ?? "",
-      type: isInitiativesPage ? "epic" : "task",
+      type: isInitiativesPage ? "epic" : "auto",
     });
   };
   const closeCreateIssueDialog = () => {
@@ -915,10 +917,7 @@ export const WorkspaceScreen = () => {
     createIssueForm.closeDialog();
   };
   const selectCreateIssueRepository = (repositoryId: string | null) => {
-    createIssueForm.setRepositoryId(repositoryId ?? "");
-    createIssueForm.setProject(null);
-    createIssueForm.setLabels([]);
-    createIssueForm.setTemplate(null);
+    createIssueForm.selectRepository(repositoryId);
   };
   const submitCreateIssueDraft = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -979,7 +978,7 @@ export const WorkspaceScreen = () => {
         priority: createIssueForm.values.priority,
         status: createIssueForm.values.status,
         title: draft.title,
-        type: draft.type ?? createIssueForm.values.type,
+        type: draft.type,
       },
       {
         onError: (error) => {
@@ -1253,6 +1252,12 @@ export const WorkspaceScreen = () => {
                 <ViewIssuePanel
                   agentProviders={detectedAgentProviders}
                   issueId={selectedIssueId}
+                  onChatOpen={() =>
+                    navigateWorkspace({
+                      page: "chat",
+                      scope: "workspace",
+                    })
+                  }
                   repositories={repositories}
                   repositoryId={selectedIssueRepositoryId}
                 />

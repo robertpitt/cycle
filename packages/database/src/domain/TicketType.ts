@@ -1,4 +1,4 @@
-export type CanonicalTicketTypeId = "bug" | "epic" | "feature" | "task";
+export type CanonicalTicketTypeId = "bug" | "epic" | "feature" | "specification" | "story" | "task";
 
 export type TicketTypeDefinition = {
   readonly id: CanonicalTicketTypeId;
@@ -18,8 +18,10 @@ export type TicketTypeMaterialization = {
 export const canonicalTicketTypes: readonly TicketTypeDefinition[] = [
   { branchSegment: "epic", id: "epic", label: "Epic" },
   { branchSegment: "feature", id: "feature", label: "Feature" },
+  { branchSegment: "story", id: "story", label: "Story" },
   { branchSegment: "bug", id: "bug", label: "Bug" },
   { branchSegment: "task", id: "task", label: "Task" },
+  { branchSegment: "specification", id: "specification", label: "Specification" },
 ];
 
 export const canonicalTicketTypeIds: readonly CanonicalTicketTypeId[] = canonicalTicketTypes.map(

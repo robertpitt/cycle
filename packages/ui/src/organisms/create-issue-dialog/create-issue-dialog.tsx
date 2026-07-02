@@ -425,10 +425,10 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
       createMoreLabel = "Create more",
       defaultOpenChip,
       description,
-      descriptionPlaceholder = "Add description...",
+      descriptionPlaceholder = "Add description",
       draftDisabled = false,
       draftInstructions = "",
-      draftPlaceholder = "Ask the agent to draft a ticket...",
+      draftPlaceholder = "Draft a ticket for...",
       draftSaving = false,
       draftSubmitLabel = "Draft ticket",
       dueDate = "",
@@ -510,13 +510,7 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
         {error}
       </div>
     ) : null;
-    const modeButtonClassName = (buttonMode: CreateIssueDialogMode) =>
-      cn(
-        "inline-flex h-8 items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors",
-        mode === buttonMode
-          ? "bg-popover text-foreground shadow-sm"
-          : "text-muted-foreground hover:text-foreground",
-      );
+    const manualMode = mode === "manual";
 
     return (
       <DialogRoot open modal>
@@ -580,23 +574,25 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
                 </div>
 
                 <div className="flex flex-1 flex-col px-5 pb-5 sm:px-7 sm:pb-6">
-                  <div className="mb-5 inline-flex w-fit items-center rounded-lg border border-border bg-subtle p-1">
-                    <button
-                      className={modeButtonClassName("agent")}
-                      onClick={() => onModeChange?.("agent")}
-                      type="button"
-                    >
-                      <Bot aria-hidden className="size-4" />
-                      Agent draft
-                    </button>
-                    <button
-                      className={modeButtonClassName("manual")}
-                      onClick={() => onModeChange?.("manual")}
-                      type="button"
-                    >
-                      <PenLine aria-hidden className="size-4" />
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div className="inline-flex min-w-0 items-center gap-2 text-sm font-medium text-muted-foreground">
+                      {manualMode ? (
+                        <PenLine aria-hidden className="size-4 shrink-0" />
+                      ) : (
+                        <Bot aria-hidden className="size-4 shrink-0" />
+                      )}
+                      <span className="truncate">
+                        {manualMode ? "Manual ticket" : "Agent-assisted ticket"}
+                      </span>
+                    </div>
+                    <label className="inline-flex items-center gap-2 rounded-full border border-border bg-subtle px-3 py-1.5 text-sm font-medium text-muted-foreground">
+                      <Switch
+                        aria-label="Manual ticket mode"
+                        checked={manualMode}
+                        onCheckedChange={(checked) => onModeChange?.(checked ? "manual" : "agent")}
+                      />
                       Manual
-                    </button>
+                    </label>
                   </div>
 
                   {mode === "agent" ? (
@@ -615,6 +611,109 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
                         tagSuggestions={tagSuggestions}
                         value={draftInstructions}
                       />
+
+                      <div className="mt-5 flex flex-wrap items-center gap-2">
+                        <PropertyPicker
+                          {...getControlledOpen(currentOpenChip, "status", setOpenChip)}
+                          formatValueLabel={formatNullableLabel("Status")}
+                          onValueChange={(value) =>
+                            onStatusChange?.(getSingleValue(value) as CreateIssueDialogStatus)
+                          }
+                          placeholder="Status"
+                          searchPlaceholder="Change status..."
+                          searchShortcut="S"
+                          sections={statusPickerSections}
+                          triggerActive
+                          triggerIcon={<Circle aria-hidden className="size-4" strokeWidth={2.2} />}
+                          value={status}
+                          widthClassName="w-[414px]"
+                        />
+                        {typePickerSections.length > 0 ? (
+                          <PropertyPicker
+                            {...getControlledOpen(currentOpenChip, "type", setOpenChip)}
+                            formatValueLabel={formatNullableLabel("Type")}
+                            onValueChange={(value) => {
+                              const selectedType = getSingleValue(value);
+                              if (selectedType) onTypeChange?.(selectedType);
+                            }}
+                            placeholder="Type"
+                            searchPlaceholder="Choose type..."
+                            sections={typePickerSections}
+                            triggerActive={Boolean(type)}
+                            triggerIcon={
+                              <Ticket aria-hidden className="size-4" strokeWidth={1.9} />
+                            }
+                            value={type}
+                            widthClassName="w-[350px]"
+                          />
+                        ) : null}
+                        <PropertyPicker
+                          {...getControlledOpen(currentOpenChip, "priority", setOpenChip)}
+                          formatValueLabel={formatNullableLabel("Priority")}
+                          onValueChange={(value) =>
+                            onPriorityChange?.(getSingleValue(value) as CreateIssueDialogPriority)
+                          }
+                          placeholder="Priority"
+                          searchPlaceholder="Set priority to..."
+                          searchShortcut="P"
+                          sections={priorityPickerSections}
+                          triggerIcon={<span className="font-semibold leading-none">---</span>}
+                          value={priority}
+                          widthClassName="w-[414px]"
+                        />
+                        <PropertyPicker
+                          {...getControlledOpen(currentOpenChip, "assignee", setOpenChip)}
+                          formatValueLabel={formatNullableLabel("Assignee")}
+                          onValueChange={(value) => {
+                            const selectedAssignee = getSingleValue(value);
+                            onAssigneeChange?.(
+                              selectedAssignee === "none" ? null : selectedAssignee,
+                            );
+                          }}
+                          placeholder="Assignee"
+                          sections={assigneePickerSections}
+                          triggerIcon={
+                            <CircleUserRound aria-hidden className="size-4" strokeWidth={1.8} />
+                          }
+                          value={assignee ?? "none"}
+                          widthClassName="w-[350px]"
+                        />
+                        <PropertyPicker
+                          {...getControlledOpen(currentOpenChip, "template", setOpenChip)}
+                          align="end"
+                          formatValueLabel={formatNullableLabel("Template")}
+                          onValueChange={(value) => {
+                            const selectedTemplate = getSingleValue(value);
+                            onTemplateChange?.(
+                              selectedTemplate === "none" ? null : selectedTemplate,
+                            );
+                          }}
+                          placeholder="Template"
+                          searchPlaceholder="Apply template..."
+                          sections={templatePickerSections}
+                          triggerIcon={
+                            <FileText aria-hidden className="size-4" strokeWidth={1.8} />
+                          }
+                          value={template ?? "none"}
+                          widthClassName="w-[350px]"
+                        />
+                        <PropertyPicker
+                          {...getControlledOpen(currentOpenChip, "labels", setOpenChip)}
+                          align="end"
+                          formatValueLabel={formatLabelList}
+                          multiple
+                          onValueChange={(value) =>
+                            onLabelsChange?.(Array.isArray(value) ? value : value ? [value] : [])
+                          }
+                          placeholder="Labels"
+                          searchPlaceholder="Add labels..."
+                          searchShortcut="L"
+                          sections={labelPickerSections}
+                          triggerIcon={<Tag aria-hidden className="size-4" strokeWidth={1.8} />}
+                          value={labels}
+                          widthClassName="w-[414px]"
+                        />
+                      </div>
 
                       <div className="mt-auto grid gap-4 pt-6">
                         {errorMessage}

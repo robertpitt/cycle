@@ -1,6 +1,11 @@
 import type { CreateIssueDialogPriority, CreateIssueDialogStatus } from "@cycle/ui/organisms";
 import * as React from "react";
-import { isCanonicalTicketType, type TicketTypeId } from "../../lib/ticketTypes.ts";
+import {
+  isTicketTypeSelection,
+  resolveManualTicketType,
+  type TicketTypeId,
+  type TicketTypeSelectionId,
+} from "../../lib/ticketTypes.ts";
 
 export type CreateIssueFormMode = "agent" | "manual";
 
@@ -20,7 +25,7 @@ export type CreateIssueFormValues = {
   readonly status: CreateIssueDialogStatus;
   readonly template: string | null;
   readonly title: string;
-  readonly type: TicketTypeId | "";
+  readonly type: TicketTypeSelectionId | "";
 };
 
 const initialCreateIssueFormValues = (): CreateIssueFormValues => ({
@@ -39,7 +44,7 @@ const initialCreateIssueFormValues = (): CreateIssueFormValues => ({
   status: "todo",
   template: null,
   title: "",
-  type: "task",
+  type: "auto",
 });
 
 export type CreateIssueFormDraft = {
@@ -50,12 +55,25 @@ export type CreateIssueFormDraft = {
   readonly type: TicketTypeId;
 };
 
+export const getCreateIssueRepositorySelectionPatch = (
+  repositoryId: string | null,
+): Pick<
+  CreateIssueFormValues,
+  "assignee" | "labels" | "project" | "repositoryId" | "template"
+> => ({
+  assignee: null,
+  labels: [],
+  project: null,
+  repositoryId: repositoryId ?? "",
+  template: null,
+});
+
 export const getCreateIssueFormDraft = (
   values: CreateIssueFormValues,
 ): CreateIssueFormDraft | undefined => {
   const title = values.title.trim();
 
-  if (title.length === 0 || !isCanonicalTicketType(values.type)) {
+  if (title.length === 0 || !isTicketTypeSelection(values.type)) {
     return undefined;
   }
 
@@ -66,7 +84,7 @@ export const getCreateIssueFormDraft = (
     dueDate: values.dueDate.length > 0 ? values.dueDate : undefined,
     estimate: values.estimate.trim().length > 0 ? values.estimate.trim() : undefined,
     title,
-    type: values.type,
+    type: resolveManualTicketType(values.type),
   };
 };
 
@@ -103,11 +121,15 @@ export const useCreateIssueForm = () => {
 
   return {
     closeDialog,
-    createDisabled: values.title.trim().length === 0 || !isCanonicalTicketType(values.type),
+    createDisabled: values.title.trim().length === 0 || !isTicketTypeSelection(values.type),
     draftDisabled: values.draftInstructions.trim().length === 0 || values.repositoryId.length === 0,
     open,
     openDialog,
     reset,
+    selectRepository: React.useCallback(
+      (repositoryId: string | null) => update(getCreateIssueRepositorySelectionPatch(repositoryId)),
+      [update],
+    ),
     setAssignee: React.useCallback((assignee: string | null) => update({ assignee }), [update]),
     setCreateMore: React.useCallback((createMore: boolean) => update({ createMore }), [update]),
     setDescription: React.useCallback((description: string) => update({ description }), [update]),
@@ -133,7 +155,7 @@ export const useCreateIssueForm = () => {
     setTemplate: React.useCallback((template: string | null) => update({ template }), [update]),
     setTitle: React.useCallback((title: string) => update({ title }), [update]),
     setType: React.useCallback(
-      (type: string) => update({ type: isCanonicalTicketType(type) ? type : "" }),
+      (type: string) => update({ type: isTicketTypeSelection(type) ? type : "" }),
       [update],
     ),
     values,

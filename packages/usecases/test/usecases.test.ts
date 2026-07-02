@@ -1,8 +1,4 @@
-import {
-  DatabaseService,
-  type DatabaseServiceShape,
-  type TicketDocument,
-} from "@cycle/database";
+import { DatabaseService, type DatabaseServiceShape, type TicketDocument } from "@cycle/database";
 import { GitDbInMemory, Store as GitDbStore } from "@cycle/git-db";
 import { Effect, Layer, Result } from "effect";
 import type { Span } from "effect/Tracer";
@@ -42,7 +38,9 @@ const StubLayer = (overrides: Partial<DatabaseServiceShape>) =>
 
 const provideStub =
   (overrides: Partial<DatabaseServiceShape>) =>
-  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, Exclude<R, DatabaseService | WorkflowPolicy>> =>
+  <A, E, R>(
+    effect: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E, Exclude<R, DatabaseService | WorkflowPolicy>> =>
     effect.pipe(Effect.provide(StubLayer(overrides))) as never;
 
 const withOpenRepository = <A, E>(
@@ -129,6 +127,30 @@ describe("@cycle/usecases", () => {
         listed.entries.map((ticket) => ticket.id),
         [created.id],
       );
+    }).pipe(withOpenRepository),
+  );
+
+  it.effect("creates tickets with expanded canonical ticket types", () =>
+    Effect.gen(function* () {
+      const story = yield* IssueCreate.run({
+        input: {
+          title: "Describe the checkout workflow",
+          type: "story",
+        },
+        repository,
+      });
+      const specification = yield* IssueCreate.run({
+        input: {
+          title: "Specify the ticket prompt system",
+          type: "specification",
+        },
+        repository,
+      });
+
+      assert.equal(story.type, "story");
+      assert.equal(story.frontmatter.type, "story");
+      assert.equal(specification.type, "specification");
+      assert.equal(specification.frontmatter.type, "specification");
     }).pipe(withOpenRepository),
   );
 
