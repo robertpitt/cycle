@@ -1,8 +1,64 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "vitest";
+import { defaultClaudeCodeProviderConfig } from "../src/providers/claude-code/config.ts";
 import { claudeCodeError, mapClaudeCodeSdkMessage } from "../src/providers/claude-code/events.ts";
+import { claudeCodeSdkOptionsFromTurn } from "../src/providers/claude-code/service.ts";
 
 describe("@cycle/agents Claude Code provider", () => {
+  it("attaches Cycle MCP tools to read-only Claude Code turns", () => {
+    const options = claudeCodeSdkOptionsFromTurn({
+      abortController: new AbortController(),
+      providerConfig: defaultClaudeCodeProviderConfig(),
+      request: {
+        input: "List Cycle issues",
+        mcp: {
+          headers: {
+            authorization: "Bearer test-token",
+          },
+          mode: "http",
+          url: "http://127.0.0.1:4738/mcp",
+        },
+      },
+    });
+
+    assert.deepEqual(options.mcpServers, {
+      cycle: {
+        alwaysLoad: true,
+        headers: {
+          authorization: "Bearer test-token",
+        },
+        type: "http",
+        url: "http://127.0.0.1:4738/mcp",
+      },
+    });
+    assert.deepEqual(options.allowedTools, ["mcp__cycle__*"]);
+    assert.deepEqual(options.tools, ["Read", "Grep", "Glob", "LS", "mcp__cycle__*"]);
+  });
+
+  it("auto-allows Cycle MCP tools without narrowing writable Claude Code tools", () => {
+    const options = claudeCodeSdkOptionsFromTurn({
+      abortController: new AbortController(),
+      providerConfig: defaultClaudeCodeProviderConfig(),
+      request: {
+        input: "Update a Cycle issue",
+        mcp: {
+          headers: {
+            authorization: "Bearer test-token",
+          },
+          mode: "http",
+          url: "http://127.0.0.1:4738/mcp",
+        },
+        runtimeMode: "workspace-write",
+      },
+    });
+
+    assert.deepEqual(options.allowedTools, ["mcp__cycle__*"]);
+    assert.deepEqual(options.tools, {
+      preset: "claude_code",
+      type: "preset",
+    });
+  });
+
   it("maps assistant SDK text blocks to content deltas", () => {
     const at = new Date("2026-06-20T00:00:00.000Z");
     const events = mapClaudeCodeSdkMessage({

@@ -46,6 +46,9 @@ type ActiveClaudeCodeTurn = {
   readonly turnId: string;
 };
 
+const cycleMcpToolPattern = "mcp__cycle__*";
+const readOnlyClaudeCodeTools = ["Read", "Grep", "Glob", "LS"] as const;
+
 export const makeClaudeCodeAgentService = (
   options: ClaudeCodeAgentServiceOptions = {},
 ): AgentService => {
@@ -256,7 +259,7 @@ const streamClaudeCodeTurn = async function* (input: {
 
   try {
     const sdkQuery = query({
-      options: sdkOptionsFromTurn({
+      options: claudeCodeSdkOptionsFromTurn({
         abortController,
         env: input.env,
         executablePath: input.executablePath,
@@ -292,7 +295,7 @@ const streamClaudeCodeTurn = async function* (input: {
   }
 };
 
-const sdkOptionsFromTurn = (input: {
+export const claudeCodeSdkOptionsFromTurn = (input: {
   readonly abortController: AbortController;
   readonly env?: NodeJS.ProcessEnv;
   readonly executablePath?: string | null;
@@ -302,6 +305,7 @@ const sdkOptionsFromTurn = (input: {
   const runtimeMode = input.request.runtimeMode ?? "read-only";
   const cwd = cwdFromRequest(input.request);
   const mcpServers = mcpServersFromAttachment(input.request.mcp);
+  const mcpToolPatterns = mcpServers === undefined ? [] : [cycleMcpToolPattern];
   const outputFormat = outputFormatFromResponseFormat(input.request.responseFormat);
   const systemPrompt =
     input.providerConfig.systemPromptMode === "provider-default" ||
@@ -323,6 +327,7 @@ const sdkOptionsFromTurn = (input: {
       CLAUDE_AGENT_SDK_CLIENT_APP: "cycle/0.1.0",
     },
     includePartialMessages: true,
+    ...(mcpToolPatterns.length === 0 ? {} : { allowedTools: mcpToolPatterns }),
     ...(input.providerConfig.maxTurns === null || input.providerConfig.maxTurns === undefined
       ? {}
       : { maxTurns: input.providerConfig.maxTurns }),
@@ -336,7 +341,7 @@ const sdkOptionsFromTurn = (input: {
     ...(runtimeMode === "read-only"
       ? {
           disallowedTools: ["Bash", "Edit", "MultiEdit", "NotebookEdit", "Write"],
-          tools: ["Read", "Grep", "Glob", "LS"],
+          tools: [...readOnlyClaudeCodeTools, ...mcpToolPatterns],
         }
       : { tools: { preset: "claude_code" as const, type: "preset" as const } }),
     ...(systemPrompt === undefined ? {} : { systemPrompt }),
@@ -383,6 +388,7 @@ const mcpServersFromAttachment = (
   if (attachment.mode === "http") {
     return {
       cycle: {
+        alwaysLoad: true,
         headers: attachment.headers === undefined ? undefined : { ...attachment.headers },
         type: "http",
         url: attachment.url,
@@ -394,6 +400,7 @@ const mcpServersFromAttachment = (
       args: attachment.args === undefined ? undefined : [...attachment.args],
       command: attachment.command,
       env: attachment.env === undefined ? undefined : { ...attachment.env },
+      alwaysLoad: true,
       type: "stdio",
     },
   };
