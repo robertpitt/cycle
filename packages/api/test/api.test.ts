@@ -1799,6 +1799,21 @@ describe("@cycle/api", () => {
     };
     const handle = await startCycleApiServer({
       agentChatStore,
+      agentProviderProfiles: async () => [
+        {
+          capabilities: defaultAgentCapabilities("codex"),
+          checkedAt: timestamp.toISOString(),
+          configuration: {
+            execution: "local",
+          },
+          displayName: "Codex",
+          executableName: "codex",
+          executablePath: "/usr/local/bin/codex",
+          models: [],
+          provider: "codex",
+          status: "available",
+        },
+      ],
       agentServices: {
         serviceFor: () => Effect.succeed(fakeAgent),
       },
@@ -2142,6 +2157,21 @@ describe("@cycle/api", () => {
     };
     const handle = await startCycleApiServer({
       agentChatStore,
+      agentProviderProfiles: async () => [
+        {
+          capabilities: defaultAgentCapabilities("codex"),
+          checkedAt: timestamp.toISOString(),
+          configuration: {
+            execution: "local",
+          },
+          displayName: "Codex",
+          executableName: "codex",
+          executablePath: "/usr/local/bin/codex",
+          models: [],
+          provider: "codex",
+          status: "available",
+        },
+      ],
       agentServices: {
         serviceFor: () => Effect.succeed(fakeAgent),
       },
