@@ -926,6 +926,7 @@ const runProviderTurn = async (input: {
   const assistantMessagesByItemId = new Map<string, AgentChatMessageRecord>();
   const assistantTextByItemId = new Map<string, string>();
   const messages = await input.chatStore.listMessages(input.thread.id);
+  const repositories = await repositoriesFromThreadOrigin(input.thread, input.runtime);
   const prepared = prepareChatTurn({
     origin: input.origin,
     payload: {
@@ -933,7 +934,7 @@ const runProviderTurn = async (input: {
       messages: messages.map(messagePayloadFromRecord),
       model: input.turn.model ?? undefined,
       provider: input.turn.providerId as AgentProviderId,
-      repositories: repositoriesFromThreadOrigin(input.thread),
+      repositories,
       sessionId: input.thread.sessionId ?? input.thread.id,
       instructions: chatOriginInstructions(input.thread),
       runtimeMode: input.turn.runtimeMode ?? input.thread.runtimeMode ?? undefined,
@@ -2343,16 +2344,26 @@ const messagePayloadFromRecord = (message: AgentChatMessageRecord): ChatMessageP
   role: message.actor === "agent" ? "assistant" : "user",
 });
 
-const repositoriesFromThreadOrigin = (
+const repositoriesFromThreadOrigin = async (
   thread: AgentChatThreadRecord,
-): readonly ChatRepositoryPayload[] | undefined => {
+  runtime: CycleApiRuntimeShape,
+): Promise<readonly ChatRepositoryPayload[] | undefined> => {
   const repositoryId = threadOriginString(thread, "repositoryId");
-  return repositoryId === undefined ? undefined : [{ id: repositoryId }];
+  if (repositoryId === undefined) return undefined;
+
+  const repositories = await runtime.listRepositories?.();
+  const repository = repositories?.find((entry) => entry.id === repositoryId);
+  return [
+    {
+      id: repositoryId,
+      ...(repository === undefined
+        ? {}
+        : { displayName: repository.displayName, path: repository.path }),
+    },
+  ];
 };
 
-export const chatOriginInstructions = (
-  thread: AgentChatThreadRecord,
-): string | undefined => {
+export const chatOriginInstructions = (thread: AgentChatThreadRecord): string | undefined => {
   const repositoryId = threadOriginString(thread, "repositoryId");
   const issueId = threadOriginString(thread, "issueId");
   if (repositoryId === undefined || issueId === undefined) return undefined;

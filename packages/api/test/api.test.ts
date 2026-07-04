@@ -1278,10 +1278,7 @@ describe("@cycle/api", () => {
       assert.equal(prepared.agentRequest.mcp.url, "http://127.0.0.1:4738/mcp");
       assert.equal(prepared.agentRequest.mcp.headers?.authorization, `Bearer ${token}`);
     }
-    assert.match(
-      prepared.agentRequest.instructions ?? "",
-      /cycle-repository:<repositoryId>/u,
-    );
+    assert.match(prepared.agentRequest.instructions ?? "", /cycle-repository:<repositoryId>/u);
     assert.match(
       prepared.agentRequest.instructions ?? "",
       /Assigned ticket implementation workflow/u,
@@ -1312,10 +1309,7 @@ describe("@cycle/api", () => {
     );
     assert.match(instructions ?? "", /Assigned ticket implementation workflow/u);
     assert.match(instructions ?? "", /dedicated git worktree/u);
-    assert.match(
-      instructions ?? "",
-      /cycle:\/\/repository\/test-repository\/tickets\/ISSUE-1/u,
-    );
+    assert.match(instructions ?? "", /cycle:\/\/repository\/test-repository\/tickets\/ISSUE-1/u);
   });
 
   it("starts issue mention chat threads for tagged Codex and Claude providers", async () => {

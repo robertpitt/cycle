@@ -36,6 +36,8 @@ import {
   type CycleApi,
   type CycleApiOptions,
   type CycleApiRuntimeShape,
+  type RepositoryDirectoryEntry,
+  type RepositoryDirectoryResolver,
   type RepositoryOpenInputResolver,
   type RepositoryOpenRequest,
   type RuntimeDiscoveryFile,
@@ -60,6 +62,8 @@ export {
   type CycleApiMcpOptions,
   type CycleApiOptions,
   type CycleApiRuntimeShape,
+  type RepositoryDirectoryEntry,
+  type RepositoryDirectoryResolver,
   type RepositoryOpenInputResolver,
   type RepositoryOpenRequest,
   type RuntimeDiscoveryFile,
@@ -118,6 +122,9 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
       : { agentSessionStore: options.agentSessionStore }),
     apiVersion: options.apiVersion ?? "0.1.0",
     ...(baseUrl === undefined ? {} : { baseUrl }),
+    ...(options.listRepositories === undefined
+      ? {}
+      : { listRepositories: options.listRepositories }),
     ...(options.localSettings === undefined ? {} : { localSettings: options.localSettings }),
     ...(mcpPath === undefined ? {} : { mcpPath }),
     ...(mcpUrl === undefined ? {} : { mcpUrl }),

@@ -109,6 +109,14 @@ export type RepositoryOpenInputResolver = (
   context: ApiRequestContext,
 ) => Promise<RepositoryInput>;
 
+export type RepositoryDirectoryEntry = {
+  readonly displayName: string;
+  readonly id: string;
+  readonly path: string;
+};
+
+export type RepositoryDirectoryResolver = () => Promise<readonly RepositoryDirectoryEntry[]>;
+
 export type CycleApiMcpOptions = {
   readonly apiToken?: string;
   readonly apiUrl?: string;
@@ -127,6 +135,7 @@ export type CycleApiOptions = {
   readonly agentSessionStore?: AgentSessionStore;
   readonly apiVersion?: string;
   readonly baseUrl?: string;
+  readonly listRepositories?: RepositoryDirectoryResolver;
   readonly localSettings?: LocalSettingsProviderShape;
   readonly mcp?: false | CycleApiMcpOptions;
   readonly now?: () => Date;
@@ -154,6 +163,7 @@ export type CycleApiRuntimeShape = {
   readonly activeAgentTurns: AgentActiveTurnDirectoryShape;
   readonly apiVersion: string;
   readonly baseUrl?: string;
+  readonly listRepositories?: RepositoryDirectoryResolver;
   readonly localSettings?: LocalSettingsProviderShape;
   readonly mcpPath?: string;
   readonly mcpUrl?: string;
