@@ -175,7 +175,7 @@ it.
 export const IssueCreate = defineUseCase({
   name: "IssueCreate",
   input: RepositoryScoped(CreateIssueInput),
-  success: TicketDocumentOutput,
+  success: TicketDocument,
   sideEffect: "write",
   repositoryScope: "single",
   handler: (input, ctx) =>

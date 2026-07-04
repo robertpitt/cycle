@@ -17,7 +17,7 @@ import type {
   UseCaseAlias,
   UseCasePayloadsByAlias,
   UseCaseSuccessesByAlias,
-} from "@cycle/contracts/contracts";
+} from "@cycle/usecases/contracts";
 import { Schema } from "effect";
 import {
   AppConfigState as AppConfigStateSchema,
@@ -56,6 +56,7 @@ type SupportedCycleApiAlias = Extract<
   | "repository.status.get"
   | "ticket.initiative.progress"
   | "ticket.issue.create"
+  | "ticket.issue.archive"
   | "ticket.issue.get"
   | "ticket.issue.history"
   | "ticket.issue.list"
@@ -72,6 +73,7 @@ type SupportedCycleApiAlias = Extract<
 
 type ApiDiscovery = {
   readonly baseUrl: string;
+  readonly profile?: Pick<ProfileConfig, "displayName" | "email">;
   readonly token?: string;
 };
 
@@ -224,6 +226,7 @@ const discoverApi = async (): Promise<ApiDiscovery> => {
       const connection = await bridge.getApiConnection();
       return {
         baseUrl: normalizeBaseUrl(connection.baseUrl),
+        ...(connection.profile === undefined ? {} : { profile: connection.profile }),
         token: connection.token,
       };
     } catch (error) {
@@ -636,6 +639,25 @@ const decodeApiErrorResponse = (
   }
 };
 
+const cleanHeaderValue = (value: string): string | undefined => {
+  const cleaned = value.replace(/[\r\n]+/gu, " ").trim();
+  return cleaned.length === 0 ? undefined : cleaned;
+};
+
+const addActorHeaders = (
+  headers: Headers,
+  profile: Pick<ProfileConfig, "displayName" | "email"> | undefined,
+): void => {
+  if (profile === undefined) return;
+
+  headers.set("x-cycle-actor-type", "human");
+  headers.set("x-cycle-source", "desktop");
+  headers.set("x-cycle-actor-name", cleanHeaderValue(profile.displayName) ?? "Cycle User");
+
+  const email = cleanHeaderValue(profile.email);
+  if (email !== undefined) headers.set("x-cycle-actor-email", email);
+};
+
 const request = async <S extends Schema.Top>(
   method: string,
   path: string,
@@ -648,6 +670,7 @@ const request = async <S extends Schema.Top>(
   const headers = new Headers({
     accept: "application/json",
   });
+  addActorHeaders(headers, discovery.profile);
   if (discovery.token !== undefined) headers.set("authorization", `Bearer ${discovery.token}`);
   if (body !== undefined) headers.set("content-type", "application/json");
 
@@ -907,7 +930,7 @@ const listIssuesForRepository = (repositoryId: string, query: QueryInput): Promi
   page(
     "GET",
     withQuery(`${repositoryPath(repositoryId)}/issues`, query),
-    ContractSchemas.TicketDocumentOutput,
+    ContractSchemas.TicketDocument,
   );
 
 const listIssuesForRepositories = async (
@@ -1069,7 +1092,7 @@ const addIssueRecord = async (repositoryId: string, input: QueryInput): Promise<
   return resource(
     "POST",
     `${repositoryPath(repositoryId)}/issues/${encodeSegment(issueId)}/records`,
-    ContractSchemas.LinkedRecordOutput,
+    ContractSchemas.LinkedRecord,
     {
       payload: input.payload,
       recordType: input.recordType,
@@ -1198,14 +1221,10 @@ export const cycleApiClient = {
     ),
 
   openRepositoryPath: (input: OpenRepositoryPathInput): Promise<RepositoryStatus> =>
-    resource("POST", "/v1/repositories", ContractSchemas.RepositoryStatusOutput, input),
+    resource("POST", "/v1/repositories", ContractSchemas.RepositoryStatus, input),
 
   pushRepository: (repositoryId: string): Promise<RepositoryStatus> =>
-    resource(
-      "POST",
-      `${repositoryPath(repositoryId)}/push`,
-      ContractSchemas.RepositoryStatusOutput,
-    ),
+    resource("POST", `${repositoryPath(repositoryId)}/push`, ContractSchemas.RepositoryStatus),
 
   removeRepository: (repositoryId: string): Promise<AppConfigState> =>
     resource("DELETE", repositoryPath(repositoryId), AppConfigStateSchema),
@@ -1217,11 +1236,7 @@ export const cycleApiClient = {
     resource("PATCH", "/v1/appearance/density", AppConfigStateSchema, { density }),
 
   syncRepository: (repositoryId: string): Promise<RepositoryStatus> =>
-    resource(
-      "POST",
-      `${repositoryPath(repositoryId)}/sync`,
-      ContractSchemas.RepositoryStatusOutput,
-    ),
+    resource("POST", `${repositoryPath(repositoryId)}/sync`, ContractSchemas.RepositoryStatus),
 
   updateProfile: (input: ProfileUpdateInput): Promise<ProfileConfig> =>
     resource("PATCH", "/v1/profile", ProfileConfigSchema, input),
@@ -1249,21 +1264,21 @@ export const cycleApiClient = {
         return resource(
           "GET",
           withQuery(inboxPath, payload as QueryInput),
-          ContractSchemas.InboxPageOutput,
+          ContractSchemas.InboxPage,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "inbox.summary":
         return resource(
           "GET",
           withQuery(`${inboxPath}/summary`, payload as QueryInput),
-          ContractSchemas.InboxSummaryOutput,
+          ContractSchemas.InboxSummary,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "inbox.markRead":
         return resource(
           "POST",
           `${inboxPath}/read`,
-          ContractSchemas.InboxMutationResultOutput,
+          ContractSchemas.InboxMutationResult,
           payload,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
@@ -1271,7 +1286,7 @@ export const cycleApiClient = {
         return resource(
           "POST",
           `${inboxPath}/unread`,
-          ContractSchemas.InboxMutationResultOutput,
+          ContractSchemas.InboxMutationResult,
           payload,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
@@ -1279,7 +1294,7 @@ export const cycleApiClient = {
         return resource(
           "POST",
           `${inboxPath}/archive`,
-          ContractSchemas.InboxMutationResultOutput,
+          ContractSchemas.InboxMutationResult,
           payload,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
     }
@@ -1289,7 +1304,7 @@ export const cycleApiClient = {
 
     switch (alias) {
       case "repository.status.get":
-        return resource("GET", base, ContractSchemas.RepositoryStatusOutput) as Promise<
+        return resource("GET", base, ContractSchemas.RepositoryStatus) as Promise<
           UseCaseSuccessesByAlias[Alias]
         >;
 
@@ -1297,14 +1312,14 @@ export const cycleApiClient = {
         return collection(
           "GET",
           `${base}/warnings`,
-          ContractSchemas.MaterializationWarningOutput,
+          ContractSchemas.MaterializationWarning,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "repository.history.list":
         return page(
           "GET",
           withQuery(`${base}/history`, input),
-          ContractSchemas.HistoryCommitOutput,
+          ContractSchemas.HistoryCommit,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "ticket.issue.list": {
@@ -1319,19 +1334,16 @@ export const cycleApiClient = {
       }
 
       case "ticket.issue.create":
-        return resource(
-          "POST",
-          `${base}/issues`,
-          ContractSchemas.TicketDocumentOutput,
-          input,
-        ) as Promise<UseCaseSuccessesByAlias[Alias]>;
+        return resource("POST", `${base}/issues`, ContractSchemas.TicketDocument, input) as Promise<
+          UseCaseSuccessesByAlias[Alias]
+        >;
 
       case "ticket.issue.get": {
         const issueId = issueIdFromInput(input);
         return resourceOrNull(
           "GET",
           `${base}/issues/${encodeSegment(issueId)}`,
-          ContractSchemas.TicketDocumentOutput,
+          ContractSchemas.TicketDocument,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
       }
 
@@ -1341,8 +1353,20 @@ export const cycleApiClient = {
         return resource(
           "PATCH",
           `${base}/issues/${encodeSegment(issueId)}`,
-          ContractSchemas.TicketDocumentOutput,
+          ContractSchemas.TicketDocument,
           patch,
+        ) as Promise<UseCaseSuccessesByAlias[Alias]>;
+      }
+
+      case "ticket.issue.archive": {
+        const issueId = issueIdFromInput(input);
+        const reason =
+          isRecord(input) && typeof input.reason === "string" ? input.reason : undefined;
+        return resource(
+          "POST",
+          `${base}/issues/${encodeSegment(issueId)}/archive`,
+          ContractSchemas.TicketDocument,
+          reason === undefined ? {} : { reason },
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
       }
 
@@ -1352,7 +1376,7 @@ export const cycleApiClient = {
         return page(
           "GET",
           withQuery(`${base}/issues/${encodeSegment(issueId)}/history`, options),
-          ContractSchemas.HistoryCommitOutput,
+          ContractSchemas.HistoryCommit,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
       }
 
@@ -1365,7 +1389,7 @@ export const cycleApiClient = {
         return page(
           "GET",
           withQuery(`${base}/issues/${encodeSegment(issueId)}/records`, query),
-          ContractSchemas.LinkedRecordOutput,
+          ContractSchemas.LinkedRecord,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
       }
 
@@ -1376,28 +1400,28 @@ export const cycleApiClient = {
         return page(
           "GET",
           withQuery(`${base}/users`, input),
-          ContractSchemas.UserProfileDocumentOutput,
+          ContractSchemas.UserProfileDocument,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "ticket.label.list":
         return page(
           "GET",
           withQuery(`${base}/labels`, input),
-          ContractSchemas.LabelDefinitionDocumentOutput,
+          ContractSchemas.LabelDefinitionDocument,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "ticket.view.list":
         return page(
           "GET",
           withQuery(`${base}/views`, input),
-          ContractSchemas.SavedViewDocumentOutput,
+          ContractSchemas.SavedViewDocument,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "ticket.view.create":
         return resource(
           "POST",
           `${base}/views`,
-          ContractSchemas.SavedViewDocumentOutput,
+          ContractSchemas.SavedViewDocument,
           input,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
@@ -1406,7 +1430,7 @@ export const cycleApiClient = {
         return resourceOrNull(
           "GET",
           `${base}/views/${encodeSegment(viewId)}`,
-          ContractSchemas.SavedViewDocumentOutput,
+          ContractSchemas.SavedViewDocument,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
       }
 
@@ -1414,7 +1438,7 @@ export const cycleApiClient = {
         return page(
           "GET",
           withQuery(`${base}/templates`, input),
-          ContractSchemas.IssueTemplateDocumentOutput,
+          ContractSchemas.IssueTemplateDocument,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
 
       case "ticket.initiative.progress": {
@@ -1422,7 +1446,7 @@ export const cycleApiClient = {
         return resource(
           "GET",
           `${base}/initiatives/${encodeSegment(initiativeId)}/progress`,
-          ContractSchemas.InitiativeProgressOutput,
+          ContractSchemas.InitiativeProgress,
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
       }
 
@@ -1432,5 +1456,5 @@ export const cycleApiClient = {
   },
 
   listRepositories: (): Promise<ReadonlyArray<RepositoryStatus>> =>
-    collection("GET", "/v1/repositories", ContractSchemas.RepositoryStatusOutput),
+    collection("GET", "/v1/repositories", ContractSchemas.RepositoryStatus),
 };

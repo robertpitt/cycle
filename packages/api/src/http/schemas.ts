@@ -111,25 +111,25 @@ export const ApiStatusOutput = Schema.Struct({
 
 export const ApiStatusResourceEnvelope = ResourceEnvelopeOf(ApiStatusOutput);
 export const RepositoryStatusResourceEnvelope = ResourceEnvelopeOf(
-  ContractSchemas.RepositoryStatusOutput,
+  ContractSchemas.RepositoryStatus,
 );
 export const RepositoryStatusCreatedEnvelope = CreatedResourceEnvelopeOf(
-  ContractSchemas.RepositoryStatusOutput,
+  ContractSchemas.RepositoryStatus,
 );
 export const RepositoryStatusCollectionEnvelope = CollectionEnvelopeOf(
-  ContractSchemas.RepositoryStatusOutput,
+  ContractSchemas.RepositoryStatus,
 );
 export const RepositoryStatusAcceptedEnvelope = AcceptedResourceEnvelopeOf(
-  ContractSchemas.RepositoryStatusOutput,
+  ContractSchemas.RepositoryStatus,
 );
 export const RepositoryHistoryCollectionEnvelope = CollectionEnvelopeOf(
-  ContractSchemas.HistoryCommitOutput,
+  ContractSchemas.HistoryCommit,
 );
 export const RepositoryWarningCollectionEnvelope = CollectionEnvelopeOf(
-  ContractSchemas.MaterializationWarningOutput,
+  ContractSchemas.MaterializationWarning,
 );
 export const RepositoryPushAcceptedEnvelope = AcceptedResourceEnvelopeOf(
-  ContractSchemas.SyncResultOutput,
+  ContractSchemas.SyncResult,
 );
 
 export const AutocompleteEntityType = Schema.Literals(["repository", "ticket"]);
@@ -380,10 +380,10 @@ export const RepositoryHistoryQuery = Schema.Struct({
   ticketId: Schema.optional(Schema.String),
 });
 
-export const InboxPageResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.InboxPageOutput);
-export const InboxSummaryResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.InboxSummaryOutput);
+export const InboxPageResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.InboxPage);
+export const InboxSummaryResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.InboxSummary);
 export const InboxMutationResourceEnvelope = ResourceEnvelopeOf(
-  ContractSchemas.InboxMutationResultOutput,
+  ContractSchemas.InboxMutationResult,
 );
 export const InboxMutationPayload = strictSchema(ContractSchemas.InboxMutationInput);
 export const InboxQueryParams = {
@@ -401,15 +401,13 @@ export const InboxQueryParams = {
   userId: Schema.optional(Schema.String),
 };
 
-export const TicketDocumentResourceEnvelope = ResourceEnvelopeOf(
-  ContractSchemas.TicketDocumentOutput,
-);
+export const TicketDocumentResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.TicketDocument);
 
 export const DraftDocumentResourceEnvelope = ResourceEnvelopeOf(
-  ContractSchemas.TicketDraftDocumentOutput,
+  ContractSchemas.TicketDraftDocument,
 );
 export const DraftDocumentCreatedEnvelope = CreatedResourceEnvelopeOf(
-  ContractSchemas.TicketDraftDocumentOutput,
+  ContractSchemas.TicketDraftDocument,
 );
 export const DraftCreatePayload = strictSchema(ContractSchemas.CreateDraftInput);
 export const DraftUpdatePayload = strictSchema(
@@ -422,10 +420,10 @@ export const DraftUpdatePayload = strictSchema(
 );
 
 export const HttpLabelCollectionEnvelope = CollectionEnvelopeOf(
-  ContractSchemas.LabelDefinitionDocumentOutput,
+  ContractSchemas.LabelDefinitionDocument,
 );
 export const HttpLabelResourceEnvelope = ResourceEnvelopeOf(
-  ContractSchemas.LabelDefinitionDocumentOutput,
+  ContractSchemas.LabelDefinitionDocument,
 );
 export const LabelPayload = strictSchema(ContractSchemas.UpsertLabelInput);
 export const LabelQueryParams = {
@@ -435,12 +433,8 @@ export const LabelQueryParams = {
   q: Schema.optional(Schema.String),
 };
 
-export const HttpUserCollectionEnvelope = CollectionEnvelopeOf(
-  ContractSchemas.UserProfileDocumentOutput,
-);
-export const HttpUserResourceEnvelope = ResourceEnvelopeOf(
-  ContractSchemas.UserProfileDocumentOutput,
-);
+export const HttpUserCollectionEnvelope = CollectionEnvelopeOf(ContractSchemas.UserProfileDocument);
+export const HttpUserResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.UserProfileDocument);
 export const UserPayload = strictSchema(
   Schema.Struct({
     aliases: Schema.optional(Schema.Array(Schema.String)),
@@ -459,13 +453,9 @@ export const UserQueryParams = {
   q: Schema.optional(Schema.String),
 };
 
-export const HttpViewCollectionEnvelope = CollectionEnvelopeOf(
-  ContractSchemas.SavedViewDocumentOutput,
-);
-export const HttpViewResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.SavedViewDocumentOutput);
-export const ViewCreatedEnvelope = CreatedResourceEnvelopeOf(
-  ContractSchemas.SavedViewDocumentOutput,
-);
+export const HttpViewCollectionEnvelope = CollectionEnvelopeOf(ContractSchemas.SavedViewDocument);
+export const HttpViewResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.SavedViewDocument);
+export const ViewCreatedEnvelope = CreatedResourceEnvelopeOf(ContractSchemas.SavedViewDocument);
 export const ViewCreatePayload = strictSchema(ContractSchemas.CreateSavedViewInput);
 export const ViewUpdatePayload = strictSchema(ContractSchemas.UpdateSavedViewInput);
 export const ViewQueryParams = {
@@ -477,13 +467,13 @@ export const ViewQueryParams = {
 };
 
 export const HttpTemplateCollectionEnvelope = CollectionEnvelopeOf(
-  ContractSchemas.IssueTemplateDocumentOutput,
+  ContractSchemas.IssueTemplateDocument,
 );
 export const HttpTemplateResourceEnvelope = ResourceEnvelopeOf(
-  ContractSchemas.IssueTemplateDocumentOutput,
+  ContractSchemas.IssueTemplateDocument,
 );
 export const TemplateCreatedEnvelope = CreatedResourceEnvelopeOf(
-  ContractSchemas.IssueTemplateDocumentOutput,
+  ContractSchemas.IssueTemplateDocument,
 );
 export const TemplateCreatePayload = strictSchema(ContractSchemas.CreateIssueTemplateInput);
 export const TemplateUpdatePayload = strictSchema(ContractSchemas.UpdateIssueTemplateInput);
@@ -495,29 +485,19 @@ export const TemplateQueryParams = {
   q: Schema.optional(Schema.String),
 };
 
-export const HttpTicketResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.TicketDocumentOutput);
-export const HttpTicketCreatedEnvelope = CreatedResourceEnvelopeOf(
-  ContractSchemas.TicketDocumentOutput,
-);
-export const HttpTicketCollectionEnvelope = CollectionEnvelopeOf(
-  ContractSchemas.TicketDocumentOutput,
-);
+export const HttpTicketResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.TicketDocument);
+export const HttpTicketCreatedEnvelope = CreatedResourceEnvelopeOf(ContractSchemas.TicketDocument);
+export const HttpTicketCollectionEnvelope = CollectionEnvelopeOf(ContractSchemas.TicketDocument);
 export const HttpTicketSearchCollectionEnvelope = CollectionEnvelopeOf(
-  ContractSchemas.TicketSearchResultOutput,
+  ContractSchemas.TicketSearchResult,
 );
 export const HttpTicketRevisionDiffEnvelope = ResourceEnvelopeOf(
-  ContractSchemas.TicketRevisionDiffOutput,
+  ContractSchemas.TicketRevisionDiff,
 );
-export const HttpHistoryCollectionEnvelope = CollectionEnvelopeOf(
-  ContractSchemas.HistoryCommitOutput,
-);
-export const HttpRecordCollectionEnvelope = CollectionEnvelopeOf(
-  ContractSchemas.LinkedRecordOutput,
-);
-export const HttpRecordResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.LinkedRecordOutput);
-export const HttpRecordCreatedEnvelope = CreatedResourceEnvelopeOf(
-  ContractSchemas.LinkedRecordOutput,
-);
+export const HttpHistoryCollectionEnvelope = CollectionEnvelopeOf(ContractSchemas.HistoryCommit);
+export const HttpRecordCollectionEnvelope = CollectionEnvelopeOf(ContractSchemas.LinkedRecord);
+export const HttpRecordResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.LinkedRecord);
+export const HttpRecordCreatedEnvelope = CreatedResourceEnvelopeOf(ContractSchemas.LinkedRecord);
 
 export const IssueListQueryParams = {
   "filter[archived]": Schema.optional(Schema.String),
@@ -601,7 +581,7 @@ export const IssueCommentAddPayload = strictSchema(
 
 export const InitiativeCreatePayload = strictSchema(ContractSchemas.CreateIssueInput);
 export const InitiativeProgressResourceEnvelope = ResourceEnvelopeOf(
-  ContractSchemas.InitiativeProgressOutput,
+  ContractSchemas.InitiativeProgress,
 );
 export const InitiativeCreatedEnvelope = HttpTicketCreatedEnvelope;
 export const InitiativeUpdatePayload = strictSchema(ContractSchemas.InitiativeUpdateInput);
@@ -638,7 +618,7 @@ export const AutomationEvaluatePayload = strictSchema(
 );
 export type AutomationEvaluatePayload = typeof AutomationEvaluatePayload.Type;
 export const AutomationEvaluationResourceEnvelope = ResourceEnvelopeOf(
-  ContractSchemas.AutomationEvaluationOutput,
+  ContractSchemas.AutomationEvaluation,
 );
 
 export const ChatMessagePayload = strictSchema(

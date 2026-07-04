@@ -1,11 +1,11 @@
+import type { RepositoryInput } from "@cycle/contracts";
 import type {
-  RepositoryInput,
   UseCaseInput,
   UseCaseMeta,
   UseCaseName,
   UseCaseSideEffect,
   UseCaseSuccess,
-} from "@cycle/contracts";
+} from "@cycle/usecases/contracts";
 import type { AgentOrchestrationServiceShape } from "@cycle/agents/orchestration";
 import type {
   AgentProviderId,

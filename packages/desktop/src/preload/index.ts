@@ -25,6 +25,11 @@ const stringField = (value: Readonly<Record<string, unknown>>, key: string): str
   return typeof field === "string" && field.length > 0 ? field : undefined;
 };
 
+const stringValue = (value: Readonly<Record<string, unknown>>, key: string): string | undefined => {
+  const field = value[key];
+  return typeof field === "string" ? field : undefined;
+};
+
 const apiConnectionFrom = (value: unknown): ApiConnection => {
   if (!isRecord(value)) throw new TypeError("API connection response must be an object.");
 
@@ -34,7 +39,22 @@ const apiConnectionFrom = (value: unknown): ApiConnection => {
     throw new TypeError("API connection response must include baseUrl and token.");
   }
 
-  return { baseUrl, token };
+  const rawProfile = isRecord(value.profile) ? value.profile : undefined;
+  const displayName = rawProfile === undefined ? undefined : stringValue(rawProfile, "displayName");
+  const email = rawProfile === undefined ? undefined : stringValue(rawProfile, "email");
+
+  return {
+    baseUrl,
+    ...(displayName === undefined || email === undefined
+      ? {}
+      : {
+          profile: {
+            displayName,
+            email,
+          },
+        }),
+    token,
+  };
 };
 
 const selectedRepositoryFolderFrom = (value: unknown): SelectRepositoryFolderResult => {

@@ -30,6 +30,7 @@ import type {
 } from "@cycle/contracts";
 import {
   useAddIssueCommentMutation,
+  useArchiveIssueMutation,
   useCancelAgentTaskMutation,
   useCreateIssueMutation,
   useRetryAgentTaskMutation,
@@ -61,6 +62,7 @@ import {
 type ViewIssuePanelProps = {
   readonly agentProviders?: readonly DetectedAgentProvider[];
   readonly issueId?: string;
+  readonly onArchived?: () => void;
   readonly onChatOpen?: () => void;
   readonly repositories?: readonly RepositoryRecord[];
   readonly repositoryId?: string;
@@ -626,9 +628,64 @@ const StartAgentTaskDialog = ({
   );
 };
 
+const ArchiveIssueDialog = ({
+  issueId,
+  issueTitle,
+  onConfirm,
+  onOpenChange,
+  open,
+  pending,
+}: {
+  readonly issueId: string;
+  readonly issueTitle: string;
+  readonly onConfirm: () => void;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly open: boolean;
+  readonly pending: boolean;
+}) => (
+  <DialogRoot
+    onOpenChange={(nextOpen) => {
+      if (!pending) onOpenChange(nextOpen);
+    }}
+    open={open}
+  >
+    <DialogPortal>
+      <DialogBackdrop />
+      <DialogViewport>
+        <DialogPanel width="sm">
+          <DialogHeader>
+            <div>
+              <DialogTitle>Archive issue?</DialogTitle>
+              <DialogDescription>
+                This removes the issue from active lists and normal app views.
+              </DialogDescription>
+            </div>
+            <DialogCloseButton disabled={pending} />
+          </DialogHeader>
+          <DialogBody className="grid gap-3">
+            <div className="rounded-md border border-border bg-subtle px-3 py-2">
+              <div className="text-sm font-medium text-foreground">{issueTitle}</div>
+              <div className="mt-1 text-xs font-medium text-muted-foreground">{issueId}</div>
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button disabled={pending} onClick={() => onOpenChange(false)} variant="ghost">
+              Cancel
+            </Button>
+            <Button loading={pending} onClick={onConfirm} tone="danger">
+              Archive issue
+            </Button>
+          </DialogFooter>
+        </DialogPanel>
+      </DialogViewport>
+    </DialogPortal>
+  </DialogRoot>
+);
+
 export const ViewIssuePanel = ({
   agentProviders = [],
   issueId,
+  onArchived,
   onChatOpen,
   repositories = [],
   repositoryId,
@@ -651,6 +708,11 @@ export const ViewIssuePanel = ({
   });
   const updateIssue = useUpdateIssueMutation({
     issueId,
+    repositoryId,
+  });
+  const archiveIssue = useArchiveIssueMutation({
+    issueId,
+    onArchived,
     repositoryId,
   });
   const createSubIssue = useCreateIssueMutation({
@@ -682,6 +744,7 @@ export const ViewIssuePanel = ({
     React.useState<string>(defaultAgentProviderId);
   const [agentTaskModel, setAgentTaskModel] = React.useState("");
   const [agentTaskInstructions, setAgentTaskInstructions] = React.useState("");
+  const [archiveDialogOpen, setArchiveDialogOpen] = React.useState(false);
 
   React.useEffect(() => {
     if (!agentTaskDialogOpen || !defaultAgentProviderId) return;
@@ -954,8 +1017,11 @@ export const ViewIssuePanel = ({
           label: labelMap.get(labelId)?.name ?? labelId,
         }))}
         onAgentDelegate={openAgentTaskDialog}
+        archiveDisabled={archiveIssue.isPending || Boolean(issue.archivedAt)}
+        archivePending={archiveIssue.isPending}
         onCommentCreate={(comment) => addComment.mutate(comment)}
         onDescriptionSave={updateDescription}
+        onArchive={() => setArchiveDialogOpen(true)}
         onFilesSelect={(files) => {
           console.info(
             "Selected issue attachment files",
@@ -1001,6 +1067,14 @@ export const ViewIssuePanel = ({
         pending={startAgentChat.isPending}
         providerId={agentTaskProviderId}
         providers={agentProviders}
+      />
+      <ArchiveIssueDialog
+        issueId={issue.id}
+        issueTitle={issue.frontmatter.title}
+        onConfirm={() => archiveIssue.mutate()}
+        onOpenChange={setArchiveDialogOpen}
+        open={archiveDialogOpen}
+        pending={archiveIssue.isPending}
       />
     </>
   );

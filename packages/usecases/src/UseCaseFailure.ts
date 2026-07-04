@@ -1,7 +1,8 @@
 import type { DatabaseFailure } from "@cycle/database";
-import type { UseCaseFailure, UseCaseFailureTag, UseCaseName } from "@cycle/contracts/contracts";
+import type { UseCaseName } from "./contracts/index.ts";
+import type { UseCaseFailure, UseCaseFailureTag } from "./schemas/failures/index.ts";
 
-export type { UseCaseFailure, UseCaseFailureTag } from "@cycle/contracts/contracts";
+export type { UseCaseFailure, UseCaseFailureTag } from "./schemas/failures/index.ts";
 
 type FailureInput = {
   readonly code?: string;

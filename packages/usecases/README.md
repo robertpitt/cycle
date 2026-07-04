@@ -6,8 +6,9 @@ This package owns executable application workflows such as `IssueCreate`,
 `IssueTransition`, `RepositoryList`, and `CommentAdd`. Each usecase is a named
 definition with a bound `run(input, meta?)` function.
 
-It does not re-export contracts or schemas. Import shared schemas, payload
-types, and boundary contracts from `@cycle/contracts` or
+The root export stays focused on runnable definitions. Import usecase contract
+schemas and helper types from `@cycle/usecases/contracts`; import shared domain
+entities, request payloads, response payloads, and query schemas from
 `@cycle/contracts/schemas`.
 
 ## Public Shape
@@ -64,7 +65,7 @@ flowchart LR
   Pipeline["defineUseCase pipeline"]
   Handler["Usecase handler"]
   Services["Effect services from layers"]
-  Contracts["@cycle/contracts schemas"]
+  Contracts["Usecase + shared contract schemas"]
   Database["DatabaseService"]
   Policy["WorkflowPolicy"]
 
@@ -97,9 +98,14 @@ repeat schema validation, output normalization, tracing boilerplate, or custom
 
 Use `@cycle/contracts` for:
 
-- contract schemas
-- request and response payload types
-- usecase metadata/failure boundary shapes
+- core entity schemas
+- request, response, and query payload schemas
+
+Use `@cycle/usecases/contracts` for:
+
+- usecase contract registry helpers such as `contractFor`
+- `UseCaseInput`, `UseCaseSuccess`, and `UseCaseName`
+- usecase metadata and failure boundary shapes
 
 Use `@cycle/usecases` for:
 
@@ -163,11 +169,12 @@ For focused tests, provide a small `DatabaseService` layer and merge it with
 
 ## Adding A Usecase
 
-1. Add or update schemas in `@cycle/contracts`.
-2. Add the usecase definition in `UseCases.ts`.
-3. Put stateless validation in schemas.
-4. Put stateful rules in `WorkflowPolicy` or another service.
-5. Add focused tests for decode, policy, storage, and success-shape behavior.
+1. Add or update shared payload schemas in `@cycle/contracts` when needed.
+2. Add or update the usecase contract in `@cycle/usecases/contracts`.
+3. Add the runnable usecase definition in `UseCases.ts`.
+4. Put stateless validation in schemas.
+5. Put stateful rules in `WorkflowPolicy` or another service.
+6. Add focused tests for decode, policy, storage, and success-shape behavior.
 
 Keep the public API concrete:
 

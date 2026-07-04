@@ -112,7 +112,7 @@ export const withIssueHandlers = (handlers: any) =>
         const result = yield* runUseCase(
           IssueCreate,
           scoped(params.repositoryId, input),
-          meta(requestId),
+          meta(requestId, request.headers),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -150,7 +150,7 @@ export const withIssueHandlers = (handlers: any) =>
         const result = yield* runUseCase(
           IssueUpdate,
           scoped(params.repositoryId, input),
-          meta(requestId),
+          meta(requestId, request.headers),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
@@ -173,7 +173,7 @@ export const withIssueHandlers = (handlers: any) =>
         const result = yield* runUseCase(
           IssueTransition,
           scoped(params.repositoryId, input),
-          meta(requestId),
+          meta(requestId, request.headers),
         );
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
 

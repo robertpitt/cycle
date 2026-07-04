@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./contracts": "./src/contracts/index.ts",
+    "./schemas": "./src/schemas/index.ts",
+    "./schemas/failures": "./src/schemas/failures/index.ts"
   },
   "scripts": {
     "test": "vitest run",

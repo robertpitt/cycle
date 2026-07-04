@@ -117,12 +117,6 @@ importers:
 
   packages/contracts:
     dependencies:
-      '@cycle/database':
-        specifier: workspace:*
-        version: link:../database
-      '@cycle/git-db':
-        specifier: workspace:*
-        version: link:../git-db
       effect:
         specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78

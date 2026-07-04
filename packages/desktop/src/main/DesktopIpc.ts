@@ -373,6 +373,7 @@ export const registerDesktopIpc = Effect.fnUntraced(function* () {
 
         return {
           baseUrl: runtimeBaseUrl ?? apiBaseUrlFromConfig(config.api),
+          profile: config.profile,
           token: config.api.staticToken,
         } satisfies ApiConnectionValue;
       }),

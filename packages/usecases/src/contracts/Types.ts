@@ -1,4 +1,5 @@
 import type { Schema } from "effect";
+export type { AutomationEvaluation, AutomationViolation } from "@cycle/contracts/schemas";
 
 export type UseCaseSource = "api" | "ci" | "cli" | "desktop" | "mcp" | "test" | string;
 
@@ -17,29 +18,6 @@ export type UseCaseMeta = {
   readonly requestId?: string;
   readonly source?: UseCaseSource;
   readonly traceContext?: unknown;
-};
-
-export type AutomationViolation = {
-  readonly code: string;
-  readonly field?: string;
-  readonly message: string;
-  readonly remediation?: string;
-  readonly severity: "error" | "fatal" | "warning";
-  readonly ticketId?: string;
-};
-
-export type AutomationEvaluation = {
-  readonly checkedAt: string;
-  readonly checkedTicketIds: ReadonlyArray<string>;
-  readonly checkedUseCase:
-    | "AutomationEvaluateIssues"
-    | "AutomationEvaluateQuery"
-    | "AutomationEvaluateRepository";
-  readonly repositoryId: string;
-  readonly status: "fail" | "pass" | "warn";
-  readonly summary: string;
-  readonly violations: ReadonlyArray<AutomationViolation>;
-  readonly warnings: ReadonlyArray<string>;
 };
 
 export type UseCaseSideEffect = "evaluate" | "push" | "read" | "sync" | "write";

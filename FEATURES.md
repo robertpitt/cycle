@@ -415,7 +415,8 @@ Source: `packages/desktop/` as reviewed on 2026-07-02.
   - [ ] External resource/link editing is not wired.
   - [x] Labels are displayed.
   - [ ] Label editing from issue detail is not wired.
-  - [ ] Issue archive/delete/restore controls are not wired in issue detail.
+  - [x] Issue archive control is wired in issue detail.
+  - [ ] Issue delete/restore controls are not wired in issue detail.
   - [ ] Issue relation editing is not wired in issue detail.
 
 ## Saved Views
@@ -767,7 +768,7 @@ Source: `packages/desktop/` as reviewed on 2026-07-02.
 - [ ] Wire project selection in the create issue dialog.
 - [ ] Wire recurring issue and issue link actions in the create issue dialog.
 - [ ] Implement issue attachment upload/persistence.
-- [ ] Add issue label editing, link editing, archive/delete/restore, and relation editing in issue detail.
+- [ ] Add issue label editing, link editing, delete/restore, and relation editing in issue detail.
 - [ ] Review initiative/epic terminology across create, list, and detail progress flows.
 - [ ] Resolve the issue agent task mode mismatch between "Implementation" UI and `read-only` submitted authority.
 - [ ] Add user-facing handling for chat command failures, failed turn retry, thread rename, and thread archive/unarchive.

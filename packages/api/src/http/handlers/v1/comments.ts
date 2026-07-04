@@ -1,5 +1,6 @@
-import { ContractSchemas, contractFor } from "@cycle/contracts";
+import { ContractSchemas } from "@cycle/contracts";
 import { CommentAdd, RecordListForIssue } from "@cycle/usecases";
+import { contractFor } from "@cycle/usecases/contracts";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {

@@ -5,16 +5,21 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./contracts": "./src/contracts/index.ts",
     "./domain": "./src/domain.ts",
-    "./schemas": "./src/schemas/index.ts"
+    "./schemas": "./src/schemas/index.ts",
+    "./schemas/agents": "./src/schemas/agents/index.ts",
+    "./schemas/api": "./src/schemas/api/index.ts",
+    "./schemas/api/requests": "./src/schemas/api/requests/index.ts",
+    "./schemas/api/responses": "./src/schemas/api/responses/index.ts",
+    "./schemas/automation": "./src/schemas/automation/index.ts",
+    "./schemas/components": "./src/schemas/components/index.ts",
+    "./schemas/entities": "./src/schemas/entities/index.ts"
   },
   "scripts": {
+    "lint": "oxlint --deny-warnings .",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@cycle/database": "workspace:*",
-    "@cycle/git-db": "workspace:*",
     "effect": "4.0.0-beta.78"
   }
 }

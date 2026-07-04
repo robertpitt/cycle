@@ -14,6 +14,10 @@ export const getSettingsDiagnosticsChannel = "cycle:desktop:settings/diagnostics
 
 export type ApiConnection = {
   readonly baseUrl: string;
+  readonly profile?: {
+    readonly displayName: string;
+    readonly email: string;
+  };
   readonly token: string;
 };
 

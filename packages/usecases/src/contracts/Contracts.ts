@@ -13,10 +13,10 @@ import {
   DeleteIssueInput,
   EmptyInput,
   InboxMutationInput,
-  InboxPageOutput,
+  InboxPage,
   InboxQuery,
-  InboxSummaryOutput,
-  InboxMutationResultOutput,
+  InboxSummary,
+  InboxMutationResult,
   InboxSummaryQuery,
   IssueDiffInput,
   IssueHistoryInput,
@@ -30,7 +30,6 @@ import {
   RelationIssueInput,
   RepositoryHistoryInput,
   RepositoryOpenInput,
-  RepositoryScoped,
   RestoreIssueInput,
   SavedViewQuery,
   SearchTicketsInput,
@@ -44,72 +43,39 @@ import {
   UpsertUserInput,
   UserProfileQuery,
   ViewIdInput,
-  AutomationEvaluationOutput,
-  HistoryPageOutput,
-  InitiativeProgressOutput,
-  IssueTemplateDocumentOutput,
-  IssueTemplatePageOutput,
-  LabelDefinitionDocumentOutput,
-  LabelDefinitionPageOutput,
-  LinkedRecordOutput,
-  MaterializationWarningOutput,
-  RecordPageOutput,
-  RepositoryStatusOutput,
-  SavedViewDocumentOutput,
-  SavedViewPageOutput,
-  SyncResultOutput,
-  TicketDocumentOutput,
-  TicketDraftDocumentOutput,
-  TicketPageOutput,
-  TicketRevisionDiffOutput,
-  TicketSearchPageOutput,
-  UserProfileDocumentOutput,
-  UserProfilePageOutput,
-} from "../schemas/index.ts";
+  AutomationEvaluation,
+  HistoryPage,
+  InitiativeProgress,
+  IssueTemplateDocument,
+  IssueTemplatePage,
+  LabelDefinitionDocument,
+  LabelDefinitionPage,
+  LinkedRecord,
+  MaterializationWarning,
+  RecordPage,
+  RepositoryStatus,
+  SavedViewDocument,
+  SavedViewPage,
+  SyncResult,
+  TicketDocument,
+  TicketDraftDocument,
+  TicketPage,
+  TicketRevisionDiff,
+  TicketSearchPage,
+  UserProfileDocument,
+  UserProfilePage,
+} from "@cycle/contracts/schemas";
+import { RepositoryScoped } from "../schemas/RepositoryScoped.ts";
+import { UseCaseFailure } from "../schemas/failures/index.ts";
 import type { UseCaseContract, UseCaseMeta } from "./Types.ts";
+
+export { UseCaseFailure, UseCaseFailureTag } from "../schemas/failures/index.ts";
 
 const NonEmptyTrimmedString = Schema.String.check(
   Schema.makeFilter<string>((value) => value.trim().length > 0 || "a non-empty string", {
     expected: "a non-empty string",
   }),
 );
-
-export const UseCaseFailureTag = Schema.Literals([
-  "AutomationEvaluationFailure",
-  "AuthorizationFailure",
-  "ConflictFailure",
-  "ConsistencyFailure",
-  "InterruptionFailure",
-  "InvalidInputFailure",
-  "NotFoundFailure",
-  "PolicyViolationFailure",
-  "PushFailure",
-  "RepositoryNotOpenFailure",
-  "RepositoryUnavailableFailure",
-  "StaleCursorFailure",
-  "StorageFailure",
-  "SyncFailure",
-  "TimeoutFailure",
-  "UnexpectedDefectFailure",
-  "UnknownUseCaseFailure",
-  "UnsupportedAliasFailure",
-]);
-export type UseCaseFailureTag = typeof UseCaseFailureTag.Type;
-
-export const UseCaseFailure = Schema.Struct({
-  _tag: UseCaseFailureTag,
-  code: Schema.optional(Schema.String),
-  // Failure details are an explicit extension field for boundary diagnostics.
-  details: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
-  field: Schema.optional(Schema.String),
-  message: Schema.String,
-  repositoryId: Schema.optional(Schema.String),
-  requestId: Schema.String,
-  retryable: Schema.Boolean,
-  ticketId: Schema.optional(Schema.String),
-  useCase: Schema.String,
-});
-export type UseCaseFailure = typeof UseCaseFailure.Type;
 
 const RepositoryScopedEmpty = RepositoryScoped(EmptyInput);
 const RepositoryScopedString = RepositoryScoped(Schema.String);
@@ -149,7 +115,7 @@ export const UseCaseContracts = {
     name: "RepositoryOpen",
     repositoryScope: "single",
     sideEffect: "sync",
-    successSchema: RepositoryStatusOutput,
+    successSchema: RepositoryStatus,
   }),
   RepositoryClose: contract({
     aliases: [],
@@ -171,7 +137,7 @@ export const UseCaseContracts = {
     name: "RepositoryList",
     repositoryScope: "none",
     sideEffect: "read",
-    successSchema: Schema.Array(RepositoryStatusOutput),
+    successSchema: Schema.Array(RepositoryStatus),
   }),
   RepositoryStatusGet: contract({
     aliases: ["repository.status.get"],
@@ -182,7 +148,7 @@ export const UseCaseContracts = {
     name: "RepositoryStatusGet",
     repositoryScope: "single",
     sideEffect: "read",
-    successSchema: RepositoryStatusOutput,
+    successSchema: RepositoryStatus,
   }),
   RepositoryMaterializationWarningsList: contract({
     aliases: ["repository.materializationWarnings"],
@@ -193,7 +159,7 @@ export const UseCaseContracts = {
     name: "RepositoryMaterializationWarningsList",
     repositoryScope: "single",
     sideEffect: "read",
-    successSchema: Schema.Array(MaterializationWarningOutput),
+    successSchema: Schema.Array(MaterializationWarning),
   }),
   RepositorySync: contract({
     aliases: ["repository.sync"],
@@ -204,7 +170,7 @@ export const UseCaseContracts = {
     name: "RepositorySync",
     repositoryScope: "single",
     sideEffect: "sync",
-    successSchema: RepositoryStatusOutput,
+    successSchema: RepositoryStatus,
   }),
   RepositoryPush: contract({
     aliases: ["repository.push"],
@@ -215,7 +181,7 @@ export const UseCaseContracts = {
     name: "RepositoryPush",
     repositoryScope: "single",
     sideEffect: "push",
-    successSchema: SyncResultOutput,
+    successSchema: SyncResult,
   }),
   RepositoryHistoryList: contract({
     aliases: ["repository.history.list"],
@@ -226,7 +192,7 @@ export const UseCaseContracts = {
     name: "RepositoryHistoryList",
     repositoryScope: "single",
     sideEffect: "read",
-    successSchema: HistoryPageOutput,
+    successSchema: HistoryPage,
   }),
   InboxList: contract({
     aliases: ["inbox.list"],
@@ -237,7 +203,7 @@ export const UseCaseContracts = {
     name: "InboxList",
     repositoryScope: "multi",
     sideEffect: "read",
-    successSchema: InboxPageOutput,
+    successSchema: InboxPage,
   }),
   InboxSummaryGet: contract({
     aliases: ["inbox.summary"],
@@ -248,7 +214,7 @@ export const UseCaseContracts = {
     name: "InboxSummaryGet",
     repositoryScope: "multi",
     sideEffect: "read",
-    successSchema: InboxSummaryOutput,
+    successSchema: InboxSummary,
   }),
   InboxMarkRead: contract({
     aliases: ["inbox.markRead"],
@@ -259,7 +225,7 @@ export const UseCaseContracts = {
     name: "InboxMarkRead",
     repositoryScope: "multi",
     sideEffect: "write",
-    successSchema: InboxMutationResultOutput,
+    successSchema: InboxMutationResult,
   }),
   InboxMarkUnread: contract({
     aliases: ["inbox.markUnread"],
@@ -270,7 +236,7 @@ export const UseCaseContracts = {
     name: "InboxMarkUnread",
     repositoryScope: "multi",
     sideEffect: "write",
-    successSchema: InboxMutationResultOutput,
+    successSchema: InboxMutationResult,
   }),
   InboxArchive: contract({
     aliases: ["inbox.archive"],
@@ -281,7 +247,7 @@ export const UseCaseContracts = {
     name: "InboxArchive",
     repositoryScope: "multi",
     sideEffect: "write",
-    successSchema: InboxMutationResultOutput,
+    successSchema: InboxMutationResult,
   }),
   IssueCreate: contract({
     aliases: ["ticket.issue.create"],
@@ -292,7 +258,7 @@ export const UseCaseContracts = {
     name: "IssueCreate",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: TicketDocumentOutput,
+    successSchema: TicketDocument,
   }),
   IssueGet: contract({
     aliases: ["ticket.issue.get"],
@@ -303,7 +269,7 @@ export const UseCaseContracts = {
     name: "IssueGet",
     repositoryScope: "single",
     sideEffect: "read",
-    successSchema: Schema.NullOr(TicketDocumentOutput),
+    successSchema: Schema.NullOr(TicketDocument),
   }),
   IssueList: contract({
     aliases: ["ticket.issue.list"],
@@ -314,7 +280,7 @@ export const UseCaseContracts = {
     name: "IssueList",
     repositoryScope: "multi",
     sideEffect: "read",
-    successSchema: TicketPageOutput,
+    successSchema: TicketPage,
   }),
   IssueSearch: contract({
     aliases: ["ticket.issue.search"],
@@ -325,7 +291,7 @@ export const UseCaseContracts = {
     name: "IssueSearch",
     repositoryScope: "multi",
     sideEffect: "read",
-    successSchema: TicketSearchPageOutput,
+    successSchema: TicketSearchPage,
   }),
   IssueUpdate: contract({
     aliases: ["ticket.issue.update"],
@@ -336,7 +302,7 @@ export const UseCaseContracts = {
     name: "IssueUpdate",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: TicketDocumentOutput,
+    successSchema: TicketDocument,
   }),
   IssueTransition: contract({
     aliases: ["ticket.issue.transition"],
@@ -347,7 +313,7 @@ export const UseCaseContracts = {
     name: "IssueTransition",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: TicketDocumentOutput,
+    successSchema: TicketDocument,
   }),
   IssueArchive: contract({
     aliases: ["ticket.issue.archive"],
@@ -358,7 +324,7 @@ export const UseCaseContracts = {
     name: "IssueArchive",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: TicketDocumentOutput,
+    successSchema: TicketDocument,
   }),
   IssueRestore: contract({
     aliases: ["ticket.issue.restore"],
@@ -369,7 +335,7 @@ export const UseCaseContracts = {
     name: "IssueRestore",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: TicketDocumentOutput,
+    successSchema: TicketDocument,
   }),
   IssueDelete: contract({
     aliases: ["ticket.issue.delete"],
@@ -380,7 +346,7 @@ export const UseCaseContracts = {
     name: "IssueDelete",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: TicketDocumentOutput,
+    successSchema: TicketDocument,
   }),
   IssueHistoryList: contract({
     aliases: ["ticket.issue.history"],
@@ -391,7 +357,7 @@ export const UseCaseContracts = {
     name: "IssueHistoryList",
     repositoryScope: "single",
     sideEffect: "read",
-    successSchema: HistoryPageOutput,
+    successSchema: HistoryPage,
   }),
   IssueRevisionGet: contract({
     aliases: ["ticket.issue.revision.get"],
@@ -402,7 +368,7 @@ export const UseCaseContracts = {
     name: "IssueRevisionGet",
     repositoryScope: "single",
     sideEffect: "read",
-    successSchema: Schema.NullOr(TicketDocumentOutput),
+    successSchema: Schema.NullOr(TicketDocument),
   }),
   IssueDiff: contract({
     aliases: ["ticket.issue.diff"],
@@ -413,7 +379,7 @@ export const UseCaseContracts = {
     name: "IssueDiff",
     repositoryScope: "single",
     sideEffect: "read",
-    successSchema: TicketRevisionDiffOutput,
+    successSchema: TicketRevisionDiff,
   }),
   IssueRelationAdd: contract({
     aliases: ["ticket.issue.relation.add"],
@@ -424,7 +390,7 @@ export const UseCaseContracts = {
     name: "IssueRelationAdd",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: TicketDocumentOutput,
+    successSchema: TicketDocument,
   }),
   IssueRelationRemove: contract({
     aliases: ["ticket.issue.relation.remove"],
@@ -435,7 +401,7 @@ export const UseCaseContracts = {
     name: "IssueRelationRemove",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: TicketDocumentOutput,
+    successSchema: TicketDocument,
   }),
   DraftCreate: contract({
     aliases: ["ticket.draft.create"],
@@ -446,7 +412,7 @@ export const UseCaseContracts = {
     name: "DraftCreate",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: TicketDraftDocumentOutput,
+    successSchema: TicketDraftDocument,
   }),
   DraftUpdate: contract({
     aliases: ["ticket.draft.update"],
@@ -457,7 +423,7 @@ export const UseCaseContracts = {
     name: "DraftUpdate",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: TicketDraftDocumentOutput,
+    successSchema: TicketDraftDocument,
   }),
   DraftCommit: contract({
     aliases: ["ticket.draft.commit"],
@@ -468,7 +434,7 @@ export const UseCaseContracts = {
     name: "DraftCommit",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: TicketDocumentOutput,
+    successSchema: TicketDocument,
   }),
   CommentAdd: contract({
     aliases: [],
@@ -484,7 +450,7 @@ export const UseCaseContracts = {
     name: "CommentAdd",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: LinkedRecordOutput,
+    successSchema: LinkedRecord,
   }),
   RecordAdd: contract({
     aliases: ["ticket.record.add"],
@@ -495,7 +461,7 @@ export const UseCaseContracts = {
     name: "RecordAdd",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: LinkedRecordOutput,
+    successSchema: LinkedRecord,
   }),
   RecordListForIssue: contract({
     aliases: ["ticket.record.listForIssue"],
@@ -506,7 +472,7 @@ export const UseCaseContracts = {
     name: "RecordListForIssue",
     repositoryScope: "single",
     sideEffect: "read",
-    successSchema: RecordPageOutput,
+    successSchema: RecordPage,
   }),
   InitiativeCreate: contract({
     aliases: ["ticket.initiative.create"],
@@ -517,7 +483,7 @@ export const UseCaseContracts = {
     name: "InitiativeCreate",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: TicketDocumentOutput,
+    successSchema: TicketDocument,
   }),
   InitiativeProgressGet: contract({
     aliases: ["ticket.initiative.progress"],
@@ -528,7 +494,7 @@ export const UseCaseContracts = {
     name: "InitiativeProgressGet",
     repositoryScope: "single",
     sideEffect: "read",
-    successSchema: InitiativeProgressOutput,
+    successSchema: InitiativeProgress,
   }),
   InitiativeUpdateAdd: contract({
     aliases: ["ticket.initiative.update.add"],
@@ -539,7 +505,7 @@ export const UseCaseContracts = {
     name: "InitiativeUpdateAdd",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: LinkedRecordOutput,
+    successSchema: LinkedRecord,
   }),
   LabelList: contract({
     aliases: ["ticket.label.list"],
@@ -550,7 +516,7 @@ export const UseCaseContracts = {
     name: "LabelList",
     repositoryScope: "single",
     sideEffect: "read",
-    successSchema: LabelDefinitionPageOutput,
+    successSchema: LabelDefinitionPage,
   }),
   LabelUpsert: contract({
     aliases: ["ticket.label.upsert"],
@@ -561,7 +527,7 @@ export const UseCaseContracts = {
     name: "LabelUpsert",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: LabelDefinitionDocumentOutput,
+    successSchema: LabelDefinitionDocument,
   }),
   LabelArchive: contract({
     aliases: ["ticket.label.archive"],
@@ -572,7 +538,7 @@ export const UseCaseContracts = {
     name: "LabelArchive",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: LabelDefinitionDocumentOutput,
+    successSchema: LabelDefinitionDocument,
   }),
   UserGet: contract({
     aliases: ["ticket.user.get"],
@@ -583,7 +549,7 @@ export const UseCaseContracts = {
     name: "UserGet",
     repositoryScope: "single",
     sideEffect: "read",
-    successSchema: Schema.NullOr(UserProfileDocumentOutput),
+    successSchema: Schema.NullOr(UserProfileDocument),
   }),
   UserList: contract({
     aliases: ["ticket.user.list"],
@@ -594,7 +560,7 @@ export const UseCaseContracts = {
     name: "UserList",
     repositoryScope: "single",
     sideEffect: "read",
-    successSchema: UserProfilePageOutput,
+    successSchema: UserProfilePage,
   }),
   UserUpsert: contract({
     aliases: ["ticket.user.upsert"],
@@ -605,7 +571,7 @@ export const UseCaseContracts = {
     name: "UserUpsert",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: UserProfileDocumentOutput,
+    successSchema: UserProfileDocument,
   }),
   ViewCreate: contract({
     aliases: ["ticket.view.create"],
@@ -616,7 +582,7 @@ export const UseCaseContracts = {
     name: "ViewCreate",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: SavedViewDocumentOutput,
+    successSchema: SavedViewDocument,
   }),
   ViewGet: contract({
     aliases: ["ticket.view.get"],
@@ -627,7 +593,7 @@ export const UseCaseContracts = {
     name: "ViewGet",
     repositoryScope: "single",
     sideEffect: "read",
-    successSchema: Schema.NullOr(SavedViewDocumentOutput),
+    successSchema: Schema.NullOr(SavedViewDocument),
   }),
   ViewList: contract({
     aliases: ["ticket.view.list"],
@@ -638,7 +604,7 @@ export const UseCaseContracts = {
     name: "ViewList",
     repositoryScope: "single",
     sideEffect: "read",
-    successSchema: SavedViewPageOutput,
+    successSchema: SavedViewPage,
   }),
   ViewUpdate: contract({
     aliases: ["ticket.view.update"],
@@ -649,7 +615,7 @@ export const UseCaseContracts = {
     name: "ViewUpdate",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: SavedViewDocumentOutput,
+    successSchema: SavedViewDocument,
   }),
   ViewDelete: contract({
     aliases: ["ticket.view.delete"],
@@ -660,7 +626,7 @@ export const UseCaseContracts = {
     name: "ViewDelete",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: SavedViewDocumentOutput,
+    successSchema: SavedViewDocument,
   }),
   TemplateCreate: contract({
     aliases: ["ticket.template.create"],
@@ -671,7 +637,7 @@ export const UseCaseContracts = {
     name: "TemplateCreate",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: IssueTemplateDocumentOutput,
+    successSchema: IssueTemplateDocument,
   }),
   TemplateGet: contract({
     aliases: ["ticket.template.get"],
@@ -682,7 +648,7 @@ export const UseCaseContracts = {
     name: "TemplateGet",
     repositoryScope: "single",
     sideEffect: "read",
-    successSchema: Schema.NullOr(IssueTemplateDocumentOutput),
+    successSchema: Schema.NullOr(IssueTemplateDocument),
   }),
   TemplateList: contract({
     aliases: ["ticket.template.list"],
@@ -693,7 +659,7 @@ export const UseCaseContracts = {
     name: "TemplateList",
     repositoryScope: "single",
     sideEffect: "read",
-    successSchema: IssueTemplatePageOutput,
+    successSchema: IssueTemplatePage,
   }),
   TemplateUpdate: contract({
     aliases: ["ticket.template.update"],
@@ -704,7 +670,7 @@ export const UseCaseContracts = {
     name: "TemplateUpdate",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: IssueTemplateDocumentOutput,
+    successSchema: IssueTemplateDocument,
   }),
   TemplateArchive: contract({
     aliases: ["ticket.template.archive"],
@@ -715,7 +681,7 @@ export const UseCaseContracts = {
     name: "TemplateArchive",
     repositoryScope: "single",
     sideEffect: "write",
-    successSchema: IssueTemplateDocumentOutput,
+    successSchema: IssueTemplateDocument,
   }),
   AutomationEvaluateRepository: contract({
     aliases: [],
@@ -726,7 +692,7 @@ export const UseCaseContracts = {
     name: "AutomationEvaluateRepository",
     repositoryScope: "single",
     sideEffect: "evaluate",
-    successSchema: AutomationEvaluationOutput,
+    successSchema: AutomationEvaluation,
   }),
   AutomationEvaluateIssues: contract({
     aliases: [],
@@ -737,7 +703,7 @@ export const UseCaseContracts = {
     name: "AutomationEvaluateIssues",
     repositoryScope: "single",
     sideEffect: "evaluate",
-    successSchema: AutomationEvaluationOutput,
+    successSchema: AutomationEvaluation,
   }),
   AutomationEvaluateQuery: contract({
     aliases: [],
@@ -748,7 +714,7 @@ export const UseCaseContracts = {
     name: "AutomationEvaluateQuery",
     repositoryScope: "single",
     sideEffect: "evaluate",
-    successSchema: AutomationEvaluationOutput,
+    successSchema: AutomationEvaluation,
   }),
 } as const satisfies Record<string, UseCaseContract>;
 

@@ -132,6 +132,131 @@ describe("renderer cycle API client", () => {
     );
   });
 
+  it("sends the desktop profile as explicit human actor metadata", async () => {
+    const calls: Array<{
+      readonly body?: BodyInit | null;
+      readonly headers: Readonly<Record<string, string>>;
+      readonly method?: string;
+      readonly url: string;
+    }> = [];
+
+    globalThis.window = {
+      cycleDesktop: {
+        getApiConnection: async () => ({
+          baseUrl: "http://cycle.test",
+          profile: {
+            displayName: "Desktop User",
+            email: "desktop@example.com",
+          },
+          token: "test-token",
+        }),
+      },
+      location: {
+        hash: "",
+        protocol: "http:",
+        search: "",
+      },
+    } as Window & typeof globalThis;
+    globalThis.fetch = async (input, init) => {
+      calls.push({
+        body: init?.body,
+        headers: Object.fromEntries(new Headers(init?.headers).entries()),
+        method: init?.method,
+        url: String(input),
+      });
+
+      return new Response(
+        JSON.stringify({
+          data: archivedIssueRecord("ISSUE-1"),
+          meta: { requestId: "req-test" },
+        }),
+        {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        },
+      );
+    };
+
+    await cycleApiClient.call("ticket.issue.update", {
+      input: {
+        id: "ISSUE-1",
+        patch: {
+          frontmatter: {
+            status: "done",
+          },
+        },
+      },
+      repository: {
+        id: "repo-a",
+      },
+    });
+
+    assert.equal(calls[0]?.url, "http://cycle.test/v1/repositories/repo-a/issues/ISSUE-1");
+    assert.equal(calls[0]?.headers["x-cycle-actor-type"], "human");
+    assert.equal(calls[0]?.headers["x-cycle-actor-name"], "Desktop User");
+    assert.equal(calls[0]?.headers["x-cycle-actor-email"], "desktop@example.com");
+    assert.equal(calls[0]?.headers["x-cycle-source"], "desktop");
+  });
+
+  it("archives issues through the repository issue archive endpoint", async () => {
+    const calls: Array<{
+      readonly body?: BodyInit | null;
+      readonly method?: string;
+      readonly url: string;
+    }> = [];
+    const storage = new Map<string, string>();
+
+    globalThis.window = {
+      location: {
+        hash: "",
+        protocol: "http:",
+        search: "?cycleApiUrl=http://cycle.test&cycleApiToken=test-token",
+      },
+      localStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          storage.set(key, value);
+        },
+      },
+    } as Window & typeof globalThis;
+    globalThis.fetch = async (input, init) => {
+      calls.push({
+        body: init?.body,
+        method: init?.method,
+        url: String(input),
+      });
+
+      return new Response(
+        JSON.stringify({
+          data: archivedIssueRecord("ISSUE-1"),
+          meta: { requestId: "req-test" },
+        }),
+        {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        },
+      );
+    };
+
+    const result = await cycleApiClient.call("ticket.issue.archive", {
+      input: {
+        id: "ISSUE-1",
+      },
+      repository: {
+        id: "repo-a",
+      },
+    });
+
+    assert.equal(result.archivedAt, "2026-07-03T10:00:00.000Z");
+    assert.deepEqual(calls, [
+      {
+        body: "{}",
+        method: "POST",
+        url: "http://cycle.test/v1/repositories/repo-a/issues/ISSUE-1/archive",
+      },
+    ]);
+  });
+
   it("starts ticket draft chats with repository context", async () => {
     const storage = new Map<string, string>();
     const sockets: MockWebSocket[] = [];
@@ -315,4 +440,38 @@ const agentTaskRecord = (taskId: string, status: string) => ({
   status,
   taskId,
   updatedAt: "2026-07-02T00:00:00.000Z",
+});
+
+const archivedIssueRecord = (id: string) => ({
+  archivedAt: "2026-07-03T10:00:00.000Z",
+  body: "Test body",
+  bodyFormat: "markdown",
+  createdBy: "tester",
+  frontmatter: {
+    archivedAt: "2026-07-03T10:00:00.000Z",
+    archivedBy: {
+      name: "Tester",
+      type: "human",
+    },
+    createdAt: "2026-07-01T10:00:00.000Z",
+    createdBy: {
+      name: "Tester",
+      type: "human",
+    },
+    id,
+    priority: "medium",
+    status: "todo",
+    title: "Archive me",
+    type: "issue",
+    updatedAt: "2026-07-03T10:00:00.000Z",
+  },
+  id,
+  parent: "none",
+  priority: "medium",
+  repositoryId: "repo-a",
+  schemaVersion: 1,
+  status: "todo",
+  title: "Archive me",
+  type: "issue",
+  updatedDate: "2026-07-03",
 });

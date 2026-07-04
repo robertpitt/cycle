@@ -2350,9 +2350,7 @@ const repositoriesFromThreadOrigin = (
   return repositoryId === undefined ? undefined : [{ id: repositoryId }];
 };
 
-export const chatOriginInstructions = (
-  thread: AgentChatThreadRecord,
-): string | undefined => {
+export const chatOriginInstructions = (thread: AgentChatThreadRecord): string | undefined => {
   const repositoryId = threadOriginString(thread, "repositoryId");
   const issueId = threadOriginString(thread, "issueId");
   if (repositoryId === undefined || issueId === undefined) return undefined;

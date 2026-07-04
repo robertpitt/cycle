@@ -1,10 +1,11 @@
-import {
-  type RepositoryInput,
-  type UseCaseInput,
-  type UseCaseMeta,
-  type UseCaseName,
-  type UseCaseFailure,
-} from "@cycle/contracts";
+import type { RepositoryInput } from "@cycle/contracts";
+import type {
+  UseCaseActor,
+  UseCaseFailure,
+  UseCaseInput,
+  UseCaseMeta,
+  UseCaseName,
+} from "@cycle/usecases/contracts";
 import { logInfo, logWarning } from "@cycle/logging";
 import {
   AutomationEvaluateIssues,
@@ -243,10 +244,40 @@ export const repositoryOpenInputFrom = (
     );
   });
 
-export const meta = (requestId: string): UseCaseMeta => ({
-  requestId,
-  source: "api",
-});
+const optionalHeader = (headers: Headers.Headers | undefined, key: string): string | undefined => {
+  const value = headers?.[key];
+  const trimmed = value?.trim();
+  return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
+};
+
+const actorTypeFromHeader = (value: string | undefined): UseCaseActor["type"] | undefined =>
+  value === "agent" || value === "human" || value === "import" ? value : undefined;
+
+const actorFromHeaders = (headers: Headers.Headers | undefined): UseCaseActor | undefined => {
+  const type = actorTypeFromHeader(optionalHeader(headers, "x-cycle-actor-type"));
+  const name = optionalHeader(headers, "x-cycle-actor-name");
+  if (type === undefined || name === undefined) return undefined;
+
+  const email = optionalHeader(headers, "x-cycle-actor-email");
+  const provider = optionalHeader(headers, "x-cycle-actor-provider");
+
+  return {
+    ...(email === undefined ? {} : { email }),
+    name,
+    ...(provider === undefined ? {} : { provider }),
+    type,
+  };
+};
+
+export const meta = (requestId: string, headers?: Headers.Headers): UseCaseMeta => {
+  const actor = actorFromHeaders(headers);
+
+  return {
+    ...(actor === undefined ? {} : { actor }),
+    requestId,
+    source: optionalHeader(headers, "x-cycle-source") ?? "api",
+  };
+};
 
 export const scoped = <T>(
   repositoryId: string,

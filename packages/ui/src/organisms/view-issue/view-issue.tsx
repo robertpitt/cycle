@@ -1,4 +1,5 @@
 import {
+  Archive as ArchiveIcon,
   BarChart3,
   Box,
   CalendarX2,
@@ -84,6 +85,9 @@ export type ViewIssueProps = Omit<React.HTMLAttributes<HTMLDivElement>, "title">
   MarkdownReferenceHandlers & {
     readonly activityEvents?: readonly ViewIssueActivityEvent[];
     readonly agentWork?: React.ReactNode;
+    readonly archiveDisabled?: boolean;
+    readonly archiveLabel?: string;
+    readonly archivePending?: boolean;
     readonly assignee?: IssueAuthor;
     readonly comments?: readonly ViewIssueComment[];
     readonly defaultDescription?: string;
@@ -96,6 +100,7 @@ export type ViewIssueProps = Omit<React.HTMLAttributes<HTMLDivElement>, "title">
     readonly dueDate?: React.ReactNode;
     readonly labels?: readonly ViewIssueLabel[];
     readonly onCommentCreate?: (comment: string) => void;
+    readonly onArchive?: () => void;
     readonly onDescriptionSave?: (description: string) => void;
     readonly onEditorCommandSelect?: (command: IssueEditorCommand) => void;
     readonly onEditorFormatSelect?: (action: IssueEditorFormatAction) => void;
@@ -188,7 +193,19 @@ const defaultProperties = ({
   },
 ];
 
-const ViewIssueActions = ({ onAgentDelegate }: { readonly onAgentDelegate?: () => void }) => (
+const ViewIssueActions = ({
+  archiveDisabled,
+  archiveLabel = "Archive issue",
+  archivePending,
+  onAgentDelegate,
+  onArchive,
+}: {
+  readonly archiveDisabled?: boolean;
+  readonly archiveLabel?: string;
+  readonly archivePending?: boolean;
+  readonly onAgentDelegate?: () => void;
+  readonly onArchive?: () => void;
+}) => (
   <div className="flex items-center justify-end gap-2">
     <IconButton
       icon={<LinkIcon aria-hidden className="size-4" />}
@@ -220,6 +237,17 @@ const ViewIssueActions = ({ onAgentDelegate }: { readonly onAgentDelegate?: () =
       title="Delegate to agent"
       variant="outline"
     />
+    {onArchive ? (
+      <IconButton
+        disabled={archiveDisabled || archivePending}
+        icon={<ArchiveIcon aria-hidden className="size-4" />}
+        label={archivePending ? "Archiving issue" : archiveLabel}
+        onClick={onArchive}
+        size="sm"
+        title={archivePending ? "Archiving issue" : archiveLabel}
+        variant="outline"
+      />
+    ) : null}
     <Button
       className="h-8 rounded-full px-2"
       rightIcon={<ChevronDown aria-hidden className="size-4" />}
@@ -314,6 +342,9 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
   {
     activityEvents = defaultActivityEvents,
     agentWork,
+    archiveDisabled = false,
+    archiveLabel,
+    archivePending = false,
     assignee,
     className,
     comments = [],
@@ -333,6 +364,7 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
     ],
     labelsDefaultOpen = true,
     onAgentReferenceClick,
+    onArchive,
     onCommentCreate,
     onCommitReferenceClick,
     onCycleReferenceClick,
@@ -626,7 +658,13 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
       </main>
 
       <aside className="sticky top-0 grid max-h-full min-h-0 content-start gap-3 self-start overflow-y-auto overscroll-contain pr-1 max-xl:hidden">
-        <ViewIssueActions onAgentDelegate={onAgentDelegate} />
+        <ViewIssueActions
+          archiveDisabled={archiveDisabled}
+          archiveLabel={archiveLabel}
+          archivePending={archivePending}
+          onAgentDelegate={onAgentDelegate}
+          onArchive={onArchive}
+        />
         <IssueSidebarSection
           className="overflow-visible"
           defaultOpen={propertiesDefaultOpen}

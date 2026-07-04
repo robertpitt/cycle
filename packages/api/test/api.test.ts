@@ -1278,10 +1278,7 @@ describe("@cycle/api", () => {
       assert.equal(prepared.agentRequest.mcp.url, "http://127.0.0.1:4738/mcp");
       assert.equal(prepared.agentRequest.mcp.headers?.authorization, `Bearer ${token}`);
     }
-    assert.match(
-      prepared.agentRequest.instructions ?? "",
-      /cycle-repository:<repositoryId>/u,
-    );
+    assert.match(prepared.agentRequest.instructions ?? "", /cycle-repository:<repositoryId>/u);
     assert.match(
       prepared.agentRequest.instructions ?? "",
       /Assigned ticket implementation workflow/u,
@@ -1312,10 +1309,7 @@ describe("@cycle/api", () => {
     );
     assert.match(instructions ?? "", /Assigned ticket implementation workflow/u);
     assert.match(instructions ?? "", /dedicated git worktree/u);
-    assert.match(
-      instructions ?? "",
-      /cycle:\/\/repository\/test-repository\/tickets\/ISSUE-1/u,
-    );
+    assert.match(instructions ?? "", /cycle:\/\/repository\/test-repository\/tickets\/ISSUE-1/u);
   });
 
   it("starts issue mention chat threads for tagged Codex and Claude providers", async () => {
@@ -2447,6 +2441,51 @@ describe("@cycle/api", () => {
       assert.equal(response.status, 200);
       assert.equal(body.data?.status, "in-progress");
       assert.deepEqual(calls, ["IssueCreate", "IssueGet", "IssueTransition"]);
+    } finally {
+      await api.dispose();
+    }
+  });
+
+  it("passes explicit human actor metadata from HTTP issue updates", async () => {
+    const { api, calls } = makeTestApi();
+
+    try {
+      await api.fetch(
+        new Request(`http://cycle.test/v1/repositories/${repository.id}/issues`, {
+          ...authed({
+            title: "Complete me",
+            type: "task",
+          }),
+          method: "POST",
+        }),
+      );
+
+      const response = await api.fetch(
+        new Request(`http://cycle.test/v1/repositories/${repository.id}/issues/ISSUE-1`, {
+          body: JSON.stringify({
+            frontmatter: {
+              status: "done",
+            },
+          }),
+          headers: {
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json",
+            "x-cycle-actor-email": "desktop@example.com",
+            "x-cycle-actor-name": "Desktop User",
+            "x-cycle-actor-type": "human",
+            "x-cycle-source": "desktop",
+            "x-request-id": "req_test",
+          },
+          method: "PATCH",
+        }),
+      );
+      const body = (await response.json()) as {
+        data?: { frontmatter?: { status?: string } };
+      };
+
+      assert.equal(response.status, 200);
+      assert.equal(body.data?.frontmatter?.status, "done");
+      assert.deepEqual(calls, ["IssueCreate", "IssueGet", "IssueUpdate"]);
     } finally {
       await api.dispose();
     }

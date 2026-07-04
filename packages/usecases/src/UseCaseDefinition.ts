@@ -11,7 +11,7 @@ import {
   type UseCaseRepositoryScope,
   type UseCaseSideEffect,
   type UseCaseSuccess,
-} from "@cycle/contracts/contracts";
+} from "./contracts/index.ts";
 import { invalidInputFailure, useCaseFailure } from "./UseCaseFailure.ts";
 
 const StrictDecodeOptions = { onExcessProperty: "error" } as const;

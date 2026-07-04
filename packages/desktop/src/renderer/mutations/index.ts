@@ -5,6 +5,7 @@ export * from "./settings.ts";
 export * from "./useInboxMutation.ts";
 export * from "./useAddRepositoryMutation.ts";
 export * from "./useAddIssueCommentMutation.ts";
+export * from "./useArchiveIssueMutation.ts";
 export * from "./useCompleteOnboardingMutation.ts";
 export * from "./useCreateIssueMutation.ts";
 export * from "./useInitialiseRepositoryMutation.ts";

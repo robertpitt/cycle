@@ -266,50 +266,42 @@ export type PlanApplyInput = typeof PlanApplyInput.Type;
 export const ApiResourceEnvelope = ResourceEnvelopeOf;
 export const ApiCollectionEnvelope = CollectionEnvelopeOf;
 
-export const TicketResourceEnvelope = ApiResourceEnvelope(ContractSchemas.TicketDocumentOutput);
-export const TicketCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.TicketDocumentOutput);
+export const TicketResourceEnvelope = ApiResourceEnvelope(ContractSchemas.TicketDocument);
+export const TicketCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.TicketDocument);
 export const TicketSearchCollectionEnvelope = ApiCollectionEnvelope(
-  ContractSchemas.TicketSearchResultOutput,
+  ContractSchemas.TicketSearchResult,
 );
 export const TicketListOrSearchCollectionEnvelope = Schema.Union([
   TicketCollectionEnvelope,
   TicketSearchCollectionEnvelope,
 ]);
-export const RepositoryCollectionEnvelope = ApiCollectionEnvelope(
-  ContractSchemas.RepositoryStatusOutput,
-);
-export const RepositoryResourceEnvelope = ApiResourceEnvelope(
-  ContractSchemas.RepositoryStatusOutput,
-);
+export const RepositoryCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.RepositoryStatus);
+export const RepositoryResourceEnvelope = ApiResourceEnvelope(ContractSchemas.RepositoryStatus);
 export const AutocompleteEnvelope = ApiResourceEnvelope(AutocompleteOutput);
-export const InboxPageEnvelope = ApiResourceEnvelope(ContractSchemas.InboxPageOutput);
-export const InboxMutationEnvelope = ApiResourceEnvelope(ContractSchemas.InboxMutationResultOutput);
-export const CommentCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.LinkedRecordOutput);
-export const CommentResourceEnvelope = ApiResourceEnvelope(ContractSchemas.LinkedRecordOutput);
-export const RecordCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.LinkedRecordOutput);
-export const RecordResourceEnvelope = ApiResourceEnvelope(ContractSchemas.LinkedRecordOutput);
-export const HistoryCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.HistoryCommitOutput);
+export const InboxPageEnvelope = ApiResourceEnvelope(ContractSchemas.InboxPage);
+export const InboxMutationEnvelope = ApiResourceEnvelope(ContractSchemas.InboxMutationResult);
+export const CommentCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.LinkedRecord);
+export const CommentResourceEnvelope = ApiResourceEnvelope(ContractSchemas.LinkedRecord);
+export const RecordCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.LinkedRecord);
+export const RecordResourceEnvelope = ApiResourceEnvelope(ContractSchemas.LinkedRecord);
+export const HistoryCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.HistoryCommit);
 export const LabelCollectionEnvelope = ApiCollectionEnvelope(
-  ContractSchemas.LabelDefinitionDocumentOutput,
+  ContractSchemas.LabelDefinitionDocument,
 );
-export const UserCollectionEnvelope = ApiCollectionEnvelope(
-  ContractSchemas.UserProfileDocumentOutput,
-);
+export const UserCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.UserProfileDocument);
 export const TemplateCollectionEnvelope = ApiCollectionEnvelope(
-  ContractSchemas.IssueTemplateDocumentOutput,
+  ContractSchemas.IssueTemplateDocument,
 );
-export const ViewCollectionEnvelope = ApiCollectionEnvelope(
-  ContractSchemas.SavedViewDocumentOutput,
-);
-export const ViewResourceEnvelope = ApiResourceEnvelope(ContractSchemas.SavedViewDocumentOutput);
+export const ViewCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.SavedViewDocument);
+export const ViewResourceEnvelope = ApiResourceEnvelope(ContractSchemas.SavedViewDocument);
 export const AutomationEvaluationEnvelope = ApiResourceEnvelope(
-  ContractSchemas.AutomationEvaluationOutput,
+  ContractSchemas.AutomationEvaluation,
 );
 export const PlanApplyOutput = Schema.Struct({
   issues: Schema.Array(
     Schema.Struct({
       clientId: Schema.String,
-      issue: ContractSchemas.TicketDocumentOutput,
+      issue: ContractSchemas.TicketDocument,
     }),
   ),
   relations: Schema.Array(

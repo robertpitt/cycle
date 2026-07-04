@@ -28,6 +28,12 @@ import type {
 
 export const ApiConnection: Schema.Schema<ApiConnectionValue> = Schema.Struct({
   baseUrl: Schema.String,
+  profile: Schema.optional(
+    Schema.Struct({
+      displayName: Schema.String,
+      email: Schema.String,
+    }),
+  ),
   token: Schema.String,
 });
 

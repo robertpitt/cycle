@@ -1252,6 +1252,7 @@ export const WorkspaceScreen = () => {
                 <ViewIssuePanel
                   agentProviders={detectedAgentProviders}
                   issueId={selectedIssueId}
+                  onArchived={navigateToParent}
                   onChatOpen={() =>
                     navigateWorkspace({
                       page: "chat",
