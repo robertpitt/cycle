@@ -1,5 +1,5 @@
 import { Context, Effect } from "effect";
-import type { ElectronError } from "./ElectronError.ts";
+import type { ElectronError } from "../errors/ElectronError.ts";
 
 export type ElectronShellService = {
   readonly openExternal: (targetUrl: string) => Effect.Effect<void, ElectronError>;

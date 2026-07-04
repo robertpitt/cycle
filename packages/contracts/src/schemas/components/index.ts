@@ -20,5 +20,4 @@ export * from "./StringList.ts";
 export * from "./TicketStatusEnum.ts";
 export * from "./TicketTypeId.ts";
 export * from "./TicketTypeSelection.ts";
-export * from "./TicketTypes.ts";
 export * from "./UnknownRecord.ts";

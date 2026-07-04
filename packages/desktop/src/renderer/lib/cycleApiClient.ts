@@ -3,12 +3,14 @@ import {
   ApiErrorEnvelope as ApiErrorEnvelopeSchema,
   AutocompleteOutput as AutocompleteOutputSchema,
   CollectionEnvelopeOf,
+  InboxPageResourceEnvelope,
   ResourceEnvelopeOf,
   type AutocompleteEntityType as ApiAutocompleteEntityType,
   type HttpAutocompleteResultOutput as ApiAutocompleteResult,
 } from "@cycle/api/api";
 import {
   ContractSchemas,
+  type InboxPage,
   type RepositoryStatus,
   type TicketDocument,
   type TicketPage,
@@ -94,6 +96,15 @@ type UnknownResourceEnvelope = {
 };
 type UnknownCollectionEnvelope = {
   readonly data?: unknown;
+};
+type InboxCollectionEnvelope = {
+  readonly data: InboxPage["entries"];
+  readonly meta: {
+    readonly activeSnapshotIds: InboxPage["activeSnapshotIds"];
+  };
+  readonly page: {
+    readonly nextCursor: string | null;
+  };
 };
 type ApiAgentProviderProfile = (typeof AgentProvidersOutputSchema.Type)["providers"][number];
 
@@ -806,6 +817,21 @@ const page = async <S extends Schema.Top>(
   };
 };
 
+const inboxPage = async (path: string): Promise<InboxPage> => {
+  const response = (await request(
+    "GET",
+    path,
+    InboxPageResourceEnvelope,
+  )) as InboxCollectionEnvelope;
+  const nextCursor = response.page.nextCursor;
+
+  return {
+    activeSnapshotIds: response.meta.activeSnapshotIds,
+    entries: response.data,
+    ...(typeof nextCursor === "string" ? { nextCursor } : {}),
+  };
+};
+
 const encodeSegment = (value: string): string => encodeURIComponent(value);
 
 const repositoryPath = (repositoryId: string): string =>
@@ -856,6 +882,14 @@ const queryParamName = (key: string): string => {
       return "filter[assignee][in]";
     case "repositoryIds":
       return "filter[repository][in]";
+    case "originKind":
+      return "filter[originKind]";
+    case "repositoryId":
+      return "filter[repositoryId]";
+    case "types":
+      return "filter[type][in]";
+    case "userId":
+      return "filter[userId]";
     case "orderBy":
       return "sort[field]";
     case "orderDirection":
@@ -1135,7 +1169,7 @@ export const cycleApiClient = {
       withQuery("/v1/autocomplete", {
         limit: input.limit,
         q: input.query,
-        types: input.types,
+        "filter[type][in]": input.types,
       }),
       AutocompleteOutputSchema,
     );
@@ -1261,11 +1295,9 @@ export const cycleApiClient = {
 
     switch (alias) {
       case "inbox.list":
-        return resource(
-          "GET",
-          withQuery(inboxPath, payload as QueryInput),
-          ContractSchemas.InboxPage,
-        ) as Promise<UseCaseSuccessesByAlias[Alias]>;
+        return inboxPage(withQuery(inboxPath, payload as QueryInput)) as Promise<
+          UseCaseSuccessesByAlias[Alias]
+        >;
 
       case "inbox.summary":
         return resource(

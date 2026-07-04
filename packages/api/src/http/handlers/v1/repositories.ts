@@ -12,6 +12,8 @@ import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import { CycleApiRuntime } from "../../runtime/CycleApiRuntime.ts";
 import {
+  arrayPageFrom,
+  asPage,
   collectionResponse,
   filterRepositories,
   historyQueryFrom,
@@ -23,7 +25,6 @@ import {
   runUseCase,
   scoped,
   urlFromRequest,
-  asPage,
 } from "../shared.ts";
 
 export const withRepositoryHandlers = (handlers: any) =>
@@ -55,8 +56,9 @@ export const withRepositoryHandlers = (handlers: any) =>
         if (HttpServerResponse.isHttpServerResponse(repositories)) return repositories;
         const url = urlFromRequest(request);
         const filtered = filterRepositories(repositories, url.searchParams);
+        const page = arrayPageFrom(filtered, url.searchParams);
 
-        return collectionResponse(requestId, url, filtered, filtered.length, null);
+        return collectionResponse(requestId, url, page.entries, page.limit, page.nextCursor);
       }),
     )
     .handle("openRepository", ({ payload, request }: any) =>
@@ -96,7 +98,8 @@ export const withRepositoryHandlers = (handlers: any) =>
         if (HttpServerResponse.isHttpServerResponse(warnings)) return warnings;
 
         const entries = Array.isArray(warnings) ? warnings : [];
-        return collectionResponse(requestId, url, entries, entries.length, null);
+        const page = arrayPageFrom(entries, url.searchParams);
+        return collectionResponse(requestId, url, page.entries, page.limit, page.nextCursor);
       }),
     )
     .handle("listRepositoryHistory", ({ params, request }: any) =>

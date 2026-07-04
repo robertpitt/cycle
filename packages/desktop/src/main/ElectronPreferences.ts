@@ -1,7 +1,7 @@
 import type { JsonObject } from "@cycle/contracts/schemas";
 import { session } from "electron";
 import { Context, Effect, Layer, Scope } from "effect";
-import { ElectronError } from "../platform/ElectronError.ts";
+import { ElectronError } from "../errors/ElectronError.ts";
 import {
   ElectronTheme,
   type ElectronThemeLifecycleHandlers,

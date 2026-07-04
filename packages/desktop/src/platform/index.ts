@@ -4,7 +4,7 @@ export * from "./DesktopRuntime.ts";
 export * from "./DesktopRuntimeLive.ts";
 export * from "./ElectronApp.ts";
 export * from "./ElectronAppLive.ts";
-export * from "./ElectronError.ts";
+export * from "../errors/ElectronError.ts";
 export * from "./ElectronShell.ts";
 export * from "./ElectronShellLive.ts";
 export * from "./ElectronShellTest.ts";

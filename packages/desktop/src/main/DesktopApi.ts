@@ -40,7 +40,7 @@ import { DesktopBootstrap } from "../shared/Bootstrap.ts";
 import { LocalWorkspace } from "../shared/LocalWorkspace.ts";
 import { cycleCliConfigPathFromHome } from "./CycleDirectory.ts";
 import { makeDesktopAgentChatStore } from "./DesktopAgentChatStore.ts";
-import { makeDesktopAgentSessionStore } from "./DesktopAgentSessionStore.ts";
+import { makeDesktopAgentSessionStore } from "./agents/services/DesktopAgentSessionStore.ts";
 import { ElectronPreferences } from "./ElectronPreferences.ts";
 
 export const desktopApiRuntimeDiscoveryPath = (): string =>

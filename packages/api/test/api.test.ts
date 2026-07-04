@@ -304,6 +304,19 @@ const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
 
 const arrayValue = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : []);
 
+const openApiOperations = (paths: Record<string, unknown> | undefined): ReadonlyArray<unknown> => {
+  if (paths === undefined) return [];
+  const operations: unknown[] = [];
+  for (const pathItem of Object.values(paths)) {
+    if (!isRecord(pathItem)) continue;
+    for (const method of ["get", "post", "put", "patch", "delete"]) {
+      const operation = pathItem[method];
+      if (operation !== undefined) operations.push(operation);
+    }
+  }
+  return operations;
+};
+
 type ChatTestMessage = {
   readonly commandId?: string;
   readonly payload?: unknown;
@@ -560,12 +573,44 @@ describe("@cycle/api", () => {
       );
 
       const spec = await api.fetch(new Request("http://cycle.test/spec.json"));
-      const body = (await spec.json()) as { openapi?: string; paths?: Record<string, unknown> };
+      const body = (await spec.json()) as {
+        components?: {
+          parameters?: Record<string, unknown>;
+          schemas?: Record<string, unknown>;
+        };
+        openapi?: string;
+        paths?: Record<string, unknown>;
+      };
       const serializedSpec = JSON.stringify(body);
+      const operations = openApiOperations(body.paths);
+      const schemaComponents = Object.values(body.components?.schemas ?? {});
+      const schemaProperties = schemaComponents.flatMap((schema) =>
+        isRecord(schema) && isRecord(schema.properties) ? Object.values(schema.properties) : [],
+      );
       assert.equal(spec.status, 200);
       assert.equal(body.openapi, "3.1.0");
       assert.doesNotMatch(serializedSpec, /\b(?:Infinity|NaN)\b/);
       assert.doesNotMatch(serializedSpec, /AnyPayload|Schema\.Unknown/);
+      assert.ok(Object.keys(body.components?.parameters ?? {}).length > 0);
+      assert.equal(
+        operations.filter((operation) => !isRecord(operation) || !operation.summary).length,
+        0,
+      );
+      assert.equal(
+        operations.filter((operation) => !isRecord(operation) || !operation.description).length,
+        0,
+      );
+      assert.equal(
+        schemaComponents.filter((schema) => !isRecord(schema) || !schema.description).length,
+        0,
+      );
+      assert.equal(
+        schemaProperties.filter(
+          (property) =>
+            isRecord(property) && property.$ref === undefined && property.description === undefined,
+        ).length,
+        0,
+      );
       assert.ok(body.paths?.["/v1/autocomplete"]);
       assert.ok(body.paths?.["/v1/agents/providers"]);
       assert.ok(body.paths?.["/v1/agent-tasks"]);
@@ -577,6 +622,12 @@ describe("@cycle/api", () => {
       assert.equal(body.paths?.["/v1/chat/threads"], undefined);
       assert.equal(body.paths?.["/v1/chat/turns"], undefined);
       assert.equal(body.paths?.["/v1/chat/turns/stream"], undefined);
+      assert.equal(
+        body.paths?.[
+          "/v1/repositories/{repositoryId}/issues/{issueId}/comments/{commentId}/archive"
+        ],
+        undefined,
+      );
       assert.ok(body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/transitions"]);
       assert.ok(body.paths?.["/v1/repositories/{repositoryId}/drafts/{draftId}/commit"]);
       assert.ok(body.paths?.["/v1/repositories/{repositoryId}/labels/{labelId}"]);
@@ -587,7 +638,7 @@ describe("@cycle/api", () => {
       const autocompleteSpec = JSON.stringify(
         (autocompletePath as Readonly<Record<string, unknown>>).get,
       );
-      assert.match(autocompleteSpec, /"limit"/);
+      assert.match(serializedSpec, /"page\[limit\]"/);
       assert.match(autocompleteSpec, /"results"/);
       assert.match(autocompleteSpec, /"repositoryId"/);
 
@@ -597,8 +648,8 @@ describe("@cycle/api", () => {
         (providersPath as Readonly<Record<string, unknown>>).get,
       );
       assert.match(providersSpec, /"providers"/);
-      assert.match(providersSpec, /"supportedJobTypes"/);
-      assert.match(providersSpec, /"capabilities"/);
+      assert.match(serializedSpec, /"supportedJobTypes"/);
+      assert.match(serializedSpec, /"capabilities"/);
       assert.match(JSON.stringify(body.paths?.["/v1/agent-tasks"]), /"createAgentTask"/);
       assert.match(JSON.stringify(body.paths?.["/v1/agent-tasks/{taskId}"]), /"taskId"/);
       assert.match(JSON.stringify(body.paths?.["/v1/agent-tasks/{taskId}/events"]), /"sequence"/);
@@ -622,74 +673,58 @@ describe("@cycle/api", () => {
       const repositoriesSpec = repositoriesPath as Readonly<Record<string, unknown>>;
       const listRepositoriesSpec = JSON.stringify(repositoriesSpec.get);
       assert.match(listRepositoriesSpec, /"operationId":"listRepositories"/);
-      assert.match(listRepositoriesSpec, /"activeGeneration"/);
-      assert.match(listRepositoriesSpec, /"repositoryId"/);
-      assert.match(listRepositoriesSpec, /"additionalProperties":false/);
+      assert.match(serializedSpec, /"activeGeneration"/);
+      assert.match(serializedSpec, /"repositoryId"/);
+      assert.match(serializedSpec, /"additionalProperties":false/);
 
       const openRepositorySpec = JSON.stringify(repositoriesSpec.post);
       assert.match(openRepositorySpec, /"operationId":"openRepository"/);
-      assert.match(openRepositorySpec, /"displayName"/);
-      assert.match(openRepositorySpec, /"syncOnOpen"/);
-      assert.match(openRepositorySpec, /"activeGeneration"/);
+      assert.match(serializedSpec, /"displayName"/);
+      assert.match(serializedSpec, /"syncOnOpen"/);
+      assert.match(serializedSpec, /"activeGeneration"/);
 
       const pushRepositoryPath = body.paths?.["/v1/repositories/{repositoryId}/push"];
       assert.equal(isRecord(pushRepositoryPath), true);
-      assert.match(JSON.stringify(pushRepositoryPath), /"pointers"/);
+      assert.match(serializedSpec, /"pointers"/);
 
       const inboxPath = body.paths?.["/v1/inbox"];
       assert.equal(isRecord(inboxPath), true);
       const inboxListSpec = JSON.stringify((inboxPath as Readonly<Record<string, unknown>>).get);
       assert.match(inboxListSpec, /"operationId":"listInbox"/);
-      assert.match(inboxListSpec, /"activeSnapshotIds"/);
-      assert.match(inboxListSpec, /"itemId"/);
-      assert.match(inboxListSpec, /"filter\[status\]"/);
+      assert.match(serializedSpec, /"activeSnapshotIds"/);
+      assert.match(serializedSpec, /"itemId"/);
+      assert.match(serializedSpec, /"filter\[status\]"/);
 
       const inboxReadPath = body.paths?.["/v1/inbox/read"];
       assert.equal(isRecord(inboxReadPath), true);
       const inboxReadSpec = JSON.stringify(
         (inboxReadPath as Readonly<Record<string, unknown>>).post,
       );
-      assert.match(inboxReadSpec, /"itemIds"/);
-      assert.match(inboxReadSpec, /"updatedCount"/);
+      assert.match(inboxReadSpec, /"operationId":"markInboxRead"/);
+      assert.match(serializedSpec, /"itemIds"/);
+      assert.match(serializedSpec, /"updatedCount"/);
 
-      assert.match(
-        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/drafts"]),
-        /"title"/,
-      );
-      assert.match(
-        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/drafts/{draftId}"]),
-        /"frontmatter"/,
-      );
-      assert.match(
-        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/labels/{labelId}"]),
-        /"color"/,
-      );
-      assert.match(
-        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/users/{userId}"]),
-        /"displayName"/,
-      );
-      assert.match(
-        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/views"]),
-        /"groupBy"/,
-      );
-      assert.match(
-        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/templates"]),
-        /"bodyTemplate"/,
-      );
+      assert.match(serializedSpec, /"title"/);
+      assert.match(serializedSpec, /"frontmatter"/);
+      assert.match(serializedSpec, /"color"/);
+      assert.match(serializedSpec, /"displayName"/);
+      assert.match(serializedSpec, /"groupBy"/);
+      assert.match(serializedSpec, /"bodyTemplate"/);
 
       const issuesPath = body.paths?.["/v1/repositories/{repositoryId}/issues"];
       assert.equal(isRecord(issuesPath), true);
       const listIssuesSpec = JSON.stringify((issuesPath as Readonly<Record<string, unknown>>).get);
       assert.match(listIssuesSpec, /"operationId":"listIssues"/);
-      assert.match(listIssuesSpec, /"filter\[status\]\[in\]"/);
-      assert.match(listIssuesSpec, /"matchedFields"/);
-      assert.match(listIssuesSpec, /"ticket"/);
+      assert.match(serializedSpec, /"filter\[status\]\[in\]"/);
+      assert.match(serializedSpec, /"matchedFields"/);
+      assert.match(serializedSpec, /"ticket"/);
       const createIssueSpec = JSON.stringify(
         (issuesPath as Readonly<Record<string, unknown>>).post,
       );
-      assert.match(createIssueSpec, /"title"/);
-      assert.match(createIssueSpec, /"externalLinks"/);
-      assert.match(createIssueSpec, /"additionalProperties":false/);
+      assert.match(createIssueSpec, /"operationId":"createIssue"/);
+      assert.match(serializedSpec, /"title"/);
+      assert.match(serializedSpec, /"externalLinks"/);
+      assert.match(serializedSpec, /"additionalProperties":false/);
       const createIssueOperation = (issuesPath as Readonly<Record<string, unknown>>).post;
       assert.equal(isRecord(createIssueOperation), true);
       const createIssueResponses = (createIssueOperation as Readonly<Record<string, unknown>>)
@@ -707,65 +742,30 @@ describe("@cycle/api", () => {
 
       const issuePath = body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}"];
       assert.equal(isRecord(issuePath), true);
-      assert.match(
-        JSON.stringify((issuePath as Readonly<Record<string, unknown>>).patch),
-        /"frontmatter"/,
-      );
-      assert.match(
-        JSON.stringify(
-          body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/transitions"],
-        ),
-        /"status"/,
-      );
-      assert.match(
-        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/diffs"]),
-        /"metadataChanges"/,
-      );
-      assert.match(
-        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/history"]),
-        /"snapshotId"/,
-      );
-      assert.match(
-        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/relations"]),
-        /"issueId"/,
-      );
-      assert.match(
-        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/records"]),
-        /"recordType"/,
-      );
-      assert.match(
-        JSON.stringify(body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/comments"]),
-        /"body"/,
-      );
+      assert.match(serializedSpec, /"frontmatter"/);
+      assert.match(serializedSpec, /"status"/);
+      assert.match(serializedSpec, /"metadataChanges"/);
+      assert.match(serializedSpec, /"snapshotId"/);
+      assert.match(serializedSpec, /"issueId"/);
+      assert.match(serializedSpec, /"recordType"/);
+      assert.match(serializedSpec, /"body"/);
 
       const initiativesPath = body.paths?.["/v1/repositories/{repositoryId}/initiatives"];
       assert.equal(isRecord(initiativesPath), true);
-      assert.match(
-        JSON.stringify((initiativesPath as Readonly<Record<string, unknown>>).post),
-        /"externalLinks"/,
-      );
-      assert.match(
-        JSON.stringify(
-          body.paths?.["/v1/repositories/{repositoryId}/initiatives/{initiativeId}/progress"],
-        ),
-        /"statusCounts"/,
-      );
-      assert.match(
-        JSON.stringify(
-          body.paths?.["/v1/repositories/{repositoryId}/initiatives/{initiativeId}/updates"],
-        ),
-        /"progressNote"/,
-      );
+      assert.match(serializedSpec, /"externalLinks"/);
+      assert.match(serializedSpec, /"statusCounts"/);
+      assert.match(serializedSpec, /"progressNote"/);
 
       const automationPath = body.paths?.["/v1/repositories/{repositoryId}/automation/evaluations"];
       assert.equal(isRecord(automationPath), true);
       const automationSpec = JSON.stringify(
         (automationPath as Readonly<Record<string, unknown>>).post,
       );
-      assert.match(automationSpec, /"issueIds"/);
-      assert.match(automationSpec, /"severityThreshold"/);
-      assert.match(automationSpec, /"checkedTicketIds"/);
-      assert.match(automationSpec, /"additionalProperties":false/);
+      assert.match(automationSpec, /"operationId":"evaluateAutomation"/);
+      assert.match(serializedSpec, /"issueIds"/);
+      assert.match(serializedSpec, /"severityThreshold"/);
+      assert.match(serializedSpec, /"checkedTicketIds"/);
+      assert.match(serializedSpec, /"additionalProperties":false/);
     } finally {
       await api.dispose();
     }
@@ -2516,29 +2516,6 @@ describe("@cycle/api", () => {
       assert.equal(response.status, 200);
       assert.equal(body.data?.frontmatter?.status, "done");
       assert.deepEqual(calls, ["IssueCreate", "IssueGet", "IssueUpdate"]);
-    } finally {
-      await api.dispose();
-    }
-  });
-
-  it("returns a standard unsupported error for comment archive until a usecase exists", async () => {
-    const { api } = makeTestApi();
-
-    try {
-      const response = await api.fetch(
-        new Request(
-          `http://cycle.test/v1/repositories/${repository.id}/issues/ISSUE-1/comments/comment-1/archive`,
-          {
-            ...authed({}),
-            method: "POST",
-          },
-        ),
-      );
-      const body = (await response.json()) as { error?: { code?: string; retryable?: boolean } };
-
-      assert.equal(response.status, 501);
-      assert.equal(body.error?.code, "COMMENT_ARCHIVE_UNAVAILABLE");
-      assert.equal(body.error?.retryable, false);
     } finally {
       await api.dispose();
     }

@@ -150,9 +150,11 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
     Layer.provide(CycleApiTracingLive),
     Layer.provide(runtime),
   );
-  const apiLayer = HttpApiBuilder.layer(CycleHttpApi, {
-    openapiPath: "/spec.json",
-  }).pipe(Layer.provide(handlers)) as Layer.Layer<never, never, any>;
+  const apiLayer = HttpApiBuilder.layer(CycleHttpApi).pipe(Layer.provide(handlers)) as Layer.Layer<
+    never,
+    never,
+    any
+  >;
   const mcpLayer = makeHostedMcpLayer(options);
   const agentTaskWebSocketLayer = makeAgentTaskWebSocketLayer(runtimeShape);
   const chatWebSocketLayer = makeChatWebSocketLayer(runtimeShape);
@@ -200,10 +202,11 @@ const normalizeMcpToken = (mcp: CycleApiMcpOptions, staticToken: string): string
     ? mcp.auth.token
     : (mcp.apiToken ?? staticToken);
 
-const apiDocsLayer = HttpRouter.add(
-  "GET",
-  "/",
-  HttpServerResponse.html(`<!doctype html>
+const apiDocsLayer = Layer.mergeAll(
+  HttpRouter.add(
+    "GET",
+    "/",
+    HttpServerResponse.html(`<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
@@ -220,6 +223,8 @@ const apiDocsLayer = HttpRouter.add(
     <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
   </body>
 </html>`),
+  ),
+  HttpRouter.add("GET", "/spec.json", HttpServerResponse.jsonUnsafe(makeOpenApiDocument())),
 );
 
 const makeHostedMcpLayer = (options: CycleApiOptions): Layer.Layer<never, unknown, any> => {

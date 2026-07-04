@@ -93,7 +93,7 @@ const requestedAutocompleteTypes = (
   input: AutocompleteQueryInput,
   requestId: string,
 ): ReadonlySet<AutocompleteEntityType> | HttpServerResponse.HttpServerResponse => {
-  const raw = input.types ?? input.type;
+  const raw = input["filter[type][in]"];
   if (raw === undefined || raw.trim().length === 0) return supportedTypes;
 
   const entries = raw
@@ -246,15 +246,22 @@ const encodeUriSegment = (value: string): string => encodeURIComponent(value);
 
 const autocompleteQueryFrom = (params: URLSearchParams): Record<string, string> => {
   const input: Record<string, string> = {};
-  for (const key of ["limit", "page[limit]", "q", "type", "types"]) {
+  const limit = params.get("page[limit]") ?? params.get("limit");
+  const typeFilter =
+    params.get("filter[type][in]") ??
+    params.get("filter[type]") ??
+    params.get("types") ??
+    params.get("type");
+  if (limit !== null) input["page[limit]"] = limit;
+  if (typeFilter !== null) input["filter[type][in]"] = typeFilter;
+  for (const key of ["q"]) {
     const value = params.get(key);
     if (value !== null) input[key] = value;
   }
   return input;
 };
 
-const autocompleteLimitFrom = (input: AutocompleteQueryInput): number =>
-  input.limit ?? input["page[limit]"] ?? 50;
+const autocompleteLimitFrom = (input: AutocompleteQueryInput): number => input["page[limit]"] ?? 50;
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);

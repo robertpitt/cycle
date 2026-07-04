@@ -1,5 +1,5 @@
 import { Context, Effect } from "effect";
-import type { ElectronError } from "../platform/ElectronError.ts";
+import type { ElectronError } from "../errors/ElectronError.ts";
 
 export type DesktopWindowService = {
   readonly createMainWindow: () => Effect.Effect<void, ElectronError>;

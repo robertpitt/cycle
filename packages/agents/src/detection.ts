@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect";
-import { defaultAgentCapabilities, supportedAgentProviders } from "./providers.ts";
+import { defaultAgentCapabilities, supportedAgentProviders } from "./providers/index.ts";
 import { claudeCodePackageName, claudeCodeProviderId } from "./providers/claude-code/constants.ts";
 import { ExecutableResolver, ExecutableResolverLive, resolveExecutables } from "./executables.ts";
 import type { ExecutableResolverEnvironment, ExecutableResolverOptions } from "./executables.ts";

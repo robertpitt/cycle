@@ -6,7 +6,7 @@ import { CycleApiRuntime } from "../../runtime/CycleApiRuntime.ts";
 import {
   collectionResponse,
   errorResponse,
-  pageLimitFrom,
+  positiveIntegerParam,
   requestIdFromHeaders,
   resourceResponse,
   urlFromRequest,
@@ -26,25 +26,22 @@ export const withAgentTaskHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const url = urlFromRequest(request);
+        const limit = query["page[limit]"] ?? 100;
         const page = yield* runTaskUsecase(requestId, (usecases) =>
           usecases.listTasks({
-            after: query.after,
-            limit: query["page[limit]"] ?? 100,
-            originKind: query.originKind ?? query["filter[originKind]"],
-            repositoryId: query.repositoryId ?? query["filter[repositoryId]"],
-            status: query.status ?? query["filter[status]"],
-            ticketId: query.ticketId ?? query["filter[ticketId]"],
+            after: positiveIntegerParam(query["page[cursor]"] ?? url.searchParams.get("after")),
+            limit,
+            originKind:
+              query["filter[originKind]"] ?? url.searchParams.get("originKind") ?? undefined,
+            repositoryId:
+              query["filter[repositoryId]"] ?? url.searchParams.get("repositoryId") ?? undefined,
+            status: query["filter[status]"] ?? url.searchParams.get("status") ?? undefined,
+            ticketId: query["filter[ticketId]"] ?? url.searchParams.get("ticketId") ?? undefined,
           }),
         );
         if (HttpServerResponse.isHttpServerResponse(page)) return page;
 
-        return collectionResponse(
-          requestId,
-          url,
-          page.entries,
-          pageLimitFrom(url.searchParams),
-          page.nextCursor ?? null,
-        );
+        return collectionResponse(requestId, url, page.entries, limit, page.nextCursor ?? null);
       }),
     )
     .handle("getAgentTask", ({ params, request }: any) =>
@@ -54,16 +51,19 @@ export const withAgentTaskHandlers = (handlers: any) =>
       Effect.gen(function* () {
         const requestId = yield* requestIdFromHeaders(request.headers);
         const url = urlFromRequest(request);
+        const limit = query["page[limit]"] ?? 100;
         const events = yield* runTaskUsecase(requestId, (usecases) =>
           usecases.listEvents({
-            afterSequence: query.afterSequence,
-            limit: query["page[limit]"] ?? 100,
+            afterSequence: positiveIntegerParam(
+              query["page[cursor]"] ?? url.searchParams.get("afterSequence"),
+            ),
+            limit,
             taskId: params.taskId,
           }),
         );
         if (HttpServerResponse.isHttpServerResponse(events)) return events;
 
-        return collectionResponse(requestId, url, events, pageLimitFrom(url.searchParams), null);
+        return collectionResponse(requestId, url, events, limit, null);
       }),
     )
     .handle("appendAgentTaskInput", ({ params, payload, request }: any) =>

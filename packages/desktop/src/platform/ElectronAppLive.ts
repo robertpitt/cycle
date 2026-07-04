@@ -1,7 +1,7 @@
 import { app } from "electron";
 import { Cause, Deferred, Effect, Layer, Queue, Scope } from "effect";
 import { DesktopRuntime } from "./DesktopRuntime.ts";
-import { ElectronError } from "./ElectronError.ts";
+import { ElectronError } from "../errors/ElectronError.ts";
 import { ElectronApp, type ElectronAppLifecycleHandlers } from "./ElectronApp.ts";
 import { ProcessLifecycle, type ProcessLifecycleEvent } from "./ProcessLifecycle.ts";
 

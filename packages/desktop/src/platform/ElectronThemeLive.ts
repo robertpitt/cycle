@@ -1,7 +1,7 @@
 import { nativeTheme } from "electron";
 import { Cause, Effect, Layer } from "effect";
 import { DesktopRuntime } from "./DesktopRuntime.ts";
-import { ElectronError } from "./ElectronError.ts";
+import { ElectronError } from "../errors/ElectronError.ts";
 import {
   ElectronTheme,
   type ElectronThemeLifecycleHandlers,

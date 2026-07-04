@@ -14,7 +14,7 @@
     "./mcp/discovery": "./src/mcp/discovery.ts",
     "./mcp/server": "./src/mcp/server/index.ts",
     "./mcp/tools": "./src/mcp/tools/index.ts",
-    "./openapi": "./src/openapi.ts",
+    "./openapi": "./src/http/CycleHttpApi.ts",
     "./server": "./src/server.ts"
   },
   "scripts": {

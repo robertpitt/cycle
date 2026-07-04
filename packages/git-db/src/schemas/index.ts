@@ -1,4 +1,4 @@
-export * as Document from "./Document.ts";
+export * as Document from "../store/Document.ts";
 export * as Identifier from "./Identifier.ts";
 export * as Path from "./Path.ts";
 export * as Snapshot from "./Snapshot.ts";

@@ -1,4 +1,4 @@
-import { ContractSchemas, type InboxQuery } from "@cycle/contracts";
+import { ContractSchemas, type InboxPage, type InboxQuery } from "@cycle/contracts";
 import {
   InboxArchive,
   InboxList,
@@ -9,9 +9,11 @@ import {
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {
+  collectionResponse,
   decodeHttpValue,
   inboxQueryFrom,
   meta,
+  pageLimitFrom,
   requestIdFromHeaders,
   resourceResponse,
   runUseCase,
@@ -28,8 +30,20 @@ export const withInboxHandlers = (handlers: any) =>
         if (HttpServerResponse.isHttpServerResponse(input)) return input;
         const result = yield* runUseCase(InboxList, input, meta(requestId));
         if (HttpServerResponse.isHttpServerResponse(result)) return result;
+        const page = result as InboxPage;
 
-        return resourceResponse(requestId, 200, result);
+        return collectionResponse(
+          requestId,
+          url,
+          page.entries,
+          pageLimitFrom(url.searchParams),
+          page.nextCursor,
+          {
+            meta: {
+              activeSnapshotIds: page.activeSnapshotIds,
+            },
+          },
+        );
       }),
     )
     .handle("inboxSummary", ({ request }: any) =>

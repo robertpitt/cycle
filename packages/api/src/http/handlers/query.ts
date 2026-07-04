@@ -9,12 +9,30 @@ export const filterRepositories = (
 ): ReadonlyArray<RepositoryStatus> => {
   const id = params.get("filter[id]");
   const path = params.get("filter[path]");
+  const query = params.get("q") ?? params.get("query");
+  const status = params.get("filter[status]") ?? params.get("status");
+  const normalizedQuery = query?.trim().toLocaleLowerCase();
 
   return repositories.filter((repository) => {
     if (id !== null && repository.repositoryId !== id) return false;
+    if (status !== null && repository.status !== status) return false;
     if (
       path !== null &&
       (repository.metadata?.worktreePath ?? repository.metadata?.gitDir) !== path
+    ) {
+      return false;
+    }
+    if (
+      normalizedQuery !== undefined &&
+      normalizedQuery.length > 0 &&
+      ![
+        repository.repositoryId,
+        repository.cycleMetadata?.ticketPrefix,
+        repository.metadata?.worktreePath,
+        repository.metadata?.gitDir,
+      ]
+        .filter((value): value is string => typeof value === "string")
+        .some((value) => value.toLocaleLowerCase().includes(normalizedQuery))
     ) {
       return false;
     }
@@ -136,6 +154,37 @@ export const pageLimitFrom = (params: URLSearchParams): number => {
 
   const limit = Number(raw);
   return Number.isInteger(limit) && limit > 0 && limit <= 100 ? limit : 50;
+};
+
+export const arrayPageFrom = <A>(
+  entries: ReadonlyArray<A>,
+  params: URLSearchParams,
+): {
+  readonly entries: ReadonlyArray<A>;
+  readonly limit: number;
+  readonly nextCursor?: string;
+} => {
+  const limit = pageLimitFrom(params);
+  const offset = pageOffsetFrom(params.get("page[cursor]"));
+  const nextOffset = offset + limit;
+
+  return {
+    entries: entries.slice(offset, nextOffset),
+    limit,
+    ...(nextOffset < entries.length ? { nextCursor: String(nextOffset) } : {}),
+  };
+};
+
+export const positiveIntegerParam = (value: string | null): number | undefined => {
+  if (value === null) return undefined;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+};
+
+const pageOffsetFrom = (value: string | null): number => {
+  if (value === null) return 0;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
 };
 
 export const asPage = (

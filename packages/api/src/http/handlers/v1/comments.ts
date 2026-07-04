@@ -7,7 +7,6 @@ import {
   asPage,
   collectionResponse,
   decodeHttpValue,
-  errorResponse,
   meta,
   pageLimitFrom,
   requestIdFromHeaders,
@@ -81,17 +80,5 @@ export const withCommentHandlers = (handlers: any) =>
         });
 
         return resourceResponse(requestId, 201, result);
-      }),
-    )
-    .handle("archiveIssueComment", ({ params, request }: any) =>
-      Effect.gen(function* () {
-        const requestId = yield* requestIdFromHeaders(request.headers);
-
-        return errorResponse(
-          requestId,
-          501,
-          "COMMENT_ARCHIVE_UNAVAILABLE",
-          `Archiving comment ${params.commentId} is not supported until a canonical comment archive usecase is available.`,
-        );
       }),
     );

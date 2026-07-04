@@ -9,6 +9,7 @@ const PositiveInteger = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
 const PositiveIntegerFromString = Schema.FiniteFromString.check(
   Schema.isInt(),
   Schema.isGreaterThanOrEqualTo(1),
+  Schema.isLessThanOrEqualTo(100),
 );
 const ApiPort = PositiveInteger.check(Schema.isLessThanOrEqualTo(65535));
 const StrictDecodeOptions = { onExcessProperty: "error" } as const;
@@ -16,13 +17,53 @@ const StrictDecodeOptions = { onExcessProperty: "error" } as const;
 const strictSchema = <S extends Schema.Top>(schema: S): S =>
   schema.annotate({ parseOptions: StrictDecodeOptions }) as S;
 
+const OptionalStringParam = (description: string) =>
+  Schema.optional(Schema.String).annotate({ description });
+
+const RequiredStringParam = (description: string) => Schema.String.annotate({ description });
+
+const OptionalBooleanStringParam = (description: string) =>
+  Schema.optional(Schema.Literals(["false", "true"])).annotate({ description });
+
+const OptionalPageCursorParam = (description: string) =>
+  Schema.optional(Schema.String).annotate({ description });
+
+const OptionalPageLimitParam = (description: string) =>
+  Schema.optional(PositiveIntegerFromString).annotate({ description });
+
+const OptionalCsvStringParam = (description: string) =>
+  Schema.optional(Schema.String).annotate({ description });
+
+const OptionalSearchParam = OptionalStringParam(
+  "Free-text search string applied by the endpoint to its primary display fields.",
+);
+
+const GenericPageCursorParam = OptionalPageCursorParam(
+  "Opaque pagination cursor returned by the previous collection response.",
+);
+
+const GenericPageLimitParam = OptionalPageLimitParam(
+  "Maximum number of collection entries to return. Defaults to 50 and must be between 1 and 100.",
+);
+
+const CollectionPaginationQueryParams = {
+  "page[cursor]": GenericPageCursorParam,
+  "page[limit]": GenericPageLimitParam,
+};
+
 const ResourceMeta = Schema.Struct({
-  requestId: Schema.String,
+  requestId: Schema.String.annotate({
+    description: "Request identifier returned in the x-request-id response header.",
+  }),
 });
 
 const CollectionMeta = Schema.Struct({
-  requestId: Schema.String,
-  totalCount: Schema.NullOr(NonNegativeInteger),
+  requestId: Schema.String.annotate({
+    description: "Request identifier returned in the x-request-id response header.",
+  }),
+  totalCount: Schema.NullOr(NonNegativeInteger).annotate({
+    description: "Total matching entry count when it is inexpensive to compute; otherwise null.",
+  }),
 });
 
 export const ApiErrorEnvelope = Schema.Struct({
@@ -50,6 +91,9 @@ export const ApiUnprocessableEntityErrorEnvelope = ApiErrorEnvelope.pipe(
 export const ApiInternalServerErrorEnvelope = ApiErrorEnvelope.pipe(
   HttpApiSchema.status("InternalServerError"),
 );
+export const ApiNotImplementedErrorEnvelope = ApiErrorEnvelope.pipe(
+  HttpApiSchema.status("NotImplemented"),
+);
 export const ApiServiceUnavailableErrorEnvelope = ApiErrorEnvelope.pipe(
   HttpApiSchema.status("ServiceUnavailable"),
 );
@@ -64,6 +108,7 @@ export const ApiErrorEnvelopes = [
   ApiConflictErrorEnvelope,
   ApiUnprocessableEntityErrorEnvelope,
   ApiInternalServerErrorEnvelope,
+  ApiNotImplementedErrorEnvelope,
   ApiServiceUnavailableErrorEnvelope,
   ApiGatewayTimeoutErrorEnvelope,
 ] as const;
@@ -82,16 +127,67 @@ export const AcceptedResourceEnvelopeOf = <A extends Schema.Top>(data: A) =>
 
 export const CollectionEnvelopeOf = <A extends Schema.Top>(entry: A) =>
   Schema.Struct({
-    data: Schema.Array(entry),
+    data: Schema.Array(entry).annotate({
+      description: "Collection entries for the current page.",
+    }),
     links: Schema.Struct({
-      next: Schema.NullOr(Schema.String),
-      self: Schema.String,
+      next: Schema.NullOr(Schema.String).annotate({
+        description: "Relative URL for the next page, or null when no next page is available.",
+      }),
+      self: Schema.String.annotate({
+        description: "Relative URL for the current request.",
+      }),
     }),
     meta: CollectionMeta,
     page: Schema.Struct({
-      hasMore: Schema.Boolean,
-      limit: PositiveInteger,
-      nextCursor: Schema.NullOr(Schema.String),
+      hasMore: Schema.Boolean.annotate({
+        description: "Whether another page is available.",
+      }),
+      limit: PositiveInteger.check(Schema.isLessThanOrEqualTo(100)).annotate({
+        description: "Maximum number of entries requested for this page.",
+      }),
+      nextCursor: Schema.NullOr(Schema.String).annotate({
+        description: "Opaque cursor to pass as page[cursor] for the next page.",
+      }),
+    }),
+  });
+
+export const CollectionEnvelopeWithMetaOf = <A extends Schema.Top, F extends Schema.Struct.Fields>(
+  entry: A,
+  metaFields: F,
+) =>
+  Schema.Struct({
+    data: Schema.Array(entry).annotate({
+      description: "Collection entries for the current page.",
+    }),
+    links: Schema.Struct({
+      next: Schema.NullOr(Schema.String).annotate({
+        description: "Relative URL for the next page, or null when no next page is available.",
+      }),
+      self: Schema.String.annotate({
+        description: "Relative URL for the current request.",
+      }),
+    }),
+    meta: Schema.Struct({
+      requestId: Schema.String.annotate({
+        description: "Request identifier returned in the x-request-id response header.",
+      }),
+      totalCount: Schema.NullOr(NonNegativeInteger).annotate({
+        description:
+          "Total matching entry count when it is inexpensive to compute; otherwise null.",
+      }),
+      ...metaFields,
+    }),
+    page: Schema.Struct({
+      hasMore: Schema.Boolean.annotate({
+        description: "Whether another page is available.",
+      }),
+      limit: PositiveInteger.check(Schema.isLessThanOrEqualTo(100)).annotate({
+        description: "Maximum number of entries requested for this page.",
+      }),
+      nextCursor: Schema.NullOr(Schema.String).annotate({
+        description: "Opaque cursor to pass as page[cursor] for the next page.",
+      }),
     }),
   });
 
@@ -144,24 +240,14 @@ const AutocompleteLimit = Schema.FiniteFromString.check(
 );
 
 export const AutocompleteQuery = Schema.Struct({
-  "page[limit]": Schema.optional(AutocompleteLimit),
-  limit: Schema.optional(AutocompleteLimit),
-  q: Schema.optional(Schema.String),
-  type: Schema.optional(Schema.String),
-  types: Schema.optional(Schema.String),
-}).check(
-  Schema.makeFilter<{
-    readonly "page[limit]"?: number;
-    readonly limit?: number;
-    readonly q?: string;
-    readonly type?: string;
-    readonly types?: string;
-  }>(
-    (value) =>
-      !(value.type !== undefined && value.types !== undefined) || "only one of type or types",
-    { expected: "an autocomplete query" },
+  "filter[type][in]": OptionalCsvStringParam(
+    "Comma-separated autocomplete entity types to include. Supported values are repository and ticket.",
   ),
-);
+  "page[limit]": Schema.optional(AutocompleteLimit).annotate({
+    description: "Maximum number of autocomplete results to return. Defaults to 50.",
+  }),
+  q: OptionalSearchParam,
+});
 export type AutocompleteQuery = typeof AutocompleteQuery.Type;
 export const AutocompleteQueryParams = AutocompleteQuery.fields;
 
@@ -222,20 +308,26 @@ export const AgentTaskIssueParams = {
   repositoryId: Schema.String,
 };
 export const AgentTaskListQueryParams = {
-  "filter[originKind]": Schema.optional(Schema.String),
-  "filter[repositoryId]": Schema.optional(Schema.String),
-  "filter[status]": Schema.optional(AgentTaskSchemas.AgentTaskStatus),
-  "filter[ticketId]": Schema.optional(Schema.String),
-  "page[limit]": Schema.optional(PositiveIntegerFromString),
-  after: Schema.optional(PositiveIntegerFromString),
-  originKind: Schema.optional(Schema.String),
-  repositoryId: Schema.optional(Schema.String),
-  status: Schema.optional(AgentTaskSchemas.AgentTaskStatus),
-  ticketId: Schema.optional(Schema.String),
+  "filter[originKind]": OptionalStringParam("Agent task origin kind to match."),
+  "filter[repositoryId]": OptionalStringParam("Repository id associated with the task origin."),
+  "filter[status]": Schema.optional(AgentTaskSchemas.AgentTaskStatus).annotate({
+    description: "Agent task status to match.",
+  }),
+  "filter[ticketId]": OptionalStringParam("Ticket id associated with the task origin."),
+  "page[cursor]": OptionalPageCursorParam(
+    "Opaque cursor returned by the previous agent task collection response.",
+  ),
+  "page[limit]": OptionalPageLimitParam(
+    "Maximum number of agent tasks to return. Defaults to 100 and must be between 1 and 100.",
+  ),
 };
 export const AgentTaskEventQueryParams = {
-  afterSequence: Schema.optional(PositiveIntegerFromString),
-  "page[limit]": Schema.optional(PositiveIntegerFromString),
+  "page[cursor]": OptionalPageCursorParam(
+    "Event sequence cursor returned by the previous event collection response.",
+  ),
+  "page[limit]": OptionalPageLimitParam(
+    "Maximum number of agent task events to return. Defaults to 100 and must be between 1 and 100.",
+  ),
 };
 
 export const ThemePreference = Schema.Literals(["light", "dark", "system"]);
@@ -368,37 +460,50 @@ export const RepositoryOpenPayload = strictSchema(
 );
 
 export const RepositoryCollectionQuery = Schema.Struct({
-  query: Schema.optional(Schema.String),
-  status: Schema.optional(Schema.String),
+  "filter[id]": OptionalStringParam("Repository id to match exactly."),
+  "filter[path]": OptionalStringParam(
+    "Repository worktree or Git directory path to match exactly.",
+  ),
+  "filter[status]": OptionalStringParam("Repository materialization status to match."),
+  ...CollectionPaginationQueryParams,
+  q: OptionalSearchParam,
 });
+
+export const RepositoryWarningQuery = Schema.Struct(CollectionPaginationQueryParams);
 
 export const RepositoryHistoryQuery = Schema.Struct({
-  cursor: Schema.optional(Schema.String),
-  from: Schema.optional(Schema.String),
-  limit: Schema.optional(PositiveIntegerFromString),
-  max: Schema.optional(PositiveIntegerFromString),
-  ticketId: Schema.optional(Schema.String),
+  "filter[ticketId]": OptionalStringParam("Ticket id used to narrow history to relevant commits."),
+  ...CollectionPaginationQueryParams,
 });
 
-export const InboxPageResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.InboxPage);
+export const InboxPageResourceEnvelope = CollectionEnvelopeWithMetaOf(ContractSchemas.InboxEntry, {
+  activeSnapshotIds: Schema.Record(Schema.String, Schema.NullOr(Schema.String)).annotate({
+    description: "Active snapshot id by repository id at query time.",
+  }),
+});
 export const InboxSummaryResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.InboxSummary);
 export const InboxMutationResourceEnvelope = ResourceEnvelopeOf(
   ContractSchemas.InboxMutationResult,
 );
 export const InboxMutationPayload = strictSchema(ContractSchemas.InboxMutationInput);
 export const InboxQueryParams = {
-  "filter[createdAfter]": Schema.optional(Schema.String),
-  "filter[createdBefore]": Schema.optional(Schema.String),
-  "filter[includeSourceInactive]": Schema.optional(Schema.String),
-  "filter[reason]": Schema.optional(Schema.String),
-  "filter[repository][in]": Schema.optional(Schema.String),
-  "filter[status]": Schema.optional(Schema.String),
-  "filter[ticketId]": Schema.optional(Schema.String),
-  "filter[userId]": Schema.optional(Schema.String),
-  "page[cursor]": Schema.optional(Schema.String),
-  "page[limit]": Schema.optional(PositiveIntegerFromString),
-  repositoryIds: Schema.optional(Schema.String),
-  userId: Schema.optional(Schema.String),
+  "filter[createdAfter]": OptionalStringParam(
+    "Only include inbox items created after this ISO timestamp.",
+  ),
+  "filter[createdBefore]": OptionalStringParam(
+    "Only include inbox items created before this ISO timestamp.",
+  ),
+  "filter[includeSourceInactive]": OptionalBooleanStringParam(
+    "Whether to include items whose source ticket or record is inactive.",
+  ),
+  "filter[reason]": OptionalStringParam("Inbox reason to match."),
+  "filter[repository][in]": OptionalCsvStringParam("Comma-separated repository id allow-list."),
+  "filter[status]": OptionalStringParam(
+    "Inbox status to match. Use all to disable status filtering.",
+  ),
+  "filter[ticketId]": OptionalStringParam("Ticket id to match."),
+  "filter[userId]": RequiredStringParam("User id whose inbox should be queried."),
+  ...CollectionPaginationQueryParams,
 };
 
 export const TicketDocumentResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.TicketDocument);
@@ -427,10 +532,9 @@ export const HttpLabelResourceEnvelope = ResourceEnvelopeOf(
 );
 export const LabelPayload = strictSchema(ContractSchemas.UpsertLabelInput);
 export const LabelQueryParams = {
-  "filter[archived]": Schema.optional(Schema.String),
-  "page[cursor]": Schema.optional(Schema.String),
-  "page[limit]": Schema.optional(PositiveIntegerFromString),
-  q: Schema.optional(Schema.String),
+  "filter[archived]": OptionalBooleanStringParam("Archived-state filter for labels."),
+  ...CollectionPaginationQueryParams,
+  q: OptionalSearchParam,
 };
 
 export const HttpUserCollectionEnvelope = CollectionEnvelopeOf(ContractSchemas.UserProfileDocument);
@@ -447,10 +551,9 @@ export const UserPayload = strictSchema(
   }),
 );
 export const UserQueryParams = {
-  "filter[disabled]": Schema.optional(Schema.String),
-  "page[cursor]": Schema.optional(Schema.String),
-  "page[limit]": Schema.optional(PositiveIntegerFromString),
-  q: Schema.optional(Schema.String),
+  "filter[disabled]": OptionalBooleanStringParam("Disabled-state filter for user profiles."),
+  ...CollectionPaginationQueryParams,
+  q: OptionalSearchParam,
 };
 
 export const HttpViewCollectionEnvelope = CollectionEnvelopeOf(ContractSchemas.SavedViewDocument);
@@ -459,11 +562,10 @@ export const ViewCreatedEnvelope = CreatedResourceEnvelopeOf(ContractSchemas.Sav
 export const ViewCreatePayload = strictSchema(ContractSchemas.CreateSavedViewInput);
 export const ViewUpdatePayload = strictSchema(ContractSchemas.UpdateSavedViewInput);
 export const ViewQueryParams = {
-  "filter[kind]": Schema.optional(Schema.String),
-  "filter[pinned]": Schema.optional(Schema.String),
-  "page[cursor]": Schema.optional(Schema.String),
-  "page[limit]": Schema.optional(PositiveIntegerFromString),
-  q: Schema.optional(Schema.String),
+  "filter[kind]": OptionalStringParam("Saved-view kind to match."),
+  "filter[pinned]": OptionalBooleanStringParam("Pinned-state filter for saved views."),
+  ...CollectionPaginationQueryParams,
+  q: OptionalSearchParam,
 };
 
 export const HttpTemplateCollectionEnvelope = CollectionEnvelopeOf(
@@ -478,11 +580,10 @@ export const TemplateCreatedEnvelope = CreatedResourceEnvelopeOf(
 export const TemplateCreatePayload = strictSchema(ContractSchemas.CreateIssueTemplateInput);
 export const TemplateUpdatePayload = strictSchema(ContractSchemas.UpdateIssueTemplateInput);
 export const TemplateQueryParams = {
-  "filter[active]": Schema.optional(Schema.String),
-  "filter[kind]": Schema.optional(Schema.String),
-  "page[cursor]": Schema.optional(Schema.String),
-  "page[limit]": Schema.optional(PositiveIntegerFromString),
-  q: Schema.optional(Schema.String),
+  "filter[active]": OptionalBooleanStringParam("Active-state filter for issue templates."),
+  "filter[kind]": OptionalStringParam("Issue-template kind to match."),
+  ...CollectionPaginationQueryParams,
+  q: OptionalSearchParam,
 };
 
 export const HttpTicketResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.TicketDocument);
@@ -500,41 +601,58 @@ export const HttpRecordResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.Lin
 export const HttpRecordCreatedEnvelope = CreatedResourceEnvelopeOf(ContractSchemas.LinkedRecord);
 
 export const IssueListQueryParams = {
-  "filter[archived]": Schema.optional(Schema.String),
-  "filter[assignee]": Schema.optional(Schema.String),
-  "filter[assignee][in]": Schema.optional(Schema.String),
-  "filter[blocked]": Schema.optional(Schema.String),
-  "filter[deleted]": Schema.optional(Schema.String),
-  "filter[dueAfter]": Schema.optional(Schema.String),
-  "filter[dueBefore]": Schema.optional(Schema.String),
-  "filter[estimate]": Schema.optional(Schema.String),
-  "filter[hasAssignee]": Schema.optional(Schema.String),
-  "filter[hasDueDate]": Schema.optional(Schema.String),
-  "filter[hasEstimate]": Schema.optional(Schema.String),
-  "filter[hasLabels]": Schema.optional(Schema.String),
-  "filter[label]": Schema.optional(Schema.String),
-  "filter[label][in]": Schema.optional(Schema.String),
-  "filter[parent]": Schema.optional(Schema.String),
-  "filter[priority]": Schema.optional(Schema.String),
-  "filter[priority][in]": Schema.optional(Schema.String),
-  "filter[repository][in]": Schema.optional(Schema.String),
-  "filter[staleBefore]": Schema.optional(Schema.String),
-  "filter[status]": Schema.optional(Schema.String),
-  "filter[status][in]": Schema.optional(Schema.String),
-  "filter[type]": Schema.optional(Schema.String),
-  "filter[updatedAfter]": Schema.optional(Schema.String),
-  "filter[updatedBefore]": Schema.optional(Schema.String),
-  "page[cursor]": Schema.optional(Schema.String),
-  "page[limit]": Schema.optional(PositiveIntegerFromString),
-  assigneeIn: Schema.optional(Schema.String),
-  labelIn: Schema.optional(Schema.String),
-  orderBy: Schema.optional(Schema.String),
-  priorityIn: Schema.optional(Schema.String),
-  q: Schema.optional(Schema.String),
-  repositoryIds: Schema.optional(Schema.String),
-  "sort[direction]": Schema.optional(Schema.String),
-  "sort[field]": Schema.optional(Schema.String),
-  statusIn: Schema.optional(Schema.String),
+  "filter[archived]": OptionalBooleanStringParam("Archived-state filter for issues."),
+  "filter[assignee]": OptionalStringParam(
+    "Assignee id to match. Use the literal null to match unassigned issues.",
+  ),
+  "filter[assignee][in]": OptionalCsvStringParam("Comma-separated assignee id allow-list."),
+  "filter[blocked]": OptionalBooleanStringParam("Whether to match issues with blocking relations."),
+  "filter[deleted]": OptionalBooleanStringParam("Soft-deleted-state filter for issues."),
+  "filter[dueAfter]": OptionalStringParam(
+    "Only include issues due after this ISO date or timestamp.",
+  ),
+  "filter[dueBefore]": OptionalStringParam(
+    "Only include issues due before this ISO date or timestamp.",
+  ),
+  "filter[estimate]": OptionalStringParam("Estimate value to match."),
+  "filter[hasAssignee]": OptionalBooleanStringParam(
+    "Whether to filter by presence of an assignee.",
+  ),
+  "filter[hasDueDate]": OptionalBooleanStringParam("Whether to filter by presence of a due date."),
+  "filter[hasEstimate]": OptionalBooleanStringParam(
+    "Whether to filter by presence of an estimate.",
+  ),
+  "filter[hasLabels]": OptionalBooleanStringParam("Whether to filter by presence of labels."),
+  "filter[label]": OptionalStringParam("Single label id or name to match."),
+  "filter[label][in]": OptionalCsvStringParam("Comma-separated label id or name allow-list."),
+  "filter[parent]": OptionalStringParam(
+    "Parent issue id to match. Use the literal null to match issues without a parent.",
+  ),
+  "filter[priority]": OptionalStringParam("Priority value to match."),
+  "filter[priority][in]": OptionalCsvStringParam("Comma-separated priority value allow-list."),
+  "filter[repository][in]": OptionalCsvStringParam(
+    "Comma-separated repository id allow-list for multi-repository issue queries.",
+  ),
+  "filter[staleBefore]": OptionalStringParam(
+    "Only include issues stale before this ISO timestamp.",
+  ),
+  "filter[status]": OptionalStringParam("Workflow status value to match."),
+  "filter[status][in]": OptionalCsvStringParam("Comma-separated workflow status allow-list."),
+  "filter[type]": OptionalStringParam("Ticket type value to match."),
+  "filter[updatedAfter]": OptionalStringParam(
+    "Only include issues updated after this ISO timestamp.",
+  ),
+  "filter[updatedBefore]": OptionalStringParam(
+    "Only include issues updated before this ISO timestamp.",
+  ),
+  ...CollectionPaginationQueryParams,
+  q: OptionalSearchParam,
+  "sort[direction]": Schema.optional(Schema.Literals(["asc", "desc"])).annotate({
+    description: "Sort direction.",
+  }),
+  "sort[field]": Schema.optional(
+    Schema.Literals(["createdAt", "dueDate", "priority", "title", "updatedAt"]),
+  ).annotate({ description: "Issue field used for sorting." }),
 };
 export const IssueCreatePayload = strictSchema(ContractSchemas.CreateIssueInput);
 export const IssueUpdatePayload = strictSchema(ContractSchemas.UpdateIssueInput);
@@ -550,19 +668,18 @@ export const IssueReasonPayload = strictSchema(
   }),
 );
 export const IssueHistoryQueryParams = {
-  "page[cursor]": Schema.optional(Schema.String),
-  "page[limit]": Schema.optional(PositiveIntegerFromString),
+  ...CollectionPaginationQueryParams,
 };
 export const IssueDiffQueryParams = {
-  from: Schema.optional(Schema.String),
-  fromSnapshotId: Schema.optional(Schema.String),
-  to: Schema.optional(Schema.String),
-  toSnapshotId: Schema.optional(Schema.String),
+  fromSnapshotId: RequiredStringParam("Older snapshot id."),
+  toSnapshotId: RequiredStringParam("Newer snapshot id."),
 };
 export const RecordListQueryParams = {
-  "filter[recordType]": Schema.optional(Schema.String),
-  "page[cursor]": Schema.optional(Schema.String),
-  "page[limit]": Schema.optional(PositiveIntegerFromString),
+  "filter[recordType]": OptionalStringParam("Linked record type to match."),
+  ...CollectionPaginationQueryParams,
+};
+export const IssueCommentListQueryParams = {
+  ...CollectionPaginationQueryParams,
 };
 export const IssueRelationPayload = strictSchema(ContractSchemas.IssueRelation);
 export const IssueRecordAddPayload = strictSchema(

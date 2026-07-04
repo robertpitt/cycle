@@ -1,7 +1,7 @@
 import { BrowserWindow } from "electron";
 import { Effect, Layer } from "effect";
 import { BrowserWindows } from "./BrowserWindows.ts";
-import { ElectronError } from "./ElectronError.ts";
+import { ElectronError } from "../errors/ElectronError.ts";
 
 export const BrowserWindowsLive = Layer.succeed(BrowserWindows)({
   all: Effect.sync(() => BrowserWindow.getAllWindows()),

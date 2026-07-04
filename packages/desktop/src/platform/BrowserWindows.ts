@@ -1,6 +1,6 @@
 import type { BrowserWindow, BrowserWindowConstructorOptions, WebPreferences } from "electron";
 import { Context, Effect, Scope } from "effect";
-import type { ElectronError } from "./ElectronError.ts";
+import type { ElectronError } from "../errors/ElectronError.ts";
 
 export type ElectronBrowserWindow = BrowserWindow;
 

@@ -18,7 +18,7 @@ import {
 } from "../ipc/index.ts";
 import type { ApiConnection as ApiConnectionValue } from "../ipc/Channels.ts";
 import { DesktopRuntime, type DesktopRuntimeService } from "../platform/DesktopRuntime.ts";
-import { ElectronError } from "../platform/ElectronError.ts";
+import { ElectronError } from "../errors/ElectronError.ts";
 import { ElectronShell } from "../platform/ElectronShell.ts";
 import {
   ElectronThemeState as ElectronThemeStateSchema,

@@ -1,5 +1,5 @@
 import { Context, Effect, Schema, Scope } from "effect";
-import type { ElectronError } from "./ElectronError.ts";
+import type { ElectronError } from "../errors/ElectronError.ts";
 
 export const electronThemeSources = ["system", "light", "dark"] as const;
 export const ElectronThemeSource = Schema.Literals(electronThemeSources);

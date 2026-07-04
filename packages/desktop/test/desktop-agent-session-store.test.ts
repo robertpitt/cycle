@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { makeDesktopAgentSessionStore } from "../src/main/DesktopAgentSessionStore.ts";
+import { makeDesktopAgentSessionStore } from "../src/main/agents/services/DesktopAgentSessionStore.ts";
 import { describe, it } from "vitest";
 
 describe("DesktopAgentSessionStore", () => {

@@ -30,6 +30,10 @@ export const collectionResponse = (
   data: ReadonlyArray<unknown>,
   limit: number,
   nextCursor: string | null | undefined,
+  options: {
+    readonly cursorParam?: string;
+    readonly meta?: Readonly<Record<string, unknown>>;
+  } = {},
 ): HttpServerResponse.HttpServerResponse => {
   const next = nextCursor ?? null;
 
@@ -37,12 +41,13 @@ export const collectionResponse = (
     {
       data,
       links: {
-        next: next === null ? null : nextUrl(url, next),
+        next: next === null ? null : nextUrl(url, next, options.cursorParam ?? "page[cursor]"),
         self: `${url.pathname}${url.search}`,
       },
       meta: {
         requestId,
         totalCount: null,
+        ...options.meta,
       },
       page: {
         hasMore: next !== null,
@@ -131,9 +136,9 @@ const statusForFailure = (tag: string): number => {
   }
 };
 
-const nextUrl = (url: URL, cursor: string): string => {
+const nextUrl = (url: URL, cursor: string, cursorParam: string): string => {
   const copy = new URL(url.toString());
-  copy.searchParams.set("page[cursor]", cursor);
+  copy.searchParams.set(cursorParam, cursor);
 
   return `${copy.pathname}${copy.search}`;
 };

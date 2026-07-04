@@ -1,5 +1,5 @@
 import { Config, ConfigProvider, Effect, Layer, Option, Path } from "effect";
-import { ElectronError } from "../platform/ElectronError.ts";
+import { ElectronError } from "../errors/ElectronError.ts";
 import { DesktopConfig } from "./DesktopConfig.ts";
 
 const readRendererUrl = (): Effect.Effect<string | undefined, ElectronError> =>

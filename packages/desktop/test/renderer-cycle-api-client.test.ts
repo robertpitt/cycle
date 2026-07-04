@@ -13,6 +13,52 @@ afterEach(() => {
   globalThis.window = originalWindow;
 });
 
+const installRendererApiWindow = (): void => {
+  const storage = new Map<string, string>();
+
+  globalThis.window = {
+    location: {
+      hash: "",
+      protocol: "http:",
+      search: "?cycleApiUrl=http://cycle.test&cycleApiToken=test-token",
+    },
+    localStorage: {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storage.set(key, value);
+      },
+    },
+  } as Window & typeof globalThis;
+};
+
+const jsonResponse = (body: unknown): Response =>
+  new Response(JSON.stringify(body), {
+    headers: { "content-type": "application/json" },
+    status: 200,
+  });
+
+const collectionEnvelope = (
+  data: readonly unknown[],
+  nextCursor: string | null = null,
+  meta: Readonly<Record<string, unknown>> = {},
+) => ({
+  data,
+  links: {
+    next: null,
+    self: "/",
+  },
+  meta: {
+    requestId: "req-test",
+    totalCount: null,
+    ...meta,
+  },
+  page: {
+    hasMore: nextCursor !== null,
+    limit: 100,
+    nextCursor,
+  },
+});
+
 describe("renderer cycle API client", () => {
   it("schema-decodes repository issue cursors", () => {
     const cursor = JSON.stringify({
@@ -57,6 +103,89 @@ describe("renderer cycle API client", () => {
     assert.equal(statusLabel("waiting_for_input"), "Waiting For Input");
     assert.equal(taskStatusTone("failed"), "danger");
     assert.equal(taskStatusTone("cancelled"), "neutral");
+  });
+
+  it("uses canonical query parameters and adapts inbox collection pages", async () => {
+    const calls: URL[] = [];
+    installRendererApiWindow();
+
+    globalThis.fetch = async (input) => {
+      const url = new URL(String(input));
+      calls.push(url);
+
+      if (url.pathname === "/v1/autocomplete") {
+        return jsonResponse({
+          data: {
+            results: [],
+          },
+          meta: { requestId: "req-test" },
+        });
+      }
+
+      if (url.pathname === "/v1/agent-tasks") {
+        return jsonResponse(collectionEnvelope([]));
+      }
+
+      if (url.pathname === "/v1/inbox") {
+        return jsonResponse(
+          collectionEnvelope([inboxEntryRecord(1)], "cursor-2", {
+            activeSnapshotIds: {
+              "repo-a": "snapshot-a",
+            },
+          }),
+        );
+      }
+
+      return jsonResponse(collectionEnvelope([]));
+    };
+
+    await cycleApiClient.autocomplete({
+      limit: 25,
+      query: "cy",
+      types: ["repository", "ticket"],
+    });
+    await cycleApiClient.listAgentTasks({
+      limit: 10,
+      originKind: "ticket",
+      repositoryId: "repo-a",
+      status: "running",
+      ticketId: "ISSUE-1",
+    });
+    const inboxPage = await cycleApiClient.call("inbox.list", {
+      limit: 50,
+      repositoryIds: ["repo-a", "repo-b"],
+      status: "unread",
+      userId: "ada@example.com",
+    });
+
+    const autocomplete = calls[0];
+    assert.equal(autocomplete?.searchParams.get("q"), "cy");
+    assert.equal(autocomplete?.searchParams.get("page[limit]"), "25");
+    assert.equal(autocomplete?.searchParams.get("filter[type][in]"), "repository,ticket");
+    assert.equal(autocomplete?.searchParams.has("types"), false);
+
+    const agentTasks = calls[1];
+    assert.equal(agentTasks?.searchParams.get("page[limit]"), "10");
+    assert.equal(agentTasks?.searchParams.get("filter[originKind]"), "ticket");
+    assert.equal(agentTasks?.searchParams.get("filter[repositoryId]"), "repo-a");
+    assert.equal(agentTasks?.searchParams.get("filter[status]"), "running");
+    assert.equal(agentTasks?.searchParams.get("filter[ticketId]"), "ISSUE-1");
+    assert.equal(agentTasks?.searchParams.has("originKind"), false);
+    assert.equal(agentTasks?.searchParams.has("repositoryId"), false);
+
+    const inbox = calls[2];
+    assert.equal(inbox?.searchParams.get("filter[userId]"), "ada@example.com");
+    assert.equal(inbox?.searchParams.get("filter[repository][in]"), "repo-a,repo-b");
+    assert.equal(inbox?.searchParams.get("filter[status]"), "unread");
+    assert.equal(inbox?.searchParams.get("page[limit]"), "50");
+    assert.equal(inbox?.searchParams.has("userId"), false);
+    assert.equal(inbox?.searchParams.has("repositoryIds"), false);
+
+    assert.equal(inboxPage.entries[0]?.itemId, "inbox-1");
+    assert.equal(inboxPage.nextCursor, "cursor-2");
+    assert.deepEqual(inboxPage.activeSnapshotIds, {
+      "repo-a": "snapshot-a",
+    });
   });
 
   it("sends empty JSON payloads for agent task control posts", async () => {
@@ -440,6 +569,26 @@ const agentTaskRecord = (taskId: string, status: string) => ({
   status,
   taskId,
   updatedAt: "2026-07-02T00:00:00.000Z",
+});
+
+const inboxEntryRecord = (index: number) => ({
+  actor: {
+    email: "ada@example.com",
+    name: "Ada Lovelace",
+  },
+  bodyExcerpt: `Excerpt ${index}`,
+  createdAt: "2026-07-04T10:00:00.000Z",
+  eventPath: `event-${index}`,
+  itemId: `inbox-${index}`,
+  reason: "mention",
+  recordId: `record-${index}`,
+  repositoryId: "repo-a",
+  sequence: index,
+  snapshotId: `snapshot-${index}`,
+  sourceState: "active",
+  status: "unread",
+  ticketId: `ISSUE-${index}`,
+  title: `Inbox item ${index}`,
 });
 
 const archivedIssueRecord = (id: string) => ({

@@ -12,7 +12,7 @@ import {
   makePromptTemplateRegistry,
   type AgentHarnessAdapter,
   type AgentRunStartRequest,
-} from "../src/runtime.ts";
+} from "../src/runtime/index.ts";
 
 const collect = async <A>(stream: Stream.Stream<A, unknown>): Promise<readonly A[]> =>
   Array.from(await Effect.runPromise(Stream.runCollect(stream)));

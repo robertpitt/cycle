@@ -6,7 +6,7 @@ import {
   type ElectronBrowserWindow,
 } from "../platform/BrowserWindows.ts";
 import { DesktopRuntime } from "../platform/DesktopRuntime.ts";
-import { ElectronError } from "../platform/ElectronError.ts";
+import { ElectronError } from "../errors/ElectronError.ts";
 import { DesktopWindow } from "./DesktopWindow.ts";
 
 let mainWindow: ElectronBrowserWindow | null = null;

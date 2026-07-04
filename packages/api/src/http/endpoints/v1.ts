@@ -40,8 +40,8 @@ import {
   InitiativeUpdateCreatedEnvelope,
   InitiativeUpdatePayload,
   HttpHistoryCollectionEnvelope,
-  IssueCommentParams,
   IssueCommentAddPayload,
+  IssueCommentListQueryParams,
   IssueCreatePayload,
   IssueDiffQueryParams,
   IssueHistoryQueryParams,
@@ -57,7 +57,6 @@ import {
   HttpLabelResourceEnvelope,
   HttpRecordCollectionEnvelope,
   HttpRecordCreatedEnvelope,
-  HttpRecordResourceEnvelope,
   HttpTemplateCollectionEnvelope,
   HttpTemplateResourceEnvelope,
   HttpTicketCollectionEnvelope,
@@ -89,6 +88,7 @@ import {
   RepositoryWarningCollectionEnvelope,
   RepositoryPreferencesPayload,
   RecordListQueryParams,
+  RepositoryWarningQuery,
   TemplateCreatePayload,
   TemplateCreatedEnvelope,
   TemplateParams,
@@ -128,6 +128,7 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
     }),
     HttpApiEndpoint.get("listRepositoryWarnings", "/v1/repositories/:repositoryId/warnings", {
       params: RepositoryParams,
+      query: RepositoryWarningQuery.fields,
       success: RepositoryWarningCollectionEnvelope,
     }),
     HttpApiEndpoint.get("listRepositoryHistory", "/v1/repositories/:repositoryId/history", {
@@ -338,7 +339,11 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
     HttpApiEndpoint.get(
       "listIssueComments",
       "/v1/repositories/:repositoryId/issues/:issueId/comments",
-      { params: IssueParams, query: RecordListQueryParams, success: HttpRecordCollectionEnvelope },
+      {
+        params: IssueParams,
+        query: IssueCommentListQueryParams,
+        success: HttpRecordCollectionEnvelope,
+      },
     ),
     HttpApiEndpoint.post(
       "addIssueComment",
@@ -347,15 +352,6 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
         params: IssueParams,
         payload: IssueCommentAddPayload,
         success: HttpRecordCreatedEnvelope,
-      },
-    ),
-    HttpApiEndpoint.post(
-      "archiveIssueComment",
-      "/v1/repositories/:repositoryId/issues/:issueId/comments/:commentId/archive",
-      {
-        params: IssueCommentParams,
-        payload: IssueReasonPayload,
-        success: HttpRecordResourceEnvelope,
       },
     ),
   )

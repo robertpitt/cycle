@@ -1,6 +1,7 @@
 import { HttpApi, OpenApi } from "effect/unstable/httpapi";
 import { SystemApiGroup } from "./endpoints/system.ts";
 import { V1ApiGroup } from "./endpoints/v1.ts";
+import { augmentOpenApiDocument } from "./openapi.ts";
 import { CycleApiTracing } from "./tracing.ts";
 
 export class CycleHttpApi extends HttpApi.make("cycle-api")
@@ -15,4 +16,6 @@ export class CycleHttpApi extends HttpApi.make("cycle-api")
   ) {}
 
 export const makeOpenApiDocument = (): Readonly<Record<string, unknown>> =>
-  OpenApi.fromApi(CycleHttpApi) as unknown as Readonly<Record<string, unknown>>;
+  augmentOpenApiDocument(
+    OpenApi.fromApi(CycleHttpApi) as unknown as Readonly<Record<string, unknown>>,
+  );

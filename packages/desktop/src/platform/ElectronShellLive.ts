@@ -1,7 +1,7 @@
 import { shell } from "electron";
 import { Effect, Layer } from "effect";
 import { ElectronShell } from "./ElectronShell.ts";
-import { ElectronError } from "./ElectronError.ts";
+import { ElectronError } from "../errors/ElectronError.ts";
 
 export const ElectronShellLive = Layer.succeed(ElectronShell)({
   openExternal: (targetUrl) =>

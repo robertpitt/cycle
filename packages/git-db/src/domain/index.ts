@@ -6,6 +6,6 @@ export { HistoryOptions } from "./HistoryOptions.ts";
 export { MovePointerOptions } from "./MovePointerOptions.ts";
 export { PointerSyncResult } from "./PointerSyncResult.ts";
 export { ReadOptions } from "./ReadOptions.ts";
-export { Snapshot } from "./Snapshot.ts";
+export { Snapshot } from "../schemas/Snapshot.ts";
 export { SyncOptions } from "./SyncOptions.ts";
 export { SyncResult } from "./SyncResult.ts";
