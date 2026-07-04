@@ -1,4 +1,8 @@
-import { startCycleApiServer, type RepositoryOpenRequest } from "@cycle/api";
+import {
+  startCycleApiServer,
+  type RepositoryDirectoryEntry,
+  type RepositoryOpenRequest,
+} from "@cycle/api";
 import { mcpBearerTokenEnvVar } from "@cycle/agents/codex";
 import { detectAgentProviders } from "@cycle/agents/detection";
 import {
@@ -302,6 +306,19 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
       }),
     );
 
+  const listRepositories = (): Promise<readonly RepositoryDirectoryEntry[]> =>
+    runtime.runPromise(
+      "api.listRepositories",
+      Effect.gen(function* () {
+        const repositories = yield* localWorkspace.listRepositories();
+        return repositories.map((repository) => ({
+          displayName: repository.displayName,
+          id: repository.id,
+          path: repository.path,
+        }));
+      }),
+    );
+
   yield* Effect.acquireRelease(
     Effect.tryPromise({
       try: async () => {
@@ -450,6 +467,7 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
               },
               path: "/mcp",
             },
+            listRepositories,
             port: config.api.port === "auto" ? undefined : config.api.port,
             repositoryOpenInput,
             onUseCaseSuccess: (event) => {
