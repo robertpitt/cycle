@@ -13,12 +13,11 @@ import {
   AgentRunStartRequestSchema,
   type AgentRunSteerRequest,
   type AgentRuntimeConfig,
-  type AgentRuntimeError,
   type AgentRuntimeReconcileRequest,
   type AgentSessionRecord,
-  AgentRuntimeFailure,
   defaultAgentRuntimeConfig,
 } from "./contracts.ts";
+import { AgentRuntimeFailure, type AgentRuntimeError } from "../errors/index.ts";
 import type { AgentDurabilityShape } from "./durability.ts";
 import { AgentDurability } from "./durability.ts";
 import {

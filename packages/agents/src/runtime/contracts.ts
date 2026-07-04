@@ -3,8 +3,6 @@ import type { AgentAuthorityMode, AgentMcpAttachment, AgentProviderId } from "..
 import type { AgentRuntimeError } from "../errors/index.ts";
 import type { AgentRuntimeEvent } from "./events.ts";
 
-export { AgentRuntimeFailure, type AgentRuntimeError } from "../errors/index.ts";
-
 export type JsonObject = Readonly<Record<string, unknown>>;
 
 export type AgentRunSource =

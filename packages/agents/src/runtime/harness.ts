@@ -10,10 +10,9 @@ import type {
   AgentPromptBundle,
   AgentProviderBindingRecord,
   AgentRunRecord,
-  AgentRuntimeError,
   AgentSessionRecord,
 } from "./contracts.ts";
-import { AgentRuntimeFailure } from "./contracts.ts";
+import { AgentRuntimeFailure, type AgentRuntimeError } from "../errors/index.ts";
 import type { AgentAuthorityProfile, AgentMcpConnection } from "./policy.ts";
 
 export type AgentHarnessCapabilities = {

@@ -6,6 +6,7 @@ export * from "./harness.ts";
 export * from "./policy.ts";
 export * from "./prompt.ts";
 export * from "./service.ts";
+export { AgentRuntimeFailure, type AgentRuntimeError } from "../errors/index.ts";
 
 import { Layer } from "effect";
 import type { CodexAgentServiceOptions } from "../providers/codex/types.ts";

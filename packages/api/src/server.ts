@@ -6,15 +6,14 @@ import {
 } from "@cycle/logging";
 import { Context, Effect, Exit, FileSystem, Layer, Path, Scope } from "effect";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
-import {
-  makeCycleApi,
-  makeCycleApiLayer,
-  type CycleApiMcpOptions,
-  type CycleApi,
-  type CycleApiOptions,
-  type RuntimeDiscoveryFile,
-} from "./CycleApi.ts";
+import { makeCycleApi, makeCycleApiLayer } from "./CycleApi.ts";
 import { CycleApiServerError } from "./errors/index.ts";
+import type {
+  CycleApi,
+  CycleApiMcpOptions,
+  CycleApiOptions,
+  RuntimeDiscoveryFile,
+} from "./http/runtime/CycleApiRuntime.ts";
 
 export type CycleApiServerOptions = CycleApiOptions & {
   readonly host?: "127.0.0.1" | "localhost";

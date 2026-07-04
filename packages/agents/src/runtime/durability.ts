@@ -4,10 +4,9 @@ import type {
   AgentInteractionRecord,
   AgentProviderBindingRecord,
   AgentRunRecord,
-  AgentRuntimeError,
   AgentSessionRecord,
 } from "./contracts.ts";
-import { AgentRuntimeFailure } from "./contracts.ts";
+import { AgentRuntimeFailure, type AgentRuntimeError } from "../errors/index.ts";
 import type { AgentRuntimeEvent } from "./events.ts";
 
 export type AgentRunLease = {

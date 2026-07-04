@@ -8,10 +8,9 @@ import { HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 import {
   makeAgentActiveTurnDirectory,
-  type AgentActiveTurnDirectoryShape,
 } from "./agents/services/AgentActiveTurnDirectory.ts";
 import { listLocalAgentProviderProfiles } from "./agents/services/AgentProviderProfiles.ts";
-import { CycleHttpApi, makeOpenApiDocument } from "./api.ts";
+import { CycleHttpApi, makeOpenApiDocument } from "./http/CycleHttpApi.ts";
 import { CycleAuthorizationLive } from "./http/handlers/Authorization.ts";
 import { FrameworkErrorEnvelopeLive } from "./http/handlers/FrameworkErrors.ts";
 import { SystemApiHandlers } from "./http/handlers/System.ts";
@@ -21,53 +20,12 @@ import { makeChatWebSocketLayer } from "./http/handlers/v1/chat/ws.ts";
 import { CycleApiTracingLive } from "./http/tracing.ts";
 import {
   CycleApiRuntime,
-  type AgentChatActivityRecord,
-  type AgentChatEventRecord,
-  type AgentChatMessageRecord,
-  type AgentChatQuestionItemRecord,
-  type AgentChatQuestionRecord,
-  type AgentChatStoreShape,
-  type AgentChatThreadRecord,
-  type AgentChatThreadWithMessages,
-  type AgentChatTurnRecord,
-  type ApiConfig,
   type CycleApiMcpOptions,
-  type ApiRequestContext,
   type CycleApi,
   type CycleApiOptions,
   type CycleApiRuntimeShape,
-  type RepositoryDirectoryEntry,
-  type RepositoryDirectoryResolver,
-  type RepositoryOpenInputResolver,
-  type RepositoryOpenRequest,
-  type RuntimeDiscoveryFile,
 } from "./http/runtime/CycleApiRuntime.ts";
 import { makeCycleMcpHttpLayer, type CycleMcpHttpOptions } from "./mcp/server/index.ts";
-
-export {
-  CycleApiRuntime,
-  type AgentActiveTurnDirectoryShape,
-  type AgentChatActivityRecord,
-  type AgentChatEventRecord,
-  type AgentChatMessageRecord,
-  type AgentChatQuestionItemRecord,
-  type AgentChatQuestionRecord,
-  type AgentChatStoreShape,
-  type AgentChatThreadRecord,
-  type AgentChatThreadWithMessages,
-  type AgentChatTurnRecord,
-  type ApiConfig,
-  type ApiRequestContext,
-  type CycleApi,
-  type CycleApiMcpOptions,
-  type CycleApiOptions,
-  type CycleApiRuntimeShape,
-  type RepositoryDirectoryEntry,
-  type RepositoryDirectoryResolver,
-  type RepositoryOpenInputResolver,
-  type RepositoryOpenRequest,
-  type RuntimeDiscoveryFile,
-};
 
 export const makeCycleApi = (options: CycleApiOptions): CycleApi => {
   const appLayer = (makeCycleApiLayer(options) as Layer.Layer<never, unknown, any>).pipe(

@@ -4,10 +4,9 @@ import type {
   AgentRunRecord,
   AgentRunSource,
   AgentRunStartRequest,
-  AgentRuntimeError,
   JsonObject,
 } from "./contracts.ts";
-import { AgentRuntimeFailure } from "./contracts.ts";
+import { AgentRuntimeFailure, type AgentRuntimeError } from "../errors/index.ts";
 import type { AgentAuthorityProfile, AgentMcpConnection } from "./policy.ts";
 
 export type AgentPromptTemplate = {

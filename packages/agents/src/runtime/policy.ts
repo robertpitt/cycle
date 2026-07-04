@@ -3,10 +3,9 @@ import type { AgentMcpAttachment, AgentRuntimeMode } from "../types.ts";
 import type {
   AgentRunRecord,
   AgentRuntimeAuthority,
-  AgentRuntimeError,
   AgentRuntimeMcpRequest,
 } from "./contracts.ts";
-import { AgentRuntimeFailure } from "./contracts.ts";
+import { AgentRuntimeFailure, type AgentRuntimeError } from "../errors/index.ts";
 
 export type AgentAuthorityProfile = {
   readonly codebaseReadOnly: boolean;
