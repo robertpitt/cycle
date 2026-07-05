@@ -1,6 +1,6 @@
 import { isAgentProviderId, type AgentProviderId, type AgentTurnResult } from "@cycle/agents";
 import type { CycleApiRuntimeShape } from "../../../runtime/CycleApiRuntime.ts";
-import { urlFromRequest } from "../../shared.ts";
+import { urlFromRequest } from "../../query.ts";
 import type {
   ChatMessagePayload,
   ChatRepositoryPayload,

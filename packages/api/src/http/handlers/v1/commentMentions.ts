@@ -5,6 +5,7 @@ import {
   type AgentTurnResult,
 } from "@cycle/agents";
 import { Effect } from "effect";
+import type { HttpServerRequest } from "effect/unstable/http";
 import type {
   AgentChatMessageRecord,
   AgentChatStoreShape,
@@ -42,7 +43,7 @@ export const handleSuccessfulCommentMentions = (input: {
   readonly comment: unknown;
   readonly commentId: string;
   readonly repositoryId: string;
-  readonly request: { readonly headers: any; readonly url: string };
+  readonly request: HttpServerRequest.HttpServerRequest;
   readonly requestId: string;
   readonly ticketId: string;
 }): Effect.Effect<void, never, CycleApiRuntime> =>

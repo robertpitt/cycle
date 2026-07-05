@@ -1,93 +1,86 @@
 import { type RepositoryStatus, type TicketDocument } from "@cycle/contracts";
 import { IssueList, IssueSearch, RepositoryList } from "@cycle/usecases";
-import { Effect } from "effect";
+import { Crypto, Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
+import { CycleApiRuntime } from "../../runtime/CycleApiRuntime.ts";
 import {
   AutocompleteOutput,
   AutocompleteQuery,
   type AutocompleteEntityType,
   type AutocompleteQuery as AutocompleteQueryInput,
   type HttpAutocompleteResultOutput as AutocompleteResult,
-} from "../../schemas.ts";
-import {
-  asPage,
-  decodeHttpValue,
-  errorResponse,
-  meta,
-  requestIdFromHeaders,
-  resourceResponse,
-  runUseCase,
-  scoped,
-  urlFromRequest,
-} from "../shared.ts";
+} from "../../schemas/AutocompleteResourceEnvelope.ts";
+import { CycleRequestContext } from "../../middleware/CycleRequestContextMiddleware.ts";
+import { asPage, urlFromRequest } from "../query.ts";
+import { errorResponse, resourceResponse } from "../responses.ts";
+import { decodeHttpValue, meta, runUseCase, scoped } from "../usecases.ts";
+import type { V1Request } from "./types.ts";
 
 const supportedTypes = new Set<AutocompleteEntityType>(["repository", "ticket"]);
 
-export const withAutocompleteHandlers = (handlers: any) =>
-  handlers.handle("autocomplete", ({ request }: any) =>
-    Effect.gen(function* () {
-      const requestId = yield* requestIdFromHeaders(request.headers);
-      const url = urlFromRequest(request);
-      const input = yield* decodeHttpValue(
-        AutocompleteQuery,
-        autocompleteQueryFrom(url.searchParams),
-        requestId,
-        {
-          code: "INVALID_AUTOCOMPLETE_QUERY",
-          message: "Invalid autocomplete query.",
-        },
+export const autocomplete = ({ request }: V1Request<"autocomplete">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+    const url = urlFromRequest(request);
+    const input = yield* decodeHttpValue(
+      AutocompleteQuery,
+      autocompleteQueryFrom(url.searchParams),
+      requestId,
+      {
+        code: "INVALID_AUTOCOMPLETE_QUERY",
+        message: "Invalid autocomplete query.",
+      },
+    );
+    if (HttpServerResponse.isHttpServerResponse(input)) return input;
+    const query = (input.q ?? "").trim();
+    const limit = autocompleteLimitFrom(input);
+    const requestedTypes = requestedAutocompleteTypes(input, requestId);
+    if (HttpServerResponse.isHttpServerResponse(requestedTypes)) return requestedTypes;
+    const repositories = (yield* runUseCase(
+      RepositoryList,
+      {},
+      meta(requestId),
+    )) as ReadonlyArray<RepositoryStatus>;
+    if (HttpServerResponse.isHttpServerResponse(repositories)) return repositories;
+
+    const results: AutocompleteResult[] = [];
+
+    if (requestedTypes.has("repository")) {
+      results.push(
+        ...repositories
+          .map(repositoryAutocompleteResult)
+          .filter((result) => autocompleteResultMatchesQuery(result, query))
+          .slice(0, limit),
       );
-      if (HttpServerResponse.isHttpServerResponse(input)) return input;
-      const query = (input.q ?? "").trim();
-      const limit = autocompleteLimitFrom(input);
-      const requestedTypes = requestedAutocompleteTypes(input, requestId);
-      if (HttpServerResponse.isHttpServerResponse(requestedTypes)) return requestedTypes;
-      const repositories = (yield* runUseCase(
-        RepositoryList,
-        {},
-        meta(requestId),
-      )) as ReadonlyArray<RepositoryStatus>;
-      if (HttpServerResponse.isHttpServerResponse(repositories)) return repositories;
+    }
 
-      const results: AutocompleteResult[] = [];
-
-      if (requestedTypes.has("repository")) {
-        results.push(
-          ...repositories
-            .map(repositoryAutocompleteResult)
-            .filter((result) => autocompleteResultMatchesQuery(result, query))
-            .slice(0, limit),
-        );
-      }
-
-      if (requestedTypes.has("ticket") && repositories.length > 0) {
-        const ticketResults = yield* ticketAutocompleteResults({
-          limit,
-          query,
-          repositories,
-          requestId,
-        });
-        if (HttpServerResponse.isHttpServerResponse(ticketResults)) return ticketResults;
-        results.push(...ticketResults);
-      }
-
-      const output = yield* decodeHttpValue(
-        AutocompleteOutput,
-        {
-          results: results.slice(0, limit),
-        },
+    if (requestedTypes.has("ticket") && repositories.length > 0) {
+      const ticketResults = yield* ticketAutocompleteResults({
+        limit,
+        query,
+        repositories,
         requestId,
-        {
-          code: "INVALID_AUTOCOMPLETE_OUTPUT",
-          message: "Autocomplete results did not match the API contract.",
-          status: 500,
-        },
-      );
-      if (HttpServerResponse.isHttpServerResponse(output)) return output;
+      });
+      if (HttpServerResponse.isHttpServerResponse(ticketResults)) return ticketResults;
+      results.push(...ticketResults);
+    }
 
-      return resourceResponse(requestId, 200, output);
-    }),
-  );
+    const output = yield* decodeHttpValue(
+      AutocompleteOutput,
+      {
+        results: results.slice(0, limit),
+      },
+      requestId,
+      {
+        code: "INVALID_AUTOCOMPLETE_OUTPUT",
+        message: "Autocomplete results did not match the API contract.",
+        status: 500,
+      },
+    );
+    if (HttpServerResponse.isHttpServerResponse(output)) return output;
+
+    return resourceResponse(requestId, 200, output);
+  });
 
 const requestedAutocompleteTypes = (
   input: AutocompleteQueryInput,
@@ -125,7 +118,7 @@ const ticketAutocompleteResults = (input: {
 }): Effect.Effect<
   ReadonlyArray<AutocompleteResult> | HttpServerResponse.HttpServerResponse,
   never,
-  any
+  CycleApiRuntime | Crypto.Crypto
 > =>
   Effect.gen(function* () {
     const repositoryIds = input.repositories.map((repository) => repository.repositoryId);

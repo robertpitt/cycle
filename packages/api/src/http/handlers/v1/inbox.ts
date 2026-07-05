@@ -8,83 +8,74 @@ import {
 } from "@cycle/usecases";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
-import {
-  collectionResponse,
-  decodeHttpValue,
-  inboxQueryFrom,
-  meta,
-  pageLimitFrom,
-  requestIdFromHeaders,
-  resourceResponse,
-  runUseCase,
-  urlFromRequest,
-} from "../shared.ts";
+import { CycleRequestContext } from "../../middleware/CycleRequestContextMiddleware.ts";
+import { inboxQueryFrom, pageLimitFrom, urlFromRequest } from "../query.ts";
+import { collectionResponse, resourceResponse } from "../responses.ts";
+import { decodeHttpValue, meta, runUseCase } from "../usecases.ts";
+import type { V1Request } from "./types.ts";
 
-export const withInboxHandlers = (handlers: any) =>
-  handlers
-    .handle("listInbox", ({ request }: any) =>
-      Effect.gen(function* () {
-        const requestId = yield* requestIdFromHeaders(request.headers);
-        const url = urlFromRequest(request);
-        const input = yield* decodeInboxQuery(url.searchParams, requestId);
-        if (HttpServerResponse.isHttpServerResponse(input)) return input;
-        const result = yield* runUseCase(InboxList, input, meta(requestId));
-        if (HttpServerResponse.isHttpServerResponse(result)) return result;
-        const page = result as InboxPage;
+export const listInbox = ({ request }: V1Request<"listInbox">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+    const url = urlFromRequest(request);
+    const input = yield* decodeInboxQuery(url.searchParams, requestId);
+    if (HttpServerResponse.isHttpServerResponse(input)) return input;
+    const result = yield* runUseCase(InboxList, input, meta(requestId));
+    if (HttpServerResponse.isHttpServerResponse(result)) return result;
+    const page = result as InboxPage;
 
-        return collectionResponse(
-          requestId,
-          url,
-          page.entries,
-          pageLimitFrom(url.searchParams),
-          page.nextCursor,
-          {
-            meta: {
-              activeSnapshotIds: page.activeSnapshotIds,
-            },
-          },
-        );
-      }),
-    )
-    .handle("inboxSummary", ({ request }: any) =>
-      Effect.gen(function* () {
-        const requestId = yield* requestIdFromHeaders(request.headers);
-        const url = urlFromRequest(request);
-        const input = yield* decodeInboxQuery(url.searchParams, requestId);
-        if (HttpServerResponse.isHttpServerResponse(input)) return input;
-        const result = yield* runUseCase(InboxSummaryGet, input, meta(requestId));
-        if (HttpServerResponse.isHttpServerResponse(result)) return result;
-
-        return resourceResponse(requestId, 200, result);
-      }),
-    )
-    .handle("markInboxRead", ({ payload, request }: any) =>
-      Effect.gen(function* () {
-        const requestId = yield* requestIdFromHeaders(request.headers);
-        const result = yield* runUseCase(InboxMarkRead, payload, meta(requestId));
-        if (HttpServerResponse.isHttpServerResponse(result)) return result;
-
-        return resourceResponse(requestId, 200, result);
-      }),
-    )
-    .handle("markInboxUnread", ({ payload, request }: any) =>
-      Effect.gen(function* () {
-        const requestId = yield* requestIdFromHeaders(request.headers);
-        const result = yield* runUseCase(InboxMarkUnread, payload, meta(requestId));
-        if (HttpServerResponse.isHttpServerResponse(result)) return result;
-
-        return resourceResponse(requestId, 200, result);
-      }),
-    )
-    .handle("archiveInbox", ({ payload, request }: any) =>
-      Effect.gen(function* () {
-        const requestId = yield* requestIdFromHeaders(request.headers);
-        const result = yield* runUseCase(InboxArchive, payload, meta(requestId));
-        if (HttpServerResponse.isHttpServerResponse(result)) return result;
-
-        return resourceResponse(requestId, 200, result);
-      }),
+    return collectionResponse(
+      requestId,
+      url,
+      page.entries,
+      pageLimitFrom(url.searchParams),
+      page.nextCursor,
+      {
+        meta: {
+          activeSnapshotIds: page.activeSnapshotIds,
+        },
+      },
     );
+  });
+
+export const inboxSummary = ({ request }: V1Request<"inboxSummary">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+    const url = urlFromRequest(request);
+    const input = yield* decodeInboxQuery(url.searchParams, requestId);
+    if (HttpServerResponse.isHttpServerResponse(input)) return input;
+    const result = yield* runUseCase(InboxSummaryGet, input, meta(requestId));
+    if (HttpServerResponse.isHttpServerResponse(result)) return result;
+
+    return resourceResponse(requestId, 200, result);
+  });
+
+export const markInboxRead = ({ payload }: V1Request<"markInboxRead">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+    const result = yield* runUseCase(InboxMarkRead, payload, meta(requestId));
+    if (HttpServerResponse.isHttpServerResponse(result)) return result;
+
+    return resourceResponse(requestId, 200, result);
+  });
+
+export const markInboxUnread = ({ payload }: V1Request<"markInboxUnread">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+    const result = yield* runUseCase(InboxMarkUnread, payload, meta(requestId));
+    if (HttpServerResponse.isHttpServerResponse(result)) return result;
+
+    return resourceResponse(requestId, 200, result);
+  });
+
+export const archiveInbox = ({ payload }: V1Request<"archiveInbox">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+    const result = yield* runUseCase(InboxArchive, payload, meta(requestId));
+    if (HttpServerResponse.isHttpServerResponse(result)) return result;
+
+    return resourceResponse(requestId, 200, result);
+  });
 
 const decodeInboxQuery = (
   params: URLSearchParams,

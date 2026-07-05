@@ -1,9 +1,21 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi";
-import { CycleAuthorization } from "../authorization.ts";
+import { CycleAuthorization } from "../middleware/CycleAuthorization.ts";
 import {
-  AgentProvidersResourceEnvelope,
   AgentProviderId,
+  AgentProvidersResourceEnvelope,
+} from "../schemas/AgentProvidersResourceEnvelope.ts";
+import {
   AgentProviderPreferencePayload,
+  AppConfigResourceEnvelope,
+  CompleteOnboardingPayload,
+  InterfaceDensityPayload,
+  ProfileResourceEnvelope,
+  ProfileUpdatePayload,
+  RepositoryPreferencesPayload,
+  RepositoryRecordNullableResourceEnvelope,
+  ThemePreferencePayload,
+} from "../schemas/AppConfigResourceEnvelope.ts";
+import {
   AgentTaskAcceptedEnvelope,
   AgentTaskCancelPayload,
   AgentTaskCollectionEnvelope,
@@ -16,30 +28,50 @@ import {
   AgentTaskParams,
   AgentTaskResourceEnvelope,
   AgentTaskRetryPayload,
-  ApiStatusResourceEnvelope,
-  AppConfigResourceEnvelope,
+  TicketAgentTaskCreatePayload,
+} from "../schemas/AgentTaskResourceEnvelope.ts";
+import { ApiStatusResourceEnvelope } from "../schemas/ApiStatusResourceEnvelope.ts";
+import {
   AutocompleteQueryParams,
   AutocompleteResourceEnvelope,
+} from "../schemas/AutocompleteResourceEnvelope.ts";
+import {
   AutomationEvaluatePayload,
   AutomationEvaluationResourceEnvelope,
-  CompleteOnboardingPayload,
-  DraftParams,
+} from "../schemas/AutomationEvaluationResourceEnvelope.ts";
+import {
   DraftCreatePayload,
   DraftDocumentCreatedEnvelope,
   DraftDocumentResourceEnvelope,
+  DraftParams,
   DraftUpdatePayload,
-  InboxMutationPayload,
-  InboxMutationResourceEnvelope,
-  InboxPageResourceEnvelope,
-  InboxQueryParams,
-  InboxSummaryResourceEnvelope,
-  InitiativeCreatedEnvelope,
-  InitiativeCreatePayload,
-  InitiativeParams,
-  InitiativeProgressResourceEnvelope,
-  InitiativeUpdateCreatedEnvelope,
-  InitiativeUpdatePayload,
+  TicketDocumentResourceEnvelope,
+} from "../schemas/DraftDocumentResourceEnvelope.ts";
+import {
+  HttpLabelCollectionEnvelope,
+  HttpLabelResourceEnvelope,
+  LabelParams,
+  LabelPayload,
+  LabelQueryParams,
+} from "../schemas/HttpLabelResourceEnvelope.ts";
+import {
+  HttpTemplateCollectionEnvelope,
+  HttpTemplateResourceEnvelope,
+  TemplateCreatePayload,
+  TemplateCreatedEnvelope,
+  TemplateParams,
+  TemplateQueryParams,
+  TemplateUpdatePayload,
+} from "../schemas/HttpTemplateResourceEnvelope.ts";
+import {
   HttpHistoryCollectionEnvelope,
+  HttpRecordCollectionEnvelope,
+  HttpRecordCreatedEnvelope,
+  HttpTicketCollectionEnvelope,
+  HttpTicketCreatedEnvelope,
+  HttpTicketResourceEnvelope,
+  HttpTicketRevisionDiffEnvelope,
+  HttpTicketSearchCollectionEnvelope,
   IssueCommentAddPayload,
   IssueCommentListQueryParams,
   IssueCreatePayload,
@@ -53,63 +85,58 @@ import {
   IssueRevisionParams,
   IssueTransitionPayload,
   IssueUpdatePayload,
-  HttpLabelCollectionEnvelope,
-  HttpLabelResourceEnvelope,
-  HttpRecordCollectionEnvelope,
-  HttpRecordCreatedEnvelope,
-  HttpTemplateCollectionEnvelope,
-  HttpTemplateResourceEnvelope,
-  HttpTicketCollectionEnvelope,
-  HttpTicketCreatedEnvelope,
-  HttpTicketResourceEnvelope,
-  HttpTicketRevisionDiffEnvelope,
-  HttpTicketSearchCollectionEnvelope,
+  RecordListQueryParams,
+} from "../schemas/HttpTicketResourceEnvelope.ts";
+import {
   HttpUserCollectionEnvelope,
   HttpUserResourceEnvelope,
+  UserParams,
+  UserPayload,
+  UserQueryParams,
+} from "../schemas/HttpUserResourceEnvelope.ts";
+import {
   HttpViewCollectionEnvelope,
   HttpViewResourceEnvelope,
-  LabelParams,
-  LabelPayload,
-  LabelQueryParams,
-  InterfaceDensityPayload,
-  ProfileResourceEnvelope,
-  ProfileUpdatePayload,
+  ViewCreatePayload,
+  ViewCreatedEnvelope,
+  ViewParams,
+  ViewQueryParams,
+  ViewUpdatePayload,
+} from "../schemas/HttpViewResourceEnvelope.ts";
+import {
+  InboxMutationPayload,
+  InboxMutationResourceEnvelope,
+  InboxPageResourceEnvelope,
+  InboxQueryParams,
+  InboxSummaryResourceEnvelope,
+} from "../schemas/InboxPageResourceEnvelope.ts";
+import {
+  InitiativeCreatePayload,
+  InitiativeCreatedEnvelope,
+  InitiativeParams,
+  InitiativeProgressResourceEnvelope,
+  InitiativeUpdateCreatedEnvelope,
+  InitiativeUpdatePayload,
+} from "../schemas/InitiativeProgressResourceEnvelope.ts";
+import {
   RepositoryCollectionQuery,
   RepositoryHistoryCollectionEnvelope,
   RepositoryHistoryQuery,
   RepositoryOpenPayload,
   RepositoryParams,
   RepositoryPushAcceptedEnvelope,
-  RepositoryRecordNullableResourceEnvelope,
   RepositoryStatusAcceptedEnvelope,
   RepositoryStatusCollectionEnvelope,
   RepositoryStatusCreatedEnvelope,
   RepositoryStatusResourceEnvelope,
   RepositoryWarningCollectionEnvelope,
-  RepositoryPreferencesPayload,
-  RecordListQueryParams,
   RepositoryWarningQuery,
-  TemplateCreatePayload,
-  TemplateCreatedEnvelope,
-  TemplateParams,
-  TemplateQueryParams,
-  TemplateUpdatePayload,
-  ThemePreferencePayload,
-  TicketDocumentResourceEnvelope,
-  TicketAgentTaskCreatePayload,
-  UserParams,
-  UserPayload,
-  UserQueryParams,
-  ViewCreatePayload,
-  ViewCreatedEnvelope,
-  ViewParams,
-  ViewQueryParams,
-  ViewUpdatePayload,
-} from "../schemas.ts";
-
+} from "../schemas/RepositoryStatusResourceEnvelope.ts";
 export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
   .add(
-    HttpApiEndpoint.get("status", "/v1/status", { success: ApiStatusResourceEnvelope }),
+    HttpApiEndpoint.get("status", "/v1/status", {
+      success: ApiStatusResourceEnvelope,
+    }),
     HttpApiEndpoint.get("autocomplete", "/v1/autocomplete", {
       query: AutocompleteQueryParams,
       success: AutocompleteResourceEnvelope,
@@ -307,7 +334,10 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
     HttpApiEndpoint.get(
       "getIssueRevision",
       "/v1/repositories/:repositoryId/issues/:issueId/revisions/:snapshotId",
-      { params: IssueRevisionParams, success: HttpTicketResourceEnvelope },
+      {
+        params: IssueRevisionParams,
+        success: HttpTicketResourceEnvelope,
+      },
     ),
     HttpApiEndpoint.get("diffIssue", "/v1/repositories/:repositoryId/issues/:issueId/diffs", {
       params: IssueParams,
@@ -317,22 +347,38 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
     HttpApiEndpoint.post(
       "addIssueRelation",
       "/v1/repositories/:repositoryId/issues/:issueId/relations",
-      { params: IssueParams, payload: IssueRelationPayload, success: HttpTicketResourceEnvelope },
+      {
+        params: IssueParams,
+        payload: IssueRelationPayload,
+        success: HttpTicketResourceEnvelope,
+      },
     ),
     HttpApiEndpoint.post(
       "removeIssueRelation",
       "/v1/repositories/:repositoryId/issues/:issueId/relations/remove",
-      { params: IssueParams, payload: IssueRelationPayload, success: HttpTicketResourceEnvelope },
+      {
+        params: IssueParams,
+        payload: IssueRelationPayload,
+        success: HttpTicketResourceEnvelope,
+      },
     ),
     HttpApiEndpoint.get(
       "listIssueRecords",
       "/v1/repositories/:repositoryId/issues/:issueId/records",
-      { params: IssueParams, query: RecordListQueryParams, success: HttpRecordCollectionEnvelope },
+      {
+        params: IssueParams,
+        query: RecordListQueryParams,
+        success: HttpRecordCollectionEnvelope,
+      },
     ),
     HttpApiEndpoint.post(
       "addIssueRecord",
       "/v1/repositories/:repositoryId/issues/:issueId/records",
-      { params: IssueParams, payload: IssueRecordAddPayload, success: HttpRecordCreatedEnvelope },
+      {
+        params: IssueParams,
+        payload: IssueRecordAddPayload,
+        success: HttpRecordCreatedEnvelope,
+      },
     ),
   )
   .add(
@@ -455,7 +501,10 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
     HttpApiEndpoint.post(
       "archiveTemplate",
       "/v1/repositories/:repositoryId/templates/:templateId/archive",
-      { params: TemplateParams, success: HttpTemplateResourceEnvelope },
+      {
+        params: TemplateParams,
+        success: HttpTemplateResourceEnvelope,
+      },
     ),
   )
   .add(
@@ -467,7 +516,10 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
     HttpApiEndpoint.get(
       "getInitiativeProgress",
       "/v1/repositories/:repositoryId/initiatives/:initiativeId/progress",
-      { params: InitiativeParams, success: InitiativeProgressResourceEnvelope },
+      {
+        params: InitiativeParams,
+        success: InitiativeProgressResourceEnvelope,
+      },
     ),
     HttpApiEndpoint.post(
       "addInitiativeUpdate",

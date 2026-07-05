@@ -25,7 +25,7 @@ import type {
   AgentChatTurnRecord,
   CycleApiRuntimeShape,
 } from "../../../runtime/CycleApiRuntime.ts";
-import { ApiHandlerError } from "../../shared.ts";
+import { ApiHandlerError } from "../../../../errors/index.ts";
 import type { ChatMessagePayload, ChatRepositoryPayload, ChatTurnPayload } from "./domain.ts";
 import { isRecord } from "./domain.ts";
 import {
@@ -1447,9 +1447,13 @@ const updateTurn = async (
     ...patch,
     updatedAt: input.runtime.now().toISOString(),
   };
-  Object.assign(input.turn as any, updated);
+  Object.assign(input.turn as Mutable<AgentChatTurnRecord>, updated);
   await input.chatStore.upsertTurn?.(updated);
   await input.publish(input.thread.id, "turn.started", { turn: turnForProtocol(updated) });
+};
+
+type Mutable<T> = {
+  -readonly [Key in keyof T]: T[Key];
 };
 
 const hiddenProviderItemTypes = new Set([

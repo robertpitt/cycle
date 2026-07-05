@@ -1,10 +1,7 @@
 import * as ContractSchemas from "@cycle/contracts/schemas";
 import { Schema } from "effect";
-import {
-  AutocompleteOutput,
-  CollectionEnvelopeOf,
-  ResourceEnvelopeOf,
-} from "../../http/schemas.ts";
+import { AutocompleteOutput } from "../../http/schemas/AutocompleteResourceEnvelope.ts";
+import { CollectionEnvelopeOf, ResourceEnvelopeOf } from "../../http/schemas/shared.ts";
 
 const RequestId = {
   requestId: Schema.optional(Schema.String),

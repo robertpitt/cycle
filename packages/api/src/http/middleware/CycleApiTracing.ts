@@ -1,16 +1,19 @@
 import { Effect, Layer } from "effect";
 import { HttpServerRequest } from "effect/unstable/http";
 import { HttpApiMiddleware } from "effect/unstable/httpapi";
+import { CycleRequestContext } from "./CycleRequestContextMiddleware.ts";
 
-export class CycleApiTracing extends HttpApiMiddleware.Service<CycleApiTracing>()(
-  "@cycle/api/CycleApiTracing",
-) {}
+export class CycleApiTracing extends HttpApiMiddleware.Service<
+  CycleApiTracing,
+  { requires: CycleRequestContext }
+>()("@cycle/api/CycleApiTracing") {}
 
 export const CycleApiTracingLive = Layer.succeed(
   CycleApiTracing,
   CycleApiTracing.of((httpEffect, { endpoint }) =>
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
+      const { requestId } = yield* CycleRequestContext;
       const route = endpoint.path;
 
       return yield* httpEffect.pipe(
@@ -18,6 +21,7 @@ export const CycleApiTracingLive = Layer.succeed(
           attributes: {
             "http.request.method": request.method,
             "http.route": route,
+            "request.id": requestId,
             "url.path": requestPathname(request.url),
             service: "@cycle/api",
           },

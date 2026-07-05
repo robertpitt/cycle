@@ -4,20 +4,19 @@ import { makeDefaultAgentServiceRegistry } from "@cycle/agents/service";
 import { UseCaseServicesLive } from "@cycle/usecases";
 import { NodeServices } from "@effect/platform-node";
 import { Layer } from "effect";
-import { HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http";
+import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
-import {
-  makeAgentActiveTurnDirectory,
-} from "./agents/services/AgentActiveTurnDirectory.ts";
+import { makeAgentActiveTurnDirectory } from "./agents/services/AgentActiveTurnDirectory.ts";
 import { listLocalAgentProviderProfiles } from "./agents/services/AgentProviderProfiles.ts";
 import { CycleHttpApi, makeOpenApiDocument } from "./http/CycleHttpApi.ts";
-import { CycleAuthorizationLive } from "./http/handlers/Authorization.ts";
-import { FrameworkErrorEnvelopeLive } from "./http/handlers/FrameworkErrors.ts";
 import { SystemApiHandlers } from "./http/handlers/System.ts";
 import { V1ApiHandlers } from "./http/handlers/V1.ts";
 import { makeAgentTaskWebSocketLayer } from "./http/handlers/v1/agentTasksWs.ts";
 import { makeChatWebSocketLayer } from "./http/handlers/v1/chat/ws.ts";
-import { CycleApiTracingLive } from "./http/tracing.ts";
+import { CycleAuthorizationLive } from "./http/middleware/CycleAuthorization.ts";
+import { CycleApiTracingLive } from "./http/middleware/CycleApiTracing.ts";
+import { CycleRequestContextLive } from "./http/middleware/CycleRequestContextMiddleware.ts";
+import { FrameworkErrorEnvelopeLive } from "./http/middleware/FrameworkErrorEnvelope.ts";
 import {
   CycleApiRuntime,
   type CycleApiMcpOptions,
@@ -106,6 +105,7 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
     Layer.provideMerge(SystemApiHandlers),
     Layer.provide(CycleAuthorizationLive),
     Layer.provide(CycleApiTracingLive),
+    Layer.provide(CycleRequestContextLive),
     Layer.provide(runtime),
   );
   const apiLayer = HttpApiBuilder.layer(CycleHttpApi).pipe(Layer.provide(handlers)) as Layer.Layer<
@@ -123,7 +123,6 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
   });
 
   return Layer.mergeAll(
-    apiDocsLayer,
     apiLayer,
     mcpLayer,
     agentTaskWebSocketLayer,
@@ -159,31 +158,6 @@ const normalizeMcpToken = (mcp: CycleApiMcpOptions, staticToken: string): string
   mcp.auth !== false && mcp.auth?.token !== undefined
     ? mcp.auth.token
     : (mcp.apiToken ?? staticToken);
-
-const apiDocsLayer = Layer.mergeAll(
-  HttpRouter.add(
-    "GET",
-    "/",
-    HttpServerResponse.html(`<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Cycle Local API</title>
-    <style>
-      body {
-        margin: 0;
-      }
-    </style>
-  </head>
-  <body>
-    <redoc spec-url="/spec.json"></redoc>
-    <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
-  </body>
-</html>`),
-  ),
-  HttpRouter.add("GET", "/spec.json", HttpServerResponse.jsonUnsafe(makeOpenApiDocument())),
-);
 
 const makeHostedMcpLayer = (options: CycleApiOptions): Layer.Layer<never, unknown, any> => {
   const mcp = options.mcp;

@@ -1,12 +1,21 @@
 import { Crypto, Effect, Layer, Redacted } from "effect";
-import { HttpServerRequest } from "effect/unstable/http";
-import { CycleAuthorization } from "../authorization.ts";
+import { HttpApiMiddleware, HttpApiSecurity } from "effect/unstable/httpapi";
+import { timingSafeTokenEqualWithCrypto } from "../handlers/crypto.ts";
+import { unauthorizedResponse } from "../handlers/responses.ts";
 import { CycleApiRuntime } from "../runtime/CycleApiRuntime.ts";
-import {
-  requestIdFromHeadersWithCrypto,
-  timingSafeTokenEqualWithCrypto,
-  unauthorizedResponse,
-} from "./shared.ts";
+import { ApiErrorEnvelopes } from "../schemas/ApiErrorEnvelope.ts";
+import { CycleRequestContext } from "./CycleRequestContextMiddleware.ts";
+
+export class CycleAuthorization extends HttpApiMiddleware.Service<
+  CycleAuthorization,
+  { requires: CycleRequestContext }
+>()("@cycle/api/CycleAuthorization", {
+  error: ApiErrorEnvelopes,
+  requiredForClient: true,
+  security: {
+    bearer: HttpApiSecurity.bearer,
+  },
+}) {}
 
 export const CycleAuthorizationLive = Layer.effect(
   CycleAuthorization,
@@ -16,7 +25,6 @@ export const CycleAuthorizationLive = Layer.effect(
 
     return CycleAuthorization.of({
       bearer: Effect.fn(function* (httpEffect, { credential }) {
-        const request = yield* HttpServerRequest.HttpServerRequest;
         const supplied = Redacted.value(credential);
         const authorized = yield* timingSafeTokenEqualWithCrypto(
           crypto,
@@ -25,7 +33,7 @@ export const CycleAuthorizationLive = Layer.effect(
         );
 
         if (!authorized) {
-          const requestId = yield* requestIdFromHeadersWithCrypto(crypto, request.headers);
+          const { requestId } = yield* CycleRequestContext;
           return unauthorizedResponse(requestId);
         }
 

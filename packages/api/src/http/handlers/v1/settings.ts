@@ -11,148 +11,140 @@ import {
   RepositoryPreferencesPayload,
   RepositoryRecordNullableOutput,
   ThemePreferencePayload,
-} from "../../schemas.ts";
-import { decodeHttpValue, requestIdFromHeaders, resourceResponse } from "../shared.ts";
+} from "../../schemas/AppConfigResourceEnvelope.ts";
+import { CycleRequestContext } from "../../middleware/CycleRequestContextMiddleware.ts";
+import { resourceResponse } from "../responses.ts";
+import { decodeHttpValue } from "../usecases.ts";
 import { errorResponse } from "../responses.ts";
+import type { V1Request } from "./types.ts";
 
-export const withSettingsHandlers = (handlers: any) =>
-  handlers
-    .handle("getAppConfig", ({ request }: any) =>
-      Effect.gen(function* () {
-        const requestId = yield* requestIdFromHeaders(request.headers);
+export const getAppConfig = () =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
 
-        return yield* runLocalSettings(requestId, "read", AppConfigOutput, (settings) =>
-          settings.read(),
-        );
-      }),
-    )
-    .handle("updateProfile", ({ payload, request }: any) =>
-      Effect.gen(function* () {
-        const requestId = yield* requestIdFromHeaders(request.headers);
-        const input = yield* decodeHttpValue(
-          ProfileUpdatePayload,
-          payload === undefined ? {} : payload,
-          requestId,
-          {
-            code: "INVALID_LOCAL_SETTINGS_INPUT",
-            message: "Invalid profile update payload.",
-          },
-        );
-        if (HttpServerResponse.isHttpServerResponse(input)) return input;
-
-        return yield* runLocalSettings(requestId, "updateProfile", ProfileOutput, (settings) =>
-          settings.updateProfile?.(input),
-        );
-      }),
-    )
-    .handle("completeOnboarding", ({ payload, request }: any) =>
-      Effect.gen(function* () {
-        const requestId = yield* requestIdFromHeaders(request.headers);
-        const input = yield* decodeHttpValue(CompleteOnboardingPayload, payload, requestId, {
-          code: "INVALID_LOCAL_SETTINGS_INPUT",
-          message: "Invalid onboarding payload.",
-        });
-        if (HttpServerResponse.isHttpServerResponse(input)) return input;
-
-        return yield* runLocalSettings(
-          requestId,
-          "completeOnboarding",
-          AppConfigOutput,
-          (settings) => settings.completeOnboarding?.(input),
-        );
-      }),
-    )
-    .handle("setThemePreference", ({ payload, request }: any) =>
-      Effect.gen(function* () {
-        const requestId = yield* requestIdFromHeaders(request.headers);
-        const input = yield* decodeHttpValue(ThemePreferencePayload, payload, requestId, {
-          code: "INVALID_LOCAL_SETTINGS_INPUT",
-          message: "Invalid theme preference payload.",
-        });
-        if (HttpServerResponse.isHttpServerResponse(input)) return input;
-
-        return yield* runLocalSettings(
-          requestId,
-          "setThemePreference",
-          AppConfigOutput,
-          (settings) => settings.setThemePreference?.(input.preference),
-        );
-      }),
-    )
-    .handle("setInterfaceDensity", ({ payload, request }: any) =>
-      Effect.gen(function* () {
-        const requestId = yield* requestIdFromHeaders(request.headers);
-        const input = yield* decodeHttpValue(InterfaceDensityPayload, payload, requestId, {
-          code: "INVALID_LOCAL_SETTINGS_INPUT",
-          message: "Invalid interface density payload.",
-        });
-        if (HttpServerResponse.isHttpServerResponse(input)) return input;
-
-        return yield* runLocalSettings(
-          requestId,
-          "setInterfaceDensity",
-          AppConfigOutput,
-          (settings) => settings.setInterfaceDensity?.(input.density),
-        );
-      }),
-    )
-    .handle("updateAgentProviderPreference", ({ params, payload, request }: any) =>
-      Effect.gen(function* () {
-        const requestId = yield* requestIdFromHeaders(request.headers);
-        const input = yield* decodeHttpValue(AgentProviderPreferencePayload, payload, requestId, {
-          code: "INVALID_LOCAL_SETTINGS_INPUT",
-          message: "Invalid agent provider preference payload.",
-        });
-        if (HttpServerResponse.isHttpServerResponse(input)) return input;
-
-        return yield* runLocalSettings(
-          requestId,
-          "updateAgentProviderPreference",
-          AppConfigOutput,
-          (settings) =>
-            settings.updateAgentProviderPreference?.({
-              preference: input.preference,
-              providerId: params.providerId,
-            }),
-        );
-      }),
-    )
-    .handle("updateRepositoryPreferences", ({ params, payload, request }: any) =>
-      Effect.gen(function* () {
-        const requestId = yield* requestIdFromHeaders(request.headers);
-        const payloadInput = yield* decodeHttpValue(
-          RepositoryPreferencesPayload,
-          payload,
-          requestId,
-          {
-            code: "INVALID_LOCAL_SETTINGS_INPUT",
-            message: "Invalid repository preferences payload.",
-          },
-        );
-        if (HttpServerResponse.isHttpServerResponse(payloadInput)) return payloadInput;
-
-        const input = {
-          id: params.repositoryId,
-          preferences: payloadInput.preferences,
-        };
-
-        return yield* runLocalSettings(
-          requestId,
-          "updateRepositoryPreferences",
-          RepositoryRecordNullableOutput,
-          (settings) => settings.updateRepositoryPreferences?.(input),
-        );
-      }),
-    )
-    .handle("removeRepository", ({ params, request }: any) =>
-      Effect.gen(function* () {
-        const requestId = yield* requestIdFromHeaders(request.headers);
-
-        return yield* runLocalSettings(requestId, "removeRepository", AppConfigOutput, (settings) =>
-          settings.removeRepository?.(params.repositoryId),
-        );
-      }),
+    return yield* runLocalSettings(requestId, "read", AppConfigOutput, (settings) =>
+      settings.read(),
     );
+  });
+
+export const updateProfile = ({ payload }: V1Request<"updateProfile">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+    const input = yield* decodeHttpValue(
+      ProfileUpdatePayload,
+      payload === undefined ? {} : payload,
+      requestId,
+      {
+        code: "INVALID_LOCAL_SETTINGS_INPUT",
+        message: "Invalid profile update payload.",
+      },
+    );
+    if (HttpServerResponse.isHttpServerResponse(input)) return input;
+
+    return yield* runLocalSettings(requestId, "updateProfile", ProfileOutput, (settings) =>
+      settings.updateProfile?.(input),
+    );
+  });
+
+export const completeOnboarding = ({ payload }: V1Request<"completeOnboarding">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+    const input = yield* decodeHttpValue(CompleteOnboardingPayload, payload, requestId, {
+      code: "INVALID_LOCAL_SETTINGS_INPUT",
+      message: "Invalid onboarding payload.",
+    });
+    if (HttpServerResponse.isHttpServerResponse(input)) return input;
+
+    return yield* runLocalSettings(requestId, "completeOnboarding", AppConfigOutput, (settings) =>
+      settings.completeOnboarding?.(input),
+    );
+  });
+
+export const setThemePreference = ({ payload }: V1Request<"setThemePreference">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+    const input = yield* decodeHttpValue(ThemePreferencePayload, payload, requestId, {
+      code: "INVALID_LOCAL_SETTINGS_INPUT",
+      message: "Invalid theme preference payload.",
+    });
+    if (HttpServerResponse.isHttpServerResponse(input)) return input;
+
+    return yield* runLocalSettings(requestId, "setThemePreference", AppConfigOutput, (settings) =>
+      settings.setThemePreference?.(input.preference),
+    );
+  });
+
+export const setInterfaceDensity = ({ payload }: V1Request<"setInterfaceDensity">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+    const input = yield* decodeHttpValue(InterfaceDensityPayload, payload, requestId, {
+      code: "INVALID_LOCAL_SETTINGS_INPUT",
+      message: "Invalid interface density payload.",
+    });
+    if (HttpServerResponse.isHttpServerResponse(input)) return input;
+
+    return yield* runLocalSettings(requestId, "setInterfaceDensity", AppConfigOutput, (settings) =>
+      settings.setInterfaceDensity?.(input.density),
+    );
+  });
+
+export const updateAgentProviderPreference = ({
+  params,
+  payload,
+}: V1Request<"updateAgentProviderPreference">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+    const input = yield* decodeHttpValue(AgentProviderPreferencePayload, payload, requestId, {
+      code: "INVALID_LOCAL_SETTINGS_INPUT",
+      message: "Invalid agent provider preference payload.",
+    });
+    if (HttpServerResponse.isHttpServerResponse(input)) return input;
+
+    return yield* runLocalSettings(
+      requestId,
+      "updateAgentProviderPreference",
+      AppConfigOutput,
+      (settings) =>
+        settings.updateAgentProviderPreference?.({
+          preference: input.preference,
+          providerId: params.providerId,
+        }),
+    );
+  });
+
+export const updateRepositoryPreferences = ({
+  params,
+  payload,
+}: V1Request<"updateRepositoryPreferences">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+    const payloadInput = yield* decodeHttpValue(RepositoryPreferencesPayload, payload, requestId, {
+      code: "INVALID_LOCAL_SETTINGS_INPUT",
+      message: "Invalid repository preferences payload.",
+    });
+    if (HttpServerResponse.isHttpServerResponse(payloadInput)) return payloadInput;
+
+    const input = {
+      id: params.repositoryId,
+      preferences: payloadInput.preferences,
+    };
+
+    return yield* runLocalSettings(
+      requestId,
+      "updateRepositoryPreferences",
+      RepositoryRecordNullableOutput,
+      (settings) => settings.updateRepositoryPreferences?.(input),
+    );
+  });
+
+export const removeRepository = ({ params }: V1Request<"removeRepository">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+
+    return yield* runLocalSettings(requestId, "removeRepository", AppConfigOutput, (settings) =>
+      settings.removeRepository?.(params.repositoryId),
+    );
+  });
 
 const runLocalSettings = <S extends Schema.Top>(
   requestId: string,

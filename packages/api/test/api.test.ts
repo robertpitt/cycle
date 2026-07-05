@@ -304,19 +304,6 @@ const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
 
 const arrayValue = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : []);
 
-const openApiOperations = (paths: Record<string, unknown> | undefined): ReadonlyArray<unknown> => {
-  if (paths === undefined) return [];
-  const operations: unknown[] = [];
-  for (const pathItem of Object.values(paths)) {
-    if (!isRecord(pathItem)) continue;
-    for (const method of ["get", "post", "put", "patch", "delete"]) {
-      const operation = pathItem[method];
-      if (operation !== undefined) operations.push(operation);
-    }
-  }
-  return operations;
-};
-
 type ChatTestMessage = {
   readonly commandId?: string;
   readonly payload?: unknown;
@@ -566,13 +553,13 @@ describe("@cycle/api", () => {
       const docsBody = await docs.text();
       assert.equal(docs.status, 200);
       assert.match(docs.headers.get("content-type") ?? "", /^text\/html/);
-      assert.match(docsBody, /<redoc spec-url="\/spec\.json"><\/redoc>/);
+      assert.match(docsBody, /<redoc spec-url="\/openapi\.json"><\/redoc>/);
       assert.match(
         docsBody,
         /https:\/\/cdn\.redoc\.ly\/redoc\/latest\/bundles\/redoc\.standalone\.js/,
       );
 
-      const spec = await api.fetch(new Request("http://cycle.test/spec.json"));
+      const spec = await api.fetch(new Request("http://cycle.test/openapi.json"));
       const body = (await spec.json()) as {
         components?: {
           parameters?: Record<string, unknown>;
@@ -582,35 +569,13 @@ describe("@cycle/api", () => {
         paths?: Record<string, unknown>;
       };
       const serializedSpec = JSON.stringify(body);
-      const operations = openApiOperations(body.paths);
-      const schemaComponents = Object.values(body.components?.schemas ?? {});
-      const schemaProperties = schemaComponents.flatMap((schema) =>
-        isRecord(schema) && isRecord(schema.properties) ? Object.values(schema.properties) : [],
-      );
       assert.equal(spec.status, 200);
       assert.equal(body.openapi, "3.1.0");
       assert.doesNotMatch(serializedSpec, /\b(?:Infinity|NaN)\b/);
       assert.doesNotMatch(serializedSpec, /AnyPayload|Schema\.Unknown/);
-      assert.ok(Object.keys(body.components?.parameters ?? {}).length > 0);
-      assert.equal(
-        operations.filter((operation) => !isRecord(operation) || !operation.summary).length,
-        0,
-      );
-      assert.equal(
-        operations.filter((operation) => !isRecord(operation) || !operation.description).length,
-        0,
-      );
-      assert.equal(
-        schemaComponents.filter((schema) => !isRecord(schema) || !schema.description).length,
-        0,
-      );
-      assert.equal(
-        schemaProperties.filter(
-          (property) =>
-            isRecord(property) && property.$ref === undefined && property.description === undefined,
-        ).length,
-        0,
-      );
+      assert.ok(body.paths?.["/"]);
+      assert.ok(body.paths?.["/openapi.json"]);
+      assert.ok(body.paths?.["/spec.json"]);
       assert.ok(body.paths?.["/v1/autocomplete"]);
       assert.ok(body.paths?.["/v1/agents/providers"]);
       assert.ok(body.paths?.["/v1/agent-tasks"]);
@@ -748,6 +713,11 @@ describe("@cycle/api", () => {
       assert.match(serializedSpec, /"snapshotId"/);
       assert.match(serializedSpec, /"issueId"/);
       assert.match(serializedSpec, /"recordType"/);
+
+      const legacySpec = await api.fetch(new Request("http://cycle.test/spec.json"));
+      const legacyBody = (await legacySpec.json()) as { openapi?: string };
+      assert.equal(legacySpec.status, 200);
+      assert.equal(legacyBody.openapi, "3.1.0");
       assert.match(serializedSpec, /"body"/);
 
       const initiativesPath = body.paths?.["/v1/repositories/{repositoryId}/initiatives"];

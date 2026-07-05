@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
-import { ApiErrorEnvelope } from "../schemas.ts";
+import { ApiErrorEnvelope } from "../schemas/ApiErrorEnvelope.ts";
 
 const StrictEncodeOptions = { onExcessProperty: "error" } as const;
 

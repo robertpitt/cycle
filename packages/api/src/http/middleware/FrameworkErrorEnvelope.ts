@@ -5,7 +5,7 @@ import {
   HttpServerRequest,
   type HttpServerResponse,
 } from "effect/unstable/http";
-import { errorResponse } from "./shared.ts";
+import { errorResponse } from "../handlers/responses.ts";
 
 const isEmptyBadRequest = (response: HttpServerResponse.HttpServerResponse): boolean =>
   response.status === 400 && response.body._tag === "Empty";

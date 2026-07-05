@@ -1,13 +1,12 @@
+import { AgentProvidersOutput as AgentProvidersOutputSchema } from "@cycle/api/schemas/AgentProvidersResourceEnvelope";
+import { ApiErrorEnvelope as ApiErrorEnvelopeSchema } from "@cycle/api/schemas/ApiErrorEnvelope";
 import {
-  AgentProvidersOutput as AgentProvidersOutputSchema,
-  ApiErrorEnvelope as ApiErrorEnvelopeSchema,
   AutocompleteOutput as AutocompleteOutputSchema,
-  CollectionEnvelopeOf,
-  InboxPageResourceEnvelope,
-  ResourceEnvelopeOf,
   type AutocompleteEntityType as ApiAutocompleteEntityType,
   type HttpAutocompleteResultOutput as ApiAutocompleteResult,
-} from "@cycle/api/api";
+} from "@cycle/api/schemas/AutocompleteResourceEnvelope";
+import { InboxPageResourceEnvelope } from "@cycle/api/schemas/InboxPageResourceEnvelope";
+import { CollectionEnvelopeOf, ResourceEnvelopeOf } from "@cycle/api/schemas/shared";
 import {
   ContractSchemas,
   type InboxPage,

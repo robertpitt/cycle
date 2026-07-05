@@ -1,7 +1,8 @@
 import { Effect, Result } from "effect";
 import type { HttpServerResponse } from "effect/unstable/http";
+import { ApiHandlerError } from "../../../../errors/index.ts";
 import { CycleApiRuntime, type AgentChatStoreShape } from "../../../runtime/CycleApiRuntime.ts";
-import { ApiHandlerError, errorResponse } from "../../shared.ts";
+import { errorResponse } from "../../responses.ts";
 
 type StoreOperation<T> =
   | {

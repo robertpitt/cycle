@@ -12,6 +12,14 @@ type ServerMessage = {
   readonly version: 1;
 };
 
+type AgentTaskUsecaseRequirements = Effect.Services<
+  ReturnType<AgentTaskUsecasesShape["createTicketTask"]>
+>;
+
+type AgentTaskOperation<A> = (
+  usecases: AgentTaskUsecasesShape,
+) => Effect.Effect<A, AgentTaskFailure, AgentTaskUsecaseRequirements>;
+
 export const makeAgentTaskWebSocketLayer = (
   runtime: CycleApiRuntimeShape,
 ): Layer.Layer<never, never, never> =>
@@ -107,7 +115,7 @@ export const makeAgentTaskWebSocketLayer = (
 
 const runTaskEffect = <A>(
   runtime: CycleApiRuntimeShape,
-  operation: (usecases: AgentTaskUsecasesShape) => Effect.Effect<A, AgentTaskFailure, any>,
+  operation: AgentTaskOperation<A>,
 ): Effect.Effect<A, AgentTaskFailure> =>
   Effect.gen(function* () {
     const usecases = yield* AgentTaskUsecases;

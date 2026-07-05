@@ -1,6 +1,6 @@
 import { NodeServices } from "@effect/platform-node";
 import { Context, Effect, Layer, Schema } from "effect";
-import { ApiErrorEnvelope } from "../http/schemas.ts";
+import { ApiErrorEnvelope } from "../http/schemas/ApiErrorEnvelope.ts";
 import {
   discoverCycleApiEffect,
   type CycleMcpApiDiscoveryInput,

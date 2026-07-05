@@ -117,7 +117,7 @@ export const startCycleApiServerEffect = (
               mcpUrl: `${baseUrl}${mcpPath}`,
             }),
         pid: globalThis.process?.pid ?? 0,
-        specUrl: `${baseUrl}/spec.json`,
+        specUrl: `${baseUrl}/openapi.json`,
         startedAt: new Date().toISOString(),
       });
     }

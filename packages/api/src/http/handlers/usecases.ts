@@ -13,34 +13,30 @@ import {
   AutomationEvaluateRepository,
   type UseCaseDefinition,
 } from "@cycle/usecases";
-import { Crypto, Effect, Result, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 import { Headers, HttpServerResponse } from "effect/unstable/http";
+import { CycleRequestContext } from "../middleware/CycleRequestContextMiddleware.ts";
 import { CycleApiRuntime, type CycleApiRuntimeShape } from "../runtime/CycleApiRuntime.ts";
-import type { AutomationEvaluatePayload } from "../schemas.ts";
-import { requestIdFromHeaders } from "./crypto.ts";
+import type { AutomationEvaluatePayload } from "../schemas/AutomationEvaluationResourceEnvelope.ts";
 import { asPage, optionalString, pageLimitFrom, urlFromRequest } from "./query.ts";
 import { collectionResponse, errorResponse, errorResponseFromUseCaseFailure } from "./responses.ts";
 
 const StrictDecodeOptions = { onExcessProperty: "error" } as const;
 
 type UseCaseInvocation = {
-  readonly definition: UseCaseDefinition<any, any>;
-  readonly input: unknown;
-  readonly meta?: UseCaseMeta;
+  readonly run: Effect.Effect<unknown, never, CycleApiRuntime>;
 };
 
-export const useCaseInvocation = <Name extends UseCaseName>(
-  definition: UseCaseDefinition<Name, any>,
+export const useCaseInvocation = <Name extends UseCaseName, R>(
+  definition: UseCaseDefinition<Name, R>,
   input: UseCaseInput<Name>,
   meta?: UseCaseMeta,
 ): UseCaseInvocation => ({
-  definition,
-  input,
-  ...(meta === undefined ? {} : { meta }),
+  run: runUseCase(definition, input, meta),
 });
 
-export const runUseCase = <Name extends UseCaseName>(
-  definition: UseCaseDefinition<Name, any>,
+export const runUseCase = <Name extends UseCaseName, R>(
+  definition: UseCaseDefinition<Name, R>,
   input: UseCaseInput<Name>,
   useCaseMeta?: UseCaseMeta,
 ): Effect.Effect<unknown, never, CycleApiRuntime> =>
@@ -69,9 +65,9 @@ export const runUseCase = <Name extends UseCaseName>(
     return result.success;
   });
 
-const notifyUseCaseSuccess = <Name extends UseCaseName>(
+const notifyUseCaseSuccess = <Name extends UseCaseName, R>(
   runtime: CycleApiRuntimeShape,
-  definition: UseCaseDefinition<Name, any>,
+  definition: UseCaseDefinition<Name, R>,
   input: UseCaseInput<Name>,
   useCaseMeta: UseCaseMeta | undefined,
   value: unknown,
@@ -102,18 +98,18 @@ const notifyUseCaseSuccess = <Name extends UseCaseName>(
 };
 
 export const pagedUseCaseResponse = (
-  request: { readonly headers: Headers.Headers; readonly url: string },
+  request: { readonly url: string },
   useCase: UseCaseInvocation | ((requestId: string) => UseCaseInvocation),
-): Effect.Effect<HttpServerResponse.HttpServerResponse, never, CycleApiRuntime | Crypto.Crypto> =>
+): Effect.Effect<
+  HttpServerResponse.HttpServerResponse,
+  never,
+  CycleApiRuntime | CycleRequestContext
+> =>
   Effect.gen(function* () {
-    const requestId = yield* requestIdFromHeaders(request.headers);
+    const { requestId } = yield* CycleRequestContext;
     const url = urlFromRequest(request);
     const invocation = typeof useCase === "function" ? useCase(requestId) : useCase;
-    const pageValue = yield* runUseCase(
-      invocation.definition,
-      invocation.input as never,
-      invocation.meta,
-    );
+    const pageValue = yield* invocation.run;
     if (HttpServerResponse.isHttpServerResponse(pageValue)) return pageValue;
     const result = asPage(pageValue);
 
