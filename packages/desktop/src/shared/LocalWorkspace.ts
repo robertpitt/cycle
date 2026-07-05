@@ -17,6 +17,11 @@ export const RepositoryPreferencesPatch = Schema.Struct({
 });
 export type RepositoryPreferencesPatch = typeof RepositoryPreferencesPatch.Type;
 
+export const LocalWorkspacePreferencesPatch = Schema.Struct({
+  sidebarCollapsed: Schema.optional(Schema.Boolean),
+});
+export type LocalWorkspacePreferencesPatch = typeof LocalWorkspacePreferencesPatch.Type;
+
 export const UpdateRepositoryPreferencesInput = Schema.Struct({
   id: Schema.String,
   preferences: RepositoryPreferencesPatch,
@@ -50,6 +55,9 @@ export type LocalWorkspaceService = {
   readonly removeRepository: (
     id: string,
   ) => Effect.Effect<ReadonlyArray<RepositoryRecord>, AppConfigError>;
+  readonly updatePreferences: (
+    preferences: LocalWorkspacePreferencesPatch,
+  ) => Effect.Effect<void, AppConfigError>;
   readonly updateRepositoryPreferences: (
     input: UpdateRepositoryPreferencesInput,
   ) => Effect.Effect<RepositoryRecord | null, AppConfigError>;

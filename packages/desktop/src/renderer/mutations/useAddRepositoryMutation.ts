@@ -99,6 +99,7 @@ export const useAddRepositoryMutation = ({
       queryClient.setQueryData(appConfigQueryKey, {
         ...current,
         localWorkspace: {
+          ...current.localWorkspace,
           repositories: [
             ...current.localWorkspace.repositories.filter(
               (repository) => repository.id !== result.repository.id,

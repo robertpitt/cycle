@@ -6,6 +6,7 @@ import {
   AgentProviderPreferencePayload,
   CompleteOnboardingPayload,
   InterfaceDensityPayload,
+  LocalWorkspacePreferencesPayload,
   ProfileOutput,
   ProfileUpdatePayload,
   RepositoryPreferencesPayload,
@@ -85,6 +86,25 @@ export const setInterfaceDensity = ({ payload }: V1Request<"setInterfaceDensity"
 
     return yield* runLocalSettings(requestId, "setInterfaceDensity", AppConfigOutput, (settings) =>
       settings.setInterfaceDensity?.(input.density),
+    );
+  });
+
+export const updateLocalWorkspacePreferences = ({
+  payload,
+}: V1Request<"updateLocalWorkspacePreferences">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+    const input = yield* decodeHttpValue(LocalWorkspacePreferencesPayload, payload, requestId, {
+      code: "INVALID_LOCAL_SETTINGS_INPUT",
+      message: "Invalid workspace preferences payload.",
+    });
+    if (HttpServerResponse.isHttpServerResponse(input)) return input;
+
+    return yield* runLocalSettings(
+      requestId,
+      "updateLocalWorkspacePreferences",
+      AppConfigOutput,
+      (settings) => settings.updateLocalWorkspacePreferences?.(input.preferences),
     );
   });
 

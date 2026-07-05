@@ -469,6 +469,7 @@ describe("desktop app config", () => {
     assert.equal(recovered.localWorkspace.repositories[0]?.preferences.autoSync, true);
     assert.equal(recovered.localWorkspace.repositories[0]?.preferences.commitStyle, "descriptive");
     assert.equal(recovered.localWorkspace.repositories[0]?.preferences.sidebarExpanded, true);
+    assert.equal(recovered.localWorkspace.sidebarCollapsed, false);
   });
 
   it("detects providers from PATH without enabling app config preferences", async () => {

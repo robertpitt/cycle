@@ -10,6 +10,7 @@ import {
 import {
   LocalWorkspace,
   type InitializeRepositoryPathInput,
+  type LocalWorkspacePreferencesPatch,
   type UpdateRepositoryPreferencesInput,
   type UpsertRepositoryPathInput,
 } from "../shared/LocalWorkspace.ts";
@@ -138,6 +139,7 @@ export const LocalWorkspaceLive = Layer.effect(
         const updated = yield* appConfig.update((current) => ({
           ...current,
           localWorkspace: {
+            ...current.localWorkspace,
             repositories:
               existing === undefined
                 ? [...current.localWorkspace.repositories, nextRepository]
@@ -170,6 +172,7 @@ export const LocalWorkspaceLive = Layer.effect(
           const updated = yield* appConfig.update((current) => ({
             ...current,
             localWorkspace: {
+              ...current.localWorkspace,
               repositories: current.localWorkspace.repositories.map((repository) =>
                 repository.id === id ? { ...repository, lastOpenedAt: openedAt } : repository,
               ),
@@ -184,17 +187,29 @@ export const LocalWorkspaceLive = Layer.effect(
           .update((current) => ({
             ...current,
             localWorkspace: {
+              ...current.localWorkspace,
               repositories: current.localWorkspace.repositories.filter(
                 (repository) => repository.id !== id,
               ),
             },
           }))
           .pipe(Effect.map((config) => config.localWorkspace.repositories)),
+      updatePreferences: (preferences: LocalWorkspacePreferencesPatch) =>
+        appConfig
+          .update((current) => ({
+            ...current,
+            localWorkspace: {
+              ...current.localWorkspace,
+              ...preferences,
+            },
+          }))
+          .pipe(Effect.asVoid),
       updateRepositoryPreferences: (input: UpdateRepositoryPreferencesInput) =>
         Effect.gen(function* () {
           const updated = yield* appConfig.update((current) => ({
             ...current,
             localWorkspace: {
+              ...current.localWorkspace,
               repositories: current.localWorkspace.repositories.map((repository) =>
                 repository.id === input.id
                   ? {

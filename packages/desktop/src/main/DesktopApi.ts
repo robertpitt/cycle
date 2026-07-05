@@ -439,6 +439,11 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
                   "api.localSettings.updateProfile",
                   preferences.updateProfile(input),
                 ),
+              updateLocalWorkspacePreferences: (workspacePreferences) =>
+                runtime.runPromise(
+                  "api.localSettings.updateLocalWorkspacePreferences",
+                  preferences.updateLocalWorkspacePreferences(workspacePreferences),
+                ),
               updateRepositoryPreferences: (input) =>
                 runtime.runPromise(
                   "api.localSettings.updateRepositoryPreferences",

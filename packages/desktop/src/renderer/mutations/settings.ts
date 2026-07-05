@@ -10,6 +10,7 @@ import {
   type ThemePreference,
 } from "../../shared/AppConfig.ts";
 import type { ProfileUpdateInput } from "../../shared/Profile.ts";
+import type { LocalWorkspacePreferencesPatch } from "../../shared/LocalWorkspace.ts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 import { appConfigQueryKey } from "../queries/appConfig.ts";
@@ -67,6 +68,18 @@ export const useSetInterfaceDensityMutation = () => {
 
       return cycleApiClient.setInterfaceDensity(density);
     },
+    onSuccess: (next) => {
+      queryClient.setQueryData(appConfigQueryKey, next);
+    },
+  });
+};
+
+export const useUpdateLocalWorkspacePreferencesMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (preferences: LocalWorkspacePreferencesPatch): Promise<AppConfigState> =>
+      cycleApiClient.updateLocalWorkspacePreferences(preferences),
     onSuccess: (next) => {
       queryClient.setQueryData(appConfigQueryKey, next);
     },

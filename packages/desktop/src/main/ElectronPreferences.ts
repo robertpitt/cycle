@@ -19,7 +19,11 @@ import {
 } from "../shared/AppConfig.ts";
 import type { AgentProviderId } from "../shared/AgentProviders.ts";
 import { supportedAgentProviders } from "../shared/AgentProviders.ts";
-import { LocalWorkspace, type UpdateRepositoryPreferencesInput } from "../shared/LocalWorkspace.ts";
+import {
+  LocalWorkspace,
+  type LocalWorkspacePreferencesPatch,
+  type UpdateRepositoryPreferencesInput,
+} from "../shared/LocalWorkspace.ts";
 import {
   Profile,
   type CompleteOnboardingInput,
@@ -53,6 +57,9 @@ export type ElectronPreferencesService = {
   readonly updateProfile: (
     input: ProfileUpdateInput,
   ) => Effect.Effect<ProfileConfig, AppConfigError>;
+  readonly updateLocalWorkspacePreferences: (
+    preferences: LocalWorkspacePreferencesPatch,
+  ) => Effect.Effect<AppConfigState, AppConfigError>;
   readonly updateRepositoryPreferences: (
     input: UpdateRepositoryPreferencesInput,
   ) => Effect.Effect<RepositoryRecord | null, AppConfigError>;
@@ -123,6 +130,10 @@ export class ElectronPreferences extends Context.Service<
         syncThemePreference,
         themeState: electronTheme.current,
         updateProfile: (input) => profile.updateProfile(input),
+        updateLocalWorkspacePreferences: (preferences) =>
+          localWorkspace
+            .updatePreferences(preferences)
+            .pipe(Effect.flatMap(() => appConfig.read())),
         updateRepositoryPreferences: (input) => localWorkspace.updateRepositoryPreferences(input),
         updateAgentProviderPreference: (input) =>
           appConfig.update((current) => {

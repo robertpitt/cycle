@@ -104,6 +104,7 @@ export type RepositoryRecord = typeof RepositoryRecord.Type;
 
 export const LocalWorkspaceConfig = Schema.Struct({
   repositories: Schema.Array(RepositoryRecord),
+  sidebarCollapsed: Schema.Boolean,
 });
 export type LocalWorkspaceConfig = typeof LocalWorkspaceConfig.Type;
 
@@ -125,6 +126,7 @@ export const defaultAppConfig = (): AppConfigState => ({
   api: defaultApiConfig(),
   localWorkspace: {
     repositories: [],
+    sidebarCollapsed: false,
   },
   onboarding: {
     completed: false,

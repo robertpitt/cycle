@@ -244,6 +244,7 @@ const makeLayer = (
   const config = {
     ...defaultAppConfig(),
     localWorkspace: {
+      ...defaultAppConfig().localWorkspace,
       repositories,
     },
   };
@@ -298,6 +299,7 @@ const makeLayer = (
           displayName: "",
           email: "",
         }),
+      updateLocalWorkspacePreferences: () => Effect.succeed(config),
       updateRepositoryPreferences: (input) =>
         Effect.succeed(
           repositories.find((repository) => repository.id === input.id) ?? repositories[0] ?? null,
@@ -380,6 +382,7 @@ const makeLayer = (
       markRepositoryOpened: (id) =>
         Effect.succeed(repositories.find((repository) => repository.id === id) ?? null),
       removeRepository: () => Effect.succeed(repositories),
+      updatePreferences: () => Effect.void,
       updateRepositoryPreferences: (input) =>
         Effect.succeed(repositories.find((repository) => repository.id === input.id) ?? null),
       upsertRepositoryPath: (input) =>

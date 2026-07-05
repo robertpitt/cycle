@@ -110,7 +110,16 @@ export const RepositoryRecordOutput = Schema.Struct({
 export const RepositoryRecordNullableOutput = Schema.NullOr(RepositoryRecordOutput);
 export const LocalWorkspaceConfigOutput = Schema.Struct({
   repositories: Schema.Array(RepositoryRecordOutput),
+  sidebarCollapsed: Schema.Boolean,
 });
+export const LocalWorkspacePreferencesPatch = Schema.Struct({
+  sidebarCollapsed: Schema.optional(Schema.Boolean),
+});
+export const LocalWorkspacePreferencesPayload = strictSchema(
+  Schema.Struct({
+    preferences: LocalWorkspacePreferencesPatch,
+  }),
+);
 export const AppConfigOutput = Schema.Struct({
   agentProviders: AgentProvidersConfigOutput,
   api: LocalApiConfigOutput,

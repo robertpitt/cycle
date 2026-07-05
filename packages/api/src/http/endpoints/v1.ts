@@ -9,6 +9,7 @@ import {
   AppConfigResourceEnvelope,
   CompleteOnboardingPayload,
   InterfaceDensityPayload,
+  LocalWorkspacePreferencesPayload,
   ProfileResourceEnvelope,
   ProfileUpdatePayload,
   RepositoryPreferencesPayload,
@@ -245,6 +246,10 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
     }),
     HttpApiEndpoint.patch("setInterfaceDensity", "/v1/appearance/density", {
       payload: InterfaceDensityPayload,
+      success: AppConfigResourceEnvelope,
+    }),
+    HttpApiEndpoint.patch("updateLocalWorkspacePreferences", "/v1/workspace/preferences", {
+      payload: LocalWorkspacePreferencesPayload,
       success: AppConfigResourceEnvelope,
     }),
     HttpApiEndpoint.patch(

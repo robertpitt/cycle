@@ -55,6 +55,10 @@ export type LocalSettingsRepositoryPreferencesInput = {
   readonly preferences: LocalSettingsRepositoryPreferences;
 };
 
+export type LocalSettingsWorkspacePreferences = {
+  readonly sidebarCollapsed?: boolean;
+};
+
 export type LocalSettingsAgentProviderPreferencePatch = {
   readonly config?: Readonly<Record<string, unknown>>;
   readonly defaultModel?: string | null;
@@ -75,6 +79,9 @@ export type LocalSettingsProviderShape = {
   readonly setInterfaceDensity?: (density: LocalSettingsInterfaceDensity) => Promise<unknown>;
   readonly setThemePreference?: (preference: LocalSettingsThemePreference) => Promise<unknown>;
   readonly updateProfile?: (input: LocalSettingsProfileUpdateInput) => Promise<unknown>;
+  readonly updateLocalWorkspacePreferences?: (
+    preferences: LocalSettingsWorkspacePreferences,
+  ) => Promise<unknown>;
   readonly updateRepositoryPreferences?: (
     input: LocalSettingsRepositoryPreferencesInput,
   ) => Promise<unknown>;

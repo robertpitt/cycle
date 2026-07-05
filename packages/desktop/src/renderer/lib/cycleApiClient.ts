@@ -33,7 +33,10 @@ import {
   type ThemePreference,
 } from "../../shared/AppConfig.ts";
 import type { AgentProviderId, DetectedAgentProvider } from "../../shared/AgentProviders.ts";
-import type { UpdateRepositoryPreferencesInput } from "../../shared/LocalWorkspace.ts";
+import type {
+  LocalWorkspacePreferencesPatch,
+  UpdateRepositoryPreferencesInput,
+} from "../../shared/LocalWorkspace.ts";
 import type { CompleteOnboardingInput, ProfileUpdateInput } from "../../shared/Profile.ts";
 import { getDesktopBridge } from "./desktopBridge.ts";
 import {
@@ -1267,6 +1270,11 @@ export const cycleApiClient = {
 
   setInterfaceDensity: (density: InterfaceDensity): Promise<AppConfigState> =>
     resource("PATCH", "/v1/appearance/density", AppConfigStateSchema, { density }),
+
+  updateLocalWorkspacePreferences: (
+    preferences: LocalWorkspacePreferencesPatch,
+  ): Promise<AppConfigState> =>
+    resource("PATCH", "/v1/workspace/preferences", AppConfigStateSchema, { preferences }),
 
   syncRepository: (repositoryId: string): Promise<RepositoryStatus> =>
     resource("POST", `${repositoryPath(repositoryId)}/sync`, ContractSchemas.RepositoryStatus),

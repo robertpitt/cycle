@@ -279,6 +279,10 @@ const salvageLocalWorkspace = (
         if (!isRecord(value)) return fallback;
         return {
           repositories: yield* salvageRepositories(value.repositories),
+          sidebarCollapsed:
+            typeof value.sidebarCollapsed === "boolean"
+              ? value.sidebarCollapsed
+              : fallback.sidebarCollapsed,
         };
       }),
     ),
