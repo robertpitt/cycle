@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { openSqliteSync } from "@cycle/sqlite/sync";
 import { makeDesktopAgentSessionStore } from "../src/main/agents/services/DesktopAgentSessionStore.ts";
 import { describe, it } from "vitest";
 
@@ -39,7 +39,7 @@ describe("DesktopAgentSessionStore", () => {
       });
       await store.close?.();
 
-      const db = new DatabaseSync(databasePath);
+      const db = openSqliteSync(databasePath);
       try {
         db.exec("UPDATE agent_session_bindings SET metadata_json = '[]', native_json = '42'");
       } finally {

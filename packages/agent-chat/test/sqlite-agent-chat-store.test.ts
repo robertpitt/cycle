@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { openSqliteSync } from "@cycle/sqlite/sync";
 import { makeSqliteAgentChatStore } from "../src/store/SqliteAgentChatStore.ts";
 import { describe, it } from "vitest";
 
@@ -116,7 +116,7 @@ describe("SqliteAgentChatStore", () => {
       });
       await store.close?.();
 
-      const db = new DatabaseSync(databasePath);
+      const db = openSqliteSync(databasePath);
       try {
         db.exec("UPDATE agent_chat_messages SET metadata_json = '[]'");
         db.exec("UPDATE agent_chat_turns SET metadata_json = 'null'");

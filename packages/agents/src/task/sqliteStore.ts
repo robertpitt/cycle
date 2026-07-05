@@ -1,22 +1,8 @@
-import { createRequire } from "node:module";
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { openSqliteSync, type SqliteDatabaseLike } from "@cycle/sqlite/sync";
 import { Effect, Layer } from "effect";
 import type { AgentTask, AgentTaskEvent, AgentTaskStatus } from "./schemas.ts";
 import { agentTaskStorageFailure, type AgentTaskServiceError } from "./errors.ts";
 import { AgentTaskStore, type AgentTaskStoreShape } from "./store.ts";
-
-export type SqliteStatementLike = {
-  readonly all: (...args: readonly unknown[]) => readonly unknown[];
-  readonly get: (...args: readonly unknown[]) => unknown;
-  readonly run: (...args: readonly unknown[]) => unknown;
-};
-
-export type SqliteDatabaseLike = {
-  readonly close?: () => unknown;
-  readonly exec: (sql: string) => unknown;
-  readonly prepare: (sql: string) => SqliteStatementLike;
-};
 
 export const agentTaskSchemaSql = `
 CREATE TABLE IF NOT EXISTS agent_tasks (
@@ -56,13 +42,7 @@ const activeStatuses = new Set<AgentTaskStatus>([
 ]);
 
 export const makeNodeSqliteAgentTaskStore = (path: string): AgentTaskStoreShape => {
-  mkdirSync(dirname(path), { recursive: true });
-  const require = createRequire(import.meta.url);
-  const { DatabaseSync: SqliteDatabaseSync } = require("node:sqlite") as {
-    readonly DatabaseSync: new (databasePath: string) => SqliteDatabaseLike;
-  };
-
-  return makeSqliteAgentTaskStore(new SqliteDatabaseSync(path));
+  return makeSqliteAgentTaskStore(openSqliteSync(path));
 };
 
 export const AgentTaskStoreSqlite = (path: string): Layer.Layer<AgentTaskStore> =>

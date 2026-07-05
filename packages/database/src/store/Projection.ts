@@ -1,7 +1,6 @@
-import { DatabaseSync } from "node:sqlite";
+import { openSqliteSync, type SqliteDatabaseLike } from "@cycle/sqlite/sync";
 import { Schema } from "effect";
-import { cycleDatabasePath, ensureDatabaseParentDirectorySync } from "../paths.ts";
-import { agentChatSchemaSql } from "./AgentChatSchema.ts";
+import { cycleDatabasePath } from "../paths.ts";
 import type {
   CycleRepositoryMetadata,
   HistoryCommit,
@@ -442,11 +441,10 @@ const ProjectionCursorJson = Schema.Struct({
 });
 
 export class Projection {
-  readonly db: DatabaseSync;
+  readonly db: SqliteDatabaseLike;
 
   constructor(path = cycleDatabasePath()) {
-    ensureDatabaseParentDirectorySync(path);
-    this.db = new DatabaseSync(path);
+    this.db = openSqliteSync(path);
     this.db.exec("PRAGMA foreign_keys = ON");
     this.initializeSchema();
   }
@@ -475,7 +473,6 @@ export class Projection {
     this.ensureRepositoryMetadataColumns();
     this.ensureSharedMetadataTables();
     this.ensureInboxTables();
-    this.ensureAgentChatTables();
     if (version < CURRENT_PROJECTION_SCHEMA_VERSION) {
       this.db.exec(`PRAGMA user_version = ${CURRENT_PROJECTION_SCHEMA_VERSION}`);
     }
@@ -528,10 +525,6 @@ export class Projection {
 
   private ensureInboxTables(): void {
     this.db.exec(inboxSchemaSql);
-  }
-
-  private ensureAgentChatTables(): void {
-    this.db.exec(agentChatSchemaSql);
   }
 
   registerRepository(input: RepositoryInput): RepositoryStatus {
@@ -2560,7 +2553,6 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
 );
 
 ${inboxSchemaSql}
-${agentChatSchemaSql}
 `;
 
 const sharedMetadataSchemaSql = `

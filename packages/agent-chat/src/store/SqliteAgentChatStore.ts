@@ -1,4 +1,4 @@
-import { agentChatSchemaSql, ensureDatabaseParentDirectorySync } from "@cycle/database";
+import { openSqliteSync, type SqliteDatabaseLike } from "@cycle/sqlite/sync";
 import type {
   AgentChatActivityRecord,
   AgentChatEventRecord,
@@ -11,7 +11,7 @@ import type {
   AgentChatTurnRecord,
 } from "../records.ts";
 import { Schema } from "effect";
-import { DatabaseSync } from "node:sqlite";
+import { agentChatSchemaSql } from "./schema.ts";
 
 type ThreadRow = {
   readonly active_turn_id: string | null;
@@ -115,8 +115,7 @@ const AgentChatQuestionItem = Schema.Struct({
 const AgentChatQuestionItems = Schema.Array(AgentChatQuestionItem);
 
 export const makeSqliteAgentChatStore = (path: string): AgentChatStoreShape => {
-  ensureDatabaseParentDirectorySync(path);
-  const db = new DatabaseSync(path);
+  const db = openSqliteSync(path);
   db.exec("PRAGMA foreign_keys = ON");
   db.exec(agentChatSchemaSql);
   ensureChatSchemaCompatibility(db);
@@ -466,7 +465,7 @@ export const makeSqliteAgentChatStore = (path: string): AgentChatStoreShape => {
 
 export const makeDesktopAgentChatStore = makeSqliteAgentChatStore;
 
-const ensureChatSchemaCompatibility = (db: DatabaseSync): void => {
+const ensureChatSchemaCompatibility = (db: SqliteDatabaseLike): void => {
   const columns: ReadonlyArray<readonly [string, string]> = [
     ["agent_chat_threads", "model TEXT"],
     ["agent_chat_threads", "runtime_mode TEXT"],
