@@ -1,0 +1,35 @@
+{
+  "name": "@cycle/sqlite",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./errors": "./src/errors.ts",
+    "./migrations": "./src/migrations.ts",
+    "./sync": "./src/sync.ts",
+    "./testing": "./src/testing.ts",
+    "./vector": "./src/vector.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@effect/platform-node": "4.0.0-beta.78",
+    "@effect/sql-sqlite-node": "4.0.0-beta.78",
+    "effect": "4.0.0-beta.78"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.8"
+  },
+  "optionalDependencies": {
+    "@sqliteai/sqlite-vector-darwin-arm64": "0.9.95",
+    "@sqliteai/sqlite-vector-darwin-x86_64": "0.9.95",
+    "@sqliteai/sqlite-vector-linux-arm64": "0.9.95",
+    "@sqliteai/sqlite-vector-linux-arm64-musl": "0.9.95",
+    "@sqliteai/sqlite-vector-linux-x86_64": "0.9.95",
+    "@sqliteai/sqlite-vector-linux-x86_64-musl": "0.9.95",
+    "@sqliteai/sqlite-vector-win32-x86_64": "0.9.95"
+  }
+}
