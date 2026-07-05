@@ -9,6 +9,7 @@ import {
   useInboxListInfiniteQuery,
   useInboxSummaryQuery,
 } from "../queries/index.ts";
+import { markReadInputForOpenedInboxEntry } from "./inboxOpen.ts";
 
 type InboxPanelProps = {
   readonly onIssueSelect?: (selection: {
@@ -104,12 +105,17 @@ export const InboxPanel = ({ onIssueSelect, profile, repositories }: InboxPanelP
         });
         setSelectedItemIds([]);
       }}
-      onEntrySelect={(entry) =>
+      onEntrySelect={(entry) => {
+        const markReadInput = markReadInputForOpenedInboxEntry(entry, profile.email);
+        if (markReadInput !== undefined) {
+          markRead.mutate(markReadInput);
+        }
+
         onIssueSelect?.({
           issueId: entry.ticketId,
           repositoryId: entry.repositoryId,
-        })
-      }
+        });
+      }}
       onLoadMore={() => {
         void inboxQuery.fetchNextPage();
       }}
