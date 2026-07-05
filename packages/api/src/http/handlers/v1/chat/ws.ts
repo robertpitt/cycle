@@ -6,7 +6,7 @@ import {
 } from "@cycle/agent-chat";
 import { Effect, Layer, Schema } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http";
-import { ApiHandlerError } from "../../../../errors/index.ts";
+import { CycleApiError } from "@cycle/api";
 import type { CycleApiRuntimeShape } from "../../../runtime/CycleApiRuntime.ts";
 
 type WriteMessage = (message: ServerMessage) => Promise<void>;
@@ -197,7 +197,7 @@ export const makeChatWebSocketLayer = (
                 await gateway.handleRawMessage(connection, raw);
               },
               catch: (cause) =>
-                new ApiHandlerError({
+                new CycleApiError({
                   cause,
                   message:
                     cause instanceof Error ? cause.message : "handle chat websocket message failed",

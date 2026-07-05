@@ -10,8 +10,8 @@ import {
   implementationBranchName,
   resolveBranchCollision,
   WorktreeService,
-} from "../src/worktree/index.ts";
-import * as WorktreeServiceLive from "../src/worktree/WorktreeServiceLive.ts";
+  WorktreeServiceLive,
+} from "../src/WorktreeService.ts";
 import { describe, it } from "./effect-vitest.ts";
 
 const execFileAsync = promisify(execFile);
@@ -68,7 +68,7 @@ const withRepoRoot = <A, E, R>(
     }),
   );
 
-const layer = WorktreeServiceLive.layer.pipe(Layer.provide(NodeServices.layer));
+const layer = WorktreeServiceLive.pipe(Layer.provide(NodeServices.layer));
 
 describe("@cycle/git WorktreeService", () => {
   it("builds implementation branch names from canonical and legacy ticket types", () => {

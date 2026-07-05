@@ -2,7 +2,7 @@
 import { defaultLayer as CycleLoggingLive } from "@cycle/logging";
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { Effect } from "effect";
-import { McpCliError } from "../errors/index.ts";
+import { CycleApiError } from "@cycle/api";
 import {
   runCycleMcpStdio,
   startCycleMcpHttpServerEffect,
@@ -44,9 +44,10 @@ if ((flags.transport ?? env.CYCLE_MCP_TRANSPORT) === "http") {
     Effect.tryPromise({
       try: () => server.close(),
       catch: (cause) =>
-        new McpCliError({
+        new CycleApiError({
           cause,
           message: cause instanceof Error ? cause.message : "failed to close MCP server",
+          operation: "close mcp server",
         }),
     }).pipe(Effect.catch(() => Effect.void)),
   ).pipe(

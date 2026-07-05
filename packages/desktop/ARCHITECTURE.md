@@ -160,7 +160,7 @@ Key composition details:
   `DesktopRuntimeLive`.
 - `AppConfigLive` depends on `ElectronAppLive` for the home path used to derive `~/.cycle`.
 - `ProfileLive` depends on `AppConfigLive`.
-- `LocalWorkspaceLive` depends on `AppConfigLive` and `GitRepository.NodeLive`.
+- `LocalWorkspaceLive` depends on `AppConfigLive` and `GitRepositoryLive`.
 - `ElectronPreferences` depends on app config, theme, local workspace, and
   profile services.
 - `DesktopDatabaseLive` depends on profile, app, logger, and runtime services.

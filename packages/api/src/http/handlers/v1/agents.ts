@@ -1,8 +1,8 @@
 import { Effect, Result } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
+import { CycleApiError } from "@cycle/api";
 import { CycleApiRuntime } from "../../runtime/CycleApiRuntime.ts";
 import { AgentProvidersOutput } from "../../schemas/AgentProvidersResourceEnvelope.ts";
-import { ApiHandlerError } from "../../../errors/index.ts";
 import { CycleRequestContext } from "../../middleware/CycleRequestContextMiddleware.ts";
 import { errorResponse, resourceResponse } from "../responses.ts";
 import { decodeHttpValue } from "../usecases.ts";
@@ -14,7 +14,7 @@ export const listAgentProviders = () =>
     const result = yield* Effect.result(
       Effect.tryPromise({
         catch: (cause) =>
-          new ApiHandlerError({
+          new CycleApiError({
             cause,
             message: cause instanceof Error ? cause.message : "list agent providers failed",
             operation: "list agent providers",

@@ -1,5 +1,5 @@
 import { ExecutableResolverLive } from "@cycle/agents/executables";
-import { GitRepository, WorktreeServiceLive } from "@cycle/git";
+import { GitRepositoryLive, WorktreeServiceLive } from "@cycle/git";
 import { defaultLayer as CycleLoggingLive } from "@cycle/logging";
 import { NodeServices } from "@effect/platform-node";
 import { Layer } from "effect";
@@ -26,27 +26,18 @@ const ElectronAppServiceLive = ElectronAppLive.pipe(
 
 const ElectronThemeServiceLive = ElectronThemeLive.pipe(Layer.provide(DesktopRuntimeLive));
 
-const DesktopWindowDependenciesLive = Layer.mergeAll(
-  BrowserWindowsLive,
-  DesktopConfigLive,
-  DesktopRuntimeLive,
-);
-
 const DesktopWindowServiceLive = DesktopWindowLive.pipe(
-  Layer.provide(DesktopWindowDependenciesLive),
+  Layer.provide(Layer.mergeAll(BrowserWindowsLive, DesktopConfigLive, DesktopRuntimeLive)),
 );
 
 const AppConfigServiceLive = AppConfigLive.pipe(Layer.provide(ElectronAppServiceLive));
 
 const ProfileServiceLive = ProfileLive.pipe(Layer.provide(AppConfigServiceLive));
 
-const GitRepositoryServiceLive = GitRepository.NodeLive;
-const WorktreeServiceServiceLive = WorktreeServiceLive.NodeLive;
-
 const DesktopLoggerServiceLive = DesktopLoggerLive;
 
 const LocalWorkspaceServiceLive = LocalWorkspaceLive.pipe(
-  Layer.provide(Layer.mergeAll(AppConfigServiceLive, GitRepositoryServiceLive)),
+  Layer.provide(Layer.mergeAll(AppConfigServiceLive, GitRepositoryLive)),
 );
 
 const ElectronPreferencesServiceLive = ElectronPreferences.defaultLayer.pipe(
@@ -69,8 +60,8 @@ const DatabaseConsumerDependenciesLive = Layer.mergeAll(
   DesktopLoggerServiceLive,
   DesktopRuntimeLive,
   ElectronPreferencesServiceLive,
-  GitRepositoryServiceLive,
-  WorktreeServiceServiceLive,
+  GitRepositoryLive,
+  WorktreeServiceLive,
   LocalWorkspaceServiceLive,
 );
 
@@ -88,8 +79,8 @@ const DesktopServicesLive = Layer.mergeAll(
   ProfileServiceLive,
   ElectronPreferencesServiceLive,
   DesktopLoggerServiceLive,
-  GitRepositoryServiceLive,
-  WorktreeServiceServiceLive,
+  GitRepositoryLive,
+  WorktreeServiceLive,
   LocalWorkspaceServiceLive,
   DesktopDatabaseServiceLive,
   ExecutableResolverLive,

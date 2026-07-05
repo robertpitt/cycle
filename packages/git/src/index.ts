@@ -1,14 +1,18 @@
-export * from "./errors/index.ts";
-export * from "./schemas/index.ts";
-export * as GitCommand from "./command/GitCommand.ts";
-export * as Git from "./object-store/Git.ts";
-export * as GitCli from "./object-store/GitCli.ts";
-export * as GitFilesystem from "./object-store/GitFilesystem.ts";
-export * as GitInMemory from "./object-store/GitInMemory.ts";
-export * as GitObjectCodec from "./object-store/GitObjectCodec.ts";
-export * as GitPack from "./object-store/GitPack.ts";
-export { GitRepository, type GitRepositoryServiceShape } from "./repository/index.ts";
-export * as GitRepositoryLive from "./repository/GitRepositoryLive.ts";
-export { WorktreeService, type WorktreeServiceShape } from "./worktree/index.ts";
-export * as WorktreeServiceLive from "./worktree/WorktreeServiceLive.ts";
-export { Git as GitService } from "./object-store/Git.ts";
+export * from "./GitErrors.ts";
+export * from "./GitSchemas.ts";
+export * as GitCommand from "./GitCommand.ts";
+export * as Git from "./Git.ts";
+export * as GitCli from "./GitCli.ts";
+export * as GitFilesystem from "./GitFilesystem.ts";
+export * as GitInMemory from "./GitInMemory.ts";
+export {
+  GitRepository,
+  GitRepositoryLive,
+  type GitRepositoryServiceShape,
+} from "./GitRepository.ts";
+export {
+  WorktreeService,
+  WorktreeServiceLive,
+  type WorktreeServiceShape,
+} from "./WorktreeService.ts";
+export { Git as GitService } from "./Git.ts";

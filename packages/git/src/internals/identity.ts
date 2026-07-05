@@ -1,4 +1,4 @@
-import type { Identity, IdentityInput } from "../schemas/index.ts";
+import type { Identity, IdentityInput } from "../GitSchemas.ts";
 
 const defaultIdentityName = "Cycle Git";
 const defaultIdentityEmail = "git@example.invalid";

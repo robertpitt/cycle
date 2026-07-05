@@ -9,7 +9,7 @@ import {
   HttpServerResponse,
 } from "effect/unstable/http";
 import * as McpServer from "effect/unstable/ai/McpServer";
-import { CycleMcpServerError } from "../../errors/index.ts";
+import { CycleApiError } from "@cycle/api";
 import { CycleMcpApiClientLive, type CycleMcpApiClientOptions } from "../client.ts";
 import { CycleMcpToolsLive } from "../tools/layer.ts";
 import { cycleMcpTools, mcpToolFromDefinition } from "../tools/registry.ts";
@@ -98,7 +98,7 @@ export const startCycleMcpHttpServerEffect = (
     const { createServer } = yield* Effect.tryPromise({
       try: () => import("node:http"),
       catch: (cause) =>
-        new CycleMcpServerError({
+        new CycleApiError({
           cause,
           message: cause instanceof Error ? cause.message : "import node:http failed",
           operation: "import node:http",
@@ -172,7 +172,7 @@ const httpCompatibilityLayer = (
       logWarning("mcp", "mcp http auth token missing").pipe(
         Effect.andThen(
           Effect.fail(
-            new CycleMcpServerError({
+            new CycleApiError({
               message: "Cycle MCP HTTP auth requires a bearer token.",
               operation: "mcp http auth",
             }),

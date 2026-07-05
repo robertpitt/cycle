@@ -80,9 +80,7 @@ Import the service from:
 import { GitRepository } from "@cycle/git";
 ```
 
-Use `GitRepository.layer` when composing lower-level Node services explicitly. Use
-`GitRepository.NodeLive` as a convenience for Node/Electron runtime composition. The
-`GitRepositoryLive` namespace remains available as a compatibility export.
+Use `GitRepositoryLive` when composing the Node implementation into an application layer.
 
 ## Backends
 

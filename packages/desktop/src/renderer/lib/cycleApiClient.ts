@@ -345,7 +345,7 @@ const ticketDraftPrompt = ({ instructions, repository }: StartTicketDraftChatInp
   [
     `Target repository: cycle://repository/${repository.id} (${repository.displayName})`,
     "Draft a Cycle ticket for the target repository.",
-    "Create a draft ticket rather than committing a final ticket unless the user explicitly asked you to create it.",
+    "If you are clear, go ahead and create the ticket, otherwise ask for clarification.",
     "Preserve and resolve any Cycle references from the request.",
     "User request:",
     instructions.trim(),

@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { Effect, Layer } from "effect";
-import { GitRepository } from "@cycle/git";
+import { GitRepositoryLive } from "@cycle/git";
 import { NodeServices } from "@effect/platform-node";
 import { afterEach, describe, it } from "vitest";
 import { ElectronApp } from "../src/platform/ElectronApp.ts";
@@ -60,7 +60,7 @@ const makeConfigLayer = (userData: string) =>
 
 const makeServicesLayer = (userData: string) => {
   const appConfig = makeConfigLayer(userData);
-  const gitRepository = GitRepository.NodeLive;
+  const gitRepository = GitRepositoryLive;
   return Layer.mergeAll(
     appConfig,
     ProfileLive.pipe(Layer.provide(appConfig)),

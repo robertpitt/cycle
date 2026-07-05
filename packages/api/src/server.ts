@@ -7,7 +7,7 @@ import {
 import { Context, Effect, Exit, FileSystem, Layer, Path, Scope } from "effect";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { makeCycleApi, makeCycleApiLayer } from "./CycleApi.ts";
-import { CycleApiServerError } from "./errors/index.ts";
+import { CycleApiError } from "@cycle/api";
 import type {
   CycleApi,
   CycleApiMcpOptions,
@@ -67,7 +67,7 @@ export const startCycleApiServerEffect = (
     const { createServer } = yield* Effect.tryPromise({
       try: () => import("node:http"),
       catch: (cause) =>
-        new CycleApiServerError({
+        new CycleApiError({
           cause,
           message: cause instanceof Error ? cause.message : "import node:http failed",
           operation: "import node:http",
@@ -146,7 +146,7 @@ const disposeApi = (api: CycleApi): Effect.Effect<void, unknown> =>
   Effect.tryPromise({
     try: () => api.dispose(),
     catch: (cause) =>
-      new CycleApiServerError({
+      new CycleApiError({
         cause,
         message: cause instanceof Error ? cause.message : "dispose api failed",
         operation: "dispose api",

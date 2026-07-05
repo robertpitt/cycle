@@ -6,13 +6,13 @@ import path from "node:path";
 import { strict as assert } from "node:assert";
 import { promisify } from "node:util";
 import { Data, Effect, Layer, Result } from "effect";
-import { sanitizeStderr } from "../src/command/GitCommand.ts";
+import { sanitizeStderr } from "../src/GitCommand.ts";
 import { bytesToString } from "../src/internals/bytes.ts";
-import { Git, type GitService } from "../src/object-store/Git.ts";
-import * as GitCli from "../src/object-store/GitCli.ts";
-import * as GitFilesystem from "../src/object-store/GitFilesystem.ts";
-import * as GitInMemory from "../src/object-store/GitInMemory.ts";
-import { GitRepository } from "../src/index.ts";
+import { Git, type GitService } from "../src/Git.ts";
+import * as GitCli from "../src/GitCli.ts";
+import * as GitFilesystem from "../src/GitFilesystem.ts";
+import * as GitInMemory from "../src/GitInMemory.ts";
+import { GitRepository, GitRepositoryLive } from "../src/index.ts";
 import { describe, it } from "./effect-vitest.ts";
 
 const execFileAsync = promisify(execFile);
@@ -87,7 +87,7 @@ const withRepo = <A, E, R>(
 const cliLayer = GitCli.layer.pipe(Layer.provide(NodeServices.layer));
 const filesystemLayer = GitFilesystem.layer.pipe(Layer.provide(NodeServices.layer));
 const inMemoryLayer = GitInMemory.layer.pipe(Layer.provide(NodeServices.layer));
-const repositoryLayer = GitRepository.layer.pipe(Layer.provide(NodeServices.layer));
+const repositoryLayer = GitRepositoryLive.pipe(Layer.provide(NodeServices.layer));
 const conformanceBackends = [
   {
     layer: cliLayer,

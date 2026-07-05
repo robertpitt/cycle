@@ -3,8 +3,6 @@ import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { ApiErrorEnvelopes } from "../schemas/ApiErrorEnvelope.ts";
 import { HealthResourceEnvelope } from "../schemas/HealthResourceEnvelope.ts";
 
-const OpenApiDocument = Schema.Record(Schema.String, Schema.Unknown);
-
 export class SystemApiGroup extends HttpApiGroup.make("system", { topLevel: true }).add(
   HttpApiEndpoint.get("openApiViewer", "/", {
     success: Schema.String,
@@ -15,7 +13,7 @@ export class SystemApiGroup extends HttpApiGroup.make("system", { topLevel: true
     }),
   ),
   HttpApiEndpoint.get("openApiJson", "/openapi.json", {
-    success: OpenApiDocument,
+    success: Schema.Record(Schema.String, Schema.Unknown),
   }).annotateMerge(
     OpenApi.annotations({
       summary: "Read OpenAPI JSON.",
@@ -23,7 +21,7 @@ export class SystemApiGroup extends HttpApiGroup.make("system", { topLevel: true
     }),
   ),
   HttpApiEndpoint.get("specJson", "/spec.json", {
-    success: OpenApiDocument,
+    success: Schema.Record(Schema.String, Schema.Unknown),
   }).annotateMerge(
     OpenApi.annotations({
       summary: "Read OpenAPI JSON compatibility endpoint.",
