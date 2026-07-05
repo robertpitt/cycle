@@ -1,7 +1,8 @@
 import { Effect, Result } from "effect";
 import type { HttpServerResponse } from "effect/unstable/http";
 import { ApiHandlerError } from "../../../../errors/index.ts";
-import { CycleApiRuntime, type AgentChatStoreShape } from "../../../runtime/CycleApiRuntime.ts";
+import type { AgentChatStoreShape } from "@cycle/agent-chat";
+import { CycleApiRuntime } from "../../../runtime/CycleApiRuntime.ts";
 import { errorResponse } from "../../responses.ts";
 
 type StoreOperation<T> =
@@ -39,7 +40,7 @@ export const runStoreOperation = <T>(
 ): Effect.Effect<StoreOperation<T>, never, CycleApiRuntime> =>
   Effect.gen(function* () {
     const runtime = yield* CycleApiRuntime;
-    const store = runtime.agentChatStore;
+    const store = runtime.agentChatRuntime?.store;
     if (store === undefined) return { error: chatStoreUnavailable(requestId) };
 
     const result = yield* Effect.result(

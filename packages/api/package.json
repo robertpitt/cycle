@@ -23,6 +23,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@cycle/agent-chat": "workspace:*",
     "@cycle/agents": "workspace:*",
     "@cycle/contracts": "workspace:*",
     "@cycle/git": "workspace:*",

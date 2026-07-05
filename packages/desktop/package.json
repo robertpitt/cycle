@@ -26,6 +26,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@cycle/agent-chat": "workspace:*",
     "@cycle/agents": "workspace:*",
     "@cycle/api": "workspace:*",
     "@cycle/contracts": "workspace:*",

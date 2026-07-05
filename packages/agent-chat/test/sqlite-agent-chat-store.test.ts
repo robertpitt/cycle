@@ -3,16 +3,16 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { makeDesktopAgentChatStore } from "../src/main/DesktopAgentChatStore.ts";
+import { makeSqliteAgentChatStore } from "../src/store/SqliteAgentChatStore.ts";
 import { describe, it } from "vitest";
 
-describe("DesktopAgentChatStore", () => {
+describe("SqliteAgentChatStore", () => {
   it("schema-decodes persisted chat JSON when rehydrating rows", async () => {
     const directory = await mkdtemp(join(tmpdir(), "cycle-agent-chat-store-"));
     const databasePath = join(directory, "cycle.db");
 
     try {
-      const store = makeDesktopAgentChatStore(databasePath);
+      const store = makeSqliteAgentChatStore(databasePath);
       const now = "2026-06-20T00:00:00.000Z";
 
       await store.upsertThread({
@@ -128,7 +128,7 @@ describe("DesktopAgentChatStore", () => {
         db.close();
       }
 
-      const reopened = makeDesktopAgentChatStore(databasePath);
+      const reopened = makeSqliteAgentChatStore(databasePath);
       try {
         assert.equal((await reopened.listMessages("thread-1"))[0]?.metadata, undefined);
         assert.equal((await reopened.listTurns?.("thread-1"))?.[0]?.metadata, undefined);

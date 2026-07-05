@@ -1,38 +1,13 @@
 import {
-  isAgentProviderId,
-  type AgentApprovalDecision,
-  type AgentApprovalKind,
-  type AgentApprovalRequest,
-  type AgentArtifact,
-  type AgentContentStreamKind,
-  type AgentError,
-  type AgentEvent,
-  type AgentProviderId,
-  type AgentProviderProfile,
-  type AgentRuntimeMode,
-  type AgentTurnRequest,
-  type AgentUserInputAnswer,
-} from "@cycle/agents";
+  providerProfileForChat,
+  requestOrigin,
+  type AgentChatPublishedEvent,
+  type AgentChatRuntimeShape,
+} from "@cycle/agent-chat";
 import { Effect, Layer, Schema } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http";
-import type {
-  AgentChatActivityRecord,
-  AgentChatEventRecord,
-  AgentChatMessageRecord,
-  AgentChatQuestionRecord,
-  AgentChatStoreShape,
-  AgentChatThreadRecord,
-  AgentChatTurnRecord,
-  CycleApiRuntimeShape,
-} from "../../../runtime/CycleApiRuntime.ts";
 import { ApiHandlerError } from "../../../../errors/index.ts";
-import type { ChatMessagePayload, ChatRepositoryPayload, ChatTurnPayload } from "./domain.ts";
-import { isRecord } from "./domain.ts";
-import {
-  assignedTicketImplementationWorkflowInstructions,
-  prepareChatTurn,
-  requestOrigin,
-} from "./prepare.ts";
+import type { CycleApiRuntimeShape } from "../../../runtime/CycleApiRuntime.ts";
 
 type WriteMessage = (message: ServerMessage) => Promise<void>;
 
@@ -257,57 +232,10 @@ export const makeChatWebSocketLayer = (
 const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
   const connections = new Map<string, ChatConnection>();
   const subscribersByThreadId = new Map<string, Set<ChatConnection>>();
-  const activeTurnsByThreadId = new Map<string, AbortController>();
 
-  const store = () => runtime.agentChatStore;
-
-  const publish = async (
-    threadId: string,
-    type: string,
-    payload: Readonly<Record<string, unknown>>,
-    createdAt = runtime.now().toISOString(),
-  ): Promise<AgentChatEventRecord | undefined> => {
-    const event = await appendEvent(store(), {
-      createdAt,
-      eventId: chatId("event"),
-      payload,
-      threadId,
-      type,
-    });
-    const message: ServerMessage = {
-      createdAt,
-      eventId: event?.eventId,
-      payload,
-      sequence: event?.sequence,
-      threadId,
-      type,
-      version: 1,
-    };
-    const subscribers = subscribersByThreadId.get(threadId);
-    if (subscribers === undefined) return event;
-
-    await Promise.all([...subscribers].map((connection) => safeSend(connection, message)));
-    return event;
-  };
-
-  const broadcastThreadDeleted = async (threadId: string, deletedAt: string): Promise<void> => {
-    await Promise.all(
-      [...connections.values()]
-        .filter((connection) => connection.authenticated)
-        .map((connection) =>
-          safeSend(connection, {
-            createdAt: deletedAt,
-            payload: {
-              deletedAt,
-              threadId,
-            },
-            threadId,
-            type: "thread.deleted",
-            version: 1,
-          }),
-        ),
-    );
-  };
+  runtime.agentChatEventBus?.subscribe(async (event) => {
+    await broadcastPublishedEvent(subscribersByThreadId, event);
+  });
 
   const sendCommandError = (
     connection: ChatConnection,
@@ -353,12 +281,11 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
     return false;
   };
 
-  const requireStore = async (
+  const requireChatRuntime = async (
     connection: ChatConnection,
     command: ClientMessage,
-  ): Promise<AgentChatStoreShape | undefined> => {
-    const chatStore = store();
-    if (chatStore !== undefined) return chatStore;
+  ): Promise<AgentChatRuntimeShape | undefined> => {
+    if (runtime.agentChatRuntime !== undefined) return runtime.agentChatRuntime;
     await sendCommandError(
       connection,
       command,
@@ -367,6 +294,29 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
       true,
     );
     return undefined;
+  };
+
+  const acknowledgeResult = async (
+    connection: ChatConnection,
+    command: ClientMessage,
+    result:
+      | {
+          readonly _tag: "error";
+          readonly code: string;
+          readonly message: string;
+          readonly retryable?: boolean;
+        }
+      | {
+          readonly _tag: "ok";
+          readonly result: unknown;
+        },
+  ): Promise<boolean> => {
+    if (result._tag === "error") {
+      await sendCommandError(connection, command, result.code, result.message, result.retryable);
+      return false;
+    }
+    await acknowledge(connection, command, result.result);
+    return true;
   };
 
   const subscribe = (connection: ChatConnection, threadId: string) => {
@@ -405,6 +355,25 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
       subscriber.subscribedThreadIds.delete(threadId);
     }
     subscribersByThreadId.delete(threadId);
+  };
+
+  const broadcastThreadDeleted = async (threadId: string, deletedAt: string): Promise<void> => {
+    await Promise.all(
+      [...connections.values()]
+        .filter((connection) => connection.authenticated)
+        .map((connection) =>
+          safeSend(connection, {
+            createdAt: deletedAt,
+            payload: {
+              deletedAt,
+              threadId,
+            },
+            threadId,
+            type: "thread.deleted",
+            version: 1,
+          }),
+        ),
+    );
   };
 
   const handleCommand = async (
@@ -463,18 +432,24 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
 
       case "thread.list": {
         if (!(await requireAuthenticated(connection, command))) return;
-        const chatStore = await requireStore(connection, command);
-        if (chatStore === undefined) return;
-        const payload = objectPayload(command);
-        const includeArchived = payload.includeArchived === true;
-        const threads = (await chatStore.listThreads())
-          .map(threadForProtocol)
-          .filter((thread) => includeArchived || thread.status !== "archived");
+        const chat = await requireChatRuntime(connection, command);
+        if (chat === undefined) return;
+        const result = await chat.listThreads({
+          includeArchived: objectPayload(command).includeArchived === true,
+        });
+        if (result._tag === "error") {
+          await sendCommandError(
+            connection,
+            command,
+            result.code,
+            result.message,
+            result.retryable,
+          );
+          return;
+        }
         await safeSend(connection, {
           commandId: command.commandId,
-          payload: {
-            threads,
-          },
+          payload: result.result,
           type: "thread.list.snapshot",
           version: 1,
         });
@@ -484,49 +459,41 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
 
       case "thread.create": {
         if (!(await requireAuthenticated(connection, command))) return;
-        const chatStore = await requireStore(connection, command);
-        if (chatStore === undefined) return;
-        const payload = objectPayload(command);
-        const now = runtime.now().toISOString();
-        const providerId = providerFromUnknown(payload.providerId);
-        const thread: AgentChatThreadRecord = {
-          ...(providerId === undefined ? {} : { agentId: providerId }),
-          createdAt: now,
-          id: chatId("thread"),
-          model: stringOrNull(payload.model),
-          ...(isRecord(payload.origin) ? { origin: payload.origin } : {}),
-          runtimeMode: runtimeModeOrNull(payload.runtimeMode),
-          status: "draft",
-          summary: "New conversation",
-          thinkingLevel: stringOrNull(payload.thinkingLevel),
-          title: stringValue(payload.title) ?? "New chat",
-          updatedAt: now,
-        };
-        await chatStore.upsertThread(thread);
-        await acknowledge(connection, command, { thread: threadForProtocol(thread) });
-        await publish(thread.id, "thread.updated", { thread: threadForProtocol(thread) }, now);
+        const chat = await requireChatRuntime(connection, command);
+        if (chat === undefined) return;
+        await acknowledgeResult(
+          connection,
+          command,
+          await chat.createThread(objectPayload(command)),
+        );
         return;
       }
 
       case "thread.subscribe": {
         if (!(await requireAuthenticated(connection, command))) return;
-        const chatStore = await requireStore(connection, command);
-        if (chatStore === undefined) return;
+        const chat = await requireChatRuntime(connection, command);
+        if (chat === undefined) return;
         const payload = objectPayload(command);
         const threadId = stringValue(payload.threadId);
         if (threadId === undefined) {
           await sendCommandError(connection, command, "INVALID_PAYLOAD", "threadId is required.");
           return;
         }
-        const snapshot = await threadSnapshot(chatStore, threadId);
-        if (snapshot === undefined) {
-          await sendCommandError(connection, command, "THREAD_NOT_FOUND", "Thread not found.");
+        const result = await chat.getThreadSnapshot({ threadId });
+        if (result._tag === "error") {
+          await sendCommandError(
+            connection,
+            command,
+            result.code,
+            result.message,
+            result.retryable,
+          );
           return;
         }
         subscribe(connection, threadId);
         await safeSend(connection, {
           commandId: command.commandId,
-          payload: snapshot,
+          payload: result.result,
           threadId,
           type: "thread.snapshot",
           version: 1,
@@ -545,101 +512,36 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
 
       case "thread.update_settings": {
         if (!(await requireAuthenticated(connection, command))) return;
-        const chatStore = await requireStore(connection, command);
-        if (chatStore === undefined) return;
+        const chat = await requireChatRuntime(connection, command);
+        if (chat === undefined) return;
         const payload = objectPayload(command);
-        const threadId = stringValue(payload.threadId);
-        if (threadId === undefined) {
-          await sendCommandError(connection, command, "INVALID_PAYLOAD", "threadId is required.");
-          return;
-        }
-        const thread = await getThread(chatStore, threadId);
-        if (thread === undefined) {
-          await sendCommandError(connection, command, "THREAD_NOT_FOUND", "Thread not found.");
-          return;
-        }
-        const nextThread: AgentChatThreadRecord = {
-          ...thread,
-          ...(providerFromUnknown(payload.providerId) === undefined
-            ? {}
-            : { agentId: providerFromUnknown(payload.providerId) }),
-          ...(typeof payload.model === "string" || payload.model === null
-            ? { model: stringOrNull(payload.model) }
-            : {}),
-          ...(typeof payload.runtimeMode === "string" || payload.runtimeMode === null
-            ? { runtimeMode: runtimeModeOrNull(payload.runtimeMode) }
-            : {}),
-          ...(typeof payload.thinkingLevel === "string" || payload.thinkingLevel === null
-            ? { thinkingLevel: stringOrNull(payload.thinkingLevel) }
-            : {}),
-          updatedAt: runtime.now().toISOString(),
-        };
-        await chatStore.upsertThread(nextThread);
-        await acknowledge(connection, command, { thread: threadForProtocol(nextThread) });
-        await publish(nextThread.id, "thread.updated", {
-          thread: threadForProtocol(nextThread),
-        });
+        await acknowledgeResult(
+          connection,
+          command,
+          await chat.updateThreadSettings({
+            model: stringOrNull(payload.model),
+            providerId: stringOrNull(payload.providerId),
+            runtimeMode: runtimeModeOrNull(payload.runtimeMode),
+            thinkingLevel: stringOrNull(payload.thinkingLevel),
+            threadId: stringValue(payload.threadId) ?? "",
+          }),
+        );
         return;
       }
 
       case "thread.delete": {
         if (!(await requireAuthenticated(connection, command))) return;
-        const chatStore = await requireStore(connection, command);
-        if (chatStore === undefined) return;
-        if (chatStore.deleteThread === undefined) {
-          await sendCommandError(
-            connection,
-            command,
-            "CHAT_DELETE_UNAVAILABLE",
-            "The local chat store cannot delete threads.",
-          );
-          return;
-        }
-
+        const chat = await requireChatRuntime(connection, command);
+        if (chat === undefined) return;
         const payload = objectPayload(command);
         const threadId = stringValue(payload.threadId);
         if (threadId === undefined) {
           await sendCommandError(connection, command, "INVALID_PAYLOAD", "threadId is required.");
           return;
         }
-
-        const thread = await getThread(chatStore, threadId);
-        if (thread === undefined) {
-          await sendCommandError(connection, command, "THREAD_NOT_FOUND", "Thread not found.");
-          return;
-        }
-
-        if (thread.activeTurnId !== undefined && thread.activeTurnId !== null) {
-          await sendCommandError(
-            connection,
-            command,
-            "THREAD_TURN_ACTIVE",
-            "Cannot delete a chat thread while a turn is active.",
-          );
-          return;
-        }
-
-        if (activeTurnsByThreadId.has(threadId)) {
-          await sendCommandError(
-            connection,
-            command,
-            "THREAD_TURN_ACTIVE",
-            "Cannot delete a chat thread while a turn is active.",
-          );
-          return;
-        }
-
+        const result = await chat.deleteThread({ threadId });
+        if (!(await acknowledgeResult(connection, command, result))) return;
         const deletedAt = runtime.now().toISOString();
-        const deleted = await chatStore.deleteThread(threadId);
-        if (!deleted) {
-          await sendCommandError(connection, command, "THREAD_NOT_FOUND", "Thread not found.");
-          return;
-        }
-
-        await acknowledge(connection, command, {
-          deleted: true,
-          threadId,
-        });
         await broadcastThreadDeleted(threadId, deletedAt);
         clearThreadSubscriptions(threadId);
         return;
@@ -647,53 +549,73 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
 
       case "turn.send": {
         if (!(await requireAuthenticated(connection, command))) return;
-        const chatStore = await requireStore(connection, command);
-        if (chatStore === undefined) return;
-        await sendTurn({
-          chatStore,
-          command,
+        const chat = await requireChatRuntime(connection, command);
+        if (chat === undefined) return;
+        const payload = objectPayload(command);
+        await acknowledgeResult(
           connection,
-          origin,
-          publish,
-          runtime,
-          activeTurnsByThreadId,
-        });
+          command,
+          await chat.sendTurn({
+            message: stringValue(payload.message) ?? "",
+            metadata: isRecord(payload.metadata) ? payload.metadata : undefined,
+            model: stringOrNull(payload.model),
+            origin,
+            providerId: stringValue(payload.providerId) ?? "",
+            runtimeMode: runtimeModeOrNull(payload.runtimeMode),
+            thinkingLevel: stringOrNull(payload.thinkingLevel),
+            threadId: stringValue(payload.threadId) ?? "",
+          }),
+        );
         return;
       }
 
       case "turn.cancel": {
         if (!(await requireAuthenticated(connection, command))) return;
-        const chatStore = await requireStore(connection, command);
-        if (chatStore === undefined) return;
-        const result = await cancelChatTurn({
-          activeTurnsByThreadId,
-          chatStore,
+        const chat = await requireChatRuntime(connection, command);
+        if (chat === undefined) return;
+        const payload = objectPayload(command);
+        await acknowledgeResult(
+          connection,
           command,
-          publish,
-          runtime,
-        });
-        if (result._tag === "error") {
-          await sendCommandError(connection, command, result.code, result.message);
-          return;
-        }
-        const { _tag: _ok, ...ackResult } = result;
-        await acknowledge(connection, command, ackResult);
+          await chat.cancelTurn({
+            threadId: stringValue(payload.threadId) ?? "",
+            turnId: stringValue(payload.turnId),
+          }),
+        );
         return;
       }
 
       case "question.respond": {
         if (!(await requireAuthenticated(connection, command))) return;
-        const chatStore = await requireStore(connection, command);
-        if (chatStore === undefined) return;
-        await respondToQuestion(chatStore, runtime, command, connection, publish);
+        const chat = await requireChatRuntime(connection, command);
+        if (chat === undefined) return;
+        const payload = objectPayload(command);
+        await acknowledgeResult(
+          connection,
+          command,
+          await chat.respondToQuestion({
+            answers: isRecord(payload.answers) ? payload.answers : {},
+            questionId: stringValue(payload.questionId) ?? "",
+            threadId: stringValue(payload.threadId) ?? "",
+          }),
+        );
         return;
       }
 
       case "approval.respond": {
         if (!(await requireAuthenticated(connection, command))) return;
-        const chatStore = await requireStore(connection, command);
-        if (chatStore === undefined) return;
-        await respondToApproval(chatStore, runtime, command, connection, publish);
+        const chat = await requireChatRuntime(connection, command);
+        if (chat === undefined) return;
+        const payload = objectPayload(command);
+        await acknowledgeResult(
+          connection,
+          command,
+          await chat.respondToApproval({
+            decision: approvalDecisionFromUnknown(payload.decision) ?? "cancel",
+            requestId: stringValue(payload.requestId) ?? "",
+            threadId: stringValue(payload.threadId) ?? "",
+          }),
+        );
         return;
       }
 
@@ -717,7 +639,7 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
         ...(authorizationToken === undefined ? {} : { authorizationToken }),
         authenticated: false,
         close: () => close(connection),
-        id: chatId("connection"),
+        id: `connection_${crypto.randomUUID()}`,
         origin,
         send: write,
         subscribedThreadIds: new Set(),
@@ -745,1407 +667,26 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
   };
 };
 
-const sendTurn = async (input: {
-  readonly activeTurnsByThreadId: Map<string, AbortController>;
-  readonly chatStore: AgentChatStoreShape;
-  readonly command: ClientMessage;
-  readonly connection: ChatConnection;
-  readonly origin: string;
-  readonly publish: (
-    threadId: string,
-    type: string,
-    payload: Readonly<Record<string, unknown>>,
-    createdAt?: string,
-  ) => Promise<AgentChatEventRecord | undefined>;
-  readonly runtime: CycleApiRuntimeShape;
-}): Promise<void> => {
-  const payload = objectPayload(input.command);
-  const threadId = stringValue(payload.threadId);
-  const message = stringValue(payload.message)?.trim();
-  const providerId = providerFromUnknown(payload.providerId);
-
-  if (threadId === undefined || message === undefined || providerId === undefined) {
-    await safeSend(input.connection, {
-      commandId: input.command.commandId,
-      payload: {
-        code: "INVALID_PAYLOAD",
-        message: "threadId, message, and providerId are required.",
-        retryable: false,
-        type: input.command.type,
-      },
-      type: "command.error",
-      version: 1,
-    });
-    return;
-  }
-
-  const thread = await getThread(input.chatStore, threadId);
-  if (thread === undefined) {
-    await safeSend(input.connection, {
-      commandId: input.command.commandId,
-      payload: {
-        code: "THREAD_NOT_FOUND",
-        message: "Thread not found.",
-        retryable: false,
-        type: input.command.type,
-      },
-      type: "command.error",
-      version: 1,
-    });
-    return;
-  }
-  if (thread.activeTurnId !== undefined && thread.activeTurnId !== null) {
-    await safeSend(input.connection, {
-      commandId: input.command.commandId,
-      payload: {
-        code: "THREAD_TURN_ACTIVE",
-        message: "A chat turn is already active for this thread.",
-        retryable: false,
-        type: input.command.type,
-      },
-      type: "command.error",
-      version: 1,
-    });
-    return;
-  }
-
-  const now = input.runtime.now().toISOString();
-  const turnId = chatId("turn");
-  const userMessage: AgentChatMessageRecord = {
-    actor: "user",
-    body: message,
-    createdAt: now,
-    id: chatId("message"),
-    threadId,
-    turnId,
-    updatedAt: now,
-  };
-  const turn: AgentChatTurnRecord = {
-    createdAt: now,
-    id: turnId,
-    inputMessageId: userMessage.id,
-    metadata: isRecord(payload.metadata) ? payload.metadata : undefined,
-    model: stringOrNull(payload.model),
-    providerId,
-    runtimeMode: runtimeModeFromUnknown(payload.runtimeMode) ?? thread.runtimeMode ?? null,
-    status: "queued",
-    thinkingLevel: stringOrNull(payload.thinkingLevel),
-    threadId,
-    updatedAt: now,
-  };
-  const nextThread: AgentChatThreadRecord = {
-    ...thread,
-    activeTurnId: turnId,
-    agentId: providerId,
-    lastError: null,
-    model: turn.model,
-    runtimeMode: turn.runtimeMode,
-    status: "active",
-    summary: message.slice(0, 120),
-    thinkingLevel: turn.thinkingLevel,
-    title: thread.title === "New chat" ? message.slice(0, 72) : thread.title,
-    updatedAt: now,
-  };
-
-  await input.chatStore.upsertMessage(userMessage);
-  await input.chatStore.upsertTurn?.(turn);
-  await input.chatStore.upsertThread(nextThread);
-  await input.publish(
-    threadId,
-    "message.created",
-    { message: messageForProtocol(userMessage) },
-    now,
-  );
-  await input.publish(threadId, "turn.started", { turn: turnForProtocol(turn) }, now);
-  await input.publish(threadId, "thread.updated", { thread: threadForProtocol(nextThread) }, now);
-  await safeSend(input.connection, {
-    commandId: input.command.commandId,
-    payload: {
-      result: {
-        thread: threadForProtocol(nextThread),
-        turn: turnForProtocol(turn),
-      },
-      type: input.command.type,
-    },
-    type: "command.ack",
-    version: 1,
-  });
-
-  void runProviderTurn({
-    activeTurnsByThreadId: input.activeTurnsByThreadId,
-    chatStore: input.chatStore,
-    origin: input.origin,
-    publish: input.publish,
-    runtime: input.runtime,
-    thread: nextThread,
-    turn,
-    userMessage,
-  });
-};
-
-const runProviderTurn = async (input: {
-  readonly activeTurnsByThreadId: Map<string, AbortController>;
-  readonly chatStore: AgentChatStoreShape;
-  readonly origin: string;
-  readonly publish: (
-    threadId: string,
-    type: string,
-    payload: Readonly<Record<string, unknown>>,
-    createdAt?: string,
-  ) => Promise<AgentChatEventRecord | undefined>;
-  readonly runtime: CycleApiRuntimeShape;
-  readonly thread: AgentChatThreadRecord;
-  readonly turn: AgentChatTurnRecord;
-  readonly userMessage: AgentChatMessageRecord;
-}): Promise<void> => {
-  const providerId = input.turn.providerId as AgentProviderId;
-  const providerBlocker = await providerExecutionBlocker(input.runtime, providerId);
-  if (providerBlocker !== undefined) {
-    await failTurn(input, providerBlocker);
-    return;
-  }
-
-  const service = await Effect.runPromise(input.runtime.agentServices.serviceFor(providerId));
-  const activeTurn = input.runtime.activeAgentTurns.begin({
-    provider: providerId,
-    requestId: input.turn.id,
-    sessionId: input.thread.sessionId ?? input.thread.id,
-    threadId: input.thread.id,
-  });
-  if (!activeTurn.active) {
-    await failTurn(input, "A chat turn is already active for this thread.");
-    return;
-  }
-
-  input.activeTurnsByThreadId.set(input.thread.id, activeTurn.record.abortController);
-
-  let assistantMessage: AgentChatMessageRecord | undefined;
-  let latestAssistantText = "";
-  let sawThinkingActivity = false;
-  let sawAssistantContentDelta = false;
-  const assistantMessagesByItemId = new Map<string, AgentChatMessageRecord>();
-  const assistantTextByItemId = new Map<string, string>();
-  const messages = await input.chatStore.listMessages(input.thread.id);
-  const repositories = await repositoriesFromThreadOrigin(input.thread, input.runtime);
-  const prepared = prepareChatTurn({
-    origin: input.origin,
-    payload: {
-      message: input.userMessage.body,
-      messages: messages.map(messagePayloadFromRecord),
-      model: input.turn.model ?? undefined,
-      provider: input.turn.providerId as AgentProviderId,
-      repositories,
-      sessionId: input.thread.sessionId ?? input.thread.id,
-      instructions: chatOriginInstructions(input.thread),
-      runtimeMode: input.turn.runtimeMode ?? input.thread.runtimeMode ?? undefined,
-      threadId: input.thread.id,
-    } satisfies ChatTurnPayload,
-    requestId: input.turn.id,
-    runtime: input.runtime,
-  });
-  const agentRequest: AgentTurnRequest = {
-    ...prepared.agentRequest,
-    metadata: {
-      ...prepared.agentRequest.metadata,
-      ...(input.turn.thinkingLevel === null || input.turn.thinkingLevel === undefined
-        ? {}
-        : { thinkingLevel: input.turn.thinkingLevel }),
-    },
-    signal: activeTurn.record.abortController.signal,
-  };
-
-  const upsertAggregateAssistantMessage = async (event: {
-    readonly at: Date;
-    readonly delta: string;
-    readonly snapshot?: string;
-  }) => {
-    latestAssistantText = event.snapshot ?? `${latestAssistantText}${event.delta}`;
-    const timestamp = event.at.toISOString();
-    if (assistantMessage === undefined) {
-      assistantMessage = {
-        actor: "agent",
-        body: latestAssistantText,
-        createdAt: timestamp,
-        id: chatId("message-agent"),
-        streaming: true,
-        threadId: input.thread.id,
-        turnId: input.turn.id,
-        updatedAt: timestamp,
-      };
-      assistantMessage = await input.chatStore.upsertMessage(assistantMessage);
-      await input.publish(
-        input.thread.id,
-        "message.created",
-        {
-          message: messageForProtocol(assistantMessage),
-        },
-        timestamp,
-      );
-    } else {
-      assistantMessage = {
-        ...assistantMessage,
-        body: latestAssistantText,
-        streaming: true,
-        updatedAt: timestamp,
-      };
-      assistantMessage = await input.chatStore.upsertMessage(assistantMessage);
-    }
-
-    await input.publish(
-      input.thread.id,
-      "message.delta",
-      {
-        delta: event.delta,
-        messageId: assistantMessage.id,
-        snapshot: event.snapshot,
-        turnId: input.turn.id,
-      },
-      timestamp,
-    );
-  };
-
-  const upsertSegmentedAssistantMessage = async (event: {
-    readonly at: Date;
-    readonly delta: string;
-    readonly itemId?: string;
-    readonly snapshot?: string;
-  }) => {
-    sawAssistantContentDelta = true;
-    latestAssistantText = event.snapshot ?? `${latestAssistantText}${event.delta}`;
-    const timestamp = event.at.toISOString();
-    const itemKey = event.itemId ?? "default";
-    const nextText = `${assistantTextByItemId.get(itemKey) ?? ""}${event.delta}`;
-    assistantTextByItemId.set(itemKey, nextText);
-
-    const existing = assistantMessagesByItemId.get(itemKey);
-    const nextMessage: AgentChatMessageRecord = {
-      actor: "agent",
-      body: nextText,
-      createdAt: existing?.createdAt ?? timestamp,
-      id:
-        existing?.id ?? (event.itemId ? `message-agent_${event.itemId}` : chatId("message-agent")),
-      sequence: existing?.sequence,
-      streaming: true,
-      threadId: input.thread.id,
-      turnId: input.turn.id,
-      updatedAt: timestamp,
-    };
-    const persisted = await input.chatStore.upsertMessage(nextMessage);
-    assistantMessagesByItemId.set(itemKey, persisted);
-    assistantMessage = persisted;
-
-    if (existing === undefined) {
-      await input.publish(
-        input.thread.id,
-        "message.created",
-        {
-          message: messageForProtocol(persisted),
-        },
-        timestamp,
-      );
-    }
-
-    await input.publish(
-      input.thread.id,
-      "message.delta",
-      {
-        delta: event.delta,
-        messageId: persisted.id,
-        snapshot: nextText,
-        turnId: input.turn.id,
-      },
-      timestamp,
-    );
-  };
-
-  const completeAssistantMessages = async (
-    completedAt: string,
-    finalText: string,
-  ): Promise<AgentChatMessageRecord | undefined> => {
-    if (assistantMessagesByItemId.size > 0) {
-      let lastMessage: AgentChatMessageRecord | undefined;
-      for (const [itemKey, message] of assistantMessagesByItemId) {
-        const completedMessage = await input.chatStore.upsertMessage({
-          ...message,
-          streaming: false,
-          updatedAt: completedAt,
-        });
-        assistantMessagesByItemId.set(itemKey, completedMessage);
-        lastMessage = completedMessage;
-        await input.publish(
-          input.thread.id,
-          "message.completed",
-          {
-            message: messageForProtocol(completedMessage),
-          },
-          completedAt,
-        );
-      }
-      assistantMessage = lastMessage;
-      return lastMessage;
-    }
-
-    assistantMessage = {
-      actor: "agent",
-      body: finalText,
-      createdAt: assistantMessage?.createdAt ?? completedAt,
-      id: assistantMessage?.id ?? chatId("message-agent"),
-      sequence: assistantMessage?.sequence,
-      streaming: false,
-      threadId: input.thread.id,
-      turnId: input.turn.id,
-      updatedAt: completedAt,
-    };
-    assistantMessage = await input.chatStore.upsertMessage(assistantMessage);
-    await input.publish(
-      input.thread.id,
-      "message.completed",
-      {
-        message: messageForProtocol(assistantMessage),
-      },
-      completedAt,
-    );
-    return assistantMessage;
-  };
-
-  try {
-    await updateTurn(input, {
-      status: "running",
-    });
-
-    for await (const event of service.stream(prepared.sessionId, agentRequest)) {
-      switch (event.type) {
-        case "turn.started":
-          await updateTurn(input, { status: "running" });
-          break;
-
-        case "text.delta": {
-          if (!sawAssistantContentDelta) await upsertAggregateAssistantMessage(event);
-          break;
-        }
-
-        case "content.delta": {
-          if (event.streamKind === "assistant_text") {
-            await upsertSegmentedAssistantMessage(event);
-            break;
-          }
-          if (event.streamKind === "reasoning_text" || event.streamKind === "reasoning_summary") {
-            sawThinkingActivity = true;
-            await upsertThinkingActivity(input, event.at.toISOString(), "running");
-            break;
-          }
-
-          await upsertActivity(input, {
-            createdAt: event.at.toISOString(),
-            detail: event.delta.slice(0, 1000),
-            id:
-              event.itemId === undefined
-                ? chatId("activity-stream")
-                : `activity-stream_${event.streamKind}_${event.itemId}`,
-            kind: event.streamKind === "plan" ? "progress" : "tool",
-            payload: {
-              delta: event.delta,
-              itemId: event.itemId,
-              streamKind: event.streamKind,
-            },
-            status: "running",
-            threadId: input.thread.id,
-            title: streamKindTitle(event.streamKind),
-            turnId: input.turn.id,
-            updatedAt: event.at.toISOString(),
-          });
-          break;
-        }
-
-        case "turn.plan.updated":
-          await upsertActivity(input, {
-            createdAt: event.at.toISOString(),
-            detail: event.explanation ?? event.plan.map((step) => step.step).join("\n"),
-            id: "activity-plan",
-            kind: "progress",
-            payload: {
-              explanation: event.explanation,
-              plan: event.plan,
-            },
-            status: "running",
-            threadId: input.thread.id,
-            title: "Plan updated",
-            turnId: input.turn.id,
-            updatedAt: event.at.toISOString(),
-          });
-          break;
-
-        case "turn.diff.updated":
-          await upsertActivity(input, {
-            createdAt: event.at.toISOString(),
-            detail: "Diff updated",
-            id: "activity-diff",
-            kind: "tool",
-            payload: {
-              diff: event.diff,
-            },
-            status: "running",
-            threadId: input.thread.id,
-            title: "Diff updated",
-            turnId: input.turn.id,
-            updatedAt: event.at.toISOString(),
-          });
-          break;
-
-        case "item.started":
-        case "item.updated":
-        case "item.completed": {
-          const activity = activityFromItemLifecycle(input, event);
-          if (activity !== undefined) await upsertActivity(input, activity);
-          break;
-        }
-
-        case "approval.requested":
-          await updateTurn(input, { status: "waiting_for_user" });
-          await upsertActivity(input, {
-            createdAt: event.at.toISOString(),
-            detail: approvalDetail(event.request),
-            id: `activity-approval_${event.request.requestId}`,
-            kind: "question",
-            payload: event.request as unknown as Readonly<Record<string, unknown>>,
-            status: "pending",
-            threadId: input.thread.id,
-            title: approvalTitle(event.request.kind),
-            turnId: input.turn.id,
-            updatedAt: event.at.toISOString(),
-          });
-          await input.publish(
-            input.thread.id,
-            "approval.requested",
-            {
-              request: event.request as unknown as Readonly<Record<string, unknown>>,
-            },
-            event.at.toISOString(),
-          );
-          break;
-
-        case "approval.resolved":
-          await upsertActivity(input, {
-            createdAt: event.at.toISOString(),
-            detail: event.decision,
-            id: `activity-approval_${event.requestId}`,
-            kind: "question",
-            payload: {
-              decision: event.decision,
-              requestId: event.requestId,
-            },
-            status: "completed",
-            threadId: input.thread.id,
-            title: "Approval resolved",
-            turnId: input.turn.id,
-            updatedAt: event.at.toISOString(),
-          });
-          await updateTurn(input, { status: "running" });
-          await input.publish(
-            input.thread.id,
-            "approval.resolved",
-            {
-              decision: event.decision,
-              requestId: event.requestId,
-            },
-            event.at.toISOString(),
-          );
-          break;
-
-        case "user-input.requested": {
-          await updateTurn(input, { status: "waiting_for_user" });
-          const question: AgentChatQuestionRecord = {
-            createdAt: event.at.toISOString(),
-            id: event.request.requestId,
-            prompt: event.request.prompt,
-            questions: event.request.questions,
-            status: "open",
-            threadId: input.thread.id,
-            turnId: input.turn.id,
-            updatedAt: event.at.toISOString(),
-          };
-          await input.chatStore.upsertQuestion?.(question);
-          await input.publish(
-            input.thread.id,
-            "question.created",
-            {
-              question: questionForProtocol(question),
-            },
-            event.at.toISOString(),
-          );
-          break;
-        }
-
-        case "user-input.resolved":
-          await updateTurn(input, { status: "running" });
-          await input.publish(
-            input.thread.id,
-            "question.resolved",
-            {
-              answers: event.answers,
-              questionId: event.requestId,
-              status: "answered",
-            },
-            event.at.toISOString(),
-          );
-          break;
-
-        case "runtime.warning":
-          await upsertActivity(input, {
-            createdAt: event.at.toISOString(),
-            detail: event.message,
-            id: chatId("activity-warning"),
-            kind: "system",
-            payload: isRecord(event.raw) ? event.raw : undefined,
-            status: "completed",
-            threadId: input.thread.id,
-            title: "Runtime warning",
-            turnId: input.turn.id,
-            updatedAt: event.at.toISOString(),
-          });
-          break;
-
-        case "runtime.error":
-          await upsertActivity(input, {
-            createdAt: event.at.toISOString(),
-            detail: event.error.message,
-            id: chatId("activity-runtime-error"),
-            kind: "error",
-            payload: publicAgentError(event.error) as Record<string, unknown>,
-            status: "failed",
-            threadId: input.thread.id,
-            title: "Runtime error",
-            turnId: input.turn.id,
-            updatedAt: event.at.toISOString(),
-          });
-          break;
-
-        case "progress":
-          await upsertActivity(input, {
-            createdAt: event.at.toISOString(),
-            detail: event.message,
-            id: chatId("activity-progress"),
-            kind: "progress",
-            payload: isRecord(event.raw) ? event.raw : undefined,
-            status: "running",
-            threadId: input.thread.id,
-            title: event.message,
-            turnId: input.turn.id,
-            updatedAt: event.at.toISOString(),
-          });
-          break;
-
-        case "artifact":
-          await upsertActivity(input, activityFromArtifact(event.artifact, input, event));
-          break;
-
-        case "usage":
-          await upsertActivity(input, {
-            createdAt: event.at.toISOString(),
-            detail: usageDetail(event.usage),
-            id: chatId("activity-usage"),
-            kind: "usage",
-            payload: event.usage as unknown as Readonly<Record<string, unknown>>,
-            status: "completed",
-            threadId: input.thread.id,
-            title: "Usage summary",
-            turnId: input.turn.id,
-            updatedAt: event.at.toISOString(),
-          });
-          break;
-
-        case "turn.completed": {
-          const completedAt = event.at.toISOString();
-          if (sawThinkingActivity) {
-            await upsertThinkingActivity(input, completedAt, "completed");
-          }
-          const finalText = event.result.text || latestAssistantText;
-          const completedAssistantMessage = await completeAssistantMessages(completedAt, finalText);
-          await completeTurn(
-            input,
-            "completed",
-            completedAt,
-            undefined,
-            completedAssistantMessage?.id,
-          );
-          return;
-        }
-
-        case "turn.failed":
-          if (sawThinkingActivity) {
-            await upsertThinkingActivity(input, event.at.toISOString(), "failed");
-          }
-          await failTurn(input, event.error.message, event.at.toISOString(), event.error);
-          return;
-
-        case "turn.cancelled":
-          if (sawThinkingActivity) {
-            await upsertThinkingActivity(input, event.at.toISOString(), "cancelled");
-          }
-          await cancelTurn(input, event.error.message, event.at.toISOString(), event.error);
-          return;
-      }
-    }
-
-    const completedAt = input.runtime.now().toISOString();
-    const completedAssistantMessage =
-      assistantMessage === undefined && assistantMessagesByItemId.size === 0
-        ? undefined
-        : await completeAssistantMessages(completedAt, latestAssistantText);
-    await completeTurn(input, "completed", completedAt, undefined, completedAssistantMessage?.id);
-  } catch (error) {
-    const aborted = activeTurn.record.abortController.signal.aborted;
-    const message = error instanceof Error ? error.message : String(error);
-    const completedAt = input.runtime.now().toISOString();
-    if (sawThinkingActivity) {
-      await upsertThinkingActivity(input, completedAt, aborted ? "cancelled" : "failed");
-    }
-    if (aborted) {
-      await cancelTurn(input, message, completedAt);
-    } else {
-      await failTurn(input, message, completedAt);
-    }
-  } finally {
-    input.activeTurnsByThreadId.delete(input.thread.id);
-    input.runtime.activeAgentTurns.finish(
-      input.turn.providerId as AgentProviderId,
-      input.thread.sessionId ?? input.thread.id,
-    );
-  }
-};
-
-const providerExecutionBlocker = async (
-  runtime: CycleApiRuntimeShape,
-  providerId: AgentProviderId,
-): Promise<string | undefined> => {
-  const profiles = await runtime.agentProviderProfiles().catch(() => []);
-  const profile = profiles.find((candidate) => candidate.provider === providerId);
-  if (profile === undefined) return `Agent provider '${providerId}' is not configured.`;
-  if (profile.status === "disabled") return `${profile.displayName} is disabled in Cycle settings.`;
-  if (profile.status !== "available") {
-    return profile.message ?? `${profile.displayName} is not available.`;
-  }
-
-  const maxConcurrentRuns = profile.maxConcurrentRuns;
-  if (
-    maxConcurrentRuns !== null &&
-    maxConcurrentRuns !== undefined &&
-    runtime.activeAgentTurns.countByProvider(providerId) >= maxConcurrentRuns
-  ) {
-    return `${profile.displayName} has reached its configured concurrency limit.`;
-  }
-
-  return undefined;
-};
-
-const updateTurn = async (
-  input: Parameters<typeof runProviderTurn>[0],
-  patch: Partial<AgentChatTurnRecord>,
-) => {
-  const updated: AgentChatTurnRecord = {
-    ...input.turn,
-    ...patch,
-    updatedAt: input.runtime.now().toISOString(),
-  };
-  Object.assign(input.turn as Mutable<AgentChatTurnRecord>, updated);
-  await input.chatStore.upsertTurn?.(updated);
-  await input.publish(input.thread.id, "turn.started", { turn: turnForProtocol(updated) });
-};
-
-type Mutable<T> = {
-  -readonly [Key in keyof T]: T[Key];
-};
-
-const hiddenProviderItemTypes = new Set([
-  "agentMessage",
-  "agent_message",
-  "contextCompaction",
-  "context_compaction",
-  "fileChange",
-  "file_change",
-  "hookPrompt",
-  "hook_prompt",
-  "plan",
-  "reasoning",
-  "userMessage",
-  "user_message",
-]);
-
-const providerItemTitle = (itemType: string | undefined): string => {
-  switch (itemType) {
-    case "commandExecution":
-    case "command_execution":
-      return "Command";
-    case "collabAgentToolCall":
-    case "collab_agent_tool_call":
-      return "Sub-agent";
-    case "dynamicToolCall":
-    case "dynamic_tool_call":
-      return "Tool call";
-    case "imageGeneration":
-    case "image_generation":
-      return "Image generation";
-    case "imageView":
-    case "image_view":
-      return "Viewed image";
-    case "mcpToolCall":
-    case "mcp_tool_call":
-      return "MCP tool";
-    case "webSearch":
-    case "web_search":
-      return "Web search";
-    default:
-      return "Provider activity";
-  }
-};
-
-const commandFromUnknown = (value: unknown): string | undefined => {
-  if (typeof value === "string" && value.trim().length > 0) return value;
-  if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
-    return value.join(" ");
-  }
-  if (Array.isArray(value)) {
-    for (const entry of value) {
-      const command = commandFromUnknown(entry);
-      if (command !== undefined) return command;
-    }
-  }
-  if (isRecord(value)) {
-    return (
-      commandFromUnknown(value.command) ??
-      commandFromUnknown(value.argv) ??
-      commandFromUnknown(value.args)
-    );
-  }
-  return undefined;
-};
-
-const providerItemDetail = (item: unknown, itemType: string | undefined): string | undefined => {
-  if (!isRecord(item)) return undefined;
-  switch (itemType) {
-    case "commandExecution":
-    case "command_execution":
-      return commandFromUnknown(item.command ?? item.commandActions);
-    case "dynamicToolCall":
-    case "dynamic_tool_call":
-    case "mcpToolCall":
-    case "mcp_tool_call": {
-      const namespace = stringValue(item.namespace);
-      const tool = stringValue(item.tool);
-      return [namespace, tool].filter((value) => value !== undefined).join(".");
-    }
-    case "webSearch":
-    case "web_search":
-      return stringValue(item.query);
-    default:
-      return stringValue(item.status);
-  }
-};
-
-const activityFromItemLifecycle = (
-  input: Parameters<typeof runProviderTurn>[0],
-  event: Extract<AgentEvent, { readonly type: "item.started" | "item.updated" | "item.completed" }>,
-): AgentChatActivityRecord | undefined => {
-  if (event.itemType === undefined || hiddenProviderItemTypes.has(event.itemType)) {
-    return undefined;
-  }
-
-  const timestamp = event.at.toISOString();
-  const command =
-    event.itemType === "commandExecution" || event.itemType === "command_execution"
-      ? providerItemDetail(event.item, event.itemType)
-      : undefined;
-  const activityId =
-    command === undefined
-      ? `activity-provider-item_${event.itemId}`
-      : `activity-command_${event.itemId}`;
-  return {
-    createdAt: timestamp,
-    detail: providerItemDetail(event.item, event.itemType),
-    id: activityId,
-    kind: "tool",
-    payload: {
-      ...(command === undefined ? {} : { command }),
-      itemId: event.itemId,
-      itemType: event.itemType,
-    },
-    status: event.type === "item.completed" ? "completed" : "running",
-    threadId: input.thread.id,
-    title: providerItemTitle(event.itemType),
-    turnId: input.turn.id,
-    updatedAt: timestamp,
-  };
-};
-
-const upsertThinkingActivity = (
-  input: Parameters<typeof runProviderTurn>[0],
-  timestamp: string,
-  status: NonNullable<AgentChatActivityRecord["status"]>,
-) =>
-  upsertActivity(input, {
-    createdAt: timestamp,
-    id: "activity-thinking",
-    kind: "thinking",
-    status,
-    threadId: input.thread.id,
-    title: "Thinking",
-    turnId: input.turn.id,
-    updatedAt: timestamp,
-  });
-
-const completeTurn = async (
-  input: Parameters<typeof runProviderTurn>[0],
-  status: "completed" | "failed" | "cancelled",
-  completedAt: string,
-  error?: string,
-  assistantMessageId?: string,
-) => {
-  const turn: AgentChatTurnRecord = {
-    ...input.turn,
-    ...(assistantMessageId === undefined ? {} : { assistantMessageId }),
-    completedAt,
-    lastError: error ?? null,
-    status,
-    updatedAt: completedAt,
-  };
-  const thread: AgentChatThreadRecord = {
-    ...input.thread,
-    activeTurnId: null,
-    lastError: error ?? null,
-    status: status === "failed" ? "error" : "active",
-    summary: status === "completed" ? input.thread.summary : (error ?? input.thread.summary),
-    updatedAt: completedAt,
-  };
-  await input.chatStore.upsertTurn?.(turn);
-  await input.chatStore.upsertThread(thread);
-  await input.publish(
-    input.thread.id,
-    `turn.${status}`,
-    { turn: turnForProtocol(turn) },
-    completedAt,
-  );
-  await input.publish(
-    input.thread.id,
-    "thread.updated",
-    { thread: threadForProtocol(thread) },
-    completedAt,
-  );
-};
-
-const failTurn = (
-  input: Parameters<typeof runProviderTurn>[0],
-  message: string,
-  completedAt = input.runtime.now().toISOString(),
-  error?: AgentError,
-) =>
-  Promise.all([
-    upsertActivity(input, {
-      createdAt: completedAt,
-      detail: message,
-      id: chatId("activity-error"),
-      kind: "error",
-      payload:
-        error === undefined ? undefined : (publicAgentError(error) as Record<string, unknown>),
-      status: "failed",
-      threadId: input.thread.id,
-      title: "Agent turn failed",
-      turnId: input.turn.id,
-      updatedAt: completedAt,
-    }),
-    completeTurn(input, "failed", completedAt, message),
-  ]).then(() => undefined);
-
-const cancelTurn = (
-  input: Parameters<typeof runProviderTurn>[0],
-  message: string,
-  completedAt = input.runtime.now().toISOString(),
-  error?: AgentError,
-) =>
-  Promise.all([
-    upsertActivity(input, {
-      createdAt: completedAt,
-      detail: message,
-      id: chatId("activity-cancelled"),
-      kind: "system",
-      payload:
-        error === undefined ? undefined : (publicAgentError(error) as Record<string, unknown>),
-      status: "cancelled",
-      threadId: input.thread.id,
-      title: "Agent turn cancelled",
-      turnId: input.turn.id,
-      updatedAt: completedAt,
-    }),
-    completeTurn(input, "cancelled", completedAt, message),
-  ]).then(() => undefined);
-
-const cancelChatTurn = async (input: {
-  readonly activeTurnsByThreadId: Map<string, AbortController>;
-  readonly chatStore: AgentChatStoreShape;
-  readonly command: ClientMessage;
-  readonly publish: (
-    threadId: string,
-    type: string,
-    payload: Readonly<Record<string, unknown>>,
-    createdAt?: string,
-  ) => Promise<AgentChatEventRecord | undefined>;
-  readonly runtime: CycleApiRuntimeShape;
-}): Promise<
-  | {
-      readonly _tag: "error";
-      readonly code: string;
-      readonly message: string;
-    }
-  | {
-      readonly _tag: "ok";
-      readonly accepted: boolean;
-      readonly reason: "cancel_requested" | "not_active" | "stale_cleared";
-      readonly staleCleared: boolean;
-    }
-> => {
-  const payload = objectPayload(input.command);
-  const threadId = stringValue(payload.threadId);
-  if (threadId === undefined) {
-    return { _tag: "error", code: "INVALID_PAYLOAD", message: "threadId is required." };
-  }
-
-  const thread = await getThread(input.chatStore, threadId);
-  if (thread === undefined) {
-    return { _tag: "error", code: "THREAD_NOT_FOUND", message: "Thread not found." };
-  }
-
-  const requestedTurnId = stringValue(payload.turnId);
-  const activeTurnId = thread.activeTurnId ?? null;
-  if (activeTurnId === null) {
-    return { _tag: "ok", accepted: false, reason: "not_active", staleCleared: false };
-  }
-  if (requestedTurnId !== undefined && requestedTurnId !== activeTurnId) {
-    return { _tag: "ok", accepted: false, reason: "not_active", staleCleared: false };
-  }
-
-  const reason = new Error("Chat turn cancellation requested.");
-  const providerId = providerFromUnknown(thread.agentId) ?? "codex";
-  const sessionId = thread.sessionId ?? thread.id;
-  const controller = input.activeTurnsByThreadId.get(threadId);
-  const runtimeTurn = input.runtime.activeAgentTurns.get(providerId, sessionId);
-  let liveCancellationRequested = false;
-
-  if (controller !== undefined) {
-    liveCancellationRequested = true;
-    if (!controller.signal.aborted) controller.abort(reason);
-  }
-  if (runtimeTurn !== undefined) {
-    liveCancellationRequested = true;
-    if (!runtimeTurn.abortController.signal.aborted) runtimeTurn.abortController.abort(reason);
-  }
-
-  const service = await Effect.runPromise(input.runtime.agentServices.serviceFor(providerId));
-  const providerAbort = await service.abortTurn(sessionId).catch(() => undefined);
-  if (providerAbort?.accepted) liveCancellationRequested = true;
-
-  if (liveCancellationRequested) {
-    return { _tag: "ok", accepted: true, reason: "cancel_requested", staleCleared: false };
-  }
-
-  await clearStaleActiveTurn({
-    chatStore: input.chatStore,
-    completedAt: input.runtime.now().toISOString(),
-    publish: input.publish,
-    thread,
-    turnId: activeTurnId,
-  });
-  input.runtime.activeAgentTurns.finish(providerId, sessionId, "cancelled");
-  input.activeTurnsByThreadId.delete(threadId);
-
-  return { _tag: "ok", accepted: true, reason: "stale_cleared", staleCleared: true };
-};
-
-const clearStaleActiveTurn = async (input: {
-  readonly chatStore: AgentChatStoreShape;
-  readonly completedAt: string;
-  readonly publish: (
-    threadId: string,
-    type: string,
-    payload: Readonly<Record<string, unknown>>,
-    createdAt?: string,
-  ) => Promise<AgentChatEventRecord | undefined>;
-  readonly thread: AgentChatThreadRecord;
-  readonly turnId: string;
-}): Promise<void> => {
-  const message = "Chat turn cancellation requested.";
-  const turns = (await input.chatStore.listTurns?.(input.thread.id)) ?? [];
-  const existingTurn = turns.find((turn) => turn.id === input.turnId);
-  const thread: AgentChatThreadRecord = {
-    ...input.thread,
-    activeTurnId: null,
-    lastError: message,
-    status: "active",
-    summary: message,
-    updatedAt: input.completedAt,
-  };
-  await input.chatStore.upsertThread(thread);
-
-  if (existingTurn !== undefined) {
-    const turn: AgentChatTurnRecord = {
-      ...existingTurn,
-      completedAt: input.completedAt,
-      lastError: message,
-      status: "cancelled",
-      updatedAt: input.completedAt,
-    };
-    await input.chatStore.upsertTurn?.(turn);
-    await input.publish(
-      input.thread.id,
-      "turn.cancelled",
-      { turn: turnForProtocol(turn) },
-      input.completedAt,
-    );
-  }
-
-  await input.publish(
-    input.thread.id,
-    "thread.updated",
-    { thread: threadForProtocol(thread) },
-    input.completedAt,
-  );
-};
-
-const upsertActivity = async (
-  input: Parameters<typeof runProviderTurn>[0],
-  activity: AgentChatActivityRecord,
-) => {
-  await input.chatStore.upsertActivity?.(activity);
-  await input.publish(
-    activity.threadId,
-    "activity.upserted",
-    {
-      activity: activityForProtocol(activity),
-    },
-    activity.updatedAt ?? activity.createdAt,
-  );
-};
-
-const respondToQuestion = async (
-  chatStore: AgentChatStoreShape,
-  runtime: CycleApiRuntimeShape,
-  command: ClientMessage,
-  connection: ChatConnection,
-  publish: (
-    threadId: string,
-    type: string,
-    payload: Readonly<Record<string, unknown>>,
-    createdAt?: string,
-  ) => Promise<AgentChatEventRecord | undefined>,
+const broadcastPublishedEvent = async (
+  subscribersByThreadId: Map<string, Set<ChatConnection>>,
+  event: AgentChatPublishedEvent,
 ): Promise<void> => {
-  const payload = objectPayload(command);
-  const threadId = stringValue(payload.threadId);
-  const questionId = stringValue(payload.questionId);
-  const answersPayload = isRecord(payload.answers) ? payload.answers : undefined;
-  if (threadId === undefined || questionId === undefined || answersPayload === undefined) {
-    await safeSend(connection, {
-      commandId: command.commandId,
-      payload: {
-        code: "INVALID_PAYLOAD",
-        message: "threadId, questionId, and answers are required.",
-        retryable: false,
-        type: command.type,
-      },
-      type: "command.error",
-      version: 1,
-    });
-    return;
-  }
-  const thread = await getThread(chatStore, threadId);
-  if (thread === undefined) {
-    await safeSend(connection, {
-      commandId: command.commandId,
-      payload: {
-        code: "THREAD_NOT_FOUND",
-        message: "Thread not found.",
-        retryable: false,
-        type: command.type,
-      },
-      type: "command.error",
-      version: 1,
-    });
-    return;
-  }
-  const questions = (await chatStore.listQuestions?.(threadId)) ?? [];
-  const question = questions.find((candidate) => candidate.id === questionId);
-  if (question === undefined || question.status !== "open") {
-    await safeSend(connection, {
-      commandId: command.commandId,
-      payload: {
-        code: question === undefined ? "QUESTION_NOT_FOUND" : "QUESTION_NOT_OPEN",
-        message: question === undefined ? "Question not found." : "Question is not open.",
-        retryable: false,
-        type: command.type,
-      },
-      type: "command.error",
-      version: 1,
-    });
-    return;
-  }
-  const providerId = providerFromUnknown(thread.agentId) ?? "codex";
-  const service = await Effect.runPromise(runtime.agentServices.serviceFor(providerId));
-  const response = await service.respondToUserInput(
-    thread.sessionId ?? thread.id,
-    questionId,
-    userInputAnswersFromRecord(answersPayload),
-  );
-  if (response.status === "not_found") {
-    await safeSend(connection, {
-      commandId: command.commandId,
-      payload: {
-        code: "QUESTION_NOT_FOUND",
-        message: "Provider question is no longer pending.",
-        retryable: false,
-        type: command.type,
-      },
-      type: "command.error",
-      version: 1,
-    });
-    return;
-  }
-  const answeredAt = runtime.now().toISOString();
-  const updated: AgentChatQuestionRecord = {
-    ...question,
-    answer: answersPayload,
-    answeredAt,
-    status: "answered",
-    updatedAt: answeredAt,
-  };
-  await chatStore.upsertQuestion?.(updated);
-  await acknowledgeQuestion(connection, command, updated);
-  await publish(
-    threadId,
-    "question.resolved",
-    {
-      answer: updated.answer ?? {},
-      answeredAt,
-      questionId,
-      response,
-      status: "answered",
-    },
-    answeredAt,
-  );
-};
+  const subscribers = subscribersByThreadId.get(event.threadId);
+  if (subscribers === undefined) return;
 
-const respondToApproval = async (
-  chatStore: AgentChatStoreShape,
-  runtime: CycleApiRuntimeShape,
-  command: ClientMessage,
-  connection: ChatConnection,
-  publish: (
-    threadId: string,
-    type: string,
-    payload: Readonly<Record<string, unknown>>,
-    createdAt?: string,
-  ) => Promise<AgentChatEventRecord | undefined>,
-): Promise<void> => {
-  const payload = objectPayload(command);
-  const threadId = stringValue(payload.threadId);
-  const requestId = stringValue(payload.requestId);
-  const decision = approvalDecisionFromUnknown(payload.decision);
-  if (threadId === undefined || requestId === undefined || decision === undefined) {
-    await safeSend(connection, {
-      commandId: command.commandId,
-      payload: {
-        code: "INVALID_PAYLOAD",
-        message: "threadId, requestId, and decision are required.",
-        retryable: false,
-        type: command.type,
-      },
-      type: "command.error",
-      version: 1,
-    });
-    return;
-  }
-
-  const thread = await getThread(chatStore, threadId);
-  if (thread === undefined) {
-    await safeSend(connection, {
-      commandId: command.commandId,
-      payload: {
-        code: "THREAD_NOT_FOUND",
-        message: "Thread not found.",
-        retryable: false,
-        type: command.type,
-      },
-      type: "command.error",
-      version: 1,
-    });
-    return;
-  }
-
-  const providerId = providerFromUnknown(thread.agentId) ?? "codex";
-  const service = await Effect.runPromise(runtime.agentServices.serviceFor(providerId));
-  const response = await service.respondToApproval(
-    thread.sessionId ?? thread.id,
-    requestId,
-    decision,
-  );
-  if (response.status === "not_found") {
-    await safeSend(connection, {
-      commandId: command.commandId,
-      payload: {
-        code: "APPROVAL_NOT_FOUND",
-        message: "Provider approval is no longer pending.",
-        retryable: false,
-        type: command.type,
-      },
-      type: "command.error",
-      version: 1,
-    });
-    return;
-  }
-
-  const resolvedAt = runtime.now().toISOString();
-  await chatStore.upsertActivity?.({
-    createdAt: resolvedAt,
-    detail: decision,
-    id: `activity-approval_${requestId}`,
-    kind: "question",
-    payload: {
-      decision,
-      requestId,
-      response,
-    },
-    status: "completed",
-    threadId,
-    title: "Approval resolved",
-    updatedAt: resolvedAt,
-  });
-  await safeSend(connection, {
-    commandId: command.commandId,
-    payload: {
-      result: {
-        requestId,
-        response,
-      },
-      type: command.type,
-    },
-    type: "command.ack",
-    version: 1,
-  });
-  await publish(
-    threadId,
-    "approval.resolved",
-    {
-      decision,
-      requestId,
-      response,
-    },
-    resolvedAt,
-  );
-};
-
-const acknowledgeQuestion = (
-  connection: ChatConnection,
-  command: ClientMessage,
-  question: AgentChatQuestionRecord,
-) =>
-  safeSend(connection, {
-    commandId: command.commandId,
-    payload: {
-      result: {
-        question: questionForProtocol(question),
-      },
-      type: command.type,
-    },
-    type: "command.ack",
-    version: 1,
-  });
-
-const threadSnapshot = async (store: AgentChatStoreShape, threadId: string) => {
-  const thread = await getThread(store, threadId);
-  if (thread === undefined) return undefined;
-  const messages = await store.listMessages(threadId);
-  const activities = (await store.listActivities?.(threadId)) ?? [];
-  const questions = (await store.listQuestions?.(threadId)) ?? [];
-  const turns = (await store.listTurns?.(threadId)) ?? [];
-  const events = (await store.listEventsAfter?.(threadId, 0)) ?? [];
-  const timelineSequences = timelineSequencesFromEvents(events);
-
-  return {
-    activities: activities.map((activity) =>
-      activityForProtocol(activity, timelineSequences.activities.get(activity.id)),
+  await Promise.all(
+    [...subscribers].map((connection) =>
+      safeSend(connection, {
+        createdAt: event.createdAt,
+        eventId: event.eventId,
+        payload: event.payload,
+        sequence: event.sequence,
+        threadId: event.threadId,
+        type: event.type,
+        version: 1,
+      }),
     ),
-    lastSequence: events.at(-1)?.sequence ?? 0,
-    messages: messages.map((message) =>
-      messageForProtocol(message, timelineSequences.messages.get(message.id)),
-    ),
-    questions: questions.map((question) =>
-      questionForProtocol(question, timelineSequences.questions.get(question.id)),
-    ),
-    thread: threadForProtocol(thread),
-    turns: turns.map(turnForProtocol),
-  };
-};
-
-const getThread = async (
-  store: AgentChatStoreShape,
-  threadId: string,
-): Promise<AgentChatThreadRecord | undefined> => {
-  const direct = await store.getThread?.(threadId);
-  if (direct !== undefined) return direct;
-  return (await store.listThreads()).find((thread) => thread.id === threadId);
-};
-
-const appendEvent = (
-  store: AgentChatStoreShape | undefined,
-  event: Omit<AgentChatEventRecord, "sequence">,
-): Promise<AgentChatEventRecord | undefined> =>
-  store?.appendEvent === undefined ? Promise.resolve(undefined) : store.appendEvent(event);
-
-type TimelineSequenceMaps = {
-  readonly activities: Map<string, number>;
-  readonly messages: Map<string, number>;
-  readonly questions: Map<string, number>;
-};
-
-const setFirstSequence = (map: Map<string, number>, id: string | undefined, sequence: number) => {
-  if (id !== undefined && !map.has(id)) map.set(id, sequence);
-};
-
-const protocolObjectId = (value: unknown): string | undefined =>
-  isRecord(value) ? stringValue(value.id) : undefined;
-
-const timelineSequencesFromEvents = (
-  events: readonly AgentChatEventRecord[],
-): TimelineSequenceMaps => {
-  const activities = new Map<string, number>();
-  const messages = new Map<string, number>();
-  const questions = new Map<string, number>();
-
-  for (const event of events) {
-    const payload = event.payload;
-    if (!isRecord(payload)) continue;
-
-    switch (event.type) {
-      case "message.created":
-      case "message.completed":
-        setFirstSequence(messages, protocolObjectId(payload.message), event.sequence);
-        break;
-      case "activity.upserted":
-        setFirstSequence(activities, protocolObjectId(payload.activity), event.sequence);
-        break;
-      case "approval.requested": {
-        const request = isRecord(payload.request) ? payload.request : undefined;
-        const requestId = stringValue(request?.requestId);
-        setFirstSequence(
-          activities,
-          requestId === undefined ? undefined : `activity-approval_${requestId}`,
-          event.sequence,
-        );
-        break;
-      }
-      case "question.created":
-        setFirstSequence(questions, protocolObjectId(payload.question), event.sequence);
-        break;
-    }
-  }
-
-  return { activities, messages, questions };
+  );
 };
 
 const safeSend = (connection: ChatConnection, message: ServerMessage): Promise<void> =>
@@ -2174,16 +715,8 @@ const bearerTokenFromHeaders = (
   return match?.[1];
 };
 
-const providerFromUnknown = (value: unknown): AgentProviderId | undefined =>
-  typeof value === "string" && isAgentProviderId(value) ? value : undefined;
-
-const runtimeModeFromUnknown = (value: unknown): AgentRuntimeMode | undefined =>
-  value === "read-only" || value === "workspace-write" || value === "full-access"
-    ? value
-    : undefined;
-
-const runtimeModeOrNull = (value: unknown): AgentRuntimeMode | null =>
-  runtimeModeFromUnknown(value) ?? null;
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const stringValue = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim().length > 0 ? value : undefined;
@@ -2191,340 +724,14 @@ const stringValue = (value: unknown): string | undefined =>
 const stringOrNull = (value: unknown): string | null =>
   typeof value === "string" && value.trim().length > 0 ? value : null;
 
-const approvalDecisionFromUnknown = (value: unknown): AgentApprovalDecision | undefined =>
+const runtimeModeOrNull = (
+  value: unknown,
+): "read-only" | "workspace-write" | "full-access" | null =>
+  value === "read-only" || value === "workspace-write" || value === "full-access" ? value : null;
+
+const approvalDecisionFromUnknown = (
+  value: unknown,
+): "accept" | "acceptForSession" | "decline" | "cancel" | undefined =>
   value === "accept" || value === "acceptForSession" || value === "decline" || value === "cancel"
     ? value
     : undefined;
-
-const answerValueFromUnknown = (value: unknown): AgentUserInputAnswer["value"] => {
-  if (typeof value === "boolean" || typeof value === "string") return value;
-  if (Array.isArray(value)) {
-    return value.filter((entry): entry is string => typeof entry === "string");
-  }
-  if (isRecord(value) && Array.isArray(value.answers)) {
-    return value.answers.filter((entry): entry is string => typeof entry === "string");
-  }
-  return String(value);
-};
-
-const userInputAnswersFromRecord = (
-  answers: Readonly<Record<string, unknown>>,
-): readonly AgentUserInputAnswer[] =>
-  Object.entries(answers).map(([questionId, value]) => ({
-    questionId,
-    value: answerValueFromUnknown(value),
-  }));
-
-const streamKindTitle = (streamKind: AgentContentStreamKind): string => {
-  switch (streamKind) {
-    case "reasoning_text":
-    case "reasoning_summary":
-      return "Reasoning";
-    case "plan":
-      return "Plan";
-    case "command_output":
-      return "Command output";
-    case "file_change_output":
-      return "File changes";
-    case "tool_output":
-      return "Tool output";
-    case "assistant_text":
-      return "Assistant text";
-    case "unknown":
-    default:
-      return "Provider output";
-  }
-};
-
-const approvalTitle = (kind: AgentApprovalKind): string => {
-  switch (kind) {
-    case "command":
-      return "Command approval requested";
-    case "file-change":
-      return "File change approval requested";
-    case "permissions":
-      return "Permission approval requested";
-    case "unknown":
-    default:
-      return "Approval requested";
-  }
-};
-
-const approvalDetail = (request: AgentApprovalRequest): string | undefined => {
-  const command = request.details?.command;
-  if (typeof command === "string" && command.length > 0) return command;
-  const changes = request.details?.changes;
-  if (Array.isArray(changes))
-    return `${changes.length} file change${changes.length === 1 ? "" : "s"}`;
-  return undefined;
-};
-
-const chatId = (prefix: string): string => `${prefix}_${crypto.randomUUID()}`;
-
-const threadForProtocol = (thread: AgentChatThreadRecord): Readonly<Record<string, unknown>> => ({
-  activeTurnId: thread.activeTurnId ?? null,
-  archivedAt: thread.archivedAt ?? null,
-  createdAt: thread.createdAt,
-  id: thread.id,
-  lastError: thread.lastError ?? null,
-  model: thread.model ?? null,
-  origin: thread.origin ?? null,
-  providerId: thread.agentId ?? null,
-  runtimeMode: thread.runtimeMode ?? null,
-  sessionId: thread.sessionId ?? null,
-  status: thread.status,
-  summary: thread.summary,
-  thinkingLevel: thread.thinkingLevel ?? null,
-  title: thread.title,
-  updatedAt: thread.updatedAt,
-});
-
-const messageForProtocol = (
-  message: AgentChatMessageRecord,
-  timelineSequence?: number,
-): Readonly<Record<string, unknown>> => ({
-  createdAt: message.createdAt,
-  id: message.id,
-  role: message.actor === "agent" ? "assistant" : "user",
-  sequence: message.sequence,
-  streaming: message.streaming ?? false,
-  text: message.body,
-  timelineSequence: timelineSequence ?? null,
-  turnId: message.turnId ?? null,
-  updatedAt: message.updatedAt ?? message.createdAt,
-});
-
-const turnForProtocol = (turn: AgentChatTurnRecord): Readonly<Record<string, unknown>> => ({
-  assistantMessageId: turn.assistantMessageId ?? null,
-  completedAt: turn.completedAt ?? null,
-  createdAt: turn.createdAt,
-  id: turn.id,
-  inputMessageId: turn.inputMessageId,
-  lastError: turn.lastError ?? null,
-  model: turn.model ?? null,
-  providerId: turn.providerId,
-  runtimeMode: turn.runtimeMode ?? null,
-  status: turn.status,
-  thinkingLevel: turn.thinkingLevel ?? null,
-  threadId: turn.threadId,
-  updatedAt: turn.updatedAt,
-});
-
-const activityForProtocol = (
-  activity: AgentChatActivityRecord,
-  timelineSequence?: number,
-): Readonly<Record<string, unknown>> => ({
-  createdAt: activity.createdAt,
-  detail: activity.detail ?? null,
-  id: activity.id,
-  kind: activity.kind,
-  payload: activity.payload ?? null,
-  timelineSequence: timelineSequence ?? null,
-  status: activity.status ?? null,
-  title: activity.title,
-  turnId: activity.turnId ?? null,
-  updatedAt: activity.updatedAt ?? activity.createdAt,
-});
-
-const questionForProtocol = (
-  question: AgentChatQuestionRecord,
-  timelineSequence?: number,
-): Readonly<Record<string, unknown>> => ({
-  answeredAt: question.answeredAt ?? null,
-  createdAt: question.createdAt,
-  id: question.id,
-  prompt: question.prompt,
-  questions: question.questions,
-  timelineSequence: timelineSequence ?? null,
-  status: question.status,
-  turnId: question.turnId,
-  updatedAt: question.updatedAt ?? question.createdAt,
-});
-
-const messagePayloadFromRecord = (message: AgentChatMessageRecord): ChatMessagePayload => ({
-  content: message.body,
-  createdAt: message.createdAt,
-  id: message.id,
-  role: message.actor === "agent" ? "assistant" : "user",
-});
-
-const repositoriesFromThreadOrigin = async (
-  thread: AgentChatThreadRecord,
-  runtime: CycleApiRuntimeShape,
-): Promise<readonly ChatRepositoryPayload[] | undefined> => {
-  const repositoryId = threadOriginString(thread, "repositoryId");
-  if (repositoryId === undefined) return undefined;
-
-  const repositories = await runtime.listRepositories?.();
-  const repository = repositories?.find((entry) => entry.id === repositoryId);
-  return [
-    {
-      id: repositoryId,
-      ...(repository === undefined
-        ? {}
-        : { displayName: repository.displayName, path: repository.path }),
-    },
-  ];
-};
-
-export const chatOriginInstructions = (thread: AgentChatThreadRecord): string | undefined => {
-  const repositoryId = threadOriginString(thread, "repositoryId");
-  const issueId = threadOriginString(thread, "issueId");
-  if (repositoryId === undefined || issueId === undefined) return undefined;
-
-  if (threadOriginString(thread, "kind") === "ticket-agent-work") {
-    return [
-      "This chat thread was started for Cycle ticket implementation.",
-      `Issue context: cycle://repository/${repositoryId}/tickets/${issueId}`,
-      "Resolve that Cycle URI through the attached MCP tools before claiming repository or ticket context is missing.",
-      assignedTicketImplementationWorkflowInstructions(),
-    ].join("\n");
-  }
-
-  return [
-    "This chat thread was started from a Cycle issue mention.",
-    `Issue context: cycle://repository/${repositoryId}/tickets/${issueId}`,
-    "Resolve that Cycle URI through the attached MCP tools before claiming repository or ticket context is missing.",
-  ].join("\n");
-};
-
-const threadOriginString = (thread: AgentChatThreadRecord, key: string): string | undefined => {
-  const value = thread.origin?.[key];
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-};
-
-const providerProfileForChat = (
-  profile: AgentProviderProfile,
-): Readonly<Record<string, unknown>> => {
-  const availability =
-    profile.status === "available"
-      ? "available"
-      : profile.status === "unsupported"
-        ? "unsupported"
-        : "unavailable";
-  const models = profile.models;
-
-  return {
-    availability,
-    defaultModel: profile.defaultModel ?? models[0] ?? null,
-    defaultThinkingLevel: profile.defaultReasoningEffortId ?? null,
-    description: profile.message ?? profile.executableName,
-    id: profile.provider,
-    label: profile.displayName,
-    models: models.map((model) => ({
-      disabled: availability !== "available",
-      id: model,
-      label: model,
-    })),
-    statusLabel: profile.status,
-    thinkingLevels:
-      profile.reasoningEfforts?.map((effort) => ({
-        description: effort.description ?? null,
-        disabled: effort.disabled === true,
-        id: effort.id,
-        label: effort.label,
-      })) ?? [],
-  };
-};
-
-const activityFromArtifact = (
-  artifact: AgentArtifact,
-  input: Parameters<typeof runProviderTurn>[0],
-  event: Extract<AgentEvent, { readonly type: "artifact" }>,
-): AgentChatActivityRecord => {
-  if (artifact.type === "tool") {
-    const artifactItemId = itemIdFromMetadata(artifact.metadata);
-    const command =
-      artifact.name === "command_execution" ? commandFromUnknown(artifact.input) : undefined;
-    return {
-      createdAt: event.at.toISOString(),
-      detail: command ?? formatToolDetail(artifact.output),
-      id:
-        artifactItemId === undefined
-          ? chatId(command === undefined ? "activity-tool" : "activity-command")
-          : command === undefined
-            ? `activity-tool_${artifactItemId}`
-            : `activity-command_${artifactItemId}`,
-      kind: "tool",
-      payload: {
-        ...(command === undefined ? {} : { command }),
-        error: artifact.error,
-        input: artifact.input,
-        metadata: artifact.metadata,
-        name: artifact.name,
-        output: artifact.output,
-      },
-      status:
-        artifact.status === "failed"
-          ? "failed"
-          : artifact.status === "completed"
-            ? "completed"
-            : "running",
-      threadId: input.thread.id,
-      title: command === undefined ? artifact.name : "Command",
-      turnId: input.turn.id,
-      updatedAt: event.at.toISOString(),
-    };
-  }
-
-  if (artifact.type === "patch") {
-    const artifactItemId = itemIdFromMetadata(artifact.metadata);
-    return {
-      createdAt: event.at.toISOString(),
-      detail: artifact.summary,
-      id:
-        artifactItemId === undefined ? chatId("activity-tool") : `activity-tool_${artifactItemId}`,
-      kind: "tool",
-      payload: {
-        files: artifact.files,
-        metadata: artifact.metadata,
-        patch: artifact.patch,
-      },
-      status: "completed",
-      threadId: input.thread.id,
-      title: "File changes",
-      turnId: input.turn.id,
-      updatedAt: event.at.toISOString(),
-    };
-  }
-
-  return {
-    createdAt: event.at.toISOString(),
-    detail: artifact.type === "text" ? artifact.text : undefined,
-    id: chatId(
-      artifact.type === "raw" && artifact.name === "reasoning"
-        ? "activity-thinking"
-        : "activity-progress",
-    ),
-    kind: artifact.type === "raw" && artifact.name === "reasoning" ? "thinking" : "progress",
-    payload: artifact as unknown as Readonly<Record<string, unknown>>,
-    status: "completed",
-    threadId: input.thread.id,
-    title: artifact.type === "raw" ? (artifact.name ?? "Provider event") : artifact.type,
-    turnId: input.turn.id,
-    updatedAt: event.at.toISOString(),
-  };
-};
-
-const itemIdFromMetadata = (
-  metadata: Readonly<Record<string, unknown>> | undefined,
-): string | undefined => {
-  const itemId = metadata?.itemId;
-  return typeof itemId === "string" && itemId.length > 0 ? itemId : undefined;
-};
-
-const formatToolDetail = (value: unknown): string | undefined => {
-  if (typeof value === "string") return value.slice(0, 500);
-  return undefined;
-};
-
-const usageDetail = (usage: unknown): string | undefined => {
-  if (!isRecord(usage)) return undefined;
-  const total = usage.totalTokens;
-  return typeof total === "number" ? `${total} total tokens` : undefined;
-};
-
-const publicAgentError = (error: AgentError): Omit<AgentError, "raw"> => {
-  const { raw: _raw, ...rest } = error;
-  return rest;
-};

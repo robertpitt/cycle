@@ -4,16 +4,19 @@ export * from "./mcp/index.ts";
 export * from "./server.ts";
 export { CycleApiRuntime } from "./http/runtime/CycleApiRuntime.ts";
 export type {
-  AgentActiveTurnDirectoryShape,
   AgentChatActivityRecord,
   AgentChatEventRecord,
   AgentChatMessageRecord,
   AgentChatQuestionItemRecord,
   AgentChatQuestionRecord,
+  AgentChatRuntimeShape,
   AgentChatStoreShape,
   AgentChatThreadRecord,
   AgentChatThreadWithMessages,
   AgentChatTurnRecord,
+} from "@cycle/agent-chat";
+export type {
+  AgentActiveTurnDirectoryShape,
   ApiConfig,
   ApiRequestContext,
   CycleApi,

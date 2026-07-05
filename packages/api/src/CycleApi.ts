@@ -1,4 +1,5 @@
 import { mcpBearerTokenEnvVar } from "@cycle/agents";
+import { makeAgentChatEventBus, makeAgentChatRuntime } from "@cycle/agent-chat";
 import { makeAgentOrchestrationService } from "@cycle/agents/orchestration";
 import { makeDefaultAgentServiceRegistry } from "@cycle/agents/service";
 import { UseCaseServicesLive } from "@cycle/usecases";
@@ -68,12 +69,42 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
       activeRunCount: activeAgentTurns.countByProvider(profile.provider),
     }));
   };
+  const agentChatEventBus =
+    options.agentChatStore === undefined ? undefined : makeAgentChatEventBus();
+  const agentChatRuntime =
+    options.agentChatStore === undefined
+      ? undefined
+      : makeAgentChatRuntime({
+          activeTurns: activeAgentTurns,
+          agentProviderProfiles: listAgentProviderProfiles,
+          agentServices,
+          ...(options.listRepositories === undefined
+            ? {}
+            : { listRepositories: options.listRepositories }),
+          mcp: ({ origin, required }) => {
+            const url =
+              mcpUrl ?? (mcpPath === undefined ? undefined : joinBaseUrlPath(origin, mcpPath));
+            if (url === undefined) return undefined;
+            return {
+              headers: {
+                authorization: `Bearer ${options.staticToken}`,
+              },
+              mode: "http" as const,
+              ...(required ? { required: true } : {}),
+              url,
+            };
+          },
+          now: options.now ?? (() => new Date()),
+          ...(agentChatEventBus === undefined ? {} : { publish: agentChatEventBus.publish }),
+          store: options.agentChatStore,
+        });
   const runtimeShape: CycleApiRuntimeShape = {
     activeAgentTurns,
+    ...(agentChatEventBus === undefined ? {} : { agentChatEventBus }),
+    ...(agentChatRuntime === undefined ? {} : { agentChatRuntime }),
     agentOrchestration,
     agentProviderProfiles: listAgentProviderProfiles,
     agentServices,
-    ...(options.agentChatStore === undefined ? {} : { agentChatStore: options.agentChatStore }),
     ...(options.agentSessionStore === undefined
       ? {}
       : { agentSessionStore: options.agentSessionStore }),

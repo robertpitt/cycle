@@ -39,7 +39,7 @@ import {
 import { DesktopBootstrap } from "../shared/Bootstrap.ts";
 import { LocalWorkspace } from "../shared/LocalWorkspace.ts";
 import { cycleCliConfigPathFromHome } from "./CycleDirectory.ts";
-import { makeDesktopAgentChatStore } from "./DesktopAgentChatStore.ts";
+import { makeSqliteAgentChatStore } from "@cycle/agent-chat/store";
 import { makeDesktopAgentSessionStore } from "./agents/services/DesktopAgentSessionStore.ts";
 import { ElectronPreferences } from "./ElectronPreferences.ts";
 
@@ -322,7 +322,7 @@ export const startDesktopApi = Effect.fnUntraced(function* () {
   yield* Effect.acquireRelease(
     Effect.tryPromise({
       try: async () => {
-        const agentChatStore = makeDesktopAgentChatStore(cycleDatabasePath());
+        const agentChatStore = makeSqliteAgentChatStore(cycleDatabasePath());
         const agentSessionStore = makeDesktopAgentSessionStore(cycleDatabasePath());
         const agentTaskStore = makeNodeSqliteAgentTaskStore(cycleDatabasePath());
         const codexPreference = preferenceForProvider(config, "codex");

@@ -1,0 +1,26 @@
+{
+  "name": "@cycle/agent-chat",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./domain": "./src/domain.ts",
+    "./prompt": "./src/prompt.ts",
+    "./records": "./src/records.ts",
+    "./runtime": "./src/runtime/AgentChatRuntime.ts",
+    "./store": "./src/store/SqliteAgentChatStore.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@cycle/agents": "workspace:*",
+    "@cycle/database": "workspace:*",
+    "effect": "4.0.0-beta.78"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.8"
+  }
+}

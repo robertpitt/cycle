@@ -27,7 +27,7 @@ import {
   type CycleApiRuntimeShape,
 } from "../src/index.ts";
 import { prepareChatTurn } from "../src/http/handlers/v1/chat/prepare.ts";
-import { chatOriginInstructions } from "../src/http/handlers/v1/chat/ws.ts";
+import { chatOriginInstructions } from "@cycle/agent-chat/runtime";
 
 const repository = { id: "test-repository" };
 const token = "test-token";
