@@ -46,8 +46,7 @@ through stable `@cycle/git-db` exports rather than source paths.
 3. Move package-owned domain schemas, DTO schemas, typed errors, store service contracts, layers,
    and helper modules into package-local files with clear ownership.
 4. Preserve the existing root import shape used by downstream packages, including `Event`,
-   `Store`, `Pointer`, `Snapshot`, `Sync`, `Transaction`, `GitDbFilesystem`, `GitDbInMemory`, and
-   `GitDbLive`.
+   `Store`, `GitDbFilesystem`, `GitDbInMemory`, and `GitDbLive`.
 5. Remove obsolete wrapper barrels and historical grouping folders once consumers are migrated.
 6. Keep all recoverable GitDB errors as typed `Schema.TaggedErrorClass` errors with
    `@cycle/git-db/...` tags.
@@ -84,7 +83,8 @@ This refactor MUST NOT:
 - Raw path transactions.
 - Document wrappers for Git blob contents.
 - Event path construction, canonical event encoding, append, list, and introduced-event discovery.
-- Pointer, snapshot, history, diff, and sync helper APIs.
+- Pointer, snapshot, history, diff, and sync operations exposed directly on `StoreService` and
+  `StorePointer`.
 - GitDB schemas, DTOs, and typed errors.
 - In-memory, filesystem, and CLI-backed layer composition.
 
@@ -114,11 +114,7 @@ src/
   GitDbErrors.ts
   GitDbLive.ts
   GitDbSchemas.ts
-  Pointer.ts
-  Snapshot.ts
   Store.ts
-  Sync.ts
-  Transaction.ts
   index.ts
   internals/
     bytes.ts
@@ -151,12 +147,8 @@ specification is updated.
 - `GitDbSchemas.ts`: public schemas and schema-derived types for options, store config, snapshots,
   changes, entries, sync, pointer status, history options, read options, commit options, and path
   identifiers.
-- `Pointer.ts`: module-first pointer helpers over `StorePointer`.
-- `Snapshot.ts`: module-first snapshot, history, diff, and snapshot ID helpers.
 - `Store.ts`: `StoreConfig`, store option parsing, `StoreService`, `StoreServiceShape`,
   `StorePointer`, `Transaction`, repository identity types, and the live store implementation.
-- `Sync.ts`: module-first sync helper and sync option/result types.
-- `Transaction.ts`: module-first transaction helpers and transaction option/result types.
 - `index.ts`: root public barrel.
 
 ### 7.2 Internal Module Responsibilities
@@ -185,12 +177,8 @@ specification expands the public API:
     "./errors": "./src/GitDbErrors.ts",
     "./event": "./src/Event.ts",
     "./live": "./src/GitDbLive.ts",
-    "./pointer": "./src/Pointer.ts",
     "./schemas": "./src/GitDbSchemas.ts",
-    "./snapshot": "./src/Snapshot.ts",
-    "./store": "./src/Store.ts",
-    "./sync": "./src/Sync.ts",
-    "./transaction": "./src/Transaction.ts"
+    "./store": "./src/Store.ts"
   }
 }
 ```
@@ -208,12 +196,8 @@ export { GitDbFilesystem, GitDbInMemory, GitDbLive } from "./GitDbLive.ts";
 export * as Document from "./Document.ts";
 export * as Event from "./Event.ts";
 export * as GitDb from "./GitDbLive.ts";
-export * as Pointer from "./Pointer.ts";
 export * as Schemas from "./GitDbSchemas.ts";
-export * as Snapshot from "./Snapshot.ts";
 export * as Store from "./Store.ts";
-export * as Sync from "./Sync.ts";
-export * as Transaction from "./Transaction.ts";
 ```
 
 The root barrel MAY also export additional top-level values from these same public modules when
@@ -239,6 +223,10 @@ Consumers MUST NOT import from:
 @cycle/git-db/store/...
 @cycle/git-db/schemas/...
 @cycle/git-db/errors/...
+@cycle/git-db/pointer
+@cycle/git-db/snapshot
+@cycle/git-db/sync
+@cycle/git-db/transaction
 ```
 
 ## 9. Core Domain and Schema Contract
@@ -372,7 +360,7 @@ The refactor MUST preserve these invariants:
 - Existing event files are immutable.
 - `Event.append` rejects duplicate event paths in the transaction base.
 - Event payload JSON is canonicalized with stable key ordering.
-- Raw `Transaction.put` encodes JSON with stable key ordering and a trailing newline for non-byte,
+- Raw transaction `put` encodes JSON with stable key ordering and a trailing newline for non-byte,
   non-string values.
 - Event reads are sorted by lexical path.
 - `Event.introduced` reports event paths introduced or changed by a snapshot diff.
@@ -427,7 +415,7 @@ A conforming implementation SHOULD migrate in this order:
 2. Move or consolidate schema/domain exports into `GitDbSchemas.ts`.
 3. Move or consolidate error exports into `GitDbErrors.ts`.
 4. Move live layer composition into `GitDbLive.ts`.
-5. Move public helper modules out of `store/` into root files.
+5. Move public modules out of `store/` into root files.
 6. Move implementation-only JSON, path, tree, and byte helpers into `internals/`.
 7. Update imports inside `@cycle/git-db`.
 8. Update `src/index.ts` and `package.json` exports.

@@ -23,9 +23,10 @@ The old collection/document convenience API has been removed. Callers should use
 
 - `Event.append` for append-only event writes.
 - `Event.list` and `Event.introduced` for event reads.
-- `Store.begin`, `Transaction.put`, `Transaction.delete`, `Store.get`, and `Store.list` for raw
-  low-level GitDB paths.
-- `Pointer`, `Snapshot`, and `Sync` helpers for refs, history, diffs, fetch, pull, and push.
+- `Store.begin`, the returned transaction methods, `Store.get`, and `Store.list` for raw low-level
+  GitDB paths.
+- `Store.pointer`, `Store.history`, `Store.diff`, and `Store.sync` for refs, history, diffs, fetch,
+  pull, and push.
 
 ## Example
 
@@ -69,19 +70,18 @@ await Effect.runPromise(
 
 ## Public Modules
 
-Root imports preserve the module-first API:
+Root imports expose the real package entrypoints:
 
 - `Store`: service construction, raw transactions, raw tree/blob reads, history, diff, identity,
-  and sync.
-- `Transaction`: module-first wrappers around transaction begin, commit, and abort.
+  pointer state, and sync.
 - `Event`: event path construction, canonical JSON encoding, append, list, and introduced-event
   discovery.
-- `Pointer`: pointer lookup, current snapshot, begin, and move helpers.
-- `Snapshot`: snapshot read, history, diff, and ID resolution helpers.
-- `Sync`: pointer sync helper.
 - `Document`: raw blob wrapper returned by `Store.get` and event reads.
 - `Schemas`: schema-first contracts for GitDB options, snapshots, changes, entries, paths, and sync
   results.
+
+GitDB does not export pass-through wrapper modules for transaction, pointer, snapshot, or sync
+operations. Callers should use `StoreService`, `StorePointer`, and transaction methods directly.
 
 Specific public modules are also available through package subpaths:
 

@@ -9,12 +9,8 @@
     "./errors": "./src/GitDbErrors.ts",
     "./event": "./src/Event.ts",
     "./live": "./src/GitDbLive.ts",
-    "./pointer": "./src/Pointer.ts",
     "./schemas": "./src/GitDbSchemas.ts",
-    "./snapshot": "./src/Snapshot.ts",
-    "./store": "./src/Store.ts",
-    "./sync": "./src/Sync.ts",
-    "./transaction": "./src/Transaction.ts"
+    "./store": "./src/Store.ts"
   },
   "scripts": {
     "bench:local": "node scripts/benchmark-local.ts",

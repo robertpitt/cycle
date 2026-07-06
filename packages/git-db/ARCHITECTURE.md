@@ -22,11 +22,7 @@ src/
   GitDbErrors.ts    Typed GitDB error classes and GitDbError union.
   GitDbLive.ts      CLI, filesystem, and in-memory layer constructors.
   GitDbSchemas.ts   Public schemas and schema-derived DTO types.
-  Pointer.ts        Module-first pointer helpers.
-  Snapshot.ts       Snapshot read, history, diff, and ID resolution helpers.
   Store.ts          Store config, StoreService, transactions, identity, and live implementation.
-  Sync.ts           Module-first pointer sync helper.
-  Transaction.ts    Module-first transaction helpers.
   index.ts          Root public package barrel.
   internals/        Byte, JSON, path validation, and tree mutation helpers.
 ```
@@ -34,6 +30,9 @@ src/
 Only the root modules are package exports. Code outside `@cycle/git-db` should import from
 `@cycle/git-db` or declared subpaths such as `@cycle/git-db/store`, `@cycle/git-db/errors`, and
 `@cycle/git-db/schemas`.
+Pass-through wrapper modules for pointer, snapshot, sync, and transaction operations are
+intentionally omitted; callers use the methods exposed by `StoreService`, `StorePointer`, and
+transactions directly.
 
 ## Event Store
 

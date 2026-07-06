@@ -12,14 +12,10 @@ import {
   InvalidJsonDocumentError,
   InvalidNamespaceError,
   InvalidPathError,
-  Pointer as PointerApi,
   PointerConflictError,
   PointerNotFoundError,
-  Snapshot as SnapshotApi,
   SnapshotNotFoundError,
   Store as StoreApi,
-  Sync as SyncApi,
-  Transaction as TransactionApi,
   TransactionInactiveError,
 } from "../src/index.ts";
 import { assert, describe, it } from "./effect-vitest.ts";
@@ -285,20 +281,20 @@ describe("@cycle/git-db", () => {
     }).pipe(Effect.provide(GitDbInMemory())),
   );
 
-  it.effect("supports module-first store, transaction, pointer, snapshot, and sync helpers", () =>
+  it.effect("supports direct store, transaction, pointer, snapshot, and sync methods", () =>
     Effect.gen(function* () {
       const store = yield* StoreApi.StoreService;
-      const tx = yield* TransactionApi.begin(store);
+      const tx = yield* store.begin();
 
       yield* tx.put("scratch/provider.json", { enabled: true });
 
-      const snapshot = yield* TransactionApi.commit(tx, {
+      const snapshot = yield* tx.commit({
         message: "Commit via helper",
       });
-      const pointer = yield* PointerApi.get(store, "main");
-      const current = yield* PointerApi.current(pointer);
-      const read = yield* SnapshotApi.get(store, snapshot.id);
-      const sync = yield* SyncApi.run(store, { mode: "fetch" });
+      const pointer = yield* store.pointer("main");
+      const current = yield* pointer.current();
+      const read = yield* store.snapshot(snapshot.id);
+      const sync = yield* store.sync({ mode: "fetch" });
 
       assert.strictEqual(current?.id, snapshot.id);
       assert.strictEqual(read.id, snapshot.id);
@@ -318,7 +314,7 @@ describe("@cycle/git-db", () => {
   it.effect("reports missing remote GitDB refs for explicitly requested empty pointers", () =>
     Effect.gen(function* () {
       const store = yield* StoreApi.StoreService;
-      const sync = yield* SyncApi.run(store, {
+      const sync = yield* store.sync({
         mode: "full",
         pointers: ["main"],
         remote: "origin",
@@ -389,13 +385,13 @@ describe("@cycle/git-db", () => {
           "Base event",
         );
 
-        yield* SyncApi.run(firstStore, {
+        yield* firstStore.sync({
           mode: "full",
           onDiverged: "error",
           pointers: ["main"],
           remote: "origin",
         });
-        yield* SyncApi.run(secondStore, {
+        yield* secondStore.sync({
           mode: "full",
           onDiverged: "error",
           pointers: ["main"],
@@ -415,14 +411,14 @@ describe("@cycle/git-db", () => {
           "Remote event",
         );
 
-        yield* SyncApi.run(secondStore, {
+        yield* secondStore.sync({
           mode: "full",
           onDiverged: "error",
           pointers: ["main"],
           remote: "origin",
         });
 
-        const sync = yield* SyncApi.run(firstStore, {
+        const sync = yield* firstStore.sync({
           mode: "full",
           onDiverged: "rebase",
           pointers: ["main"],
