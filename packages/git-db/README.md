@@ -69,14 +69,30 @@ await Effect.runPromise(
 
 ## Public Modules
 
-- `Store`: service construction, raw transactions, raw tree/blob reads, history, diff, and sync.
-- `Transaction`: module-first wrappers around transaction begin/commit/abort.
+Root imports preserve the module-first API:
+
+- `Store`: service construction, raw transactions, raw tree/blob reads, history, diff, identity,
+  and sync.
+- `Transaction`: module-first wrappers around transaction begin, commit, and abort.
 - `Event`: event path construction, canonical JSON encoding, append, list, and introduced-event
   discovery.
 - `Pointer`: pointer lookup, current snapshot, begin, and move helpers.
 - `Snapshot`: snapshot read, history, diff, and ID resolution helpers.
 - `Sync`: pointer sync helper.
 - `Document`: raw blob wrapper returned by `Store.get` and event reads.
+- `Schemas`: schema-first contracts for GitDB options, snapshots, changes, entries, paths, and sync
+  results.
+
+Specific public modules are also available through package subpaths:
+
+```ts
+import { InvalidPathError } from "@cycle/git-db/errors";
+import { GitDbInMemory } from "@cycle/git-db/live";
+import { StoreService } from "@cycle/git-db/store";
+import { SyncResult } from "@cycle/git-db/schemas";
+```
+
+Internal helpers live under `src/internals` and are not package exports.
 
 ## Invariants
 
@@ -94,8 +110,8 @@ breakpoints, and benchmark matrix for millions of tickets.
 ## Scripts
 
 ```bash
-npm run typecheck --workspace @cycle/git-db
-npm test --workspace @cycle/git-db
-npm run test:merge-scenarios --workspace @cycle/git-db
-npm run bench:local --workspace @cycle/git-db -- --count 5000
+pnpm --filter @cycle/git-db typecheck
+pnpm --filter @cycle/git-db test
+pnpm --filter @cycle/git-db test:merge-scenarios
+pnpm --filter @cycle/git-db bench:local -- --count 5000
 ```

@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import type { ObjectId, TreeEntry } from "@cycle/git/schemas";
-import type { GitDbError } from "../errors/index.ts";
-import { joinStorePath } from "./Path.ts";
+import type { GitDbError } from "../GitDbErrors.ts";
+import { joinStorePath } from "./path.ts";
 
 export type GitTree = {
   readonly readTree: (id: ObjectId) => Effect.Effect<ReadonlyArray<TreeEntry>, GitDbError>;

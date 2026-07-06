@@ -24,8 +24,8 @@ import type {
   WriteCommitInput,
 } from "@cycle/git/schemas";
 import { Document } from "./Document.ts";
-import { encodeValue } from "./Json.ts";
-import * as Tree from "./Tree.ts";
+import { encodeValue } from "./internals/json.ts";
+import * as Tree from "./internals/tree.ts";
 import {
   PointerConflictError,
   PointerNotFoundError,
@@ -35,8 +35,8 @@ import {
   SyncConflictError,
   TransactionInactiveError,
   type GitDbError,
-} from "../errors/index.ts";
-import { Options as OptionsSchema, Store, type Options as StoreOptions } from "../schemas/Store.ts";
+} from "./GitDbErrors.ts";
+import { Options as OptionsSchema, Store, type Options as StoreOptions } from "./GitDbSchemas.ts";
 import {
   isPotentialObjectId,
   isValidPointerName,
@@ -47,7 +47,7 @@ import {
   validateDatabaseName,
   validatePointerName,
   validateRemoteName,
-} from "./Path.ts";
+} from "./internals/path.ts";
 import type {
   Change,
   ChangeSet,
@@ -60,7 +60,7 @@ import type {
   Snapshot,
   SyncOptions,
   SyncResult,
-} from "../domain/index.ts";
+} from "./GitDbSchemas.ts";
 
 export const Options = OptionsSchema;
 export type Options = StoreOptions;

@@ -17,12 +17,23 @@ not understand tickets, labels, users, or SQLite projections. Those belong to `@
 
 ```text
 src/
-  domain/      Public schemas and DTOs for changes, snapshots, sync, and options.
-  errors/      Typed GitDB errors.
-  schemas/     Runtime validation schemas.
-  store/       Store service, transaction, pointer, snapshot, sync, event, tree, and document APIs.
-  internals/   Small byte/hash helpers.
+  Document.ts       Public blob document wrapper and JSON parse helper.
+  Event.ts          Event path, canonical JSON, append, list, and introduced-event helpers.
+  GitDbErrors.ts    Typed GitDB error classes and GitDbError union.
+  GitDbLive.ts      CLI, filesystem, and in-memory layer constructors.
+  GitDbSchemas.ts   Public schemas and schema-derived DTO types.
+  Pointer.ts        Module-first pointer helpers.
+  Snapshot.ts       Snapshot read, history, diff, and ID resolution helpers.
+  Store.ts          Store config, StoreService, transactions, identity, and live implementation.
+  Sync.ts           Module-first pointer sync helper.
+  Transaction.ts    Module-first transaction helpers.
+  index.ts          Root public package barrel.
+  internals/        Byte, JSON, path validation, and tree mutation helpers.
 ```
+
+Only the root modules are package exports. Code outside `@cycle/git-db` should import from
+`@cycle/git-db` or declared subpaths such as `@cycle/git-db/store`, `@cycle/git-db/errors`, and
+`@cycle/git-db/schemas`.
 
 ## Event Store
 

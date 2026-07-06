@@ -1,6 +1,6 @@
 import type { Effect } from "effect";
-import type { SyncOptions, SyncResult } from "../domain/index.ts";
-import type { GitDbError } from "../errors/index.ts";
+import type { SyncOptions, SyncResult } from "./GitDbSchemas.ts";
+import type { GitDbError } from "./GitDbErrors.ts";
 import type { StoreServiceShape } from "./Store.ts";
 
 export type { SyncOptions, SyncResult };

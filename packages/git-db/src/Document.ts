@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect";
-import { InvalidJsonDocumentError } from "../errors/index.ts";
-import { bytesToString } from "../internals/bytes.ts";
+import { InvalidJsonDocumentError } from "./GitDbErrors.ts";
+import { bytesToString } from "./internals/bytes.ts";
 
 export class Document extends Schema.Class<Document>("@cycle/git-db/Document")({
   bytes: Schema.Uint8Array,

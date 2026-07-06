@@ -5,9 +5,8 @@ import {
   InvalidNamespaceError,
   InvalidPathError,
   InvalidPointerNameError,
-} from "../errors/index.ts";
-import * as IdentifierSchema from "../schemas/Identifier.ts";
-import * as PathSchema from "../schemas/Path.ts";
+} from "../GitDbErrors.ts";
+import * as GitDbSchemas from "../GitDbSchemas.ts";
 
 export const normalizeNamespace = (
   namespace: string,
@@ -23,7 +22,7 @@ export const normalizeNamespace = (
 export const validateDatabaseName = (
   database: string,
 ): Effect.Effect<string, InvalidIdentifierError> =>
-  Schema.decodeUnknownEffect(IdentifierSchema.DatabaseName)(database).pipe(
+  Schema.decodeUnknownEffect(GitDbSchemas.DatabaseName)(database).pipe(
     Effect.mapError(
       () =>
         new InvalidIdentifierError({
@@ -35,7 +34,7 @@ export const validateDatabaseName = (
   );
 
 export const validateRemoteName = (remote: string): Effect.Effect<string, InvalidIdentifierError> =>
-  Schema.decodeUnknownEffect(IdentifierSchema.RemoteName)(remote).pipe(
+  Schema.decodeUnknownEffect(GitDbSchemas.RemoteName)(remote).pipe(
     Effect.mapError(
       () =>
         new InvalidIdentifierError({
@@ -69,7 +68,7 @@ export const normalizeStorePath = (path: string): Effect.Effect<string, InvalidP
   const withoutEdges = path.replace(/^\/+/u, "").replace(/\/+$/u, "");
   const normalized = withoutEdges.split("/").join("/");
 
-  return Schema.decodeUnknownEffect(PathSchema.StorePath)(normalized).pipe(
+  return Schema.decodeUnknownEffect(GitDbSchemas.StorePath)(normalized).pipe(
     Effect.mapError(
       () =>
         new InvalidPathError({
@@ -81,7 +80,7 @@ export const normalizeStorePath = (path: string): Effect.Effect<string, InvalidP
 };
 
 export const rejectEmptyMutationPath = (path: string): Effect.Effect<string, InvalidPathError> =>
-  Schema.decodeUnknownEffect(PathSchema.MutationPath)(path).pipe(
+  Schema.decodeUnknownEffect(GitDbSchemas.MutationPath)(path).pipe(
     Effect.mapError(
       () =>
         new InvalidPathError({
@@ -91,7 +90,7 @@ export const rejectEmptyMutationPath = (path: string): Effect.Effect<string, Inv
     ),
   );
 
-export const joinStorePath = PathSchema.joinStorePath;
+export const joinStorePath = GitDbSchemas.joinStorePath;
 
 export const isPotentialObjectId = GitSchemas.isPotentialObjectId;
 

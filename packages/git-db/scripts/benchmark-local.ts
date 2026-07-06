@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { performance } from "node:perf_hooks";
 import { Effect } from "effect";
 import { Event as GitDbEvent, GitDbFilesystem, GitDbLive, Store } from "../src/index.ts";
-import type { StoreServiceShape } from "../src/store/Store.ts";
+import type { StoreServiceShape } from "../src/Store.ts";
 
 type Backend = "cli" | "filesystem";
 

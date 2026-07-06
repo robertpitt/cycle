@@ -13,7 +13,7 @@ import {
   type PointerSyncResult,
   type SyncResult,
 } from "../src/index.ts";
-import type { StoreServiceShape } from "../src/store/Store.ts";
+import type { StoreServiceShape } from "../src/Store.ts";
 
 type Actor = "A" | "B";
 

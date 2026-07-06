@@ -1,6 +1,6 @@
 import type { Effect } from "effect";
-import type { MovePointerOptions, Snapshot } from "../domain/index.ts";
-import type { GitDbError } from "../errors/index.ts";
+import type { MovePointerOptions, Snapshot } from "./GitDbSchemas.ts";
+import type { GitDbError } from "./GitDbErrors.ts";
 import type { StorePointer, StoreServiceShape, Transaction } from "./Store.ts";
 
 export const get = (

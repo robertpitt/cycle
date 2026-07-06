@@ -1,6 +1,6 @@
 import { Effect } from "effect";
-import { InvalidJsonDocumentError } from "../errors/index.ts";
-import { bytesFromString } from "../internals/bytes.ts";
+import { InvalidJsonDocumentError } from "../GitDbErrors.ts";
+import { bytesFromString } from "./bytes.ts";
 
 export const encodeValue = (value: unknown): Effect.Effect<Uint8Array, InvalidJsonDocumentError> =>
   Effect.try({

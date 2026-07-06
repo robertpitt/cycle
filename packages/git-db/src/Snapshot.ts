@@ -1,6 +1,6 @@
 import type { Effect } from "effect";
-import type { ChangeSet, HistoryOptions, Snapshot } from "../domain/index.ts";
-import type { GitDbError } from "../errors/index.ts";
+import type { ChangeSet, HistoryOptions, Snapshot } from "./GitDbSchemas.ts";
+import type { GitDbError } from "./GitDbErrors.ts";
 import type { StoreServiceShape } from "./Store.ts";
 
 export const get = (store: StoreServiceShape, id: string): Effect.Effect<Snapshot, GitDbError> =>

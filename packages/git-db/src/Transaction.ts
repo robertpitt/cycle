@@ -1,6 +1,6 @@
 import type { Effect } from "effect";
-import type { CommitOptions, Snapshot } from "../domain/index.ts";
-import type { GitDbError } from "../errors/index.ts";
+import type { CommitOptions, Snapshot } from "./GitDbSchemas.ts";
+import type { GitDbError } from "./GitDbErrors.ts";
 import type { StoreServiceShape, Transaction } from "./Store.ts";
 
 export type { CommitOptions, Transaction };

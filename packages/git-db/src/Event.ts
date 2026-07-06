@@ -1,8 +1,8 @@
 import { Effect } from "effect";
-import type { Change, Snapshot } from "../domain/index.ts";
-import { InvalidJsonDocumentError, InvalidPathError, type GitDbError } from "../errors/index.ts";
-import { bytesFromString } from "../internals/bytes.ts";
-import { normalizeStorePath } from "./Path.ts";
+import type { Change, Snapshot } from "./GitDbSchemas.ts";
+import { InvalidJsonDocumentError, InvalidPathError, type GitDbError } from "./GitDbErrors.ts";
+import { bytesFromString } from "./internals/bytes.ts";
+import { normalizeStorePath } from "./internals/path.ts";
 import type { Document } from "./Document.ts";
 import type { StoreServiceShape, Transaction } from "./Store.ts";
 
