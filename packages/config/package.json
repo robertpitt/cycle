@@ -1,0 +1,33 @@
+{
+  "name": "@cycle/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./AgentProviders": "./src/AgentProviders.ts",
+    "./AppConfig": "./src/AppConfig.ts",
+    "./AppConfigError": "./src/AppConfigError.ts",
+    "./AppConfigSchema": "./src/AppConfigSchema.ts",
+    "./CycleApiDiscovery": "./src/CycleApiDiscovery.ts",
+    "./agent-providers": "./src/AgentProviders.ts",
+    "./app-config": "./src/AppConfig.ts",
+    "./app-config-live": "./src/AppConfig.ts",
+    "./app-config-schema": "./src/AppConfigSchema.ts",
+    "./discovery": "./src/CycleApiDiscovery.ts",
+    "./errors": "./src/AppConfigError.ts",
+    "./testing": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@cycle/contracts": "workspace:*",
+    "@effect/platform-node": "4.0.0-beta.78",
+    "effect": "4.0.0-beta.78"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.8"
+  }
+}

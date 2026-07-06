@@ -997,7 +997,6 @@ Recognized environment variables SHOULD include:
 - `CYCLE_API_URL`
 - `CYCLE_API_TOKEN`
 - `CYCLE_API_RUNTIME_FILE`
-- `CYCLE_CONFIG_PATH`
 - `CYCLE_MCP_TRANSPORT`
 - `CYCLE_MCP_HOST`
 - `CYCLE_MCP_PORT`
@@ -1090,7 +1089,7 @@ discoverApi(options, env):
   if env.CYCLE_API_URL and env.CYCLE_API_TOKEN:
     return normalize(env.CYCLE_API_URL), env.CYCLE_API_TOKEN
 
-  token = read config token from CYCLE_CONFIG_PATH or default app config path
+  token = read api.staticToken from the canonical app config
   runtime = read CYCLE_API_RUNTIME_FILE or default runtime file
   if token and runtime.baseUrl:
     return normalize(runtime.baseUrl), token

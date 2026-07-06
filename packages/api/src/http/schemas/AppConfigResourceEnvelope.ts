@@ -117,7 +117,7 @@ export const AppConfigOutput = Schema.Struct({
   localWorkspace: LocalWorkspaceConfigOutput,
   onboarding: OnboardingConfigOutput,
   profile: ProfileOutput,
-  schemaVersion: Schema.Literal(4),
+  schemaVersion: Schema.Finite,
   theme: ThemeConfigOutput,
 });
 export const AppConfigResourceEnvelope = ResourceEnvelopeOf(AppConfigOutput);

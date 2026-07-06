@@ -9,7 +9,7 @@ import {
   type AppConfigState,
   type RepositoryCommitStyle,
   type RepositoryRecord,
-} from "../../shared/AppConfig.ts";
+} from "@cycle/config/app-config";
 import {
   usePushRepositoryMutation,
   useRemoveRepositoryMutation,

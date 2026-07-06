@@ -5,7 +5,7 @@ import {
 } from "@cycle/ui/organisms";
 import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 import * as React from "react";
-import type { AppConfigState } from "../../shared/AppConfig.ts";
+import type { AppConfigState } from "@cycle/config/app-config";
 import type { AgentProviderId, DetectedAgentProvider } from "../../shared/AgentProviders.ts";
 import { isAgentProviderId } from "../lib/agentProviders.ts";
 

@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "vitest";
-import { parseRuntimeBaseUrlFromDiscoveryText } from "../src/main/DesktopApiRuntimeDiscovery.ts";
+import { parseRuntimeBaseUrlFromDiscoveryText } from "../src/DesktopApiRuntimeDiscovery.ts";
 
 describe("desktop API runtime discovery", () => {
   it("schema-decodes runtime discovery files and normalizes base URLs", () => {

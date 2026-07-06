@@ -11,7 +11,7 @@ import type {
   UserProfileDocument,
 } from "@cycle/contracts";
 import { Box, CalendarPlus, CircleDashed, FileText, Link2, Repeat2 } from "lucide-react";
-import type { ProfileConfig, RepositoryRecord } from "../../../shared/AppConfig.ts";
+import type { ProfileConfig, RepositoryRecord } from "@cycle/config/app-config";
 
 export type CreateIssueDialogOptionSections = {
   readonly assigneeSections: readonly PropertyPickerSection[];

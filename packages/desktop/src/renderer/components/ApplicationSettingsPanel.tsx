@@ -10,7 +10,7 @@ import {
   type AppConfigState,
   type InterfaceDensity,
   type ThemePreference,
-} from "../../shared/AppConfig.ts";
+} from "@cycle/config/app-config";
 import {
   useClearCacheMutation,
   useSetInterfaceDensityMutation,
@@ -275,7 +275,6 @@ const AdvancedSettingsPanel = ({
             status={diagnostics?.runtimeFile.status}
             value={asText(diagnostics?.paths.runtimeDiscovery)}
           />
-          <DiagnosticRow label="CLI config" value={asText(diagnostics?.paths.cliConfig)} />
         </dl>
       </SectionShell>
       <SectionShell title="Bootstrap">

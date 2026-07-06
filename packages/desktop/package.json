@@ -9,7 +9,6 @@
     "./errors": "./src/errors/index.ts",
     "./ipc": "./src/ipc/index.ts",
     "./main": "./src/main/index.ts",
-    "./platform": "./src/platform/index.ts",
     "./renderer": "./src/renderer/App.tsx",
     "./shared": "./src/shared/index.ts"
   },
@@ -29,6 +28,7 @@
     "@cycle/agent-chat": "workspace:*",
     "@cycle/agents": "workspace:*",
     "@cycle/api": "workspace:*",
+    "@cycle/config": "workspace:*",
     "@cycle/contracts": "workspace:*",
     "@cycle/database": "workspace:*",
     "@cycle/git": "workspace:*",

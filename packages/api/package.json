@@ -25,6 +25,7 @@
   "dependencies": {
     "@cycle/agent-chat": "workspace:*",
     "@cycle/agents": "workspace:*",
+    "@cycle/config": "workspace:*",
     "@cycle/contracts": "workspace:*",
     "@cycle/git": "workspace:*",
     "@cycle/logging": "workspace:*",

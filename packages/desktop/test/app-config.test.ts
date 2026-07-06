@@ -4,25 +4,23 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "n
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
-import { Effect, Layer } from "effect";
+import { ConfigProvider, Effect, Layer } from "effect";
 import { GitRepositoryLive } from "@cycle/git";
 import { NodeServices } from "@effect/platform-node";
 import { afterEach, describe, it } from "vitest";
-import { ElectronApp } from "../src/platform/ElectronApp.ts";
+import { detectAgentProviders } from "@cycle/agents/detection";
 import {
   AppConfig,
-  CURRENT_APP_CONFIG_SCHEMA_VERSION,
   DEFAULT_API_PORT,
   defaultAppConfig,
   parseAppConfig,
   type AppConfigState,
-} from "../src/shared/AppConfig.ts";
+} from "@cycle/config/app-config";
 import { LocalWorkspace } from "../src/shared/LocalWorkspace.ts";
 import { Profile } from "../src/shared/Profile.ts";
-import { detectAgentProviders } from "../src/main/AgentProviderDetectorLive.ts";
-import { AppConfigLive } from "../src/main/AppConfigLive.ts";
-import { LocalWorkspaceLive } from "../src/main/LocalWorkspaceLive.ts";
-import { ProfileLive } from "../src/main/ProfileLive.ts";
+import { AppConfigLive } from "../src/AppConfigLive.ts";
+import { LocalWorkspaceLive } from "../src/LocalWorkspaceLive.ts";
+import { ProfileLive } from "../src/ProfileLive.ts";
 
 const temporaryDirectories: Array<string> = [];
 const execFileAsync = promisify(execFile);
@@ -41,20 +39,9 @@ afterEach(async () => {
   );
 });
 
-const makeElectronAppTest = (userData: string) =>
-  Layer.succeed(ElectronApp)({
-    appPath: Effect.succeed(userData),
-    awaitShutdown: Effect.void,
-    getPath: () => Effect.succeed(userData),
-    platform: process.platform,
-    quit: () => Effect.void,
-    startLifecycleSupervision: () => Effect.void,
-    whenReady: () => Effect.void,
-  });
-
 const makeConfigLayer = (userData: string) =>
   AppConfigLive.pipe(
-    Layer.provide(makeElectronAppTest(userData)),
+    Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: { HOME: userData } }))),
     Layer.provide(NodeServices.layer),
   );
 
@@ -117,7 +104,7 @@ const assertDefaultConfigWithGeneratedToken = (config: AppConfigState): void => 
 describe("desktop app config", () => {
   it("validates app config through Effect Config and ConfigProvider", async () => {
     const valid = await Effect.runPromise(parseAppConfig(defaultAppConfig()));
-    assert.equal(valid.schemaVersion, CURRENT_APP_CONFIG_SCHEMA_VERSION);
+    assert.equal(valid.schemaVersion, defaultAppConfig().schemaVersion);
     assert.equal(valid.api.port, DEFAULT_API_PORT);
 
     await assert.rejects(() =>

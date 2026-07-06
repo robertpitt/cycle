@@ -1,5 +1,9 @@
+import {
+  RepositoryCommitStyle,
+  RepositoryRecord,
+  type AppConfigError,
+} from "@cycle/config/app-config";
 import { Context, Effect, Schema } from "effect";
-import { RepositoryCommitStyle, RepositoryRecord, type AppConfigError } from "./AppConfig.ts";
 
 export const UpsertRepositoryPathInput = Schema.Struct({
   displayName: Schema.optional(Schema.String),

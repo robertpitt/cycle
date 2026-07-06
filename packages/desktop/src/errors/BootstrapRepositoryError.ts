@@ -1,6 +1,8 @@
-import { Data } from "effect";
+import { Schema } from "effect";
 
-export class BootstrapRepositoryError extends Data.TaggedError("BootstrapRepositoryError")<{
-  readonly message: string;
-  readonly repositoryId: string;
-}> {}
+export class BootstrapRepositoryError extends Schema.TaggedErrorClass<BootstrapRepositoryError>(
+  "@cycle/desktop/BootstrapRepositoryError",
+)("BootstrapRepositoryError", {
+  message: Schema.String,
+  repositoryId: Schema.String,
+}) {}

@@ -1,10 +1,10 @@
 import { Effect } from "effect";
-import { ElectronApp } from "../platform/ElectronApp.ts";
+import { DesktopApi } from "../DesktopApi.ts";
+import { registerDesktopIpc, startDesktopThemeLifecycle } from "../DesktopIpc.ts";
+import { DesktopWindow } from "../DesktopWindow.ts";
+import { ElectronApp } from "../ElectronApp.ts";
+import { ElectronPreferences } from "../ElectronPreferences.ts";
 import { DesktopBootstrap } from "../shared/Bootstrap.ts";
-import { registerDesktopIpc, startDesktopThemeLifecycle } from "./DesktopIpc.ts";
-import { startDesktopApi } from "./DesktopApi.ts";
-import { DesktopWindow } from "./DesktopWindow.ts";
-import { ElectronPreferences } from "./ElectronPreferences.ts";
 
 export type DesktopStartupWorkflow<
   RReady = never,
@@ -74,13 +74,14 @@ export const runDesktopStartupWorkflow = <
     yield* workflow.awaitShutdown;
   }).pipe(Effect.ensuring(workflow.destroyAllWindows.pipe(Effect.catchCause(() => Effect.void))));
 
-export const runDesktop = Effect.fnUntraced(function* () {
+export const runDesktop = Effect.fn("runDesktop")(function* () {
   const app = yield* ElectronApp;
   const bootstrap = yield* DesktopBootstrap;
+  const desktopApi = yield* DesktopApi;
   const desktopWindow = yield* DesktopWindow;
   const preferences = yield* ElectronPreferences;
 
-  yield* startDesktopApi();
+  yield* desktopApi.start();
 
   yield* runDesktopStartupWorkflow({
     awaitShutdown: app.awaitShutdown,

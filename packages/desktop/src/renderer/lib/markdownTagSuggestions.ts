@@ -1,6 +1,6 @@
 import type { TicketDocument, UserProfileDocument } from "@cycle/contracts";
 import type { MarkdownEditorTagSuggestion } from "@cycle/ui/molecules";
-import type { ProfileConfig, RepositoryRecord } from "../../shared/AppConfig.ts";
+import type { ProfileConfig, RepositoryRecord } from "@cycle/config/app-config";
 import type { DetectedAgentProvider } from "../../shared/AgentProviders.ts";
 
 type CreateMarkdownTagSuggestionsInput = {

@@ -97,12 +97,15 @@ interfaces that can be replaced in tests or composed differently as the app grow
 ```txt
 src/
   index.ts              Public package barrel.
+  Electron*.ts          Thin Effect services around Electron app/window/shell APIs.
+  ElectronLifecycle.ts  Electron lifecycle layer composition.
+  ApplicationLifecycle.ts Application lifecycle layer composition.
+  ProcessLifecycle.ts   Process failure event wrapper used by app supervision.
   ipc/                  Shared IPC channel names, request types, and renderer bridge types.
-  main/                 Electron main program, app layer, IPC registration, and window service.
-  platform/             Thin Effect services around Electron app/window/shell/process APIs.
+  main/                 Electron main entrypoint, app layer, and startup workflow.
   preload/              contextBridge implementation.
   renderer/             React renderer entry, router, screens, and HTML file.
-  shared/               Runtime config service shared by main-layer code.
+  shared/               Shared schemas and service contracts.
 electron.vite.config.ts Main/preload/renderer build configuration.
 ```
 
@@ -111,7 +114,6 @@ Public exports are defined in `package.json`:
 - `@cycle/desktop`
 - `@cycle/desktop/ipc`
 - `@cycle/desktop/main`
-- `@cycle/desktop/platform`
 - `@cycle/desktop/renderer`
 - `@cycle/desktop/shared`
 
@@ -144,7 +146,7 @@ Effect.runPromise(main).catch((error: unknown) => {
 
 - `ElectronAppLive`, backed by Electron `app`
 - `ProcessLifecycleLive`, observing process-level failures
-- `BrowserWindowsLive`, backed by Electron `BrowserWindow`
+- `ElectronWindowLive`, backed by Electron `BrowserWindow`
 - `DesktopConfigLive`, deriving renderer/preload paths and development mode
 - `DesktopWindowLive`, creating and supervising the main Cycle window
 - `ElectronShellLive`, wrapping Electron shell APIs
@@ -186,7 +188,7 @@ Add new IPC APIs by updating both sides of the contract:
 
 1. add the channel name, request/response types, bridge type, and type guards in `src/ipc/`
 2. expose a preload method in `src/preload/index.ts`
-3. register and validate the handler in `src/main/DesktopIpc.ts`
+3. register and validate the handler in `src/DesktopIpc.ts`
 4. consume the method from renderer code through `window.cycleDesktop`
 
 ## Renderer
@@ -266,8 +268,8 @@ For renderer UI work:
 
 For main-process work:
 
-1. add or update a platform service interface if Electron access needs to be abstracted
-2. implement the live layer in `src/platform/*Live.ts`
+1. add or update an Electron service interface if Electron access needs to be abstracted
+2. implement the live layer in `src/Electron*.ts` or `src/ProcessLifecycle.ts`
 3. compose it in `src/main/AppLayer.ts`
 4. keep side effects inside Effect programs
 5. run `pnpm desktop:typecheck`

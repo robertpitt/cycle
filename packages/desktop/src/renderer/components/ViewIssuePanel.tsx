@@ -49,7 +49,7 @@ import {
 } from "../queries/index.ts";
 import { createMarkdownTagSuggestions } from "../lib/markdownTagSuggestions.ts";
 import { labelColorClassName } from "../screens/workspace/createIssueOptions.tsx";
-import type { RepositoryRecord } from "../../shared/AppConfig.ts";
+import type { RepositoryRecord } from "@cycle/config/app-config";
 import type { DetectedAgentProvider } from "../../shared/AgentProviders.ts";
 import {
   taskStatusTone,

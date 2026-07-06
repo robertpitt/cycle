@@ -8,7 +8,7 @@ import {
   type InterfaceDensity,
   type ProfileConfig,
   type ThemePreference,
-} from "../../shared/AppConfig.ts";
+} from "@cycle/config/app-config";
 import type { ProfileUpdateInput } from "../../shared/Profile.ts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";

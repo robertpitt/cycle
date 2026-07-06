@@ -21,7 +21,6 @@ const unavailableDiagnostics = (): SettingsDiagnostics => ({
   paths: {
     agentWorktrees: "Unavailable outside Electron",
     appConfig: "Unavailable outside Electron",
-    cliConfig: "Unavailable outside Electron",
     cycleHome: "Unavailable outside Electron",
     database: "Unavailable outside Electron",
     log: "Unavailable outside Electron",

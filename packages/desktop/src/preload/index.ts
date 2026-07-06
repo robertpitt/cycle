@@ -14,7 +14,7 @@ import {
   type SelectRepositoryFolderResult,
   type SettingsDiagnostics,
 } from "../ipc/Channels.ts";
-import type { ElectronThemeState } from "../platform/ElectronTheme.ts";
+import type { ElectronThemeState } from "../ElectronTheme.ts";
 import type { BootstrapStatus } from "../shared/Bootstrap.ts";
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>

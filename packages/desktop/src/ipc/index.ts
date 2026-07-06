@@ -17,9 +17,9 @@ export type {
 } from "./Channels.ts";
 
 import { Schema } from "effect";
-import { RepositoryCommitStyle, ThemePreference } from "../shared/AppConfig.ts";
+import { RepositoryCommitStyle, ThemePreference } from "@cycle/config/app-config";
 import { BootstrapStatus } from "../shared/Bootstrap.ts";
-import { ElectronThemeSource, ElectronThemeState } from "../platform/ElectronTheme.ts";
+import { ElectronThemeSource, ElectronThemeState } from "../ElectronTheme.ts";
 import type {
   ApiConnection as ApiConnectionValue,
   SelectRepositoryFolderResult as SelectRepositoryFolderResultValue,
@@ -63,7 +63,7 @@ export const SettingsDiagnostics: Schema.Schema<SettingsDiagnosticsValue> = Sche
   app: Schema.Struct({
     electronVersion: Schema.optional(Schema.String),
     nodeVersion: Schema.String,
-    schemaVersion: Schema.Number,
+    schemaVersion: Schema.Finite,
   }),
   mcp: Schema.Struct({
     enabled: Schema.Boolean,
@@ -74,7 +74,6 @@ export const SettingsDiagnostics: Schema.Schema<SettingsDiagnosticsValue> = Sche
   paths: Schema.Struct({
     agentWorktrees: Schema.String,
     appConfig: Schema.String,
-    cliConfig: Schema.String,
     cycleHome: Schema.String,
     database: Schema.String,
     log: Schema.String,

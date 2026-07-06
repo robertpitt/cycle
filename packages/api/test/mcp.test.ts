@@ -425,7 +425,7 @@ describe("@cycle/api/mcp", () => {
     ]);
   });
 
-  it("uses an explicit API token with the default API URL when no config token exists", async () => {
+  it("uses an explicit API token with the default API URL without reading app config", async () => {
     const result = await discoverCycleApi({
       apiToken: "api-token",
       env: {

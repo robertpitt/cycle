@@ -1,4 +1,4 @@
-import type { ElectronThemeState } from "../platform/ElectronTheme.ts";
+import type { ElectronThemeState } from "../ElectronTheme.ts";
 import type { BootstrapStatus } from "../shared/Bootstrap.ts";
 
 export const getThemeStateChannel = "cycle:desktop:theme/get-state";
@@ -55,7 +55,6 @@ export type SettingsDiagnostics = {
   readonly paths: {
     readonly agentWorktrees: string;
     readonly appConfig: string;
-    readonly cliConfig: string;
     readonly cycleHome: string;
     readonly database: string;
     readonly log: string;

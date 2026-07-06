@@ -1,7 +1,9 @@
-import { Data } from "effect";
+import { Schema } from "effect";
 
-export class DesktopApiError extends Data.TaggedError("DesktopApiError")<{
-  readonly cause?: unknown;
-  readonly message: string;
-  readonly operation: string;
-}> {}
+export class DesktopApiError extends Schema.TaggedErrorClass<DesktopApiError>(
+  "@cycle/desktop/DesktopApiError",
+)("DesktopApiError", {
+  cause: Schema.optional(Schema.Unknown),
+  message: Schema.String,
+  operation: Schema.String,
+}) {}

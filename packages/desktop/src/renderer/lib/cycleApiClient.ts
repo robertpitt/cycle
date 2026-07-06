@@ -31,7 +31,7 @@ import {
   type ProfileConfig,
   type RepositoryRecord as AppRepositoryRecord,
   type ThemePreference,
-} from "../../shared/AppConfig.ts";
+} from "@cycle/config/app-config";
 import type { AgentProviderId, DetectedAgentProvider } from "../../shared/AgentProviders.ts";
 import type { UpdateRepositoryPreferencesInput } from "../../shared/LocalWorkspace.ts";
 import type { CompleteOnboardingInput, ProfileUpdateInput } from "../../shared/Profile.ts";

@@ -73,6 +73,9 @@ importers:
       '@cycle/agents':
         specifier: workspace:*
         version: link:../agents
+      '@cycle/config':
+        specifier: workspace:*
+        version: link:../config
       '@cycle/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -104,6 +107,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@cycle/config':
+        specifier: workspace:*
+        version: link:../config
       '@cycle/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -126,6 +132,22 @@ importers:
 
   packages/codex-app-server:
     dependencies:
+      '@effect/platform-node':
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.11.1)
+      effect:
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78
+    devDependencies:
+      vitest:
+        specifier: ^4.1.8
+        version: 4.1.8(@types/node@25.9.2)(vite@8.0.16(@types/node@25.9.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/config:
+    dependencies:
+      '@cycle/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@effect/platform-node':
         specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.11.1)
@@ -170,6 +192,9 @@ importers:
       '@cycle/api':
         specifier: workspace:*
         version: link:../api
+      '@cycle/config':
+        specifier: workspace:*
+        version: link:../config
       '@cycle/contracts':
         specifier: workspace:*
         version: link:../contracts

@@ -17,7 +17,7 @@ type RuntimeDiscoveryFile = {
   readonly baseUrl?: unknown;
 };
 
-type CycleCliConfigFile = {
+type CycleAppConfigFile = {
   readonly api?: {
     readonly staticToken?: unknown;
   };
@@ -27,8 +27,8 @@ const runtimeDiscoveryPath = (): string =>
   process.env.CYCLE_API_RUNTIME_FILE ??
   resolve(tmpdir(), `cycle-api-${process.getuid?.() ?? "user"}.json`);
 
-const cliConfigPath = (): string =>
-  process.env.CYCLE_CONFIG_PATH ?? resolve(homedir(), ".cycle", "config.json");
+const appConfigPath = (): string =>
+  process.env.CYCLE_APP_CONFIG_PATH ?? resolve(homedir(), ".cycle", "app-config.json");
 
 const readJsonFile = async <A>(path: string): Promise<A> =>
   JSON.parse(await readFile(path, "utf8")) as A;
@@ -38,14 +38,14 @@ const readCycleApiProxyTarget = async (): Promise<{
   readonly token: string;
 }> => {
   const runtime = await readJsonFile<RuntimeDiscoveryFile>(runtimeDiscoveryPath());
-  const config = await readJsonFile<CycleCliConfigFile>(cliConfigPath());
+  const config = await readJsonFile<CycleAppConfigFile>(appConfigPath());
   const token = config.api?.staticToken;
 
   if (typeof runtime.baseUrl !== "string" || runtime.baseUrl.length === 0) {
     throw new Error("Cycle API runtime discovery file does not include baseUrl.");
   }
   if (typeof token !== "string" || token.length === 0) {
-    throw new Error("Cycle CLI config does not include api.staticToken.");
+    throw new Error("Cycle app config does not include api.staticToken.");
   }
 
   return {

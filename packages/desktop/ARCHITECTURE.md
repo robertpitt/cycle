@@ -23,8 +23,9 @@ packages/desktop/
   src/
     index.ts                   Package barrel.
     ipc/                       Shared IPC channel names, bridge type, guards.
-    main/                      Main process service implementations and boot.
-    platform/                  Thin Electron/process wrappers as Effect services.
+    main/                      Main process entrypoint, app layer, and startup workflow.
+    Electron*.ts               Thin Electron app/window/shell/theme wrappers as Effect services.
+    ProcessLifecycle.ts        Process failure event wrapper used by app supervision.
     preload/                   contextBridge implementation.
     renderer/                  React app, routes, queries, mutations, screens.
     shared/                    Shared service contracts and schemas.
@@ -37,7 +38,6 @@ The exported package surfaces are:
 @cycle/desktop
 @cycle/desktop/ipc
 @cycle/desktop/main
-@cycle/desktop/platform
 @cycle/desktop/renderer
 @cycle/desktop/shared
 ```
@@ -114,58 +114,56 @@ local Cycle HTTP API started by the desktop main process.
 
 ## Ownership Model
 
-| Area                            | Owner                                                          | Responsibility                                                                                      |
-| ------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Electron lifecycle              | `platform/ElectronAppLive.ts`                                  | App readiness, quit, shutdown signal, activate/window lifecycle hooks.                              |
-| Process failure events          | `platform/ProcessLifecycleLive.ts`                             | Captures uncaught exceptions and unhandled rejections for app supervision.                          |
-| Windows                         | `platform/BrowserWindowsLive.ts`, `main/DesktopWindowLive.ts`  | BrowserWindow construction, secure web preferences, main window focus/destruction.                  |
-| Runtime callback execution      | `platform/DesktopRuntimeLive.ts`                               | Runs fire-and-forget Effect work from Electron callbacks and logs task failures.                    |
-| Theme                           | `platform/ElectronThemeLive.ts`, `main/ElectronPreferences.ts` | Reads and writes Electron theme source, broadcasts theme updates to renderer.                       |
-| Shell access                    | `platform/ElectronShellLive.ts`                                | Opens external URLs and filesystem paths behind validated main-process calls.                       |
-| Desktop config paths            | `shared/DesktopConfigLive.ts`                                  | Derives preload path, renderer HTML path, renderer dev URL, and dev/prod mode.                      |
-| Persisted app config            | `main/AppConfigLive.ts`                                        | Reads, validates, migrates, salvages, backs up, and writes `app-config.json`.                       |
-| Profile                         | `main/ProfileLive.ts`                                          | Normalizes profile/onboarding input and stores it in app config.                                    |
-| Local workspace                 | `main/LocalWorkspaceLive.ts`                                   | Registers repositories in app config, validates Git repos, initializes missing Git repos.           |
-| Provider detection              | `main/AgentProviderDetectorLive.ts`                            | Detects local Codex, Claude Code, and OpenCode executables from PATH/shell.                         |
-| Database projection             | `main/DesktopDatabaseLive.ts`                                  | Creates the local projection database and provides database identity/id generation.                 |
-| Repository bootstrap            | `main/DesktopBootstrapLive.ts`                                 | Opens configured repositories, maintains bootstrap status, runs background sync/push orchestration. |
-| IPC                             | `main/DesktopIpc.ts`, `ipc/Channels.ts`                        | Defines bridge contracts, validates input/senders, dispatches requests to services.                 |
-| Renderer routes and workflow UI | `renderer/`                                                    | App shell composition, queries, mutations, navigation, shortcut and notification state.             |
+| Area                            | Owner                                        | Responsibility                                                                                      |
+| ------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Electron lifecycle              | `ElectronApp.ts`                             | App readiness, quit, shutdown signal, activate/window lifecycle hooks.                              |
+| Process failure events          | `ProcessLifecycle.ts`                        | Captures uncaught exceptions and unhandled rejections for app supervision.                          |
+| Windows                         | `ElectronWindow.ts`, `DesktopWindowLive.ts`  | BrowserWindow construction, secure web preferences, main window focus/destruction.                  |
+| Runtime callback execution      | `ElectronRuntime.ts`                         | Runs fire-and-forget Effect work from Electron callbacks and logs task failures.                    |
+| Theme                           | `ElectronTheme.ts`, `ElectronPreferences.ts` | Reads and writes Electron theme source, broadcasts theme updates to renderer.                       |
+| Shell access                    | `ElectronShell.ts`                           | Opens external URLs and filesystem paths behind validated main-process calls.                       |
+| Desktop config paths            | `shared/DesktopConfigLive.ts`                | Derives preload path, renderer HTML path, renderer dev URL, and dev/prod mode.                      |
+| Persisted app config            | `AppConfigLive.ts`                           | Reads, validates, migrates, salvages, backs up, and writes `app-config.json`.                       |
+| Profile                         | `ProfileLive.ts`                             | Normalizes profile/onboarding input and stores it in app config.                                    |
+| Local workspace                 | `LocalWorkspaceLive.ts`                      | Registers repositories in app config, validates Git repos, initializes missing Git repos.           |
+| Provider detection              | `@cycle/agents/detection`                    | Detects local Codex, Claude Code, and OpenCode executables from PATH/shell.                         |
+| Database projection             | `DesktopDatabaseLive.ts`                     | Creates the local projection database and provides database identity/id generation.                 |
+| Repository bootstrap            | `DesktopBootstrapLive.ts`                    | Opens configured repositories, maintains bootstrap status, runs background sync/push orchestration. |
+| IPC                             | `DesktopIpc.ts`, `ipc/Channels.ts`           | Defines bridge contracts, validates input/senders, dispatches requests to services.                 |
+| Renderer routes and workflow UI | `renderer/`                                  | App shell composition, queries, mutations, navigation, shortcut and notification state.             |
 
 ## Layer Composition
 
-`main/AppLayer.ts` composes the desktop runtime with Effect layers. The top-level
-layer exported to `Main.ts` is `DesktopLive`.
+`main/AppLayer.ts` composes two lifecycle layers. The top-level layer exported to `Main.ts` is
+`DesktopLive`.
 
 ```mermaid
 flowchart TD
   DesktopLive["DesktopLive"]
-  Platform["Platform layers"]
-  Config["Config and preferences"]
-  Window["Desktop window"]
-  Data["Database consumers"]
-  Bootstrap["DesktopBootstrapLive"]
+  ElectronLifecycle["ElectronLifecycleLive"]
+  ApplicationLifecycle["ApplicationLifecycleLive"]
+  ElectronServices["Electron app, runtime, theme, window, shell"]
+  ApplicationServices["Config, preferences, API, database, bootstrap"]
+  ExternalServices["Git, GitDB, agents, logging, Node services"]
 
-  DesktopLive --> Platform
-  DesktopLive --> Config
-  DesktopLive --> Window
-  DesktopLive --> Data
-  Data --> Bootstrap
+  DesktopLive --> ElectronLifecycle
+  DesktopLive --> ApplicationLifecycle
+  ElectronLifecycle --> ElectronServices
+  ApplicationLifecycle --> ApplicationServices
+  ApplicationLifecycle --> ExternalServices
+  ApplicationLifecycle --> ElectronLifecycle
 ```
 
 Key composition details:
 
-- `ElectronAppLive` depends on `ProcessLifecycleLive` and `DesktopRuntimeLive`.
-- `DesktopWindowLive` depends on `BrowserWindowsLive`, `DesktopConfigLive`, and
-  `DesktopRuntimeLive`.
-- `AppConfigLive` depends on `ElectronAppLive` for the home path used to derive `~/.cycle`.
-- `ProfileLive` depends on `AppConfigLive`.
-- `LocalWorkspaceLive` depends on `AppConfigLive` and `GitRepositoryLive`.
-- `ElectronPreferences` depends on app config, theme, local workspace, and
-  profile services.
-- `DesktopDatabaseLive` depends on profile, app, logger, and runtime services.
-- `DesktopBootstrapLive` is provided with database, use-case runner, logger,
-  runtime, preferences, and Git services.
+- `ElectronLifecycleLive` owns Electron-facing services: app lifecycle, process lifecycle,
+  callback runtime, theme, shell, and window construction.
+- `ApplicationLifecycleLive` owns Cycle application services that run on Electron: app config,
+  profile, local workspace, preferences, API startup, projection database, and repository bootstrap.
+- `AppConfigLive` reads and writes `~/.cycle/app-config.json` through schema-driven Effect config
+  parsing, with recovery only at the file boundary.
+- `DesktopBootstrapLive` remains the main repository orchestration service and is the largest
+  remaining candidate for simplification.
 
 ## Persistent State
 
@@ -175,7 +173,7 @@ Path: `~/.cycle/app-config.json`
 
 Schema owner: `src/shared/AppConfig.ts`
 
-Current schema version: `2`
+Current schema version: `4`
 
 Persisted sections:
 
@@ -236,7 +234,7 @@ Main process:
 - `DesktopBootstrapLive` owns opened repositories, in-flight opens, per-repo
   remote operations, and bootstrap status snapshots.
 - `DesktopWindowLive` owns the current main window reference.
-- `DesktopRuntimeLive` owns a queue for callback-triggered Effect work.
+- `ElectronRuntimeLive` owns a queue for callback-triggered Effect work.
 
 Renderer process:
 
@@ -375,7 +373,7 @@ Flow:
    `window.cycleDesktop.getAppConfig()`.
 4. In a local browser, the client uses same-origin `/cycle-api` by default.
 5. The Vite dev server proxy reads the desktop API runtime discovery file and
-   CLI config token, then forwards the request to the local API with bearer auth.
+   `app-config.json` token, then forwards the request to the local API with bearer auth.
 6. The API validates auth, decodes path/query/body input, and runs the matching
    use case.
 7. The renderer adapter unwraps API envelopes back into the page/resource shapes
@@ -666,7 +664,7 @@ Logging:
 
 - `@cycle/logging.defaultLayer` writes Effect logs to `~/.cycle/logs/cycle.jsonl`.
 - Database events are forwarded to the desktop logger.
-- `DesktopRuntimeLive` logs failed queued tasks.
+- `ElectronRuntimeLive` logs failed queued tasks.
 - Electron window load/render failures are logged through Effect logs.
 - Process lifecycle failures request app shutdown.
 
@@ -698,7 +696,7 @@ interfaces so lower-level services can be tested with replacement layers.
 2. Add a method to `CycleDesktopBridge`.
 3. Implement preload validation and `ipcRenderer.invoke` in
    `src/preload/index.ts`.
-4. Register a main-process handler in `src/main/DesktopIpc.ts`.
+4. Register a main-process handler in `src/DesktopIpc.ts`.
 5. Validate sender and payload in main before touching services.
 6. Add a renderer query or mutation wrapper.
 7. Add focused tests for parsing, service behavior, or renderer helpers.

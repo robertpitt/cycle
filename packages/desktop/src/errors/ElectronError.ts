@@ -1,10 +1,17 @@
-import { Data } from "effect";
+import { Schema } from "effect";
 
-export type ElectronErrorCategory = "configuration" | "electron" | "security";
+export const ElectronErrorCategorySchema = Schema.Literals([
+  "configuration",
+  "electron",
+  "security",
+]);
+export type ElectronErrorCategory = typeof ElectronErrorCategorySchema.Type;
 
-export class ElectronError extends Data.TaggedError("ElectronError")<{
-  readonly category: ElectronErrorCategory;
-  readonly cause?: unknown;
-  readonly message: string;
-  readonly operation: string;
-}> {}
+export class ElectronError extends Schema.TaggedErrorClass<ElectronError>(
+  "@cycle/desktop/ElectronError",
+)("ElectronError", {
+  category: ElectronErrorCategorySchema,
+  cause: Schema.optional(Schema.Unknown),
+  message: Schema.String,
+  operation: Schema.String,
+}) {}

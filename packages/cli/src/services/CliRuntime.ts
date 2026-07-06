@@ -102,7 +102,6 @@ const envVariableNames = [
   "CYCLE_API_TOKEN",
   "CYCLE_API_URL",
   "CYCLE_API_URL_DEFAULT",
-  "CYCLE_CONFIG_PATH",
   "HOME",
   "TEMP",
   "TMP",

@@ -1,7 +1,11 @@
 import { AgentProviderId } from "@cycle/contracts/schemas";
+import {
+  ThemePreference,
+  type AppConfigError,
+  type AppConfigState,
+  type ProfileConfig,
+} from "@cycle/config/app-config";
 import { Context, Effect, Schema } from "effect";
-import type { AppConfigError, AppConfigState, ProfileConfig } from "./AppConfig.ts";
-import { ThemePreference } from "./AppConfig.ts";
 
 export const ProfileUpdateInput = Schema.Struct({
   displayName: Schema.optional(Schema.String),

@@ -1,19 +1,20 @@
 import { strict as assert } from "node:assert";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseService, type DatabaseServiceShape } from "@cycle/database";
+import { AgentProviderDetector } from "@cycle/agents/detection";
 import { GitRepository, WorktreeService } from "@cycle/git";
 import { NodeServices } from "@effect/platform-node";
 import { Data, Effect, Layer } from "effect";
 import { afterEach, describe, it } from "vitest";
-import { DesktopRuntime } from "../src/platform/DesktopRuntime.ts";
-import { AppConfig, defaultAppConfig, type AppConfigState } from "../src/shared/AppConfig.ts";
+import { ElectronRuntime } from "../src/ElectronRuntime.ts";
+import { DesktopApi, DesktopApiLive } from "../src/DesktopApi.ts";
+import { AppConfig, defaultAppConfig, type AppConfigState } from "@cycle/config/app-config";
 import { DesktopBootstrap } from "../src/shared/Bootstrap.ts";
 import { LocalWorkspace } from "../src/shared/LocalWorkspace.ts";
-import { startDesktopApi } from "../src/main/DesktopApi.ts";
-import { DesktopLogger } from "../src/main/DesktopLoggerLive.ts";
-import { ElectronPreferences } from "../src/main/ElectronPreferences.ts";
+import { DesktopLogger } from "../src/DesktopLoggerLive.ts";
+import { ElectronPreferences } from "../src/ElectronPreferences.ts";
 
 const temporaryDirectories: Array<string> = [];
 
@@ -82,6 +83,12 @@ const makeLayer = (config: AppConfigState) =>
   Layer.mergeAll(
     NodeServices.layer,
     Layer.succeed(
+      AgentProviderDetector,
+      AgentProviderDetector.of({
+        detect: () => Effect.succeed([]),
+      }),
+    ),
+    Layer.succeed(
       AppConfig,
       AppConfig.of({
         configPath: Effect.succeed("test-app-config.json"),
@@ -118,8 +125,8 @@ const makeLayer = (config: AppConfigState) =>
       }),
     ),
     Layer.succeed(
-      DesktopRuntime,
-      DesktopRuntime.of({
+      ElectronRuntime,
+      ElectronRuntime.of({
         run: (_label, effect) => {
           Effect.runFork(effect as Effect.Effect<void>);
         },
@@ -222,6 +229,7 @@ const makeLayer = (config: AppConfigState) =>
         retainWorktree: () => Effect.die("not implemented"),
       }),
     ),
+    DesktopApiLive,
     Layer.succeed(DatabaseService, DatabaseService.of(databaseStub({}))),
   );
 
@@ -229,30 +237,19 @@ describe("desktop API startup", () => {
   it("starts REST and MCP on the desktop API server", async () => {
     const directory = await makeTempDir();
     const runtimeFile = join(directory, "runtime.json");
-    const configFile = join(directory, "config.json");
     const config = makeConfig();
-    await writeFile(
-      configFile,
-      JSON.stringify({
-        api: {
-          previous: true,
-          staticToken: "old-token",
-        },
-        existing: "preserved",
-      }),
-      "utf8",
-    );
 
     await withEnv(
       {
         CYCLE_API_RUNTIME_FILE: runtimeFile,
-        CYCLE_CONFIG_PATH: configFile,
+        HOME: directory,
       },
       () =>
         Effect.runPromise(
           Effect.scoped(
             Effect.gen(function* () {
-              yield* startDesktopApi();
+              const desktopApi = yield* DesktopApi;
+              yield* desktopApi.start();
 
               const runtime = JSON.parse(
                 yield* Effect.tryPromise({
@@ -264,17 +261,6 @@ describe("desktop API startup", () => {
                 readonly baseUrl: string;
                 readonly mcpPath?: string;
                 readonly mcpUrl?: string;
-              };
-              const cliConfig = JSON.parse(
-                yield* Effect.tryPromise({
-                  try: () => readFile(configFile, "utf8"),
-                  catch: (cause) =>
-                    new TestFailure({ cause, message: "failed to read config file" }),
-                }),
-              ) as {
-                readonly api?: {
-                  readonly staticToken?: string;
-                };
               };
 
               const health = yield* Effect.tryPromise({
@@ -302,12 +288,6 @@ describe("desktop API startup", () => {
               assert.equal(runtime.mcpPath, "/mcp");
               assert.equal(runtime.mcpUrl, `${runtime.baseUrl}/mcp`);
               assert.equal(mcp.status, 401);
-              assert.equal(cliConfig.api?.staticToken, config.api.staticToken);
-              assert.equal(
-                (cliConfig.api as { readonly previous?: boolean } | undefined)?.previous,
-                true,
-              );
-              assert.equal((cliConfig as { readonly existing?: string }).existing, "preserved");
             }).pipe(Effect.provide(makeLayer(config))),
           ),
         ),

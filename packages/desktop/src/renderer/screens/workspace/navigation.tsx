@@ -12,7 +12,7 @@ import {
   User,
   Wrench,
 } from "lucide-react";
-import type { RepositoryRecord } from "../../../shared/AppConfig.ts";
+import type { RepositoryRecord } from "@cycle/config/app-config";
 import type { ApplicationSettingsSection } from "../../components/ApplicationSettingsPanel.tsx";
 
 const createRepositoryNavItems = (repositories: readonly RepositoryRecord[]) =>

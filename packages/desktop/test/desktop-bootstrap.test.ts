@@ -13,13 +13,13 @@ import {
 import { GitRepository } from "@cycle/git";
 import { Data, Effect, Layer } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
-import { DesktopRuntimeLive } from "../src/platform/DesktopRuntimeLive.ts";
-import { defaultAppConfig, type RepositoryRecord } from "../src/shared/AppConfig.ts";
+import { ElectronRuntimeLive } from "../src/ElectronRuntime.ts";
+import { defaultAppConfig, type RepositoryRecord } from "@cycle/config/app-config";
 import { DesktopBootstrap } from "../src/shared/Bootstrap.ts";
 import { LocalWorkspace } from "../src/shared/LocalWorkspace.ts";
-import { DesktopBootstrapLive } from "../src/main/DesktopBootstrapLive.ts";
-import { DesktopLogger } from "../src/main/DesktopLoggerLive.ts";
-import { ElectronPreferences } from "../src/main/ElectronPreferences.ts";
+import { DesktopBootstrapLive } from "../src/DesktopBootstrapLive.ts";
+import { DesktopLogger } from "../src/DesktopLoggerLive.ts";
+import { ElectronPreferences } from "../src/ElectronPreferences.ts";
 
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: Array<string> = [];
@@ -393,7 +393,7 @@ const makeLayer = (
 
   return DesktopBootstrapLive.pipe(
     Layer.provide(
-      Layer.mergeAll(DesktopRuntimeLive, preferences, database, git, localWorkspace, logger),
+      Layer.mergeAll(ElectronRuntimeLive, preferences, database, git, localWorkspace, logger),
     ),
   );
 };
