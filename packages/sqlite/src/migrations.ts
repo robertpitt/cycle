@@ -1,6 +1,6 @@
+import * as SqliteMigrator from "@effect/sql-sqlite-node/SqliteMigrator";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/unstable/sql/SqlClient";
-import * as SqliteMigrator from "@effect/sql-sqlite-node/SqliteMigrator";
 
 export type SqliteMigrationRecord = Record<
   string,

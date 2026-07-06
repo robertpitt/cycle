@@ -5,25 +5,18 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Reactivity from "effect/unstable/reactivity/Reactivity";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
-import {
-  SqliteMigrationError,
-  SqliteOpenError,
-  SqlitePragmaError,
-  SqliteVectorUnavailableError,
-  type SqliteLayerError,
-} from "./errors.ts";
+import { SqliteCapabilities } from "./SqliteCapabilities.ts";
+import { SqliteMigrationError } from "./SqliteMigrationError.ts";
+import { SqliteOpenError } from "./SqliteOpenError.ts";
+import { SqlitePathError } from "./SqlitePathError.ts";
+import { SqlitePragmaError } from "./SqlitePragmaError.ts";
+import { SqliteVectorUnavailableError } from "./SqliteVectorUnavailableError.ts";
 import type { SqliteMigrationOptions, SqliteMigrationRecord } from "./migrations.ts";
-import { ensureSqliteParentDirectory } from "./paths.ts";
-import { resolveSqliteVectorExtensionPath, type SqliteVectorCapability } from "./vector.ts";
-
-export type SqliteCapabilitiesShape = {
-  readonly vector: SqliteVectorCapability;
-};
-
-export class SqliteCapabilities extends Context.Service<
-  SqliteCapabilities,
-  SqliteCapabilitiesShape
->()("@cycle/sqlite/SqliteCapabilities") {}
+import { ensureSqliteParentDirectory } from "./internals/paths.ts";
+import {
+  resolveSqliteVectorExtensionPath,
+  type SqliteVectorCapability,
+} from "./internals/vector.ts";
 
 export type SqliteVectorMode = "disabled" | "required";
 
@@ -36,6 +29,13 @@ export type SqliteLayerOptions<R = never> = {
   readonly readonly?: boolean;
   readonly vector?: SqliteVectorMode;
 };
+
+export type SqliteLayerError =
+  | SqliteMigrationError
+  | SqliteOpenError
+  | SqlitePathError
+  | SqlitePragmaError
+  | SqliteVectorUnavailableError;
 
 const normalizeMigrationOptions = <R>(
   migrations: SqliteLayerOptions<R>["migrations"],

@@ -3,7 +3,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { arch, platform } from "node:os";
 import { resolve } from "node:path";
 import * as Effect from "effect/Effect";
-import { SqliteVectorUnavailableError, type SqliteVectorUnavailableReason } from "./errors.ts";
+import {
+  SqliteVectorUnavailableError,
+  type SqliteVectorUnavailableReason,
+} from "../SqliteVectorUnavailableError.ts";
 
 export type SqliteVectorPlatform =
   | "darwin-arm64"
@@ -15,13 +18,8 @@ export type SqliteVectorPlatform =
   | "win32-x86_64";
 
 export type SqliteVectorCapability =
-  | {
-      readonly status: "disabled";
-    }
-  | {
-      readonly extensionPath: string;
-      readonly status: "loaded";
-    }
+  | { readonly status: "disabled" }
+  | { readonly extensionPath: string; readonly status: "loaded" }
   | {
       readonly message: string;
       readonly reason: SqliteVectorUnavailableReason;

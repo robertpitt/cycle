@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import * as Effect from "effect/Effect";
-import { SqlitePathError } from "./errors.ts";
+import { SqlitePathError } from "../SqlitePathError.ts";
 
 export const IN_MEMORY_SQLITE_PATH = ":memory:";
 

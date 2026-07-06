@@ -1,7 +1,9 @@
 import { DatabaseSync } from "node:sqlite";
-import { SqliteOpenError, SqlitePragmaError, SqliteVectorUnavailableError } from "./errors.ts";
-import { ensureSqliteParentDirectorySync, isInMemorySqlitePath } from "./paths.ts";
-import { resolveSqliteVectorExtensionPathSync } from "./vector.ts";
+import { SqliteOpenError } from "./SqliteOpenError.ts";
+import { SqlitePragmaError } from "./SqlitePragmaError.ts";
+import { SqliteVectorUnavailableError } from "./SqliteVectorUnavailableError.ts";
+import { ensureSqliteParentDirectorySync, isInMemorySqlitePath } from "./internals/paths.ts";
+import { resolveSqliteVectorExtensionPathSync } from "./internals/vector.ts";
 
 export type SqliteRunResult = {
   readonly changes?: number | bigint;

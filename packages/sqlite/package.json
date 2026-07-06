@@ -6,10 +6,13 @@
   "exports": {
     ".": "./src/index.ts",
     "./errors": "./src/errors.ts",
+    "./layer": "./src/layer.ts",
+    "./live": "./src/SqliteLive.ts",
     "./migrations": "./src/migrations.ts",
+    "./services": "./src/SqliteCapabilities.ts",
     "./sync": "./src/sync.ts",
     "./testing": "./src/testing.ts",
-    "./vector": "./src/vector.ts"
+    "./vector": "./src/internals/vector.ts"
   },
   "scripts": {
     "test": "vitest run",

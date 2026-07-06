@@ -1,1 +1,1 @@
-export { makeInMemorySqliteLayer } from "./layer.ts";
+export { makeInMemorySqliteLayer } from "./SqliteLive.ts";
