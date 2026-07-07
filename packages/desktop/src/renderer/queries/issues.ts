@@ -4,7 +4,7 @@ import {
   type InfiniteData,
   type QueryKey,
 } from "@tanstack/react-query";
-import type { RecordPage, TicketDocument, TicketPage, TicketQuery } from "@cycle/contracts";
+import type { RecordPage, TicketDocument, TicketPage, TicketQuery } from "@cycle/backend/client";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 
 export const issueListRootQueryKey = ["desktop", "api", "issues"] as const;

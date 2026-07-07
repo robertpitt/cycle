@@ -27,7 +27,7 @@ import type {
   HistoryCommit,
   LinkedRecord,
   TicketDocument,
-} from "@cycle/contracts";
+} from "@cycle/backend/client";
 import {
   useAddIssueCommentMutation,
   useArchiveIssueMutation,
@@ -49,8 +49,8 @@ import {
 } from "../queries/index.ts";
 import { createMarkdownTagSuggestions } from "../lib/markdownTagSuggestions.ts";
 import { labelColorClassName } from "../screens/workspace/createIssueOptions.tsx";
-import type { RepositoryRecord } from "@cycle/config/app-config";
-import type { DetectedAgentProvider } from "../../shared/AgentProviders.ts";
+import type { RepositoryRecord } from "@cycle/backend/client";
+import type { DetectedAgentProvider } from "@cycle/backend/client";
 import {
   taskStatusTone,
   statusLabel,

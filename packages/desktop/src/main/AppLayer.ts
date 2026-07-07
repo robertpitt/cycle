@@ -4,7 +4,9 @@ import { Layer } from "effect";
 import { ApplicationLifecycleLive } from "../ApplicationLifecycle.ts";
 import { ElectronLifecycleLive } from "../ElectronLifecycle.ts";
 
-const DesktopServicesLive = ApplicationLifecycleLive.pipe(Layer.provideMerge(ElectronLifecycleLive));
+const DesktopServicesLive = ApplicationLifecycleLive.pipe(
+  Layer.provideMerge(ElectronLifecycleLive),
+);
 
 export const DesktopLive = DesktopServicesLive.pipe(
   Layer.provideMerge(NodeServices.layer),

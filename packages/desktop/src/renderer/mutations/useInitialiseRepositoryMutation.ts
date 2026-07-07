@@ -3,8 +3,8 @@ import {
   defaultAppConfig,
   type AppConfigState,
   type RepositoryRecord,
-} from "@cycle/config/app-config";
-import type { InitializeRepositoryPathInput } from "../../shared/LocalWorkspace.ts";
+} from "@cycle/backend/client";
+import type { InitializeRepositoryPathInput } from "@cycle/backend/workspace";
 import { appConfigQueryKey } from "../queries/appConfig.ts";
 
 type UseInitialiseRepositoryMutationOptions = {

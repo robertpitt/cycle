@@ -1,4 +1,4 @@
-import { ContractSchemas } from "@cycle/contracts";
+import * as ContractSchemas from "@cycle/contracts/schemas";
 import {
   IssueArchive,
   IssueCreate,

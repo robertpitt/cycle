@@ -1,4 +1,4 @@
-import { ContractSchemas } from "@cycle/contracts";
+import * as ContractSchemas from "@cycle/contracts/schemas";
 import { CommentAdd, RecordListForIssue } from "@cycle/usecases";
 import { contractFor } from "@cycle/usecases/contracts";
 import { Effect } from "effect";

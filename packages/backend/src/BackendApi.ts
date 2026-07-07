@@ -1,0 +1,535 @@
+import {
+  startCycleApiServer,
+  type CycleApiServerHandle,
+  type RepositoryDirectoryEntry,
+  type RepositoryOpenRequest,
+} from "@cycle/api";
+import { mcpBearerTokenEnvVar } from "@cycle/agents/codex";
+import { AgentProviderDetector } from "@cycle/agents/detection";
+import {
+  agentProviderDefinitionById,
+  agentProviderProfileFromDetection,
+  supportedAgentProviders,
+} from "@cycle/agents/providers";
+import { makeDefaultAgentServiceRegistry } from "@cycle/agents/service";
+import type { AgentModelCatalog, AgentProviderId, AgentProviderProfile } from "@cycle/agents/types";
+import {
+  AgentTaskServiceLive,
+  AgentTaskStore,
+  makeNodeSqliteAgentTaskStore,
+} from "@cycle/agents/task";
+import { makeSqliteAgentChatStore } from "@cycle/agent-chat/store";
+import {
+  AppConfig,
+  AppConfigError,
+  defaultAgentProviderPreference,
+  type AppConfigState,
+  type RepositoryRecord,
+} from "@cycle/config/app-config";
+import type { RepositoryInput, RepositoryMetadata } from "@cycle/contracts";
+import { DatabaseService } from "@cycle/database";
+import { GitRepository, type GitRepositoryMetadata } from "@cycle/git";
+import { WorktreeService } from "@cycle/git/worktree";
+import { GitDb, Store as GitDbStore } from "@cycle/git-db";
+import { logError } from "@cycle/logging";
+import { repositoryIdFromInput } from "@cycle/usecases";
+import { Context, Effect, Layer, Path, Scope } from "effect";
+import { backendPaths, type BackendStartOptions } from "./BackendConfig.ts";
+import { BackendApiError, errorMessage } from "./BackendErrors.ts";
+import { makeBackendAgentSessionStore } from "./internals/agentSessionStore.ts";
+import { LocalSettings } from "./LocalSettings.ts";
+import { LocalWorkspace } from "./LocalWorkspace.ts";
+import { RepositoryBootstrap } from "./RepositoryBootstrap.ts";
+
+export type BackendApiHandle = {
+  readonly baseUrl?: string;
+  readonly close: () => Promise<void>;
+  readonly mcpPath?: string;
+  readonly mcpUrl?: string;
+  readonly port?: number;
+  readonly runtimeFile?: string;
+  readonly server?: CycleApiServerHandle;
+  readonly started: boolean;
+};
+
+type BackendApiStartRequirements =
+  | AgentProviderDetector
+  | AppConfig
+  | DatabaseService
+  | GitRepository
+  | LocalSettings
+  | LocalWorkspace
+  | Path.Path
+  | RepositoryBootstrap
+  | Scope.Scope
+  | WorktreeService;
+
+export type BackendApiService = {
+  readonly start: (
+    options?: BackendStartOptions,
+  ) => Effect.Effect<BackendApiHandle, BackendApiError>;
+};
+
+export class BackendApi extends Context.Service<BackendApi, BackendApiService>()(
+  "@cycle/backend/BackendApi",
+) {}
+
+const repositoryMetadata = (metadata: GitRepositoryMetadata): RepositoryMetadata => ({
+  ...(metadata.currentBranch === undefined ? {} : { currentBranch: metadata.currentBranch }),
+  ...(metadata.defaultRemote === undefined ? {} : { defaultRemote: metadata.defaultRemote }),
+  ...(metadata.defaultRemoteUrl === undefined
+    ? {}
+    : { defaultRemoteUrl: metadata.defaultRemoteUrl }),
+  gitDir: metadata.gitDir,
+  inspectedAt: metadata.inspectedAt,
+  remotes: metadata.remotes,
+  worktreePath: metadata.path,
+});
+
+const makeLocalStore = (
+  repositoryPath: string,
+  gitDir: string,
+): Effect.Effect<GitDbStore.StoreServiceShape, unknown> =>
+  GitDbStore.StoreService.pipe(
+    Effect.provide(
+      GitDb.GitDbFilesystem({
+        cwd: repositoryPath,
+        database: "cycle",
+        gitDir,
+      }),
+    ),
+  );
+
+const repositoryById = (
+  repositories: ReadonlyArray<RepositoryRecord>,
+  repositoryId: string,
+): RepositoryRecord | undefined =>
+  repositories.find((repository) => repository.id === repositoryId);
+
+const preferenceForProvider = (config: AppConfigState, providerId: AgentProviderId) => {
+  const definition = agentProviderDefinitionById(providerId);
+  return (
+    config.agentProviders.preferences.find((entry) => entry.id === providerId) ??
+    defaultAgentProviderPreference(providerId, definition.defaultEnabled ?? false)
+  );
+};
+
+const profileWithPreference = (
+  profile: AgentProviderProfile,
+  config: AppConfigState,
+  providerId: AgentProviderId,
+): AgentProviderProfile => {
+  const preference = preferenceForProvider(config, providerId);
+  const enabled = preference.enabled;
+
+  return {
+    ...profile,
+    activeRunCount: profile.activeRunCount ?? 0,
+    configuration: {
+      ...profile.configuration,
+      detectedStatus: profile.status,
+      preference: {
+        config: preference.config ?? {},
+        defaultModel: preference.defaultModel ?? null,
+        enabled: preference.enabled,
+        executablePath: preference.executablePath ?? null,
+        maxConcurrentRuns: preference.maxConcurrentRuns ?? null,
+      },
+    },
+    ...(preference.executablePath === null || preference.executablePath === undefined
+      ? {}
+      : { configuredExecutablePath: preference.executablePath }),
+    defaultModel: preference.defaultModel ?? profile.defaultModel ?? null,
+    maxConcurrentRuns: preference.maxConcurrentRuns ?? null,
+    message: enabled ? profile.message : `${profile.displayName} is disabled in Cycle settings.`,
+    status: enabled ? profile.status : "disabled",
+  };
+};
+
+const modelCatalogStatus = (
+  catalog: AgentModelCatalog,
+): "available" | "unsupported" | "unavailable" =>
+  catalog.source === "unsupported"
+    ? "unsupported"
+    : catalog.source === "unavailable"
+      ? "unavailable"
+      : "available";
+
+const profileWithModelCatalog = (
+  profile: AgentProviderProfile,
+  config: AppConfigState,
+  providerId: AgentProviderId,
+  catalog: AgentModelCatalog,
+): AgentProviderProfile => {
+  const preference = preferenceForProvider(config, providerId);
+  const models = catalog.models
+    .filter((model) => model.status !== "hidden" && model.disabled !== true)
+    .map((model) => model.id);
+  const preferredModel =
+    typeof preference.defaultModel === "string" && preference.defaultModel.trim().length > 0
+      ? preference.defaultModel.trim()
+      : undefined;
+
+  return {
+    ...profile,
+    configuration: {
+      ...profile.configuration,
+      modelCatalog: {
+        defaultReasoningEffortId: catalog.defaultReasoningEffortId ?? null,
+        fetchedAt: catalog.fetchedAt,
+        modelCount: models.length,
+        reasoningEffortCount: catalog.reasoningEfforts?.length ?? 0,
+        source: catalog.source,
+        status: modelCatalogStatus(catalog),
+        stale: catalog.stale === true,
+      },
+    },
+    defaultModel:
+      preferredModel ?? catalog.defaultModelId ?? models[0] ?? profile.defaultModel ?? null,
+    defaultReasoningEffortId:
+      catalog.defaultReasoningEffortId ?? profile.defaultReasoningEffortId ?? null,
+    models,
+    ...(catalog.reasoningEfforts === undefined
+      ? {}
+      : { reasoningEfforts: catalog.reasoningEfforts }),
+  };
+};
+
+const profileWithModelCatalogFailure = (
+  profile: AgentProviderProfile,
+  error: unknown,
+): AgentProviderProfile => ({
+  ...profile,
+  configuration: {
+    ...profile.configuration,
+    modelCatalog: {
+      checkedAt: new Date().toISOString(),
+      error: errorMessage(error),
+      status: "failed",
+    },
+  },
+});
+
+const toBackendApiError = (cause: unknown): BackendApiError =>
+  cause instanceof BackendApiError
+    ? cause
+    : new BackendApiError({
+        cause,
+        message: cause instanceof Error ? cause.message : "backend api operation failed",
+        operation: "BackendApi.start",
+      });
+
+const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
+  options: BackendStartOptions = {},
+) {
+  const agentProviderDetector = yield* AgentProviderDetector;
+  const appConfig = yield* AppConfig;
+  const bootstrap = yield* RepositoryBootstrap;
+  const database = yield* DatabaseService;
+  const settings = yield* LocalSettings;
+  const gitRepository = yield* GitRepository;
+  const worktreeService = yield* WorktreeService;
+  const localWorkspace = yield* LocalWorkspace;
+  const config = yield* appConfig.read();
+  const paths = yield* backendPaths(options);
+  const services = yield* Effect.context<BackendApiStartRequirements>();
+  const environment = yield* Effect.sync(() => ({
+    ...process.env,
+    CYCLE_API_RUNTIME_FILE: paths.runtimeDiscoveryPath,
+  }));
+  const runPromise = <A>(effect: Effect.Effect<A, unknown, BackendApiStartRequirements>) =>
+    Effect.runPromiseWith(services)(effect);
+
+  if (!config.api.enabled) {
+    return {
+      close: async () => {},
+      runtimeFile: paths.runtimeDiscoveryPath,
+      started: false,
+    };
+  }
+
+  const repositoryOpenInput = (request: RepositoryOpenRequest): Promise<RepositoryInput> =>
+    runPromise(
+      Effect.gen(function* () {
+        const repository =
+          request.path !== undefined
+            ? yield* localWorkspace.upsertRepositoryPath({
+                displayName: request.displayName,
+                path: request.path,
+              })
+            : repositoryById(yield* localWorkspace.listRepositories(), request.repositoryId ?? "");
+
+        if (repository === undefined) {
+          return yield* new AppConfigError({
+            message: "Repository path or registered repository id is required.",
+            operation: "BackendApi.repositoryOpenInput",
+          });
+        }
+
+        const inspected = yield* gitRepository.metadata(repository.path);
+        const metadata = repositoryMetadata(inspected);
+        const store = yield* makeLocalStore(repository.path, metadata.gitDir ?? inspected.gitDir);
+
+        return {
+          displayName: repository.displayName,
+          gitDir: metadata.gitDir,
+          metadata,
+          repositoryId: repository.id,
+          store,
+          syncOnOpen: request.syncOnOpen ?? false,
+          worktreePath: repository.path,
+        };
+      }),
+    );
+
+  const listRepositories = (): Promise<readonly RepositoryDirectoryEntry[]> =>
+    runPromise(
+      Effect.gen(function* () {
+        const repositories = yield* localWorkspace.listRepositories();
+        return repositories.map((repository) => ({
+          displayName: repository.displayName,
+          id: repository.id,
+          path: repository.path,
+        }));
+      }),
+    );
+
+  return yield* Effect.acquireRelease(
+    Effect.tryPromise({
+      try: async () => {
+        const agentChatStore = makeSqliteAgentChatStore(paths.databasePath);
+        const agentSessionStore = makeBackendAgentSessionStore(paths.databasePath);
+        const agentTaskStore = makeNodeSqliteAgentTaskStore(paths.databasePath);
+        const codexPreference = preferenceForProvider(config, "codex");
+        const claudeCodePreference = preferenceForProvider(config, "claude-code");
+        const agentServices = makeDefaultAgentServiceRegistry({
+          env: {
+            ...environment,
+            [mcpBearerTokenEnvVar]: config.api.staticToken,
+          },
+          ...(codexPreference.executablePath === null ||
+          codexPreference.executablePath === undefined
+            ? {}
+            : { executablePath: codexPreference.executablePath }),
+          claudeCode: {
+            config: claudeCodePreference.config ?? {},
+            executablePath: claudeCodePreference.executablePath ?? null,
+          },
+          sessionStore: agentSessionStore,
+        });
+        const listAgentProviderProfiles = async (): Promise<readonly AgentProviderProfile[]> => {
+          const currentConfig = await runPromise(appConfig.read());
+          const detected = await runPromise(agentProviderDetector.detect());
+          const detectedById = new Map(detected.map((provider) => [provider.id, provider]));
+
+          return Promise.all(
+            supportedAgentProviders.map(async (definition) => {
+              const detectedProvider = detectedById.get(definition.id);
+              const baseProfile =
+                detectedProvider === undefined
+                  ? {
+                      ...agentProviderProfileFromDetection({
+                        capabilities:
+                          definition.capabilities ??
+                          agentProviderDefinitionById(definition.id).capabilities,
+                        detectedAt: new Date().toISOString(),
+                        executable: definition.executable,
+                        id: definition.id,
+                        name: definition.name,
+                        packageName: definition.packageName,
+                        status: "missing",
+                      }),
+                      message: `${definition.name} provider status has not been checked.`,
+                    }
+                  : agentProviderProfileFromDetection(detectedProvider);
+              const preferredProfile = profileWithPreference(
+                baseProfile,
+                currentConfig,
+                definition.id,
+              );
+              if (preferredProfile.status !== "available") return preferredProfile;
+
+              try {
+                const service = await Effect.runPromise(agentServices.serviceFor(definition.id));
+                const catalog = await service.listModels();
+                return profileWithModelCatalog(
+                  preferredProfile,
+                  currentConfig,
+                  definition.id,
+                  catalog,
+                );
+              } catch (error) {
+                logError("backend", "agent provider model listing failed", {
+                  component: "agent",
+                  error: errorMessage(error),
+                  providerId: definition.id,
+                  service: "backend",
+                });
+                return profileWithModelCatalogFailure(preferredProfile, error);
+              }
+            }),
+          );
+        };
+        const agentTaskLayer = AgentTaskServiceLive().pipe(
+          Layer.provide(Layer.succeed(AgentTaskStore, AgentTaskStore.of(agentTaskStore))),
+        );
+
+        try {
+          const handle = await startCycleApiServer({
+            agentChatStore,
+            agentProviderProfiles: listAgentProviderProfiles,
+            agentServices,
+            agentSessionStore,
+            host: options.host ?? config.api.host,
+            localSettings: {
+              completeOnboarding: (input) =>
+                runPromise(
+                  settings.completeOnboarding({
+                    displayName: input.displayName,
+                    email: input.email,
+                    enabledAgentProviderIds: input.enabledAgentProviderIds,
+                    themePreference: input.themePreference,
+                  }),
+                ),
+              read: () => runPromise(settings.read()),
+              removeRepository: (repositoryId) =>
+                runPromise(settings.removeRepository(repositoryId)),
+              setInterfaceDensity: (density) => runPromise(settings.setInterfaceDensity(density)),
+              setThemePreference: (preference) =>
+                runPromise(settings.setThemePreference(preference)),
+              updateProfile: (input) => runPromise(settings.updateProfile(input)),
+              updateRepositoryPreferences: (input) =>
+                runPromise(
+                  settings.updateRepositoryPreferences({
+                    id: input.id,
+                    preferences: input.preferences,
+                  }),
+                ),
+              updateAgentProviderPreference: (input) =>
+                runPromise(
+                  settings.updateAgentProviderPreference({
+                    preference: input.preference,
+                    providerId: input.providerId,
+                  }),
+                ),
+            },
+            logging: { console: false, packageName: "backend" },
+            mcp: {
+              apiToken: config.api.staticToken,
+              auth: { token: config.api.staticToken },
+              enabled: true,
+              env: {
+                ...environment,
+                CYCLE_API_RUNTIME_FILE: paths.runtimeDiscoveryPath,
+              },
+              path: "/mcp",
+            },
+            listRepositories,
+            port: (() => {
+              const configuredPort = options.port ?? config.api.port;
+              return configuredPort === "auto" ? undefined : configuredPort;
+            })(),
+            repositoryOpenInput,
+            onUseCaseSuccess: (event) => {
+              const repositoryId = repositoryIdFromInput(event.input);
+              if (event.sideEffect !== "write" || repositoryId === undefined) return;
+              return runPromise(bootstrap.notifyRepositoryChanged(repositoryId)) as Promise<void>;
+            },
+            runtimeFile: paths.runtimeDiscoveryPath,
+            staticToken: config.api.staticToken,
+            useCaseLayer: Layer.mergeAll(
+              Layer.succeed(DatabaseService, DatabaseService.of(database)),
+              agentTaskLayer,
+            ),
+            worktreeService,
+            worktreeStoragePath: paths.agentWorktreesPath,
+          });
+
+          return { agentChatStore, agentSessionStore, agentTaskStore, handle };
+        } catch (error) {
+          await Effect.runPromise(agentTaskStore.close());
+          await agentChatStore.close?.();
+          await agentSessionStore.close?.();
+          throw error;
+        }
+      },
+      catch: (cause) =>
+        new BackendApiError({
+          cause,
+          message: cause instanceof Error ? cause.message : "start api server failed",
+          operation: "BackendApi.start",
+        }),
+    }),
+    ({ agentChatStore, agentSessionStore, agentTaskStore, handle }) =>
+      Effect.tryPromise({
+        try: async () => {
+          await handle.close();
+          await Effect.runPromise(agentTaskStore.close());
+          await agentChatStore.close?.();
+          await agentSessionStore.close?.();
+        },
+        catch: (cause) =>
+          new BackendApiError({
+            cause,
+            message: cause instanceof Error ? cause.message : "stop api server failed",
+            operation: "BackendApi.stop",
+          }),
+      }).pipe(
+        Effect.catch((error) =>
+          logError("backend", "api server shutdown failed", {
+            component: "api",
+            error: errorMessage(error),
+            service: "backend",
+          }),
+        ),
+      ),
+  ).pipe(
+    Effect.map(({ handle }) => ({
+      baseUrl: handle.baseUrl,
+      close: handle.close,
+      mcpPath: "/mcp",
+      mcpUrl: `${handle.baseUrl}/mcp`,
+      port: handle.port,
+      runtimeFile: paths.runtimeDiscoveryPath,
+      server: handle,
+      started: true,
+    })),
+  );
+});
+
+export const startBackendApi = (
+  options: BackendStartOptions = {},
+): Effect.Effect<BackendApiHandle, BackendApiError, BackendApiStartRequirements> =>
+  startBackendApiUnsafe(options).pipe(Effect.mapError(toBackendApiError));
+
+export const BackendApiLive = Layer.effect(
+  BackendApi,
+  Effect.gen(function* () {
+    const agentProviderDetector = yield* AgentProviderDetector;
+    const appConfig = yield* AppConfig;
+    const database = yield* DatabaseService;
+    const gitRepository = yield* GitRepository;
+    const localSettings = yield* LocalSettings;
+    const localWorkspace = yield* LocalWorkspace;
+    const path = yield* Path.Path;
+    const repositoryBootstrap = yield* RepositoryBootstrap;
+    const scope = yield* Scope.Scope;
+    const worktreeService = yield* WorktreeService;
+
+    return BackendApi.of({
+      start: (options) =>
+        startBackendApi(options).pipe(
+          Effect.provideService(AgentProviderDetector, agentProviderDetector),
+          Effect.provideService(AppConfig, appConfig),
+          Effect.provideService(DatabaseService, database),
+          Effect.provideService(GitRepository, gitRepository),
+          Effect.provideService(LocalSettings, localSettings),
+          Effect.provideService(LocalWorkspace, localWorkspace),
+          Effect.provideService(Path.Path, path),
+          Effect.provideService(RepositoryBootstrap, repositoryBootstrap),
+          Effect.provideService(Scope.Scope, scope),
+          Effect.provideService(WorktreeService, worktreeService),
+        ),
+    });
+  }),
+);

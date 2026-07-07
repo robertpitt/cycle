@@ -105,8 +105,57 @@ importers:
         specifier: ^4.1.8
         version: 4.1.8(@types/node@25.9.2)(vite@8.0.16(@types/node@25.9.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  packages/backend:
+    dependencies:
+      '@cycle/agent-chat':
+        specifier: workspace:*
+        version: link:../agent-chat
+      '@cycle/agents':
+        specifier: workspace:*
+        version: link:../agents
+      '@cycle/api':
+        specifier: workspace:*
+        version: link:../api
+      '@cycle/config':
+        specifier: workspace:*
+        version: link:../config
+      '@cycle/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@cycle/database':
+        specifier: workspace:*
+        version: link:../database
+      '@cycle/git':
+        specifier: workspace:*
+        version: link:../git
+      '@cycle/git-db':
+        specifier: workspace:*
+        version: link:../git-db
+      '@cycle/logging':
+        specifier: workspace:*
+        version: link:../logging
+      '@cycle/sqlite':
+        specifier: workspace:*
+        version: link:../sqlite
+      '@cycle/usecases':
+        specifier: workspace:*
+        version: link:../usecases
+      '@effect/platform-node':
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.11.1)
+      effect:
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78
+    devDependencies:
+      vitest:
+        specifier: ^4.1.8
+        version: 4.1.8(@types/node@25.9.2)(vite@8.0.16(@types/node@25.9.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
   packages/cli:
     dependencies:
+      '@cycle/backend':
+        specifier: workspace:*
+        version: link:../backend
       '@cycle/config':
         specifier: workspace:*
         version: link:../config
@@ -183,42 +232,15 @@ importers:
 
   packages/desktop:
     dependencies:
-      '@cycle/agent-chat':
+      '@cycle/backend':
         specifier: workspace:*
-        version: link:../agent-chat
-      '@cycle/agents':
-        specifier: workspace:*
-        version: link:../agents
-      '@cycle/api':
-        specifier: workspace:*
-        version: link:../api
-      '@cycle/config':
-        specifier: workspace:*
-        version: link:../config
-      '@cycle/contracts':
-        specifier: workspace:*
-        version: link:../contracts
-      '@cycle/database':
-        specifier: workspace:*
-        version: link:../database
-      '@cycle/git':
-        specifier: workspace:*
-        version: link:../git
-      '@cycle/git-db':
-        specifier: workspace:*
-        version: link:../git-db
+        version: link:../backend
       '@cycle/logging':
         specifier: workspace:*
         version: link:../logging
-      '@cycle/sqlite':
-        specifier: workspace:*
-        version: link:../sqlite
       '@cycle/ui':
         specifier: workspace:*
         version: link:../ui
-      '@cycle/usecases':
-        specifier: workspace:*
-        version: link:../usecases
       '@effect/platform-node':
         specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.11.1)

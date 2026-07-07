@@ -4,7 +4,7 @@ import type {
   TicketDocument,
   TicketQuery,
   UserProfileDocument,
-} from "@cycle/contracts";
+} from "@cycle/backend/client";
 import { Button, DateTime, IconButton, Input, Select } from "@cycle/ui/atoms";
 import {
   IssueAssigneeMark,
@@ -17,7 +17,7 @@ import { IssuesList, type IssuesListGroup, type IssuesListProps } from "@cycle/u
 import { cn } from "@cycle/ui/utils";
 import { Plus, Save, Search, SlidersHorizontal, X } from "lucide-react";
 import * as React from "react";
-import type { ProfileConfig } from "@cycle/config/app-config";
+import type { ProfileConfig } from "@cycle/backend/client";
 import { useCreateSavedViewMutation } from "../mutations/index.ts";
 import { useUpdateIssueMutation } from "../mutations/useUpdateIssueMutation.ts";
 import { labelColorClassName } from "../screens/workspace/createIssueOptions.tsx";

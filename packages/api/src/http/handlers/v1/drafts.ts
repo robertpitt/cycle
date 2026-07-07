@@ -1,4 +1,4 @@
-import { ContractSchemas } from "@cycle/contracts";
+import * as ContractSchemas from "@cycle/contracts/schemas";
 import { DraftCommit, DraftCreate, DraftUpdate } from "@cycle/usecases";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";

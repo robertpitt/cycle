@@ -1,18 +1,77 @@
-import { GitDb, Store as GitDbStore } from "@cycle/git-db";
-import { GitRepository, type GitRepositoryServiceShape } from "@cycle/git";
-import { Effect, Layer, Path } from "effect";
+import { RepositoryCommitStyle, RepositoryRecord } from "@cycle/config/app-config";
 import {
   AppConfig,
   AppConfigError,
   defaultRepositoryPreferences,
-  type RepositoryRecord,
+  type RepositoryRecord as RepositoryRecordType,
 } from "@cycle/config/app-config";
-import {
-  LocalWorkspace,
-  type InitializeRepositoryPathInput,
-  type UpdateRepositoryPreferencesInput,
-  type UpsertRepositoryPathInput,
-} from "./shared/LocalWorkspace.ts";
+import { GitRepository, type GitRepositoryServiceShape } from "@cycle/git";
+import { GitDb, Store as GitDbStore } from "@cycle/git-db";
+import { Context, Effect, Layer, Path, Schema } from "effect";
+
+export const UpsertRepositoryPathInput = Schema.Struct({
+  displayName: Schema.optional(Schema.String),
+  path: Schema.String,
+});
+export type UpsertRepositoryPathInput = typeof UpsertRepositoryPathInput.Type;
+
+export const InitializeRepositoryPathInput = UpsertRepositoryPathInput;
+export type InitializeRepositoryPathInput = typeof InitializeRepositoryPathInput.Type;
+
+export const RepositoryPreferencesPatch = Schema.Struct({
+  autoSync: Schema.optional(Schema.Boolean),
+  commitStyle: Schema.optional(RepositoryCommitStyle),
+  sidebarExpanded: Schema.optional(Schema.Boolean),
+});
+export type RepositoryPreferencesPatch = typeof RepositoryPreferencesPatch.Type;
+
+export const UpdateRepositoryPreferencesInput = Schema.Struct({
+  id: Schema.String,
+  preferences: RepositoryPreferencesPatch,
+});
+export type UpdateRepositoryPreferencesInput = typeof UpdateRepositoryPreferencesInput.Type;
+
+export const SelectRepositoryFolderResult = Schema.Union([
+  Schema.Struct({
+    repository: RepositoryRecord,
+    status: Schema.Literal("added"),
+  }),
+  Schema.Struct({
+    status: Schema.Literal("cancelled"),
+  }),
+  Schema.Struct({
+    message: Schema.String,
+    path: Schema.String,
+    status: Schema.Literal("not-git"),
+  }),
+]);
+export type SelectRepositoryFolderResult = typeof SelectRepositoryFolderResult.Type;
+
+export type LocalWorkspaceService = {
+  readonly initializeRepositoryPath: (
+    input: InitializeRepositoryPathInput,
+  ) => Effect.Effect<RepositoryRecordType, AppConfigError>;
+  readonly listRepositories: () => Effect.Effect<
+    ReadonlyArray<RepositoryRecordType>,
+    AppConfigError
+  >;
+  readonly markRepositoryOpened: (
+    id: string,
+  ) => Effect.Effect<RepositoryRecordType | null, AppConfigError>;
+  readonly removeRepository: (
+    id: string,
+  ) => Effect.Effect<ReadonlyArray<RepositoryRecordType>, AppConfigError>;
+  readonly updateRepositoryPreferences: (
+    input: UpdateRepositoryPreferencesInput,
+  ) => Effect.Effect<RepositoryRecordType | null, AppConfigError>;
+  readonly upsertRepositoryPath: (
+    input: UpsertRepositoryPathInput,
+  ) => Effect.Effect<RepositoryRecordType, AppConfigError>;
+};
+
+export class LocalWorkspace extends Context.Service<LocalWorkspace, LocalWorkspaceService>()(
+  "@cycle/backend/LocalWorkspace",
+) {}
 
 const ensureGitRepository = (gitRepository: GitRepositoryServiceShape, repositoryPath: string) =>
   gitRepository.ensure(repositoryPath).pipe(
@@ -117,7 +176,7 @@ export const LocalWorkspaceLive = Layer.effect(
         const existing = repositories.find(
           (repository) => repository.path === normalizedPath || repository.id === id,
         );
-        const nextRepository: RepositoryRecord =
+        const nextRepository: RepositoryRecordType =
           existing === undefined
             ? {
                 addedAt: now,
@@ -153,7 +212,7 @@ export const LocalWorkspaceLive = Layer.effect(
         );
       });
 
-    return {
+    return LocalWorkspace.of({
       initializeRepositoryPath: (input: InitializeRepositoryPathInput) =>
         Effect.gen(function* () {
           const normalizedPath = normalizeRepositoryPath(input.path);
@@ -215,6 +274,9 @@ export const LocalWorkspaceLive = Layer.effect(
           );
         }),
       upsertRepositoryPath,
-    };
+    });
   }),
 );
+
+export const LocalWorkspaceTest = (service: LocalWorkspaceService) =>
+  Layer.succeed(LocalWorkspace, LocalWorkspace.of(service));

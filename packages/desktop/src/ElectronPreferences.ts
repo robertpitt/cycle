@@ -1,5 +1,5 @@
-import type { JsonObject } from "@cycle/contracts/schemas";
-import { supportedAgentProviders, type AgentProviderId } from "@cycle/config/agent-providers";
+import type { AgentProviderId } from "@cycle/backend/client";
+import { LocalSettings } from "@cycle/backend/settings";
 import { session } from "electron";
 import { Context, Effect, Layer, Scope } from "effect";
 import { ElectronError } from "./errors/ElectronError.ts";
@@ -9,21 +9,15 @@ import {
   type ElectronThemeState,
 } from "./ElectronTheme.ts";
 import {
-  AppConfig,
   type AppConfigError,
   type AppConfigState,
-  defaultAgentProviderPreference,
   type InterfaceDensity,
   type ProfileConfig,
   type RepositoryRecord,
   type ThemePreference,
-} from "@cycle/config/app-config";
-import { LocalWorkspace, type UpdateRepositoryPreferencesInput } from "./shared/LocalWorkspace.ts";
-import {
-  Profile,
-  type CompleteOnboardingInput,
-  type ProfileUpdateInput,
-} from "./shared/Profile.ts";
+} from "@cycle/backend/client";
+import type { UpdateRepositoryPreferencesInput } from "@cycle/backend/workspace";
+import { type CompleteOnboardingInput, type ProfileUpdateInput } from "./shared/Profile.ts";
 
 export type ElectronPreferencesService = {
   readonly clearCache: () => Effect.Effect<void, ElectronError>;
@@ -74,13 +68,14 @@ export class ElectronPreferences extends Context.Service<
   static readonly defaultLayer = Layer.effect(
     ElectronPreferences,
     Effect.gen(function* () {
-      const appConfig = yield* AppConfig;
       const electronTheme = yield* ElectronTheme;
-      const localWorkspace = yield* LocalWorkspace;
-      const profile = yield* Profile;
+      const settings = yield* LocalSettings;
 
       const syncThemePreference = () =>
-        appConfig.getThemePreference().pipe(Effect.flatMap(electronTheme.setSource));
+        settings.read().pipe(
+          Effect.map((config) => config.theme.preference),
+          Effect.flatMap(electronTheme.setSource),
+        );
 
       return {
         clearCache: () =>
@@ -95,97 +90,27 @@ export class ElectronPreferences extends Context.Service<
               }),
           }),
         completeOnboarding: (input) =>
-          profile
+          settings
             .completeOnboarding(input)
             .pipe(Effect.tap(() => electronTheme.setSource(input.themePreference))),
-        read: () => appConfig.read(),
-        removeRepository: (id) =>
-          localWorkspace.removeRepository(id).pipe(Effect.flatMap(() => appConfig.read())),
-        setInterfaceDensity: (density) => appConfig.setInterfaceDensity(density),
+        read: () => settings.read(),
+        removeRepository: (id) => settings.removeRepository(id),
+        setInterfaceDensity: (density) => settings.setInterfaceDensity(density),
         setThemePreference: (preference) =>
-          appConfig
+          settings
             .setThemePreference(preference)
             .pipe(Effect.tap(() => electronTheme.setSource(preference))),
-        shouldAutoSyncRepository: (repositoryId) =>
-          appConfig
-            .read()
-            .pipe(
-              Effect.map(
-                (config) =>
-                  config.localWorkspace.repositories.find(
-                    (repository) => repository.id === repositoryId,
-                  )?.preferences.autoSync ?? false,
-              ),
-            ),
+        shouldAutoSyncRepository: (repositoryId) => settings.shouldAutoSyncRepository(repositoryId),
         startThemeLifecycleSupervision: (handlers) =>
           electronTheme.startLifecycleSupervision(handlers),
         syncThemePreference,
         themeState: electronTheme.current,
-        updateProfile: (input) => profile.updateProfile(input),
-        updateRepositoryPreferences: (input) => localWorkspace.updateRepositoryPreferences(input),
-        updateAgentProviderPreference: (input) =>
-          appConfig.update((current) => {
-            const knownProvider = supportedAgentProviders.find(
-              (provider) => provider.id === input.providerId,
-            );
-            const fallback = defaultAgentProviderPreference(
-              input.providerId,
-              knownProvider?.defaultEnabled ?? false,
-            );
-            const currentPreference =
-              current.agentProviders.preferences.find(
-                (preference) => preference.id === input.providerId,
-              ) ?? fallback;
-            const nextPreference = {
-              ...currentPreference,
-              ...input.preference,
-              config:
-                input.preference.config === undefined
-                  ? (currentPreference.config ?? {})
-                  : jsonObject(input.preference.config),
-              defaultModel:
-                input.preference.defaultModel === undefined
-                  ? (currentPreference.defaultModel ?? null)
-                  : normalizeNullableText(input.preference.defaultModel),
-              executablePath:
-                input.preference.executablePath === undefined
-                  ? (currentPreference.executablePath ?? null)
-                  : normalizeNullableText(input.preference.executablePath),
-              maxConcurrentRuns:
-                input.preference.maxConcurrentRuns === undefined
-                  ? currentPreference.maxConcurrentRuns
-                  : input.preference.maxConcurrentRuns,
-            };
-            const preferences = [
-              ...current.agentProviders.preferences.filter(
-                (preference) => preference.id !== input.providerId,
-              ),
-              nextPreference,
-            ].sort(
-              (left, right) =>
-                supportedAgentProviders.findIndex((provider) => provider.id === left.id) -
-                supportedAgentProviders.findIndex((provider) => provider.id === right.id),
-            );
-
-            return {
-              ...current,
-              agentProviders: {
-                preferences,
-              },
-            };
-          }),
+        updateProfile: (input) => settings.updateProfile(input),
+        updateRepositoryPreferences: (input) => settings.updateRepositoryPreferences(input),
+        updateAgentProviderPreference: (input) => settings.updateAgentProviderPreference(input),
       };
     }),
   );
 }
 
 export const ElectronPreferencesLive = ElectronPreferences.defaultLayer;
-
-const normalizeNullableText = (value: string | null): string | null => {
-  if (value === null) return null;
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? null : trimmed;
-};
-
-const jsonObject = (value: Readonly<Record<string, unknown>>): JsonObject =>
-  JSON.parse(JSON.stringify(value)) as JsonObject;

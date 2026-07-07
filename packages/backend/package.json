@@ -1,0 +1,43 @@
+{
+  "name": "@cycle/backend",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./agent-session-store": "./src/BackendAgentSessionStore.ts",
+    "./api": "./src/BackendApi.ts",
+    "./bootstrap": "./src/RepositoryBootstrap.ts",
+    "./client": "./src/BackendClient.ts",
+    "./config": "./src/BackendConfig.ts",
+    "./database": "./src/BackendDatabase.ts",
+    "./errors": "./src/BackendErrors.ts",
+    "./runtime": "./src/BackendRuntime.ts",
+    "./schemas": "./src/BackendSchemas.ts",
+    "./settings": "./src/LocalSettings.ts",
+    "./testing": "./src/BackendTesting.ts",
+    "./workspace": "./src/LocalWorkspace.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@cycle/agent-chat": "workspace:*",
+    "@cycle/agents": "workspace:*",
+    "@cycle/api": "workspace:*",
+    "@cycle/config": "workspace:*",
+    "@cycle/contracts": "workspace:*",
+    "@cycle/database": "workspace:*",
+    "@cycle/git": "workspace:*",
+    "@cycle/git-db": "workspace:*",
+    "@cycle/logging": "workspace:*",
+    "@cycle/sqlite": "workspace:*",
+    "@cycle/usecases": "workspace:*",
+    "@effect/platform-node": "4.0.0-beta.78",
+    "effect": "4.0.0-beta.78"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.8"
+  }
+}

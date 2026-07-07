@@ -233,19 +233,19 @@ Required file rules:
 `packages/backend/package.json` MUST expose intentional public subpaths that map to root source
 files:
 
-| Subpath | Target file | Purpose |
-| --- | --- |
-| `@cycle/backend` | `./src/index.ts` | Main backend runtime, options, handle, status, and layer exports. |
-| `@cycle/backend/api` | `./src/BackendApi.ts` | Backend API server and hosted MCP composition. |
-| `@cycle/backend/config` | `./src/BackendConfig.ts` | Backend path/config resolution contracts. |
-| `@cycle/backend/database` | `./src/BackendDatabase.ts` | Backend database layer and identity/id generator composition. |
-| `@cycle/backend/errors` | `./src/BackendErrors.ts` | Backend typed error classes. |
-| `@cycle/backend/runtime` | `./src/BackendRuntime.ts` | Runtime service, launch effects, and status contracts. |
-| `@cycle/backend/schemas` | `./src/BackendSchemas.ts` | Backend status, config, and transport-adjacent schemas. |
-| `@cycle/backend/settings` | `./src/LocalSettings.ts` | Local settings service used by API settings endpoints. |
-| `@cycle/backend/workspace` | `./src/LocalWorkspace.ts` | Local workspace service and repository directory contracts. |
-| `@cycle/backend/bootstrap` | `./src/RepositoryBootstrap.ts` | Repository bootstrap service and status contracts. |
-| `@cycle/backend/testing` | `./src/BackendTesting.ts` | Deterministic test layers and fixtures. |
+| Subpath                    | Target file                    | Purpose                                                           |
+| -------------------------- | ------------------------------ | ----------------------------------------------------------------- |
+| `@cycle/backend`           | `./src/index.ts`               | Main backend runtime, options, handle, status, and layer exports. |
+| `@cycle/backend/api`       | `./src/BackendApi.ts`          | Backend API server and hosted MCP composition.                    |
+| `@cycle/backend/config`    | `./src/BackendConfig.ts`       | Backend path/config resolution contracts.                         |
+| `@cycle/backend/database`  | `./src/BackendDatabase.ts`     | Backend database layer and identity/id generator composition.     |
+| `@cycle/backend/errors`    | `./src/BackendErrors.ts`       | Backend typed error classes.                                      |
+| `@cycle/backend/runtime`   | `./src/BackendRuntime.ts`      | Runtime service, launch effects, and status contracts.            |
+| `@cycle/backend/schemas`   | `./src/BackendSchemas.ts`      | Backend status, config, and transport-adjacent schemas.           |
+| `@cycle/backend/settings`  | `./src/LocalSettings.ts`       | Local settings service used by API settings endpoints.            |
+| `@cycle/backend/workspace` | `./src/LocalWorkspace.ts`      | Local workspace service and repository directory contracts.       |
+| `@cycle/backend/bootstrap` | `./src/RepositoryBootstrap.ts` | Repository bootstrap service and status contracts.                |
+| `@cycle/backend/testing`   | `./src/BackendTesting.ts`      | Deterministic test layers and fixtures.                           |
 
 The package root SHOULD export the stable app-composition surface only. Internal implementation
 modules MUST NOT be exposed as public package subpaths.
@@ -266,10 +266,9 @@ export type BackendRuntimeShape = {
   readonly status: () => Effect.Effect<BackendStatus, BackendError>;
 };
 
-export class BackendRuntime extends Context.Service<
-  BackendRuntime,
-  BackendRuntimeShape
->()("@cycle/backend/BackendRuntime") {}
+export class BackendRuntime extends Context.Service<BackendRuntime, BackendRuntimeShape>()(
+  "@cycle/backend/BackendRuntime",
+) {}
 ```
 
 Required semantics:
@@ -740,17 +739,17 @@ Add it to workspace typecheck and package dependency references.
 
 The implementation SHOULD move or split these desktop-owned backend pieces:
 
-| Current source | Target |
-| --- | --- |
-| `packages/desktop/src/DesktopApi.ts` | `packages/backend/src/BackendApi.ts` and `packages/backend/src/BackendRuntime.ts` |
-| `packages/desktop/src/DesktopApiRuntimeDiscovery.ts` | `packages/backend/src/BackendConfig.ts`, or a lower shared config/API root file if reused outside backend |
-| `packages/desktop/src/DesktopDatabaseLive.ts` | `packages/backend/src/BackendDatabase.ts` |
-| `packages/desktop/src/DesktopBootstrapLive.ts` | `packages/backend/src/RepositoryBootstrap.ts` |
-| `packages/desktop/src/shared/Bootstrap.ts` | `packages/backend/src/RepositoryBootstrap.ts` |
-| `packages/desktop/src/LocalWorkspaceLive.ts` | `packages/backend/src/LocalWorkspace.ts` |
-| `packages/desktop/src/shared/LocalWorkspace.ts` | `packages/backend/src/LocalWorkspace.ts` |
-| `packages/desktop/src/DesktopAgentSessionStore.ts` | `packages/backend/src/BackendApi.ts`, `packages/backend/src/BackendRuntime.ts`, or an `@cycle/agents` root service file if it becomes agent-owned |
-| non-Electron parts of `ElectronPreferences.ts` | `packages/backend/src/LocalSettings.ts` |
+| Current source                                       | Target                                                                                                                                            |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/desktop/src/DesktopApi.ts`                 | `packages/backend/src/BackendApi.ts` and `packages/backend/src/BackendRuntime.ts`                                                                 |
+| `packages/desktop/src/DesktopApiRuntimeDiscovery.ts` | `packages/backend/src/BackendConfig.ts`, or a lower shared config/API root file if reused outside backend                                         |
+| `packages/desktop/src/DesktopDatabaseLive.ts`        | `packages/backend/src/BackendDatabase.ts`                                                                                                         |
+| `packages/desktop/src/DesktopBootstrapLive.ts`       | `packages/backend/src/RepositoryBootstrap.ts`                                                                                                     |
+| `packages/desktop/src/shared/Bootstrap.ts`           | `packages/backend/src/RepositoryBootstrap.ts`                                                                                                     |
+| `packages/desktop/src/LocalWorkspaceLive.ts`         | `packages/backend/src/LocalWorkspace.ts`                                                                                                          |
+| `packages/desktop/src/shared/LocalWorkspace.ts`      | `packages/backend/src/LocalWorkspace.ts`                                                                                                          |
+| `packages/desktop/src/DesktopAgentSessionStore.ts`   | `packages/backend/src/BackendApi.ts`, `packages/backend/src/BackendRuntime.ts`, or an `@cycle/agents` root service file if it becomes agent-owned |
+| non-Electron parts of `ElectronPreferences.ts`       | `packages/backend/src/LocalSettings.ts`                                                                                                           |
 
 Desktop MUST keep or recreate only Electron-specific adapters:
 
@@ -794,23 +793,23 @@ CLI SHOULD add backend launch support while preserving client commands:
 
 The implementation MUST include deterministic tests for:
 
-| Area | Required validation |
-| --- | --- |
-| Package boundary | `@cycle/backend` has no imports from `@cycle/desktop`, `@cycle/ui`, Electron, React, or CLI command modules. |
-| Source layout | Backend production source has no subdirectories except `src/internals/`; service files live at `src/<ServiceName>.ts` and export their service plus live/test layers when available. |
-| Public exports | Every `package.json` export maps to a root source file or `src/index.ts`; no export maps to `src/internals/*`. |
-| Startup | Backend starts API and hosted MCP with temp `HOME`, writes runtime discovery, and `/health` succeeds. |
-| Shutdown | Backend close/finalizer closes stores, stops server, interrupts fibers, and removes the runtime discovery file. |
-| Paths | Defaults resolve to `~/.cycle/cycle.db`, `~/.cycle/agent-task-worktrees`, and the expected runtime discovery file. |
-| Config | Explicit options override env/config; invalid host/port/token config fails with typed errors. |
-| Repository open | Path and repository-id open requests produce `RepositoryInput`; missing inputs fail with typed errors. |
-| Write hook | Write usecase success notifies repository bootstrap; read success does not. |
-| Local settings | API settings mutations update app config without Electron dependencies. |
-| Provider profiles | Detection, preferences, active run counts, and model catalog failures are merged correctly. |
-| Hosted MCP | Hosted MCP remains mounted with API and uses the configured bearer token. |
-| Stdio MCP | Stdio MCP tests prove it discovers REST API and does not import or launch backend. |
-| CLI launch | `cycle backend start` can launch against temp state and exits non-zero on startup failure. |
-| Desktop migration | Desktop startup uses backend while Electron lifecycle tests remain desktop-owned. |
+| Area              | Required validation                                                                                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Package boundary  | `@cycle/backend` has no imports from `@cycle/desktop`, `@cycle/ui`, Electron, React, or CLI command modules.                                                                         |
+| Source layout     | Backend production source has no subdirectories except `src/internals/`; service files live at `src/<ServiceName>.ts` and export their service plus live/test layers when available. |
+| Public exports    | Every `package.json` export maps to a root source file or `src/index.ts`; no export maps to `src/internals/*`.                                                                       |
+| Startup           | Backend starts API and hosted MCP with temp `HOME`, writes runtime discovery, and `/health` succeeds.                                                                                |
+| Shutdown          | Backend close/finalizer closes stores, stops server, interrupts fibers, and removes the runtime discovery file.                                                                      |
+| Paths             | Defaults resolve to `~/.cycle/cycle.db`, `~/.cycle/agent-task-worktrees`, and the expected runtime discovery file.                                                                   |
+| Config            | Explicit options override env/config; invalid host/port/token config fails with typed errors.                                                                                        |
+| Repository open   | Path and repository-id open requests produce `RepositoryInput`; missing inputs fail with typed errors.                                                                               |
+| Write hook        | Write usecase success notifies repository bootstrap; read success does not.                                                                                                          |
+| Local settings    | API settings mutations update app config without Electron dependencies.                                                                                                              |
+| Provider profiles | Detection, preferences, active run counts, and model catalog failures are merged correctly.                                                                                          |
+| Hosted MCP        | Hosted MCP remains mounted with API and uses the configured bearer token.                                                                                                            |
+| Stdio MCP         | Stdio MCP tests prove it discovers REST API and does not import or launch backend.                                                                                                   |
+| CLI launch        | `cycle backend start` can launch against temp state and exits non-zero on startup failure.                                                                                           |
+| Desktop migration | Desktop startup uses backend while Electron lifecycle tests remain desktop-owned.                                                                                                    |
 
 Existing tests in `packages/desktop/test/desktop-api.test.ts` SHOULD move to backend tests or be
 rewritten as desktop integration tests over `@cycle/backend`.

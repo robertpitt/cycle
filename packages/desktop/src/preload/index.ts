@@ -15,7 +15,7 @@ import {
   type SettingsDiagnostics,
 } from "../ipc/Channels.ts";
 import type { ElectronThemeState } from "../ElectronTheme.ts";
-import type { BootstrapStatus } from "../shared/Bootstrap.ts";
+import type { BootstrapStatus } from "@cycle/backend/bootstrap";
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);

@@ -1,4 +1,4 @@
-import type { InboxPage, InboxQuery, InboxSummary } from "@cycle/contracts";
+import type { InboxPage, InboxQuery, InboxSummary } from "@cycle/backend/client";
 import {
   useInfiniteQuery,
   useQuery,

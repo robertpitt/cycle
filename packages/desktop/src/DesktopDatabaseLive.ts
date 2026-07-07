@@ -1,98 +1,33 @@
-import {
-  DatabaseIdGenerator,
-  DatabaseIdentity,
-  DatabaseLiveWithOptions,
-  ValidationError,
-} from "@cycle/database";
-import { Config, Crypto, Effect, FileSystem, Layer, Path } from "effect";
+import { BackendDatabaseLive } from "@cycle/backend/database";
+import { LocalSettings } from "@cycle/backend/settings";
+import { Effect, Layer } from "effect";
+import type { AppConfigError } from "@cycle/backend/client";
 import { Profile } from "./shared/Profile.ts";
 
-const DesktopDatabaseIdentityLive = Layer.effect(
-  DatabaseIdentity,
+const LocalSettingsFromProfile = Layer.effect(
+  LocalSettings,
   Effect.gen(function* () {
     const profile = yield* Profile;
+    const unavailable = <A>() =>
+      Effect.die(
+        new Error("DesktopDatabaseLive only requires LocalSettings.getProfile"),
+      ) as Effect.Effect<A, AppConfigError>;
 
-    return DatabaseIdentity.of({
-      currentActor: profile.getProfile().pipe(
-        Effect.map((current) => ({
-          email: current.email.trim().length === 0 ? undefined : current.email,
-          name: current.displayName.trim().length === 0 ? "Cycle User" : current.displayName,
-          type: "human" as const,
-        })),
-        Effect.mapError(
-          (error) =>
-            new ValidationError({
-              field: "profile",
-              message: "failed to read profile for database identity",
-              cause: error,
-            }),
-        ),
-      ),
+    return LocalSettings.of({
+      completeOnboarding: unavailable,
+      getProfile: () => profile.getProfile(),
+      read: unavailable,
+      removeRepository: unavailable,
+      setInterfaceDensity: unavailable,
+      setThemePreference: unavailable,
+      shouldAutoSyncRepository: unavailable,
+      updateAgentProviderPreference: unavailable,
+      updateProfile: (input) => profile.updateProfile(input),
+      updateRepositoryPreferences: unavailable,
     });
   }),
 );
 
-const DesktopDatabaseIdGeneratorLive = Layer.effect(
-  DatabaseIdGenerator,
-  Effect.gen(function* () {
-    const crypto = yield* Crypto.Crypto;
-    const randomUuid = crypto.randomUUIDv4.pipe(
-      Effect.mapError(
-        (cause) =>
-          new ValidationError({
-            field: "id",
-            message: "failed to generate database id",
-            cause: cause,
-          }),
-      ),
-    );
-    const makeId = (prefix: string) =>
-      randomUuid.pipe(Effect.map((uuid) => `${prefix}_${uuid.replaceAll("-", "")}`));
-
-    return DatabaseIdGenerator.of({
-      draftId: makeId("drf"),
-      eventId: makeId("evt"),
-      labelId: makeId("lbl"),
-      recordId: makeId("rec"),
-      templateId: makeId("tpl"),
-      ticketId: randomUuid.pipe(
-        Effect.map((uuid) =>
-          BigInt(`0x${uuid.replaceAll("-", "")}`)
-            .toString(36)
-            .toUpperCase()
-            .padStart(5, "0"),
-        ),
-      ),
-      viewId: makeId("view"),
-    });
-  }),
-);
-
-export const DesktopDatabaseLive = Layer.unwrap(
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const homeDirectory = yield* Config.string("HOME").pipe(
-      Config.withDefault("."),
-      Config.map((value) => value.trim() || "."),
-    );
-    const projectionPath = path.join(homeDirectory, ".cycle", "cycle.db");
-
-    yield* fs.makeDirectory(path.dirname(projectionPath), { recursive: true }).pipe(
-      Effect.mapError(
-        (cause) =>
-          new ValidationError({
-            field: "database",
-            message: "failed to create Cycle directory",
-            cause: cause,
-          }),
-      ),
-    );
-
-    return DatabaseLiveWithOptions({
-      projectionPath,
-    }).pipe(
-      Layer.provide(Layer.mergeAll(DesktopDatabaseIdentityLive, DesktopDatabaseIdGeneratorLive)),
-    );
-  }),
+export const DesktopDatabaseLive = BackendDatabaseLive().pipe(
+  Layer.provide(LocalSettingsFromProfile),
 );

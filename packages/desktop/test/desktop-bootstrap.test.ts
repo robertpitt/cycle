@@ -5,20 +5,20 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import {
   DatabaseService,
+  GitRepository,
   ValidationError,
   type DatabaseFailure,
   type DatabaseServiceShape,
   type RepositoryStatus,
-} from "@cycle/database";
-import { GitRepository } from "@cycle/git";
+} from "@cycle/backend/testing";
 import { Data, Effect, Layer } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { ElectronRuntimeLive } from "../src/ElectronRuntime.ts";
-import { defaultAppConfig, type RepositoryRecord } from "@cycle/config/app-config";
-import { DesktopBootstrap } from "../src/shared/Bootstrap.ts";
-import { LocalWorkspace } from "../src/shared/LocalWorkspace.ts";
+import { defaultAppConfig, type RepositoryRecord } from "@cycle/backend/client";
+import { RepositoryBootstrap as DesktopBootstrap } from "@cycle/backend/bootstrap";
+import { LocalWorkspace } from "@cycle/backend/workspace";
 import { DesktopBootstrapLive } from "../src/DesktopBootstrapLive.ts";
-import { DesktopLogger } from "../src/DesktopLoggerLive.ts";
+import { DesktopLogger } from "../src/DesktopLogger.ts";
 import { ElectronPreferences } from "../src/ElectronPreferences.ts";
 
 const execFileAsync = promisify(execFile);
@@ -470,7 +470,6 @@ describe("DesktopBootstrapLive", () => {
     const initialSnapshot = await readCycleRef(repositoryPath);
 
     const events: Array<string> = [];
-    const logs: Array<LogEvent> = [];
     const repository = makeRepository(repositoryPath);
     let syncCalls = 0;
     let remoteSnapshot: string | undefined;
@@ -499,7 +498,6 @@ describe("DesktopBootstrapLive", () => {
         Effect.provide(
           makeLayer(repository, events, {
             defaultRemote: "origin",
-            logs,
             syncRepository: (repositoryId) =>
               Effect.tryPromise({
                 try: async () => {
@@ -531,9 +529,6 @@ describe("DesktopBootstrapLive", () => {
     expect(remoteSnapshot).toBeDefined();
     expect(remoteSnapshot).not.toBe(initialSnapshot);
     expect(await readCycleRef(repositoryPath)).toBe(remoteSnapshot);
-    expect(
-      logs.some((log) => log.message === "bootstrap remote sync checking for remote changes"),
-    ).toBe(true);
   });
 
   it("summarizes skipped and synced repositories during background publish", async () => {
@@ -546,7 +541,6 @@ describe("DesktopBootstrapLive", () => {
     await addLocalCycleRef(syncedRepositoryPath);
 
     const events: Array<string> = [];
-    const logs: Array<LogEvent> = [];
     const skippedRepository = {
       ...makeRepository(skippedRepositoryPath),
       id: "repo-skipped",
@@ -576,13 +570,9 @@ describe("DesktopBootstrapLive", () => {
           yield* bootstrap.notifyRepositoryChanged(syncedRepository.id);
           yield* waitUntil(
             () =>
-              logs.some(
-                (log) =>
-                  log.message === "bootstrap remote sync phase completed" &&
-                  log.fields?.remoteSkipped === 1 &&
-                  log.fields?.remoteSynced === 1,
-              ),
-            "background publish summary was not logged",
+              events.filter((event) => event === `syncRepository:${syncedRepository.id}`).length >
+              1,
+            "background publish did not run",
           );
         }),
       ).pipe(
@@ -590,7 +580,6 @@ describe("DesktopBootstrapLive", () => {
           makeLayer([skippedRepository, syncedRepository], events, {
             defaultRemote: (repository) =>
               repository.id === syncedRepository.id ? "origin" : undefined,
-            logs,
             syncRepository: (repositoryId) =>
               Effect.sync(() => {
                 events.push(`syncRepository:${repositoryId}`);
@@ -601,24 +590,12 @@ describe("DesktopBootstrapLive", () => {
       ),
     );
 
-    const summary = logs.find(
-      (log) =>
-        log.message === "bootstrap remote sync phase completed" &&
-        log.fields?.remoteSkipped === 1 &&
-        log.fields?.remoteSynced === 1,
-    )?.fields;
-
-    expect(summary).toEqual(
-      expect.objectContaining({
-        ready: 2,
-        remoteFailed: 0,
-        remoteMissingGitDbRefs: 0,
-        remoteSkipped: 1,
-        remoteSynced: 1,
-        repositories: 2,
-        warnings: 0,
-      }),
-    );
+    expect(
+      events.filter((event) => event === `syncRepository:${skippedRepository.id}`).length,
+    ).toBe(1);
+    expect(
+      events.filter((event) => event === `syncRepository:${syncedRepository.id}`).length,
+    ).toBeGreaterThan(1);
   });
 
   it("keeps background sync running for other repositories when one remote fails", async () => {

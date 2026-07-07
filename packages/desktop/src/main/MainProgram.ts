@@ -1,10 +1,10 @@
+import { BackendRuntime } from "@cycle/backend";
 import { Effect } from "effect";
-import { DesktopApi } from "../DesktopApi.ts";
 import { registerDesktopIpc, startDesktopThemeLifecycle } from "../DesktopIpc.ts";
 import { DesktopWindow } from "../DesktopWindow.ts";
 import { ElectronApp } from "../ElectronApp.ts";
 import { ElectronPreferences } from "../ElectronPreferences.ts";
-import { DesktopBootstrap } from "../shared/Bootstrap.ts";
+import { RepositoryBootstrap as DesktopBootstrap } from "@cycle/backend/bootstrap";
 
 export type DesktopStartupWorkflow<
   RReady = never,
@@ -76,12 +76,12 @@ export const runDesktopStartupWorkflow = <
 
 export const runDesktop = Effect.fn("runDesktop")(function* () {
   const app = yield* ElectronApp;
+  const backend = yield* BackendRuntime;
   const bootstrap = yield* DesktopBootstrap;
-  const desktopApi = yield* DesktopApi;
   const desktopWindow = yield* DesktopWindow;
   const preferences = yield* ElectronPreferences;
 
-  yield* desktopApi.start();
+  yield* backend.start();
 
   yield* runDesktopStartupWorkflow({
     awaitShutdown: app.awaitShutdown,

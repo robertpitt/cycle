@@ -2,18 +2,23 @@ import { strict as assert } from "node:assert";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseService, type DatabaseServiceShape } from "@cycle/database";
-import { AgentProviderDetector } from "@cycle/agents/detection";
-import { GitRepository, WorktreeService } from "@cycle/git";
+import {
+  AgentProviderDetector,
+  AppConfig,
+  DatabaseService,
+  GitRepository,
+  WorktreeService,
+  type DatabaseServiceShape,
+} from "@cycle/backend/testing";
 import { NodeServices } from "@effect/platform-node";
 import { Data, Effect, Layer } from "effect";
 import { afterEach, describe, it } from "vitest";
 import { ElectronRuntime } from "../src/ElectronRuntime.ts";
 import { DesktopApi, DesktopApiLive } from "../src/DesktopApi.ts";
-import { AppConfig, defaultAppConfig, type AppConfigState } from "@cycle/config/app-config";
-import { DesktopBootstrap } from "../src/shared/Bootstrap.ts";
-import { LocalWorkspace } from "../src/shared/LocalWorkspace.ts";
-import { DesktopLogger } from "../src/DesktopLoggerLive.ts";
+import { defaultAppConfig, type AppConfigState } from "@cycle/backend/client";
+import { RepositoryBootstrap as DesktopBootstrap } from "@cycle/backend/bootstrap";
+import { LocalWorkspace } from "@cycle/backend/workspace";
+import { DesktopLogger } from "../src/DesktopLogger.ts";
 import { ElectronPreferences } from "../src/ElectronPreferences.ts";
 
 const temporaryDirectories: Array<string> = [];

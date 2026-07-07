@@ -1,6 +1,6 @@
 import type { AgentSessionBinding, AgentSessionStore, JsonObject } from "@cycle/agents";
 import { openSqliteSync } from "@cycle/sqlite/sync";
-import { Context, Layer, Schema } from "effect";
+import { Schema } from "effect";
 
 type SessionBindingRow = {
   readonly active_turn_id: string | null;
@@ -17,11 +17,6 @@ type SessionBindingRow = {
   readonly title: string | null;
   readonly updated_at: string;
 };
-
-export class DesktopAgentSessionStore extends Context.Service<
-  DesktopAgentSessionStore,
-  AgentSessionStore
->()("@cycle/desktop/DesktopAgentSessionStore") {}
 
 const agentSessionBindingSchemaSql = `
 CREATE TABLE IF NOT EXISTS agent_session_bindings (
@@ -43,7 +38,7 @@ CREATE INDEX IF NOT EXISTS agent_session_bindings_provider_status ON agent_sessi
 CREATE INDEX IF NOT EXISTS agent_session_bindings_updated ON agent_session_bindings(updated_at DESC, session_id);
 `;
 
-export const makeDesktopAgentSessionStore = (path: string): AgentSessionStore => {
+export const makeBackendAgentSessionStore = (path: string): AgentSessionStore => {
   const db = openSqliteSync(path);
   db.exec(agentSessionBindingSchemaSql);
 
@@ -108,14 +103,6 @@ export const makeDesktopAgentSessionStore = (path: string): AgentSessionStore =>
     },
   };
 };
-
-export const DesktopAgentSessionStoreLive = (path: string) =>
-  Layer.sync(DesktopAgentSessionStore, () =>
-    DesktopAgentSessionStore.of(makeDesktopAgentSessionStore(path)),
-  );
-
-export const DesktopAgentSessionStoreTest = (store: AgentSessionStore) =>
-  Layer.succeed(DesktopAgentSessionStore, DesktopAgentSessionStore.of(store));
 
 const JsonRecord = Schema.Record(Schema.String, Schema.Unknown);
 const JsonObjectSchema = Schema.Record(Schema.String, Schema.Json);

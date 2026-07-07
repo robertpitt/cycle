@@ -20,8 +20,8 @@ import type {
 } from "@cycle/ui/molecules";
 import { AgentChatShell, type AgentChatTurnSettings } from "@cycle/ui/organisms";
 import * as React from "react";
-import type { ProfileConfig, RepositoryRecord } from "@cycle/config/app-config";
-import type { AgentProviderId, DetectedAgentProvider } from "../../shared/AgentProviders.ts";
+import type { ProfileConfig, RepositoryRecord } from "@cycle/backend/client";
+import type { AgentProviderId, DetectedAgentProvider } from "@cycle/backend/client";
 import {
   chatWebSocketUrlForConnection,
   discoverCycleApiConnection,

@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { afterEach, describe, it } from "vitest";
-import { defaultAppConfig } from "@cycle/config/app-config";
+import { defaultAppConfig } from "@cycle/backend/client";
 import { cycleApiClient } from "../src/renderer/lib/cycleApiClient.ts";
 import { getRendererAppConfig } from "../src/renderer/queries/appConfig.ts";
 

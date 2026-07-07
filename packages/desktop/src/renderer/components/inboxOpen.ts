@@ -1,4 +1,4 @@
-import type { InboxMutationInput } from "@cycle/contracts";
+import type { InboxMutationInput } from "@cycle/backend/client";
 import type { InboxListEntry } from "@cycle/ui/organisms";
 
 export const markReadInputForOpenedInboxEntry = (

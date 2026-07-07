@@ -3,7 +3,7 @@ import {
   isAgentProviderId,
   supportedAgentProviders,
   type DetectedAgentProvider,
-} from "../../shared/AgentProviders.ts";
+} from "@cycle/backend/client";
 
 export { isAgentProviderId };
 

@@ -1,4 +1,4 @@
-import type { HistoryCommit, RepositoryHistoryQuery } from "@cycle/contracts";
+import type { HistoryCommit, RepositoryHistoryQuery } from "@cycle/backend/client";
 import {
   RepositoryHistoryPanel as UiRepositoryHistoryPanel,
   type RepositoryHistoryEntry,

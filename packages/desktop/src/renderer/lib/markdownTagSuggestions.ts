@@ -1,7 +1,7 @@
-import type { TicketDocument, UserProfileDocument } from "@cycle/contracts";
+import type { TicketDocument, UserProfileDocument } from "@cycle/backend/client";
 import type { MarkdownEditorTagSuggestion } from "@cycle/ui/molecules";
-import type { ProfileConfig, RepositoryRecord } from "@cycle/config/app-config";
-import type { DetectedAgentProvider } from "../../shared/AgentProviders.ts";
+import type { ProfileConfig, RepositoryRecord } from "@cycle/backend/client";
+import type { DetectedAgentProvider } from "@cycle/backend/client";
 
 type CreateMarkdownTagSuggestionsInput = {
   readonly agentProviders?: readonly DetectedAgentProvider[];

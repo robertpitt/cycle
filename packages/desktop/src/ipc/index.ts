@@ -17,8 +17,8 @@ export type {
 } from "./Channels.ts";
 
 import { Schema } from "effect";
-import { RepositoryCommitStyle, ThemePreference } from "@cycle/config/app-config";
-import { BootstrapStatus } from "../shared/Bootstrap.ts";
+import { BootstrapStatus } from "@cycle/backend/bootstrap";
+import { RepositoryCommitStyle, ThemePreference } from "@cycle/backend/client";
 import { ElectronThemeSource, ElectronThemeState } from "../ElectronTheme.ts";
 import type {
   ApiConnection as ApiConnectionValue,

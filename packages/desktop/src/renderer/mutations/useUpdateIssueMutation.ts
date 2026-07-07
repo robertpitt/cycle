@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { UpdateTicketPatch } from "@cycle/contracts";
+import type { UpdateTicketPatch } from "@cycle/backend/client";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { issueHistoryQueryKey } from "../queries/issueHistory.ts";
 import {

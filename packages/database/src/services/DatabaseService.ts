@@ -531,7 +531,7 @@ export const makeDatabaseService = (
       Effect.annotateLogs({
         ...(data === undefined ? {} : data),
         ...(repositoryId === undefined ? {} : { repositoryId }),
-        service: "database",
+        service: "@cycle/database",
       }),
     );
   const repositoryState = (status: RepositoryStatus): string =>

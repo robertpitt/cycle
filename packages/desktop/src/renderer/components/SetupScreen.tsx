@@ -5,8 +5,8 @@ import {
 } from "@cycle/ui/organisms";
 import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 import * as React from "react";
-import type { AppConfigState } from "@cycle/config/app-config";
-import type { AgentProviderId, DetectedAgentProvider } from "../../shared/AgentProviders.ts";
+import type { AppConfigState } from "@cycle/backend/client";
+import type { AgentProviderId, DetectedAgentProvider } from "@cycle/backend/client";
 import { isAgentProviderId } from "../lib/agentProviders.ts";
 
 type SetupScreenProps = {

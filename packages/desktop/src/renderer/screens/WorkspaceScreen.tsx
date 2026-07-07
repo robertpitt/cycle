@@ -84,7 +84,7 @@ import {
   type WorkspaceLocation,
 } from "./workspace/workspaceRoute.ts";
 import { useMacTrackpadSwipeNavigation } from "./workspace/macTrackpadSwipeNavigation.ts";
-import type { AgentProviderId } from "../../shared/AgentProviders.ts";
+import type { AgentProviderId } from "@cycle/backend/client";
 
 const ticketTypeSections = [
   {

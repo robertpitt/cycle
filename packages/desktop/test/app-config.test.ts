@@ -5,22 +5,20 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { ConfigProvider, Effect, Layer } from "effect";
-import { GitRepositoryLive } from "@cycle/git";
+import { AppConfig, detectAgentProviders, GitRepositoryLive } from "@cycle/backend/testing";
 import { NodeServices } from "@effect/platform-node";
 import { afterEach, describe, it } from "vitest";
-import { detectAgentProviders } from "@cycle/agents/detection";
+import { AppConfigLive } from "@cycle/backend/runtime";
+import { LocalWorkspace, LocalWorkspaceLive } from "@cycle/backend/workspace";
 import {
-  AppConfig,
   DEFAULT_API_PORT,
   defaultAppConfig,
   parseAppConfig,
   type AppConfigState,
-} from "@cycle/config/app-config";
-import { LocalWorkspace } from "../src/shared/LocalWorkspace.ts";
+} from "@cycle/backend/client";
 import { Profile } from "../src/shared/Profile.ts";
-import { AppConfigLive } from "../src/AppConfigLive.ts";
-import { LocalWorkspaceLive } from "../src/LocalWorkspaceLive.ts";
 import { ProfileLive } from "../src/ProfileLive.ts";
+import { LocalSettingsLive } from "@cycle/backend/settings";
 
 const temporaryDirectories: Array<string> = [];
 const execFileAsync = promisify(execFile);
@@ -48,11 +46,19 @@ const makeConfigLayer = (userData: string) =>
 const makeServicesLayer = (userData: string) => {
   const appConfig = makeConfigLayer(userData);
   const gitRepository = GitRepositoryLive;
+  const localWorkspace = LocalWorkspaceLive.pipe(
+    Layer.provide(Layer.mergeAll(appConfig, gitRepository)),
+  );
+  const localSettings = LocalSettingsLive.pipe(
+    Layer.provide(Layer.mergeAll(appConfig, localWorkspace)),
+  );
+
   return Layer.mergeAll(
     appConfig,
-    ProfileLive.pipe(Layer.provide(appConfig)),
+    ProfileLive.pipe(Layer.provide(localSettings)),
     gitRepository,
-    LocalWorkspaceLive.pipe(Layer.provide(Layer.mergeAll(appConfig, gitRepository))),
+    localWorkspace,
+    localSettings,
   ).pipe(Layer.provide(NodeServices.layer));
 };
 

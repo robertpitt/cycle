@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { defaultAppConfig, type AppConfigState } from "@cycle/config/app-config";
-import type { AgentProviderId } from "../../shared/AgentProviders.ts";
+import { defaultAppConfig, type AppConfigState } from "@cycle/backend/client";
+import type { AgentProviderId } from "@cycle/backend/client";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { appConfigQueryKey } from "../queries/appConfig.ts";
 

@@ -8,13 +8,13 @@ import {
   type InterfaceDensity,
   type ProfileConfig,
   type ThemePreference,
-} from "@cycle/config/app-config";
+} from "@cycle/backend/client";
 import type { ProfileUpdateInput } from "../../shared/Profile.ts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 import { appConfigQueryKey } from "../queries/appConfig.ts";
 import { agentProvidersQueryKey } from "../queries/agentProviders.ts";
-import type { AgentProviderId } from "../../shared/AgentProviders.ts";
+import type { AgentProviderId } from "@cycle/backend/client";
 
 type SettingsMutationOptions = {
   readonly appConfig?: AppConfigState;

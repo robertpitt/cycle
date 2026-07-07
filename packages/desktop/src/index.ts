@@ -4,10 +4,7 @@ export * from "./errors/index.ts";
  * Electron
  */
 export * from "./ApplicationLifecycle.ts";
-export * from "./AppConfigLive.ts";
-export * from "./DesktopAgentSessionStore.ts";
 export * from "./DesktopApi.ts";
-export * from "./DesktopApiRuntimeDiscovery.ts";
 export * from "./DesktopBootstrapLive.ts";
 export * from "./DesktopDatabaseLive.ts";
 export * from "./DesktopIpc.ts";
@@ -21,7 +18,6 @@ export * from "./ElectronShell.ts";
 export * from "./ElectronTheme.ts";
 export * from "./ElectronWindow.ts";
 export * from "./ElectronRuntime.ts";
-export * from "./LocalWorkspaceLive.ts";
 export * from "./ProcessLifecycle.ts";
 export * from "./ProfileLive.ts";
 

@@ -4,7 +4,7 @@ import type {
   MaterializationWarning,
   RepositoryHistoryQuery,
   RepositoryStatus,
-} from "@cycle/contracts";
+} from "@cycle/backend/client";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 
 export const repositoryStatusQueryKey = (repositoryId: string | undefined) =>
