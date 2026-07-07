@@ -3,21 +3,14 @@ export * from "./errors/index.ts";
 export * from "./paths.ts";
 export {
   DatabaseIdGenerator,
-  DatabaseIdGeneratorDeterministic,
   DatabaseIdGeneratorLive,
-  makeDeterministicIdGenerator,
   type DatabaseIdGeneratorShape,
 } from "./services/DatabaseIdGenerator.ts";
-export {
-  DatabaseIdentity,
-  DatabaseIdentityTest,
-  type DatabaseIdentityShape,
-} from "./services/DatabaseIdentity.ts";
+export { DatabaseIdentity, type DatabaseIdentityShape } from "./services/DatabaseIdentity.ts";
 export {
   DatabaseLive,
   DatabaseLiveWithOptions,
   DatabaseService,
-  DatabaseTest,
   makeDatabaseService,
   type DatabaseServiceOptions,
   type DatabaseServiceShape,

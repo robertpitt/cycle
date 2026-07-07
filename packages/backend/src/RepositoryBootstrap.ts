@@ -670,6 +670,3 @@ export const RepositoryBootstrapLive = Layer.effect(
     });
   }),
 );
-
-export const RepositoryBootstrapTest = (service: RepositoryBootstrapService) =>
-  Layer.succeed(RepositoryBootstrap, RepositoryBootstrap.of(service));

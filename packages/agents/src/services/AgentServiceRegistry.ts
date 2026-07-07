@@ -32,5 +32,3 @@ export const makeAgentServiceRegistry = (
 
 export const AgentServiceRegistryLive = (entries: readonly AgentServiceEntry[]) =>
   Layer.succeed(AgentServiceRegistry, AgentServiceRegistry.of(makeAgentServiceRegistry(entries)));
-
-export const AgentServiceRegistryTest = AgentServiceRegistryLive;

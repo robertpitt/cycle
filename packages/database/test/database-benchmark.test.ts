@@ -3,13 +3,8 @@ import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
 import { Event as GitDbEvent, GitDbFilesystem, Store as GitDbStore } from "@cycle/git-db";
 import { Effect } from "effect";
-import {
-  DatabaseService,
-  DatabaseTest,
-  makeFrontmatter,
-  makeTicketDocument,
-  type Actor,
-} from "../src/index.ts";
+import { DatabaseService, makeFrontmatter, makeTicketDocument, type Actor } from "../src/index.ts";
+import { DatabaseTest } from "../src/testing/index.ts";
 import { assert, describe, it } from "./effect-vitest.ts";
 
 type BenchmarkTiming = {

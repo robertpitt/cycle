@@ -6,13 +6,13 @@ import { Effect } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { describe, expect, it } from "vitest";
 import {
-  makeInMemorySqliteLayer,
   makeSqliteLayer,
   openSqliteSync,
   SqliteCapabilities,
   SqliteMigrationError,
   SqliteVectorUnavailableError,
 } from "../src/index.ts";
+import { makeInMemorySqliteLayer } from "../src/testing/index.ts";
 
 describe("@cycle/sqlite", () => {
   it("opens an in-memory Effect SQL database with foreign keys enabled", async () => {

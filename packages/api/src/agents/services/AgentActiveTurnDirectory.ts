@@ -76,7 +76,3 @@ export const makeAgentActiveTurnDirectory = (): AgentActiveTurnDirectoryShape =>
 export const AgentActiveTurnDirectoryLive = Layer.sync(AgentActiveTurnDirectory, () =>
   AgentActiveTurnDirectory.of(makeAgentActiveTurnDirectory()),
 );
-
-export const AgentActiveTurnDirectoryTest = (
-  directory: AgentActiveTurnDirectoryShape = makeAgentActiveTurnDirectory(),
-) => Layer.succeed(AgentActiveTurnDirectory, AgentActiveTurnDirectory.of(directory));

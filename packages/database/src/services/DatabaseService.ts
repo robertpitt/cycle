@@ -84,12 +84,7 @@ import {
 } from "../errors/index.ts";
 import { Projection } from "../store/Projection.ts";
 import { DatabaseIdGenerator, type DatabaseIdGeneratorShape } from "./DatabaseIdGenerator.ts";
-import {
-  DatabaseIdentity,
-  DatabaseIdentityTest,
-  type DatabaseIdentityShape,
-} from "./DatabaseIdentity.ts";
-import { DatabaseIdGeneratorDeterministic } from "./DatabaseIdGenerator.ts";
+import { DatabaseIdentity, type DatabaseIdentityShape } from "./DatabaseIdentity.ts";
 
 type RepositoryRuntime = {
   readonly cycleMetadata?: CycleRepositoryMetadata;
@@ -2666,11 +2661,6 @@ export const DatabaseLiveWithOptions = (options: DatabaseServiceOptions) =>
         (service) => service.close(),
       );
     }),
-  );
-
-export const DatabaseTest = (prefix?: string) =>
-  DatabaseLiveWithOptions({ projectionPath: ":memory:" }).pipe(
-    Layer.provide(Layer.mergeAll(DatabaseIdentityTest(), DatabaseIdGeneratorDeterministic(prefix))),
   );
 
 const buildMaterialization = (

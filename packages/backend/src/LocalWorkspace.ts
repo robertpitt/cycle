@@ -277,6 +277,3 @@ export const LocalWorkspaceLive = Layer.effect(
     });
   }),
 );
-
-export const LocalWorkspaceTest = (service: LocalWorkspaceService) =>
-  Layer.succeed(LocalWorkspace, LocalWorkspace.of(service));

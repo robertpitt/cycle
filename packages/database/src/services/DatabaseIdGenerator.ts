@@ -16,38 +16,6 @@ export class DatabaseIdGenerator extends Context.Service<
   DatabaseIdGeneratorShape
 >()("@cycle/database/DatabaseIdGenerator") {}
 
-export const makeDeterministicIdGenerator = (prefix = "test"): DatabaseIdGeneratorShape => {
-  let ticket = 0;
-  let draft = 0;
-  let event = 0;
-  let label = 0;
-  let record = 0;
-  let template = 0;
-  let view = 0;
-
-  const next = (kind: string, value: number): string =>
-    `${kind}_${prefix}_${String(value).padStart(4, "0")}`;
-  const nextBase36 = (value: number): string => {
-    const base = value.toString(36).toUpperCase().padStart(5, "0");
-    const expansion = (value % 36).toString(36).toUpperCase();
-
-    return `${base}${expansion}`;
-  };
-
-  return {
-    draftId: Effect.sync(() => next("drf", ++draft)),
-    eventId: Effect.sync(() => next("evt", ++event)),
-    labelId: Effect.sync(() => next("lbl", ++label)),
-    recordId: Effect.sync(() => next("rec", ++record)),
-    templateId: Effect.sync(() => next("tpl", ++template)),
-    ticketId: Effect.sync(() => nextBase36(++ticket)),
-    viewId: Effect.sync(() => next("view", ++view)),
-  };
-};
-
-export const DatabaseIdGeneratorDeterministic = (prefix?: string) =>
-  Layer.succeed(DatabaseIdGenerator, DatabaseIdGenerator.of(makeDeterministicIdGenerator(prefix)));
-
 export const DatabaseIdGeneratorLive = Layer.effect(
   DatabaseIdGenerator,
   Effect.gen(function* () {

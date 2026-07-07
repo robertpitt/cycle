@@ -212,12 +212,3 @@ export const makeVectorSqliteLayer = <R = never>(options: Omit<SqliteLayerOption
     ...options,
     vector: "required",
   });
-
-export const makeInMemorySqliteLayer = <R = never>(
-  options: Omit<SqliteLayerOptions<R>, "createParentDirectory" | "filename"> = {},
-) =>
-  makeSqliteLayer({
-    ...options,
-    createParentDirectory: false,
-    filename: ":memory:",
-  });

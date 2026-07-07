@@ -8,12 +8,12 @@ import { afterEach, describe, it } from "vitest";
 import {
   AppConfig,
   AppConfigLive,
-  AppConfigTest,
   DEFAULT_API_PORT,
   defaultAppConfig,
   parseAppConfig,
   type AppConfigState,
 } from "../src/AppConfig.ts";
+import { AppConfigTest } from "../src/testing/index.ts";
 
 const temporaryDirectories: Array<string> = [];
 

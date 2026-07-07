@@ -12,8 +12,5 @@ export const BackendAgentSessionStoreLive = (path: string) =>
     BackendAgentSessionStore.of(makeBackendAgentSessionStore(path)),
   );
 
-export const BackendAgentSessionStoreTest = (store: AgentSessionStore) =>
-  Layer.succeed(BackendAgentSessionStore, BackendAgentSessionStore.of(store));
-
 export { makeBackendAgentSessionStore };
 export type { AgentSessionBinding, AgentSessionStore } from "@cycle/agents";

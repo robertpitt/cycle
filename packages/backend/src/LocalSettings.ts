@@ -1,4 +1,3 @@
-import type { JsonObject } from "@cycle/contracts/schemas";
 import { supportedAgentProviders, type AgentProviderId } from "@cycle/config/agent-providers";
 import {
   AppConfig,
@@ -12,6 +11,12 @@ import {
 } from "@cycle/config/app-config";
 import { AgentProviderId as AgentProviderIdSchema } from "@cycle/contracts/schemas";
 import { Context, Effect, Layer, Schema } from "effect";
+import {
+  jsonObject,
+  normalizeNullableText,
+  normalizeOnboardingProfile,
+  normalizeProfileUpdate,
+} from "./internals/localSettings.ts";
 import { LocalWorkspace, type UpdateRepositoryPreferencesInput } from "./LocalWorkspace.ts";
 
 export const ProfileUpdateInput = Schema.Struct({
@@ -71,51 +76,6 @@ export type LocalSettingsService = {
 export class LocalSettings extends Context.Service<LocalSettings, LocalSettingsService>()(
   "@cycle/backend/LocalSettings",
 ) {}
-
-const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-const normalizeEmail = (email: string): Effect.Effect<string, AppConfigError> =>
-  Effect.sync(() => email.trim()).pipe(
-    Effect.flatMap((trimmed) => {
-      if (trimmed === "" || emailPattern.test(trimmed)) return Effect.succeed(trimmed);
-      return Effect.fail(
-        new AppConfigError({
-          message: "Profile email must be empty or a valid email address.",
-          operation: "LocalSettings.email",
-        }),
-      );
-    }),
-  );
-
-const normalizeProfileUpdate = (
-  current: ProfileConfig,
-  input: ProfileUpdateInput,
-): Effect.Effect<ProfileConfig, AppConfigError> =>
-  Effect.gen(function* () {
-    return {
-      displayName: input.displayName === undefined ? current.displayName : input.displayName.trim(),
-      email: input.email === undefined ? current.email : yield* normalizeEmail(input.email),
-    };
-  });
-
-const normalizeOnboardingProfile = (
-  input: CompleteOnboardingInput,
-): Effect.Effect<ProfileConfig, AppConfigError> =>
-  Effect.gen(function* () {
-    return {
-      displayName: input.displayName.trim(),
-      email: yield* normalizeEmail(input.email),
-    };
-  });
-
-const normalizeNullableText = (value: string | null): string | null => {
-  if (value === null) return null;
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? null : trimmed;
-};
-
-const jsonObject = (value: Readonly<Record<string, unknown>>): JsonObject =>
-  JSON.parse(JSON.stringify(value)) as JsonObject;
 
 export const LocalSettingsLive = Layer.effect(
   LocalSettings,
@@ -235,6 +195,3 @@ export const LocalSettingsLive = Layer.effect(
     });
   }),
 );
-
-export const LocalSettingsTest = (service: LocalSettingsService) =>
-  Layer.succeed(LocalSettings, LocalSettings.of(service));

@@ -1,21 +1,14 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "vitest";
-import { AppConfig as AppConfigFromPascal, AppConfigLive } from "@cycle/config/AppConfig";
-import { AppConfigState as AppConfigStateFromSchema } from "@cycle/config/AppConfigSchema";
-import {
-  AppConfig as AppConfigFromLegacy,
-  AppConfigState as AppConfigStateFromLegacy,
-} from "@cycle/config/app-config";
-import { AppConfigLive as AppConfigLiveFromLegacy } from "@cycle/config/app-config-live";
-import { AppConfigState as AppConfigStateFromKebabSchema } from "@cycle/config/app-config-schema";
+import { AppConfig, AppConfigLive } from "@cycle/config/app-config";
+import { AppConfigState } from "@cycle/config/app-config-schema";
 import { AppConfigTest } from "@cycle/config/testing";
 
 describe("@cycle/config package exports", () => {
-  it("maps PascalCase and legacy subpaths to the same service exports", () => {
-    assert.equal(AppConfigFromPascal, AppConfigFromLegacy);
-    assert.equal(AppConfigLive, AppConfigLiveFromLegacy);
-    assert.equal(AppConfigStateFromSchema, AppConfigStateFromKebabSchema);
-    assert.equal(AppConfigStateFromSchema, AppConfigStateFromLegacy);
+  it("exposes canonical app config and testing subpaths", () => {
+    assert.equal(typeof AppConfig, "function");
+    assert.equal(typeof AppConfigLive, "object");
+    assert.equal(typeof AppConfigState, "object");
     assert.equal(typeof AppConfigTest, "function");
   });
 });

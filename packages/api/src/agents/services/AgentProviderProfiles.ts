@@ -28,13 +28,3 @@ export const AgentProviderProfilesLive = Layer.succeed(
   AgentProviderProfiles,
   AgentProviderProfiles.of(makeAgentProviderProfiles()),
 );
-
-export const AgentProviderProfilesTest = (
-  profiles: readonly AgentProviderProfile[] | (() => Promise<readonly AgentProviderProfile[]>),
-) =>
-  Layer.succeed(
-    AgentProviderProfiles,
-    AgentProviderProfiles.of(
-      makeAgentProviderProfiles(typeof profiles === "function" ? profiles : async () => profiles),
-    ),
-  );

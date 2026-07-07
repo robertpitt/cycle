@@ -1,6 +1,5 @@
 import {
   DatabaseService,
-  DatabaseTest,
   normalizeKey,
   protectedSectionsChanged,
   type DatabaseServiceShape,
@@ -814,8 +813,5 @@ export const WorkflowPolicyLive = Layer.succeed(
 );
 
 export const UseCaseServicesLive = Layer.mergeAll(WorkflowPolicyLive, AgentTaskUsecasesLive);
-
-export const UseCaseTest = (prefix?: string) =>
-  Layer.mergeAll(DatabaseTest(prefix), UseCaseServicesLive);
 
 export type CycleUseCaseName = UseCaseName;

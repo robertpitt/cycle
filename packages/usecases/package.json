@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./contracts": "./src/contracts/index.ts",
     "./schemas": "./src/schemas/index.ts",
-    "./schemas/failures": "./src/schemas/failures/index.ts"
+    "./schemas/failures": "./src/schemas/failures/index.ts",
+    "./testing": "./src/testing/index.ts"
   },
   "scripts": {
     "test": "vitest run",

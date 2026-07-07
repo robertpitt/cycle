@@ -1,5 +1,5 @@
 import { AgentProviderDetectorLive } from "@cycle/agents/detection";
-import { AppConfigLive } from "@cycle/config/app-config-live";
+import { AppConfigLive } from "@cycle/config/app-config";
 import { GitRepositoryLive, WorktreeServiceLive } from "@cycle/git";
 import { Context, Effect, Layer } from "effect";
 import { BackendApi, BackendApiLive, type BackendApiHandle } from "./BackendApi.ts";
@@ -11,7 +11,7 @@ import { LocalSettingsLive } from "./LocalSettings.ts";
 import { LocalWorkspaceLive } from "./LocalWorkspace.ts";
 import { RepositoryBootstrap, RepositoryBootstrapLive } from "./RepositoryBootstrap.ts";
 
-export { AppConfigLive } from "@cycle/config/app-config-live";
+export { AppConfigLive } from "@cycle/config/app-config";
 
 export type BackendHandle = {
   readonly baseUrl?: string;
@@ -146,9 +146,6 @@ export const launchBackend = (
   options: BackendStartOptions = {},
 ): Effect.Effect<never, BackendError, BackendRuntime> =>
   startBackend(options).pipe(Effect.andThen(Effect.never));
-
-export const BackendRuntimeTest = (service: BackendRuntimeService) =>
-  Layer.succeed(BackendRuntime, BackendRuntime.of(service));
 
 const makeBackendServiceLayers = (options: BackendStartOptions = {}) => {
   const AppConfigServiceLive = AppConfigLive;

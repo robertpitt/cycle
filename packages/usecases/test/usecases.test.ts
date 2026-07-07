@@ -13,9 +13,9 @@ import {
   IssueUpdate,
   RepositoryStatusGet,
   UseCaseServicesLive,
-  UseCaseTest,
   type WorkflowPolicy,
 } from "../src/index.ts";
+import { UseCaseTest } from "../src/testing/index.ts";
 import { assert, describe, it } from "./effect-vitest.ts";
 
 const repository = { id: "usecase-repository" };

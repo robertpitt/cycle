@@ -15,7 +15,7 @@
     "./runtime": "./src/BackendRuntime.ts",
     "./schemas": "./src/BackendSchemas.ts",
     "./settings": "./src/LocalSettings.ts",
-    "./testing": "./src/BackendTesting.ts",
+    "./testing": "./src/testing/index.ts",
     "./workspace": "./src/LocalWorkspace.ts"
   },
   "scripts": {

@@ -6,7 +6,6 @@ import {
   DatabaseIdGenerator,
   DatabaseIdGeneratorLive,
   DatabaseService,
-  DatabaseTest,
   ValidationError,
   extractMentionTags,
   makeFrontmatter,
@@ -17,6 +16,7 @@ import {
   type LinkedRecord,
   type TicketDocument,
 } from "../src/index.ts";
+import { DatabaseTest } from "../src/testing/index.ts";
 import { Projection } from "../src/store/Projection.ts";
 import { assert, describe, it } from "./effect-vitest.ts";
 

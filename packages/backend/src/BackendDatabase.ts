@@ -94,5 +94,3 @@ export const BackendDatabaseLive = (options: BackendStartOptions = {}) =>
       );
     }),
   );
-
-export const BackendDatabaseTest = BackendDatabaseLive;
