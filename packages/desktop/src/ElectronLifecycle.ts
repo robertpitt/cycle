@@ -1,5 +1,5 @@
 import { Layer } from "effect";
-import { DesktopWindowLive } from "./DesktopWindowLive.ts";
+import { DesktopWindowLive } from "./DesktopWindow.ts";
 import { ElectronAppLive } from "./ElectronApp.ts";
 import { ElectronRuntimeLive } from "./ElectronRuntime.ts";
 import { ElectronShellLive } from "./ElectronShell.ts";

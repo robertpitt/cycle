@@ -27,8 +27,8 @@ import { DEFAULT_API_PORT, type ApiConfig } from "@cycle/config/app-config";
 import { BootstrapStatus, DesktopBootstrap } from "./shared/Bootstrap.ts";
 import { desktopApiRuntimeDiscoveryPath } from "./DesktopApi.ts";
 import { parseRuntimeBaseUrlFromDiscoveryText } from "./DesktopApiRuntimeDiscovery.ts";
-import { currentDesktopWindow } from "./DesktopWindowLive.ts";
-import { DesktopLogger } from "./DesktopLoggerLive.ts";
+import { currentDesktopWindow } from "./DesktopWindow.ts";
+import { DesktopLogger } from "./DesktopLogger.ts";
 import { ElectronPreferences } from "./ElectronPreferences.ts";
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>

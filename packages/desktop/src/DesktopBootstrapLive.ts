@@ -11,7 +11,7 @@ import {
   type BootstrapStatus,
 } from "./shared/Bootstrap.ts";
 import { LocalWorkspace } from "./shared/LocalWorkspace.ts";
-import { DesktopLogger } from "./DesktopLoggerLive.ts";
+import { DesktopLogger } from "./DesktopLogger.ts";
 import { ElectronPreferences } from "./ElectronPreferences.ts";
 
 const DEFAULT_POINTER = "main";

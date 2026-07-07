@@ -2,8 +2,6 @@ import { BrowserWindow, type BrowserWindowConstructorOptions, type WebPreference
 import { Context, Effect, Layer, Scope } from "effect";
 import { ElectronError } from "./errors/ElectronError.ts";
 
-export type ElectronBrowserWindow = BrowserWindow;
-
 export type SecureWebPreferences = Omit<
   WebPreferences,
   "allowRunningInsecureContent" | "contextIsolation" | "nodeIntegration" | "sandbox" | "webSecurity"
@@ -21,11 +19,11 @@ export const secureWebPreferences = (preferences: SecureWebPreferences): WebPref
 });
 
 export type ElectronWindowService = {
-  readonly all: Effect.Effect<ReadonlyArray<ElectronBrowserWindow>>;
+  readonly all: Effect.Effect<ReadonlyArray<BrowserWindow>>;
   readonly destroyAll: Effect.Effect<void>;
   readonly make: (
     options: BrowserWindowConstructorOptions,
-  ) => Effect.Effect<ElectronBrowserWindow, ElectronError, Scope.Scope>;
+  ) => Effect.Effect<BrowserWindow, ElectronError, Scope.Scope>;
 };
 
 export class ElectronWindow extends Context.Service<ElectronWindow, ElectronWindowService>()(

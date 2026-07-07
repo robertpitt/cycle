@@ -5,7 +5,7 @@ import { Layer } from "effect";
 import { DesktopApiLive } from "./DesktopApi.ts";
 import { DesktopBootstrapLive } from "./DesktopBootstrapLive.ts";
 import { DesktopDatabaseLive } from "./DesktopDatabaseLive.ts";
-import { DesktopLoggerLive } from "./DesktopLoggerLive.ts";
+import { DesktopLoggerLive } from "./DesktopLogger.ts";
 import { ElectronPreferences } from "./ElectronPreferences.ts";
 import { LocalWorkspaceLive } from "./LocalWorkspaceLive.ts";
 import { ProfileLive } from "./ProfileLive.ts";
