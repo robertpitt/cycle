@@ -27,6 +27,7 @@
   "devDependencies": {
     "@effect/language-service": "0.86.2",
     "@types/node": "^25.9.2",
+    "@vitest/coverage-v8": "4.1.8",
     "oxfmt": "^0.55.0",
     "oxlint": "^1.70.0",
     "typescript": "^6.0.3"
