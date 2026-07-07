@@ -1,4 +1,4 @@
-import type { AgentProviderId } from "@cycle/backend/client";
+import type { AgentProviderId } from "@cycle/config/agent-providers";
 import { LocalSettings } from "@cycle/backend/settings";
 import { session } from "electron";
 import { Context, Effect, Layer, Scope } from "effect";
@@ -8,14 +8,14 @@ import {
   type ElectronThemeLifecycleHandlers,
   type ElectronThemeState,
 } from "./ElectronTheme.ts";
-import {
-  type AppConfigError,
-  type AppConfigState,
-  type InterfaceDensity,
-  type ProfileConfig,
-  type RepositoryRecord,
-  type ThemePreference,
-} from "@cycle/backend/client";
+import type { AppConfigError } from "@cycle/config/errors";
+import type {
+  AppConfigState,
+  InterfaceDensity,
+  ProfileConfig,
+  RepositoryRecord,
+  ThemePreference,
+} from "@cycle/config/app-config-schema";
 import type { UpdateRepositoryPreferencesInput } from "@cycle/backend/workspace";
 import { type CompleteOnboardingInput, type ProfileUpdateInput } from "./shared/Profile.ts";
 

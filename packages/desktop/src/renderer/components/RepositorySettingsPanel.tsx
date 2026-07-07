@@ -1,4 +1,4 @@
-import type { RepositoryStatus } from "@cycle/backend/client";
+import type { RepositoryStatus } from "@cycle/contracts/schemas";
 import { Button, Select, StatusIndicator, Switch } from "@cycle/ui/atoms";
 import { SettingRow } from "@cycle/ui/molecules";
 import { RefreshCw, Trash2, Upload } from "lucide-react";
@@ -9,14 +9,14 @@ import {
   type AppConfigState,
   type RepositoryCommitStyle,
   type RepositoryRecord,
-} from "@cycle/backend/client";
+} from "@cycle/config/app-config-schema";
 import {
   usePushRepositoryMutation,
   useRemoveRepositoryMutation,
   useSyncRepositoryMutation,
   useUpdateRepositoryPreferencesMutation,
 } from "../mutations/index.ts";
-import type { DetectedAgentProvider } from "@cycle/backend/client";
+import type { DetectedAgentProvider } from "@cycle/config/agent-providers";
 
 type RepositorySettingsPanelProps = {
   readonly agentProviders?: readonly DetectedAgentProvider[];

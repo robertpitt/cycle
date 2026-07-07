@@ -21,9 +21,9 @@ import {
   makeCycleApiLayer,
   startCycleApiServer,
   startCycleApiServerEffect,
-  type AgentChatStoreShape,
   type CycleApiRuntimeShape,
 } from "../src/index.ts";
+import type { AgentChatStoreShape } from "@cycle/agent-chat/records";
 import { prepareChatTurn } from "../src/http/handlers/v1/chat/prepare.ts";
 import { chatOriginInstructions } from "@cycle/agent-chat/runtime";
 

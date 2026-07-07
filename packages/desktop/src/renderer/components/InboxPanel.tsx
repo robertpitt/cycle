@@ -1,8 +1,8 @@
-import type { InboxReason, InboxStatus } from "@cycle/backend/client";
+import type { InboxReason, InboxStatus } from "@cycle/contracts/schemas";
 import { PanelState } from "@cycle/ui/molecules";
 import { InboxList, type InboxListEntry } from "@cycle/ui/organisms";
 import * as React from "react";
-import type { ProfileConfig, RepositoryRecord } from "@cycle/backend/client";
+import type { ProfileConfig, RepositoryRecord } from "@cycle/config/app-config-schema";
 import { useInboxMutation } from "../mutations/index.ts";
 import {
   inboxListEntriesFromPages,

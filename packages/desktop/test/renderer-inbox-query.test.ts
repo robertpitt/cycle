@@ -1,4 +1,4 @@
-import type { InboxEntry, InboxPage, InboxQuery } from "@cycle/backend/client";
+import type { InboxEntry, InboxPage, InboxQuery } from "@cycle/contracts/schemas";
 import { strict as assert } from "node:assert";
 import { describe, it } from "vitest";
 import {

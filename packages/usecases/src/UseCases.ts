@@ -29,7 +29,8 @@ import {
   useCaseFailure,
   type UseCaseFailure,
 } from "./UseCaseFailure.ts";
-import type { AutomationEvaluation, AutomationViolation, UseCaseName } from "./contracts/index.ts";
+import type { AutomationEvaluation, AutomationViolation } from "@cycle/contracts/schemas";
+import type { UseCaseName } from "./contracts/index.ts";
 
 const defaultTransitions: Readonly<Record<string, ReadonlyArray<string>>> = {
   backlog: ["todo", "ready", "canceled"],

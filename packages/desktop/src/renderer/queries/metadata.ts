@@ -13,7 +13,7 @@ import type {
   UserProfileDocument,
   UserProfilePage,
   UserProfileQuery,
-} from "@cycle/backend/client";
+} from "@cycle/contracts/schemas";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { normalizeCreateTicketType } from "../lib/ticketTypes.ts";
 

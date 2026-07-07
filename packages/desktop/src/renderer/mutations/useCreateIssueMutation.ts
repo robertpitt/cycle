@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { CreateTicketInput } from "@cycle/backend/client";
+import type { CreateTicketInput } from "@cycle/contracts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { issueListRootQueryKey } from "../queries/issues.ts";
 

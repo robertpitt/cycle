@@ -1,9 +1,9 @@
 import {
   providerProfileForChat,
-  requestOrigin,
   type AgentChatPublishedEvent,
   type AgentChatRuntimeShape,
-} from "@cycle/agent-chat";
+} from "@cycle/agent-chat/runtime";
+import { requestOrigin } from "@cycle/agent-chat/prompt";
 import { Effect, Layer, Schema } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http";
 import { CycleApiError } from "@cycle/api";

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { CreateSavedViewInput } from "@cycle/backend/client";
+import type { CreateSavedViewInput } from "@cycle/contracts/schemas";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { viewsQueryKey } from "../queries/metadata.ts";
 

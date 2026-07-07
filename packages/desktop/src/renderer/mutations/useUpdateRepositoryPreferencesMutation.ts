@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { defaultAppConfig, type AppConfigState } from "@cycle/backend/client";
+import { defaultAppConfig, type AppConfigState } from "@cycle/config/app-config-schema";
 import type { UpdateRepositoryPreferencesInput } from "@cycle/backend/workspace";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { appConfigQueryKey } from "../queries/appConfig.ts";

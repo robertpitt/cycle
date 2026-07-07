@@ -235,15 +235,30 @@ importers:
 
   packages/desktop:
     dependencies:
+      '@cycle/agents':
+        specifier: workspace:*
+        version: link:../agents
+      '@cycle/api':
+        specifier: workspace:*
+        version: link:../api
       '@cycle/backend':
         specifier: workspace:*
         version: link:../backend
+      '@cycle/config':
+        specifier: workspace:*
+        version: link:../config
+      '@cycle/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@cycle/logging':
         specifier: workspace:*
         version: link:../logging
       '@cycle/ui':
         specifier: workspace:*
         version: link:../ui
+      '@cycle/usecases':
+        specifier: workspace:*
+        version: link:../usecases
       '@effect/platform-node':
         specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.11.1)
@@ -266,6 +281,15 @@ importers:
         specifier: ^7.17.0
         version: 7.17.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
     devDependencies:
+      '@cycle/database':
+        specifier: workspace:*
+        version: link:../database
+      '@cycle/git':
+        specifier: workspace:*
+        version: link:../git
+      '@cycle/sqlite':
+        specifier: workspace:*
+        version: link:../sqlite
       '@swc/core':
         specifier: ^1.15.41
         version: 1.15.41

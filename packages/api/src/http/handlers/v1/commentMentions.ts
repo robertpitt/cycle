@@ -1,9 +1,8 @@
-import { idFromResult, parseAgentMentions, requestOrigin } from "@cycle/agent-chat";
+import { requestOrigin } from "@cycle/agent-chat/prompt";
+import { idFromResult, parseAgentMentions } from "@cycle/agent-chat/runtime";
 import { Effect } from "effect";
 import type { HttpServerRequest } from "effect/unstable/http";
 import { CycleApiRuntime } from "../../runtime/CycleApiRuntime.ts";
-
-export { idFromResult, parseAgentMentions };
 
 export const handleSuccessfulCommentMentions = (input: {
   readonly body: string;

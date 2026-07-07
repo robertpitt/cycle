@@ -1,7 +1,7 @@
 import { BackendDatabaseLive } from "@cycle/backend/database";
 import { LocalSettings } from "@cycle/backend/settings";
 import { Effect, Layer } from "effect";
-import type { AppConfigError } from "@cycle/backend/client";
+import type { AppConfigError } from "@cycle/config/errors";
 import { Profile } from "./shared/Profile.ts";
 
 const LocalSettingsFromProfile = Layer.effect(

@@ -24,7 +24,7 @@ import {
   type ElectronThemeState,
 } from "./ElectronTheme.ts";
 import { BootstrapStatus, RepositoryBootstrap as DesktopBootstrap } from "@cycle/backend/bootstrap";
-import { DEFAULT_API_PORT, type ApiConfig } from "@cycle/backend/client";
+import { DEFAULT_API_PORT, type ApiConfig } from "@cycle/config/app-config-schema";
 import { parseRuntimeBaseUrlFromDiscoveryText } from "@cycle/backend/config";
 import { desktopApiRuntimeDiscoveryPath } from "./DesktopApi.ts";
 import { currentDesktopWindow } from "./DesktopWindow.ts";

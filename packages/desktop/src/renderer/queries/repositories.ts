@@ -2,9 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import type {
   HistoryPage,
   MaterializationWarning,
-  RepositoryHistoryQuery,
   RepositoryStatus,
-} from "@cycle/backend/client";
+} from "@cycle/contracts/schemas";
+import type { RepositoryHistoryQuery } from "@cycle/contracts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 
 export const repositoryStatusQueryKey = (repositoryId: string | undefined) =>

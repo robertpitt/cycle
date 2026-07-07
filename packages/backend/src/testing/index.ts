@@ -1,9 +1,6 @@
 import type { AgentSessionStore } from "@cycle/agents";
 import { Layer } from "effect";
-import {
-  BackendAgentSessionStore,
-  type AgentSessionStore as BackendAgentSessionStoreShape,
-} from "../BackendAgentSessionStore.ts";
+import { BackendAgentSessionStore } from "../BackendAgentSessionStore.ts";
 import { BackendApiLive } from "../BackendApi.ts";
 import { BackendDatabaseLive } from "../BackendDatabase.ts";
 import { BackendRuntime, type BackendRuntimeService } from "../BackendRuntime.ts";
@@ -29,15 +26,3 @@ export const RepositoryBootstrapTest = (service: RepositoryBootstrapService) =>
   Layer.succeed(RepositoryBootstrap, RepositoryBootstrap.of(service));
 
 export { BackendApiLive };
-export { AgentProviderDetector, detectAgentProviders } from "@cycle/agents";
-export { AppConfig } from "@cycle/config/app-config";
-export {
-  DatabaseService,
-  ValidationError,
-  type DatabaseFailure,
-  type DatabaseServiceShape,
-  type RepositoryStatus,
-} from "@cycle/database";
-export { GitRepository, GitRepositoryLive, WorktreeService } from "@cycle/git";
-export { openSqliteSync } from "@cycle/sqlite/sync";
-export type { BackendAgentSessionStoreShape };

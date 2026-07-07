@@ -1,7 +1,7 @@
 import { RefreshCw, Settings, Upload } from "lucide-react";
 import * as React from "react";
 import { Button, StatusIndicator } from "@cycle/ui/atoms";
-import type { RepositoryRecord } from "@cycle/backend/client";
+import type { RepositoryRecord } from "@cycle/config/app-config-schema";
 import type { BootstrapRepositoryStatus, BootstrapStatus } from "@cycle/backend/bootstrap";
 import { usePushRepositoryMutation, useSyncRepositoryMutation } from "../mutations/index.ts";
 

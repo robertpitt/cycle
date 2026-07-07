@@ -22,12 +22,8 @@ import {
 } from "@cycle/ui/molecules";
 import { BarChart3, CalendarDays, Gauge } from "lucide-react";
 import * as React from "react";
-import type {
-  CreateTicketInput,
-  HistoryCommit,
-  LinkedRecord,
-  TicketDocument,
-} from "@cycle/backend/client";
+import type { HistoryCommit, LinkedRecord, TicketDocument } from "@cycle/contracts/schemas";
+import type { CreateTicketInput } from "@cycle/contracts";
 import {
   useAddIssueCommentMutation,
   useArchiveIssueMutation,
@@ -49,8 +45,8 @@ import {
 } from "../queries/index.ts";
 import { createMarkdownTagSuggestions } from "../lib/markdownTagSuggestions.ts";
 import { labelColorClassName } from "../screens/workspace/createIssueOptions.tsx";
-import type { RepositoryRecord } from "@cycle/backend/client";
-import type { DetectedAgentProvider } from "@cycle/backend/client";
+import type { RepositoryRecord } from "@cycle/config/app-config-schema";
+import type { DetectedAgentProvider } from "@cycle/config/agent-providers";
 import {
   taskStatusTone,
   statusLabel,

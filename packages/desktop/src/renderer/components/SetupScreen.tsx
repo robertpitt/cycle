@@ -5,9 +5,12 @@ import {
 } from "@cycle/ui/organisms";
 import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 import * as React from "react";
-import type { AppConfigState } from "@cycle/backend/client";
-import type { AgentProviderId, DetectedAgentProvider } from "@cycle/backend/client";
-import { isAgentProviderId } from "../lib/agentProviders.ts";
+import type { AppConfigState } from "@cycle/config/app-config-schema";
+import {
+  isAgentProviderId,
+  type AgentProviderId,
+  type DetectedAgentProvider,
+} from "@cycle/config/agent-providers";
 
 type SetupScreenProps = {
   readonly agentProvidersQuery: UseQueryResult<ReadonlyArray<DetectedAgentProvider>, Error>;

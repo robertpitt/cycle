@@ -8,7 +8,6 @@
     "./agent-session-store": "./src/BackendAgentSessionStore.ts",
     "./api": "./src/BackendApi.ts",
     "./bootstrap": "./src/RepositoryBootstrap.ts",
-    "./client": "./src/BackendClient.ts",
     "./config": "./src/BackendConfig.ts",
     "./database": "./src/BackendDatabase.ts",
     "./errors": "./src/BackendErrors.ts",

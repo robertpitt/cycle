@@ -1,10 +1,10 @@
-import { AgentProviderId } from "@cycle/backend/client";
+import { AgentProviderId } from "@cycle/config/agent-providers";
 import {
   ThemePreference,
-  type AppConfigError,
   type AppConfigState,
   type ProfileConfig,
-} from "@cycle/backend/client";
+} from "@cycle/config/app-config-schema";
+import type { AppConfigError } from "@cycle/config/errors";
 import { Context, Effect, Schema } from "effect";
 
 export const ProfileUpdateInput = Schema.Struct({

@@ -1,24 +1,24 @@
-import { AgentProvidersOutput as AgentProvidersOutputSchema } from "@cycle/backend/client";
-import { ApiErrorEnvelope as ApiErrorEnvelopeSchema } from "@cycle/backend/client";
+import { AgentProvidersOutput as AgentProvidersOutputSchema } from "@cycle/api/schemas/AgentProvidersResourceEnvelope";
+import { ApiErrorEnvelope as ApiErrorEnvelopeSchema } from "@cycle/api/schemas/ApiErrorEnvelope";
 import {
   AutocompleteOutput as AutocompleteOutputSchema,
   type AutocompleteEntityType as ApiAutocompleteEntityType,
   type HttpAutocompleteResultOutput as ApiAutocompleteResult,
-} from "@cycle/backend/client";
-import { InboxPageResourceEnvelope } from "@cycle/backend/client";
-import { CollectionEnvelopeOf, ResourceEnvelopeOf } from "@cycle/backend/client";
-import * as ContractSchemas from "@cycle/backend/client";
-import {
-  type InboxPage,
-  type RepositoryStatus,
-  type TicketDocument,
-  type TicketPage,
-} from "@cycle/backend/client";
+} from "@cycle/api/schemas/AutocompleteResourceEnvelope";
+import { InboxPageResourceEnvelope } from "@cycle/api/schemas/InboxPageResourceEnvelope";
+import { CollectionEnvelopeOf, ResourceEnvelopeOf } from "@cycle/api/schemas/shared";
+import * as ContractSchemas from "@cycle/contracts/schemas";
+import type {
+  InboxPage,
+  RepositoryStatus,
+  TicketDocument,
+  TicketPage,
+} from "@cycle/contracts/schemas";
 import type {
   UseCaseAlias,
   UseCasePayloadsByAlias,
   UseCaseSuccessesByAlias,
-} from "@cycle/backend/client";
+} from "@cycle/usecases/contracts";
 import { Schema } from "effect";
 import {
   AppConfigState as AppConfigStateSchema,
@@ -31,8 +31,8 @@ import {
   type ProfileConfig,
   type RepositoryRecord as AppRepositoryRecord,
   type ThemePreference,
-} from "@cycle/backend/client";
-import type { AgentProviderId, DetectedAgentProvider } from "@cycle/backend/client";
+} from "@cycle/config/app-config-schema";
+import type { AgentProviderId, DetectedAgentProvider } from "@cycle/config/agent-providers";
 import type { UpdateRepositoryPreferencesInput } from "@cycle/backend/workspace";
 import type { CompleteOnboardingInput, ProfileUpdateInput } from "../../shared/Profile.ts";
 import { getDesktopBridge } from "./desktopBridge.ts";

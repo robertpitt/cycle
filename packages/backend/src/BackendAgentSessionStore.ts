@@ -13,4 +13,3 @@ export const BackendAgentSessionStoreLive = (path: string) =>
   );
 
 export { makeBackendAgentSessionStore };
-export type { AgentSessionBinding, AgentSessionStore } from "@cycle/agents";

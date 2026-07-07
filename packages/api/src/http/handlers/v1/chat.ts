@@ -4,12 +4,16 @@ import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 import { CycleApiRuntime } from "../../runtime/CycleApiRuntime.ts";
 import { CycleRequestContext } from "../../middleware/CycleRequestContextMiddleware.ts";
 import { errorResponse, resourceResponse } from "../responses.ts";
-import type { ChatTurnPayload } from "./chat/domain.ts";
-import { prepareChatTurn, requestOrigin, streamOptionsFromPayload } from "./chat/prepare.ts";
-import { chatMessageFromPayload, chatThreadFromPayload } from "./chat/records.ts";
+import type { ChatTurnPayload } from "@cycle/agent-chat/domain";
+import {
+  messageFromTurnResult,
+  requestOrigin,
+  streamOptionsFromPayload,
+} from "@cycle/agent-chat/prompt";
+import { chatMessageFromPayload, chatThreadFromPayload } from "@cycle/agent-chat/payload-records";
+import { prepareChatTurn } from "./chat/prepare.ts";
 import { runStoreOperation } from "./chat/store.ts";
 import { chatTurnSseFrames } from "./chat/stream.ts";
-import { messageFromTurnResult } from "./chat/prepare.ts";
 
 type ChatRequest = {
   readonly request: HttpServerRequest.HttpServerRequest;

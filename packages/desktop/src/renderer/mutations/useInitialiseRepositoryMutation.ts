@@ -3,7 +3,7 @@ import {
   defaultAppConfig,
   type AppConfigState,
   type RepositoryRecord,
-} from "@cycle/backend/client";
+} from "@cycle/config/app-config-schema";
 import type { InitializeRepositoryPathInput } from "@cycle/backend/workspace";
 import { appConfigQueryKey } from "../queries/appConfig.ts";
 

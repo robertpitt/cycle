@@ -5,17 +5,18 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { ConfigProvider, Effect, Layer } from "effect";
-import { AppConfig, detectAgentProviders, GitRepositoryLive } from "@cycle/backend/testing";
+import { detectAgentProviders } from "@cycle/agents";
+import { AppConfig, AppConfigLive } from "@cycle/config/app-config";
+import { GitRepositoryLive } from "@cycle/git";
 import { NodeServices } from "@effect/platform-node";
 import { afterEach, describe, it } from "vitest";
-import { AppConfigLive } from "@cycle/backend/runtime";
 import { LocalWorkspace, LocalWorkspaceLive } from "@cycle/backend/workspace";
 import {
   DEFAULT_API_PORT,
   defaultAppConfig,
   parseAppConfig,
   type AppConfigState,
-} from "@cycle/backend/client";
+} from "@cycle/config/app-config-schema";
 import { Profile } from "../src/shared/Profile.ts";
 import { ProfileLive } from "../src/ProfileLive.ts";
 import { LocalSettingsLive } from "@cycle/backend/settings";

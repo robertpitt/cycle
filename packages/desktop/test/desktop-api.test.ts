@@ -2,20 +2,16 @@ import { strict as assert } from "node:assert";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  AgentProviderDetector,
-  AppConfig,
-  DatabaseService,
-  GitRepository,
-  WorktreeService,
-  type DatabaseServiceShape,
-} from "@cycle/backend/testing";
+import { AgentProviderDetector } from "@cycle/agents";
+import { AppConfig } from "@cycle/config/app-config";
+import { DatabaseService, type DatabaseServiceShape } from "@cycle/database";
+import { GitRepository, WorktreeService } from "@cycle/git";
 import { NodeServices } from "@effect/platform-node";
 import { Data, Effect, Layer } from "effect";
 import { afterEach, describe, it } from "vitest";
 import { ElectronRuntime } from "../src/ElectronRuntime.ts";
 import { DesktopApi, DesktopApiLive } from "../src/DesktopApi.ts";
-import { defaultAppConfig, type AppConfigState } from "@cycle/backend/client";
+import { defaultAppConfig, type AppConfigState } from "@cycle/config/app-config-schema";
 import { RepositoryBootstrap as DesktopBootstrap } from "@cycle/backend/bootstrap";
 import { LocalWorkspace } from "@cycle/backend/workspace";
 import { DesktopLogger } from "../src/DesktopLogger.ts";

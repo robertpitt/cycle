@@ -8,8 +8,8 @@ import type {
   AgentTurnResult,
 } from "@cycle/agents";
 import type { CycleApiRuntimeShape } from "../../../runtime/CycleApiRuntime.ts";
-import type { ChatStreamEnvelope, ChatStreamOptions } from "./domain.ts";
-import { messageFromTurnResult } from "./prepare.ts";
+import type { ChatStreamEnvelope, ChatStreamOptions } from "@cycle/agent-chat/domain";
+import { messageFromTurnResult } from "@cycle/agent-chat/prompt";
 
 const publicAgentError = (error: AgentError): Omit<AgentError, "raw"> => {
   const { raw: _raw, ...publicError } = error;

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import type { HistoryPage, RepositoryHistoryQuery } from "@cycle/backend/client";
+import type { RepositoryHistoryQuery } from "@cycle/contracts";
+import type { HistoryPage } from "@cycle/contracts/schemas";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 
 export const issueHistoryQueryKey = (

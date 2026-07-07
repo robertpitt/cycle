@@ -38,7 +38,8 @@ import {
   scoped,
   useCaseInvocation,
 } from "../usecases.ts";
-import { handleSuccessfulCommentMentions, idFromResult } from "./commentMentions.ts";
+import { idFromResult } from "@cycle/agent-chat/runtime";
+import { handleSuccessfulCommentMentions } from "./commentMentions.ts";
 import type { V1Request } from "./types.ts";
 
 export const listIssues = ({ params, request }: V1Request<"listIssues">) =>

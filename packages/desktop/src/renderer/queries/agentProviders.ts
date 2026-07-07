@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { DetectedAgentProvider } from "@cycle/backend/client";
+import type { DetectedAgentProvider } from "@cycle/config/agent-providers";
 import { fallbackAgentProviders } from "../lib/agentProviders.ts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 

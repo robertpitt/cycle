@@ -1,4 +1,5 @@
-import type { SavedViewDocument, TicketQuery } from "@cycle/backend/client";
+import type { TicketQuery } from "@cycle/contracts";
+import type { SavedViewDocument } from "@cycle/contracts/schemas";
 import { ViewsPanel as UiViewsPanel, type ViewsPanelRow } from "@cycle/ui/organisms";
 import * as React from "react";
 import { useCreateSavedViewMutation } from "../mutations/index.ts";

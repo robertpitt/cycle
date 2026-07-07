@@ -1,4 +1,8 @@
-import type { InboxMutationInput, InboxMutationResult, InboxStatus } from "@cycle/backend/client";
+import type {
+  InboxMutationInput,
+  InboxMutationResult,
+  InboxStatus,
+} from "@cycle/contracts/schemas";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { inboxRootQueryKey } from "../queries/inbox.ts";

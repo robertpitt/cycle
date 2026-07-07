@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openSqliteSync } from "@cycle/backend/testing";
+import { openSqliteSync } from "@cycle/sqlite/sync";
 import { makeBackendAgentSessionStore as makeDesktopAgentSessionStore } from "@cycle/backend/agent-session-store";
 import { describe, it } from "vitest";
 

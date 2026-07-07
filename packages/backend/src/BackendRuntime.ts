@@ -11,8 +11,6 @@ import { LocalSettingsLive } from "./LocalSettings.ts";
 import { LocalWorkspaceLive } from "./LocalWorkspace.ts";
 import { RepositoryBootstrap, RepositoryBootstrapLive } from "./RepositoryBootstrap.ts";
 
-export { AppConfigLive } from "@cycle/config/app-config";
-
 export type BackendHandle = {
   readonly baseUrl?: string;
   readonly close: () => Promise<void>;

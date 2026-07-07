@@ -1,12 +1,7 @@
-import {
-  prepareChatTurn as prepareAgentChatTurn,
-  requestOrigin,
-  type ChatTurnPayload,
-} from "@cycle/agent-chat";
+import { prepareChatTurn as prepareAgentChatTurn } from "@cycle/agent-chat/prompt";
+import type { ChatTurnPayload } from "@cycle/agent-chat/domain";
 import type { AgentMcpAttachment } from "@cycle/agents";
 import type { CycleApiRuntimeShape } from "../../../runtime/CycleApiRuntime.ts";
-
-export * from "@cycle/agent-chat/prompt";
 
 export const prepareChatTurn = (input: {
   readonly origin: string;
@@ -19,8 +14,6 @@ export const prepareChatTurn = (input: {
     payload: input.payload,
     requestId: input.requestId,
   });
-
-export { requestOrigin };
 
 const mcpAttachmentFromRuntime = (
   runtime: CycleApiRuntimeShape,

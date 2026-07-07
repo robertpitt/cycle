@@ -1,6 +1,5 @@
 export * from "./BackendAgentSessionStore.ts";
 export * from "./BackendApi.ts";
-export * from "./BackendClient.ts";
 export * from "./BackendConfig.ts";
 export * from "./BackendDatabase.ts";
 export * from "./BackendErrors.ts";

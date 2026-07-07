@@ -1,5 +1,4 @@
 import type { Schema } from "effect";
-export type { AutomationEvaluation, AutomationViolation } from "@cycle/contracts/schemas";
 
 export type UseCaseSource = "api" | "ci" | "cli" | "desktop" | "mcp" | "test" | string;
 
