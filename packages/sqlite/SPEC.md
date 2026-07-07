@@ -632,7 +632,7 @@ Conformance SHOULD include repository checks that:
 - `@cycle/agent-chat` no longer imports SQLite schema/path helpers from `@cycle/database`.
 - `@cycle/agents` task storage no longer uses `createRequire("node:sqlite")`.
 - Existing public exports from `@cycle/database`, `@cycle/agent-chat/store`, and
-  `@cycle/agents/task` remain available.
+  `@cycle/agents` remain available.
 
 ## 18. Implementation Checklist
 

@@ -4,8 +4,8 @@ import type {
   AgentTaskEvent,
   AgentTaskEventQuery,
   AgentTaskListQuery,
-} from "./schemas.ts";
-import type { AgentTaskServiceError } from "./errors.ts";
+} from "./AgentTaskSchemas.ts";
+import type { AgentTaskServiceError } from "./AgentTaskErrors.ts";
 
 export type AgentTaskEventInput = Omit<AgentTaskEvent, "sequence">;
 

@@ -5,9 +5,9 @@ import type {
   AgentProviderBindingRecord,
   AgentRunRecord,
   AgentSessionRecord,
-} from "./contracts.ts";
-import { AgentRuntimeFailure, type AgentRuntimeError } from "../errors/index.ts";
-import type { AgentRuntimeEvent } from "./events.ts";
+} from "./AgentRuntimeContracts.ts";
+import { AgentRuntimeFailure, type AgentRuntimeError } from "./errors/index.ts";
+import type { AgentRuntimeEvent } from "./AgentRuntimeEvents.ts";
 
 export type AgentRunLease = {
   readonly expiresAt: string;

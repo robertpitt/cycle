@@ -1,4 +1,4 @@
-import { AgentTaskFailure, type AgentTaskStatus } from "@cycle/agents/task";
+import { AgentTaskFailure, type AgentTaskStatus } from "@cycle/agents";
 import { AgentTaskUsecases, type AgentTaskUsecasesShape } from "@cycle/usecases";
 import { Effect, Result } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";

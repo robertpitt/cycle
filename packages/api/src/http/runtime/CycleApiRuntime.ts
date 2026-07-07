@@ -11,9 +11,13 @@ import type {
   UseCaseSideEffect,
   UseCaseSuccess,
 } from "@cycle/usecases/contracts";
-import type { AgentOrchestrationServiceShape } from "@cycle/agents/orchestration";
-import type { AgentProviderId, AgentProviderProfile, AgentSessionStore } from "@cycle/agents/types";
-import { type AgentServiceRegistryShape } from "@cycle/agents/service";
+import type {
+  AgentOrchestrationServiceShape,
+  AgentProviderId,
+  AgentProviderProfile,
+  AgentServiceRegistryShape,
+  AgentSessionStore,
+} from "@cycle/agents";
 import type { WorktreeServiceShape } from "@cycle/git/worktree";
 import { Context, Layer } from "effect";
 import type {

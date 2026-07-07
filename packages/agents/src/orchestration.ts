@@ -12,7 +12,7 @@ import type {
   AgentTurnResult,
   JsonObject,
 } from "./types.ts";
-import type { AgentServiceRegistryShape } from "./services/AgentServiceRegistry.ts";
+import type { AgentServiceRegistryShape } from "./AgentServiceRegistry.ts";
 import {
   AgentMessageDelta,
   AgentRunCancelled,
@@ -33,6 +33,7 @@ import {
   WarningReported,
   type AgentRuntimeEvent,
 } from "./runtime-events.ts";
+import { makeTimestampRandomId } from "./internal/id.ts";
 
 export type AgentRunId = string;
 
@@ -143,7 +144,7 @@ export const makeAgentOrchestrationService = (
   options: AgentOrchestrationServiceOptions,
 ): AgentOrchestrationServiceShape => {
   const now = options.now ?? (() => new Date());
-  const makeId = options.makeId ?? defaultId;
+  const makeId = options.makeId ?? makeTimestampRandomId;
   const activeRuns = new Map<AgentRunId, ActiveRun>();
   const snapshots = new Map<AgentRunId, AgentRunSnapshot>();
 
@@ -665,8 +666,5 @@ const isJsonValue = (value: unknown): value is JsonObject[string] => {
   if (typeof value !== "object") return false;
   return Object.values(value).every(isJsonValue);
 };
-
-const defaultId = (prefix: string): string =>
-  `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 
 export const agentPromptText = inputText;

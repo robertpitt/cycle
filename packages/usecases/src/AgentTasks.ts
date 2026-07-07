@@ -11,7 +11,7 @@ import {
   type AgentTaskSubscriptionQuery,
   type CancelAgentTaskInput,
   type RetryAgentTaskInput,
-} from "@cycle/agents/task";
+} from "@cycle/agents";
 import { DatabaseService, type TicketDocument } from "@cycle/database";
 import { Context, Effect, Layer, Stream } from "effect";
 

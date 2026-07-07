@@ -1,7 +1,7 @@
 import { Effect, Layer } from "effect";
-import type { AgentTaskStatus, AgentTask, AgentTaskEvent } from "./schemas.ts";
-import { agentTaskStorageFailure, type AgentTaskServiceError } from "./errors.ts";
-import { AgentTaskStore, type AgentTaskStoreShape } from "./store.ts";
+import type { AgentTaskStatus, AgentTask, AgentTaskEvent } from "../AgentTaskSchemas.ts";
+import { agentTaskStorageFailure, type AgentTaskServiceError } from "../AgentTaskErrors.ts";
+import { AgentTaskStore, type AgentTaskStoreShape } from "../AgentTaskStore.ts";
 
 const activeStatuses = new Set<AgentTaskStatus>([
   "cancelling",

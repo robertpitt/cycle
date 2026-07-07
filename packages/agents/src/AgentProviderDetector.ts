@@ -1,8 +1,8 @@
 import { Context, Effect, Layer } from "effect";
 import { defaultAgentCapabilities, supportedAgentProviders } from "./providers/index.ts";
 import { claudeCodePackageName, claudeCodeProviderId } from "./providers/claude-code/constants.ts";
-import { ExecutableResolver, ExecutableResolverLive, resolveExecutables } from "./executables.ts";
-import type { ExecutableResolverEnvironment, ExecutableResolverOptions } from "./executables.ts";
+import { ExecutableResolver, ExecutableResolverLive, resolveExecutables } from "./ExecutableResolver.ts";
+import type { ExecutableResolverEnvironment, ExecutableResolverOptions } from "./ExecutableResolver.ts";
 import type { DetectedAgentProvider } from "./types.ts";
 
 export type AgentProviderDetectionEnvironment = ExecutableResolverEnvironment;

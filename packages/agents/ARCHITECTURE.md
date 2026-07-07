@@ -1,48 +1,75 @@
 # Agents Package Architecture
 
-`@cycle/agents` is the provider abstraction layer for local AI agent execution in Cycle. It owns the shared TypeScript contracts, local provider detection, capability metadata, service registry, and the Codex execution adapter. It deliberately does not own UI, HTTP routing, database schema, chat persistence, or request authorization; those are supplied by consuming packages.
+`@cycle/agents` is the local agent runtime package for Cycle. Its primary public boundary is the Effect-first `AgentRuntime` service plus schema-tagged runtime events, runtime contracts, provider detection, prompt assembly, authority/MCP policy, harness lookup, and task storage contracts. It deliberately does not own UI, HTTP routing, chat persistence, ticket transitions, branch finalization, or request authorization; those are supplied by consuming packages.
 
 ## Goals
 
-- Present one provider-agnostic `AgentService` contract for session creation, session resume, turn execution, streaming, cancellation, and shutdown.
+- Present one provider-agnostic `AgentRuntime` contract for starting, resuming, observing, steering, cancelling, and reconciling local agent runs.
 - Normalize provider-specific responses into Cycle-owned result, event, artifact, usage, and error types.
 - Detect locally installed provider CLIs and expose profile/capability information for API and desktop consumers.
-- Keep persistence pluggable through `AgentSessionStore` so desktop, tests, and other runtimes can choose their own storage.
-- Allow provider support to be added incrementally. Codex has an executable adapter today; Claude Code and OpenCode currently expose definitions and capabilities but resolve to unsupported execution unless a consumer registers a real service.
+- Keep runtime durability and task storage behind Effect services so desktop, tests, and other runtimes can choose their own storage layers.
+- Allow provider support to be added incrementally behind harness adapters. Codex is the default executable harness today; Claude Code support exists behind the same harness boundary.
 
 ## Package Shape
 
 ```text
 packages/agents/
   src/
-    types.ts                  Shared contracts and normalized data model
-    detection.ts              Local executable detection and Effect service layer
-    providers.ts              Public provider catalog export
-    service.ts                Public service registry export
-    codex.ts                  Public Codex adapter export
+    AgentRuntime.ts           Primary runtime service facade
+    AgentRuntimeContracts.ts  Runtime request, record, snapshot, and handle contracts
+    AgentRuntimeEvents.ts     Canonical schema-tagged runtime event protocol
+    AgentDurability.ts        Runtime durability service facade
+    AgentHarnessRegistry.ts   Harness adapter registry service facade
+    AgentAuthorityPolicy.ts   Cycle authority to provider runtime policy
+    AgentMcpConnector.ts      Scoped MCP attachment service facade
+    PromptAssembler.ts        Prompt assembly service facade
+    PromptTemplateRegistry.ts Prompt template registry service facade
+    AgentProviderDetector.ts  Local provider detection service facade
+    AgentTaskService.ts       Agent task service facade
+    AgentTaskStore.ts         Agent task store contract facade
+    AgentTaskSchemas.ts       Agent task schemas and typed errors
+    types.ts                  Compatibility provider-turn contracts
+    service.ts                Compatibility provider-turn registry export
+    orchestration.ts          Compatibility orchestration wrapper
+    codex.ts                  Stable public Codex constants
+    internal/                 Shared private implementation helpers
+    testing/                  Test-only in-memory layers and stores
     providers/
       catalog.ts              Provider definitions, profiles, capabilities lookup
       shared.ts               Shared job type groups
       codex/                  Codex implementation using Codex app-server
-      claude/                 Claude Code definition and capability metadata
-      opencode/               OpenCode definition and capability metadata
-    services/
-      AgentServiceRegistry.ts Provider-to-service lookup
-      DefaultAgentServices.ts Default registry with Codex enabled
-      UnsupportedAgentService.ts Stub execution for unsupported providers
+      claude-code/            Claude Code implementation and capability metadata
+    runtime/                  Runtime implementation modules behind root facades
+    task/                     Task service/store implementation modules
+    services/                 Compatibility provider-turn registry
   test/
     codex.test.ts             Codex execution, streaming, and session persistence
     detection.test.ts         Provider detection and unsupported service contracts
 ```
 
-The package exports subpaths from `package.json` for the main contract, provider catalog, detection, services, and Codex-specific adapter utilities:
+The package exports subpaths from `package.json` for the runtime-first contract, provider catalog, detection, task service, testing layers, and compatibility adapters:
 
 - `@cycle/agents`
+- `@cycle/agents/agent-runtime`
+- `@cycle/agents/agent-runtime-contracts`
+- `@cycle/agents/agent-runtime-events`
+- `@cycle/agents/agent-durability`
+- `@cycle/agents/agent-harness-registry`
+- `@cycle/agents/agent-authority-policy`
+- `@cycle/agents/agent-mcp-connector`
+- `@cycle/agents/prompt-assembler`
+- `@cycle/agents/prompt-template-registry`
+- `@cycle/agents/agent-provider-detector`
+- `@cycle/agents/executable-resolver`
+- `@cycle/agents/agent-task-errors`
+- `@cycle/agents/agent-task-schemas`
+- `@cycle/agents/agent-task-service`
+- `@cycle/agents/agent-task-store`
+- `@cycle/agents/testing`
 - `@cycle/agents/types`
 - `@cycle/agents/providers`
-- `@cycle/agents/detection`
-- `@cycle/agents/service`
-- `@cycle/agents/codex`
+- `@cycle/agents/orchestration` compatibility orchestration wrapper
+- `@cycle/agents/codex` stable Codex constants
 - provider capability subpaths under `@cycle/agents/providers/*`
 
 ## Layers
@@ -103,37 +130,23 @@ It returns one `DetectedAgentProvider` per `supportedAgentProviders` entry, with
 
 ### 4. Service Registry Layer
 
-`src/services/AgentServiceRegistry.ts` provides provider-to-service lookup:
+`src/AgentServiceRegistry.ts` provides provider-to-service lookup:
 
 ```ts
 serviceFor(provider: AgentProviderId): Effect.Effect<AgentService>
 ```
 
-`makeAgentServiceRegistry` accepts explicit provider entries and an optional fallback. If no service exists, it returns `makeUnsupportedAgentService(provider)`.
+`makeAgentServiceRegistry` accepts explicit provider entries. If no service exists, it dies with a provider registration error.
 
-`src/services/DefaultAgentServices.ts` builds the default runtime registry:
+`src/DefaultAgentServices.ts` builds the default runtime registry:
 
 - Registers Codex through `makeCodexAgentService`.
-- Uses `makeUnsupportedAgentService` for all other providers.
+- Registers Claude Code through `makeClaudeCodeAgentService`.
 - Passes through a shared optional `AgentSessionStore`.
 
-This keeps consumers from needing to know which providers are implemented. They ask the registry for a provider service and receive either a real adapter or a normalized unsupported service.
+This keeps consumers from needing to know adapter construction details. They ask the registry for a provider service and receive the configured adapter.
 
-### 5. Unsupported Provider Layer
-
-`src/services/UnsupportedAgentService.ts` implements the full `AgentService` interface for providers without an executable adapter.
-
-It:
-
-- Creates and resumes sessions in memory and optionally in `AgentSessionStore`.
-- Returns provider capabilities from `defaultAgentCapabilities`.
-- Fails `run` with `unsupported_option`.
-- Emits `turn.started` then `turn.failed` from `stream`.
-- Rejects aborts with `not_supported`.
-
-This gives API/UI layers a consistent service shape even when a provider is only represented by catalog metadata.
-
-### 6. Codex Adapter Layer
+### 5. Codex Adapter Layer
 
 `src/providers/codex` is the only executable provider implementation in this package. It adapts Cycle's `AgentService` contract to the Codex app-server protocol.
 
@@ -173,7 +186,7 @@ Effect service for selecting the execution adapter.
 ```text
 makeDefaultAgentServiceRegistry(options)
   -> codex: makeCodexAgentService(options)
-  -> fallback: makeUnsupportedAgentService(provider, { sessionStore })
+  -> claude-code: makeClaudeCodeAgentService(options.claudeCode + shared options)
 ```
 
 Consumers use it before chat/agent execution to resolve the provider-specific `AgentService`.

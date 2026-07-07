@@ -29,7 +29,7 @@ export const RepositoryBootstrapTest = (service: RepositoryBootstrapService) =>
   Layer.succeed(RepositoryBootstrap, RepositoryBootstrap.of(service));
 
 export { BackendApiLive };
-export { AgentProviderDetector, detectAgentProviders } from "@cycle/agents/detection";
+export { AgentProviderDetector, detectAgentProviders } from "@cycle/agents";
 export { AppConfig } from "@cycle/config/app-config";
 export {
   DatabaseService,

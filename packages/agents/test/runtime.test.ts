@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { Effect, Stream } from "effect";
+import { ConfigProvider, Effect, Stream } from "effect";
 import { describe, it } from "vitest";
 import type { AgentEvent } from "../src/types.ts";
 import {
@@ -12,7 +12,8 @@ import {
   makePromptTemplateRegistry,
   type AgentHarnessAdapter,
   type AgentRunStartRequest,
-} from "../src/runtime/index.ts";
+} from "../src/index.ts";
+import { agentRuntimeEnvironmentConfig } from "../src/AgentRuntimeConfig.ts";
 
 const collect = async <A>(stream: Stream.Stream<A, unknown>): Promise<readonly A[]> =>
   Array.from(await Effect.runPromise(Stream.runCollect(stream)));
@@ -163,6 +164,36 @@ const baseRequest = (patch: Partial<AgentRunStartRequest> = {}): AgentRunStartRe
 });
 
 describe("@cycle/agents AgentRuntime", () => {
+  it("reads runtime defaults from Effect Config", async () => {
+    const config = await Effect.runPromise(
+      agentRuntimeEnvironmentConfig.parse(
+        ConfigProvider.fromEnv({
+          env: {
+            CYCLE_AGENT_AUTOMATIC_RESUME: "true",
+            CYCLE_AGENT_DEFAULT_HARNESS_ID: "claude-code",
+            CYCLE_AGENT_DEFAULT_MCP_FAILURE_POLICY: "fail-run",
+            CYCLE_AGENT_DEFAULT_PROVIDER_ID: "claude-code",
+            CYCLE_AGENT_DEFAULT_TIMEOUT_MS: "1234",
+            CYCLE_AGENT_EVENT_DIAGNOSTICS: "raw-private",
+            CYCLE_AGENT_LEASE_DURATION_MS: "4321",
+            CYCLE_AGENT_PROMPT_DIAGNOSTICS: "redacted-full",
+            CYCLE_AGENT_RUNTIME_OWNER_ID: "test-owner",
+          },
+        }),
+      ),
+    );
+
+    assert.equal(config.automaticResume, true);
+    assert.equal(config.defaultHarnessId, "claude-code");
+    assert.equal(config.defaultMcpFailurePolicy, "fail-run");
+    assert.equal(config.defaultProviderId, "claude-code");
+    assert.equal(config.defaultTimeoutMs, 1234);
+    assert.equal(config.eventDiagnostics, "raw-private");
+    assert.equal(config.leaseDurationMs, 4321);
+    assert.equal(config.ownerId, "test-owner");
+    assert.equal(config.promptDiagnostics, "redacted-full");
+  });
+
   it("starts a durable run and maps provider events into canonical runtime events", async () => {
     const { durability, runtime } = makeRuntime();
     const handle = await Effect.runPromise(runtime.start(baseRequest()));

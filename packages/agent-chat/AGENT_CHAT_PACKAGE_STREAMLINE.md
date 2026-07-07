@@ -354,7 +354,6 @@ import { makeSqliteAgentChatStore } from "@cycle/agent-chat/store";
 Production code in `packages/agent-chat/src` MAY import:
 
 - `@cycle/agents`
-- `@cycle/agents/service`
 - `@cycle/sqlite/sync`
 - `effect`
 

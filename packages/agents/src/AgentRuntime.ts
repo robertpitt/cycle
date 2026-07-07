@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Option, Schema, Stream } from "effect";
-import type { AgentContentStreamKind, AgentEvent, AgentProviderId } from "../types.ts";
+import type { AgentContentStreamKind, AgentEvent, AgentProviderId } from "./types.ts";
 import {
   type AgentAttemptRecord,
   type AgentPromptBundle,
@@ -16,10 +16,10 @@ import {
   type AgentRuntimeReconcileRequest,
   type AgentSessionRecord,
   defaultAgentRuntimeConfig,
-} from "./contracts.ts";
-import { AgentRuntimeFailure, type AgentRuntimeError } from "../errors/index.ts";
-import type { AgentDurabilityShape } from "./durability.ts";
-import { AgentDurability } from "./durability.ts";
+} from "./AgentRuntimeContracts.ts";
+import { AgentRuntimeFailure, type AgentRuntimeError } from "./errors/index.ts";
+import type { AgentDurabilityShape } from "./AgentDurability.ts";
+import { AgentDurability } from "./AgentDurability.ts";
 import {
   AgentRuntimeApprovalRequested,
   AgentRuntimeApprovalResolved,
@@ -48,18 +48,32 @@ import {
   AgentRuntimeUserInputRequested,
   AgentRuntimeUserInputResolved,
   AgentRuntimeWarningReported,
-} from "./events.ts";
-import type { AgentHarnessAdapter } from "./harness.ts";
-import { AgentHarnessRegistry, type AgentHarnessRegistryShape } from "./harness.ts";
+} from "./AgentRuntimeEvents.ts";
+import type { AgentHarnessAdapter } from "./AgentHarnessRegistry.ts";
+import { AgentHarnessRegistry, type AgentHarnessRegistryShape } from "./AgentHarnessRegistry.ts";
 import {
   AgentAuthorityPolicy,
-  AgentMcpConnector,
   type AgentAuthorityProfile,
+  type AgentAuthorityPolicyShape,
+} from "./AgentAuthorityPolicy.ts";
+import {
+  AgentMcpConnector,
   type AgentMcpConnection,
   type AgentMcpConnectorShape,
-  type AgentAuthorityPolicyShape,
-} from "./policy.ts";
-import { PromptAssembler, type PromptAssemblerShape } from "./prompt.ts";
+} from "./AgentMcpConnector.ts";
+import { PromptAssembler, type PromptAssemblerShape } from "./PromptAssembler.ts";
+import { PromptAssemblerLive } from "./PromptAssembler.ts";
+import { PromptTemplateRegistryLive } from "./PromptTemplateRegistry.ts";
+import { AgentAuthorityPolicyLive } from "./AgentAuthorityPolicy.ts";
+import { AgentMcpConnectorLive } from "./AgentMcpConnector.ts";
+import { AgentDurabilityInMemory } from "./AgentDurability.ts";
+import { AgentHarnessRegistryLive } from "./AgentHarnessRegistry.ts";
+import { makeCodexHarnessAdapter } from "./AgentCodexHarness.ts";
+import type { CodexAgentServiceOptions } from "./providers/codex/types.ts";
+import { makeClaudeCodeHarnessAdapter } from "./providers/claude-code/harness.ts";
+import type { ClaudeCodeAgentServiceOptions } from "./providers/claude-code/service.ts";
+import { agentRuntimeEnvironmentConfig } from "./AgentRuntimeConfig.ts";
+import { makeTimestampRandomId } from "./internal/id.ts";
 
 export type AgentRuntimeShape = {
   readonly cancel: (
@@ -100,6 +114,14 @@ export type AgentRuntimeOptions = {
   readonly promptAssembler: PromptAssemblerShape;
 };
 
+export type DefaultAgentRuntimeLayerOptions = {
+  readonly claudeCode?: ClaudeCodeAgentServiceOptions;
+  readonly codex?: CodexAgentServiceOptions;
+  readonly config?: AgentRuntimeOptions["config"];
+  readonly makeId?: (prefix: string) => string;
+  readonly now?: () => Date;
+};
+
 type ActiveRun = {
   readonly attemptId: string;
   readonly controller: AbortController;
@@ -119,7 +141,7 @@ type ProviderMappingState = {
 export const makeAgentRuntime = (options: AgentRuntimeOptions): AgentRuntimeShape => {
   const durability = options.durability;
   const now = options.now ?? (() => new Date());
-  const makeId = options.makeId ?? defaultId;
+  const makeId = options.makeId ?? makeTimestampRandomId;
   const config: AgentRuntimeConfig = {
     ...defaultAgentRuntimeConfig,
     ...options.config,
@@ -130,14 +152,22 @@ export const makeAgentRuntime = (options: AgentRuntimeOptions): AgentRuntimeShap
     runId: string,
   ): Effect.Effect<Option.Option<AgentRunSnapshot>, AgentRuntimeError> =>
     Effect.gen(function* () {
-      const run = yield* durability.getRun(runId);
+      const run = yield* durability.getRun(runId).pipe(
+        Effect.mapError((e) => e as AgentRuntimeError),
+      );
       if (run === undefined) return Option.none();
-      const session = yield* durability.getSession(run.sessionId);
+      const session = yield* durability.getSession(run.sessionId).pipe(
+        Effect.mapError((e) => e as AgentRuntimeError),
+      );
       if (session === undefined) return Option.none();
-      const attempts = yield* durability.listAttemptsByRun(runId);
-      const events = yield* durability.listEvents(runId);
+      const attempts = yield* durability.listAttemptsByRun(runId).pipe(
+        Effect.mapError((e) => e as AgentRuntimeError),
+      );
+      const events = yield* durability.listEvents(runId).pipe(
+        Effect.mapError((e) => e as AgentRuntimeError),
+      );
       const activeAttempt = attempts.find(
-        (attempt) =>
+        (attempt: AgentAttemptRecord) =>
           attempt.status === "running" ||
           attempt.status === "starting" ||
           attempt.status === "waiting",
@@ -1139,6 +1169,38 @@ export const AgentRuntimeLive = (
     }),
   );
 
+export const AgentRuntimeDefault = (options: DefaultAgentRuntimeLayerOptions = {}) => {
+  const now = options.now ?? (() => new Date());
+  const makeId = options.makeId ?? makeTimestampRandomId;
+
+  return Layer.unwrap(
+    agentRuntimeEnvironmentConfig.pipe(
+      Effect.map((environmentConfig) =>
+        AgentRuntimeLive({
+          config: {
+            ...environmentConfig,
+            ...options.config,
+          },
+          makeId,
+          now,
+        }).pipe(
+          Layer.provide([
+            AgentAuthorityPolicyLive,
+            AgentDurabilityInMemory,
+            AgentHarnessRegistryLive([
+              makeCodexHarnessAdapter(options.codex),
+              makeClaudeCodeHarnessAdapter(options.claudeCode),
+            ]),
+            AgentMcpConnectorLive,
+            PromptAssemblerLive({ makeId, now }),
+            PromptTemplateRegistryLive,
+          ]),
+        ),
+      ),
+    ),
+  );
+};
+
 const requiredRun = (
   durability: AgentDurabilityShape,
   runId: string,
@@ -1347,6 +1409,3 @@ const isJsonValue = (value: unknown): boolean => {
   if (typeof value !== "object") return false;
   return Object.values(value).every(isJsonValue);
 };
-
-const defaultId = (prefix: string): string =>
-  `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;

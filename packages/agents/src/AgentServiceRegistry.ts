@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect";
-import type { AgentProviderId, AgentService } from "../types.ts";
+import type { AgentProviderId, AgentService } from "./types.ts";
 
 export type AgentServiceRegistryShape = {
   readonly serviceFor: (provider: AgentProviderId) => Effect.Effect<AgentService>;

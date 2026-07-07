@@ -1,4 +1,4 @@
-import * as AgentTaskSchemas from "@cycle/agents/schemas";
+import * as AgentTaskSchemas from "@cycle/agents/agent-task-schemas";
 import { Schema } from "effect";
 import {
   AcceptedResourceEnvelopeOf,

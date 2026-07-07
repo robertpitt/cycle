@@ -5,9 +5,9 @@ import { fileURLToPath } from "node:url";
 import {
   AgentTaskServiceLive,
   AgentTaskStore,
-  makeInMemoryAgentTaskStore,
   type AgentTaskRequest,
-} from "@cycle/agents/task";
+} from "@cycle/agents";
+import { makeInMemoryAgentTaskStore } from "@cycle/agents/testing";
 import { DatabaseService, type DatabaseServiceShape } from "@cycle/database";
 import type { TicketDocument } from "@cycle/contracts";
 import { Effect, Layer } from "effect";

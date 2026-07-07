@@ -1,8 +1,8 @@
 import { openSqliteSync, type SqliteDatabaseLike } from "@cycle/sqlite/sync";
 import { Effect, Layer } from "effect";
-import type { AgentTask, AgentTaskEvent, AgentTaskStatus } from "./schemas.ts";
-import { agentTaskStorageFailure, type AgentTaskServiceError } from "./errors.ts";
-import { AgentTaskStore, type AgentTaskStoreShape } from "./store.ts";
+import type { AgentTask, AgentTaskEvent, AgentTaskStatus } from "./AgentTaskSchemas.ts";
+import { agentTaskStorageFailure, type AgentTaskServiceError } from "./AgentTaskErrors.ts";
+import { AgentTaskStore, type AgentTaskStoreShape } from "./AgentTaskStore.ts";
 
 export const agentTaskSchemaSql = `
 CREATE TABLE IF NOT EXISTS agent_tasks (

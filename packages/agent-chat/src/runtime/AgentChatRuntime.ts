@@ -1,4 +1,5 @@
 import {
+  type AgentServiceRegistryShape,
   isAgentProviderId,
   type AgentApprovalDecision,
   type AgentApprovalKind,
@@ -15,7 +16,6 @@ import {
   type AgentTurnResult,
   type AgentUserInputAnswer,
 } from "@cycle/agents";
-import type { AgentServiceRegistryShape } from "@cycle/agents/service";
 import { Effect } from "effect";
 import type { ChatMessagePayload, ChatRepositoryPayload, ChatTurnPayload } from "../domain.ts";
 import { isRecord } from "../domain.ts";

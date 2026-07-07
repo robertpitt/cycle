@@ -4,10 +4,10 @@ import { describe, it } from "vitest";
 import {
   AgentTaskService,
   AgentTaskServiceLive,
-  AgentTaskStoreInMemory,
   AgentTask,
   AgentTaskRequest,
 } from "../src/index.ts";
+import { AgentTaskStoreInMemory } from "../src/testing/index.ts";
 
 const makeIds = () => {
   let id = 0;

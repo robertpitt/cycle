@@ -1,4 +1,4 @@
-import type { AgentProviderId, AgentTurnRuntimeRecord } from "@cycle/agents/types";
+import type { AgentProviderId, AgentTurnRuntimeRecord } from "@cycle/agents";
 import { Context, Layer } from "effect";
 
 export type AgentActiveTurnBeginInput = {

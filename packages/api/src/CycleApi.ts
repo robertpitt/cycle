@@ -1,7 +1,9 @@
-import { mcpBearerTokenEnvVar } from "@cycle/agents";
 import { makeAgentChatEventBus, makeAgentChatRuntime } from "@cycle/agent-chat";
-import { makeAgentOrchestrationService } from "@cycle/agents/orchestration";
-import { makeDefaultAgentServiceRegistry } from "@cycle/agents/service";
+import {
+  makeAgentOrchestrationService,
+  makeDefaultAgentServiceRegistry,
+  mcpBearerTokenEnvVar,
+} from "@cycle/agents";
 import { UseCaseServicesLive } from "@cycle/usecases";
 import { NodeServices } from "@effect/platform-node";
 import { Layer } from "effect";

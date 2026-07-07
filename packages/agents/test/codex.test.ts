@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { makeCodexAppServerClient, type CodexAppServerClient } from "@cycle/codex-app-server";
 import { Schema } from "effect";
 import { describe, it, vi } from "vitest";
-import { makeCodexAgentService } from "../src/codex.ts";
+import { makeCodexAgentService } from "../src/providers/codex/service.ts";
 import { makeAgentJobRequestMetadata } from "../src/providers/capabilities.ts";
 import { parseStructured } from "../src/providers/codex/structured.ts";
 import type { AgentEvent, AgentSessionBinding, AgentSessionStore } from "../src/types.ts";

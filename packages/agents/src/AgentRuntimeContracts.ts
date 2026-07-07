@@ -1,7 +1,7 @@
 import { Schema, Stream } from "effect";
-import type { AgentAuthorityMode, AgentMcpAttachment, AgentProviderId } from "../types.ts";
-import type { AgentRuntimeError } from "../errors/index.ts";
-import type { AgentRuntimeEvent } from "./events.ts";
+import type { AgentAuthorityMode, AgentMcpAttachment, AgentProviderId } from "./types.ts";
+import type { AgentRuntimeError } from "./errors/index.ts";
+import type { AgentRuntimeEvent } from "./AgentRuntimeEvents.ts";
 
 export type JsonObject = Readonly<Record<string, unknown>>;
 

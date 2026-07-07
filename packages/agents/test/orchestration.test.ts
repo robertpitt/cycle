@@ -1,18 +1,16 @@
 import { strict as assert } from "node:assert";
 import { Effect, Schema } from "effect";
 import { describe, it } from "vitest";
+import { AgentRuntimeEvent } from "../src/runtime-events.ts";
 import {
-  AgentRuntimeEvent,
   makeAgentOrchestrationService,
+  type AgentEvent,
+  type AgentService,
   type AgentOrchestrationServiceShape,
-} from "../src/index.ts";
-import type {
-  AgentEvent,
-  AgentService,
-  AgentServiceRegistryShape,
-  AgentSession,
-  AgentTurnRequest,
-  AgentTurnResult,
+  type AgentSession,
+  type AgentServiceRegistryShape,
+  type AgentTurnRequest,
+  type AgentTurnResult,
 } from "../src/index.ts";
 
 const collect = async <A>(iterable: AsyncIterable<A>): Promise<readonly A[]> => {

@@ -27,7 +27,7 @@ export {
   type AgentTaskAuthority,
   type AgentTaskRequest as AgentTaskRequestInput,
   type AgentTaskWorkspace,
-} from "@cycle/agents/schemas";
+} from "@cycle/agents/agent-task-schemas";
 export {
   AgentCapabilities,
   AgentProviderId,

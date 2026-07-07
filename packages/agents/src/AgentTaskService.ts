@@ -12,9 +12,10 @@ import type {
   AgentTaskSubscriptionQuery,
   CancelAgentTaskInput,
   RetryAgentTaskInput,
-} from "./schemas.ts";
-import { AgentTaskFailure, type AgentTaskServiceError } from "./errors.ts";
-import { AgentTaskStore, type AgentTaskStoreShape } from "./store.ts";
+} from "./AgentTaskSchemas.ts";
+import { AgentTaskFailure, type AgentTaskServiceError } from "./AgentTaskErrors.ts";
+import { AgentTaskStore, type AgentTaskStoreShape } from "./AgentTaskStore.ts";
+import { makeTimestampRandomId } from "./internal/id.ts";
 
 export type AgentTaskReconcileResult = {
   readonly queued: readonly string[];
@@ -77,7 +78,7 @@ export const makeAgentTaskService = (
   store: AgentTaskStoreShape,
   options: AgentTaskServiceOptions = {},
 ): AgentTaskServiceShape => {
-  const makeId = options.makeId ?? defaultId;
+  const makeId = options.makeId ?? makeTimestampRandomId;
   const now = options.now ?? (() => new Date());
   const subscribers = new Set<Subscriber>();
 
@@ -277,9 +278,9 @@ export const makeAgentTaskService = (
             afterSequence: query.afterSequence,
             taskId: query.taskId,
           });
-          const queue = yield* Queue.unbounded<AgentTaskEvent>();
+          const queue = yield* Queue.sliding<AgentTaskEvent>(256);
           const subscriber: Subscriber = {
-            offer: (event) => Queue.offer(queue, event),
+            offer: (event) => Queue.offer(queue, event).pipe(Effect.as(undefined)),
             query: {
               afterSequence: replayed.at(-1)?.sequence ?? query.afterSequence,
               taskId: query.taskId,
@@ -289,8 +290,11 @@ export const makeAgentTaskService = (
           return Stream.fromIterable(replayed).pipe(
             Stream.concat(Stream.fromQueue(queue)),
             Stream.ensuring(
-              Effect.sync(() => {
-                subscribers.delete(subscriber);
+              Effect.gen(function* () {
+                yield* Effect.sync(() => {
+                  subscribers.delete(subscriber);
+                });
+                yield* Queue.shutdown(queue);
               }),
             ),
           );
@@ -322,6 +326,3 @@ const eventMatchesSubscription = (
 ): boolean =>
   event.taskId === query.taskId &&
   (query.afterSequence === undefined || event.sequence > query.afterSequence);
-
-const defaultId = (prefix: string): string =>
-  `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;

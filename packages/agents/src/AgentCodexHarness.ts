@@ -1,13 +1,13 @@
 import { Effect, Stream } from "effect";
-import { makeCodexAgentService } from "../providers/codex/service.ts";
-import type { CodexAgentServiceOptions } from "../providers/codex/types.ts";
-import type { AgentEvent, AgentService, JsonObject } from "../types.ts";
+import { makeCodexAgentService } from "./providers/codex/service.ts";
+import type { CodexAgentServiceOptions } from "./providers/codex/types.ts";
+import type { AgentEvent, AgentService, JsonObject } from "./types.ts";
 import type {
   AgentHarnessAdapter,
   AgentHarnessCapabilities,
   HarnessExecuteRequest,
-} from "./harness.ts";
-import { harnessError } from "./harness.ts";
+} from "./AgentHarnessRegistry.ts";
+import { harnessError } from "./AgentHarnessRegistry.ts";
 
 const codexHarnessCapabilities: AgentHarnessCapabilities = {
   approvalRequests: true,

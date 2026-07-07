@@ -126,7 +126,7 @@ local Cycle HTTP API started by the desktop main process.
 | Persisted app config            | `AppConfigLive.ts`                           | Reads, validates, migrates, salvages, backs up, and writes `app-config.json`.                       |
 | Profile                         | `ProfileLive.ts`                             | Normalizes profile/onboarding input and stores it in app config.                                    |
 | Local workspace                 | `LocalWorkspaceLive.ts`                      | Registers repositories in app config, validates Git repos, initializes missing Git repos.           |
-| Provider detection              | `@cycle/agents/detection`                    | Detects local Codex, Claude Code, and OpenCode executables from PATH/shell.                         |
+| Provider detection              | `@cycle/agents`                              | Detects local Codex, Claude Code, and OpenCode executables from PATH/shell.                         |
 | Database projection             | `DesktopDatabaseLive.ts`                     | Creates the local projection database and provides database identity/id generation.                 |
 | Repository bootstrap            | `DesktopBootstrapLive.ts`                    | Opens configured repositories, maintains bootstrap status, runs background sync/push orchestration. |
 | IPC                             | `DesktopIpc.ts`, `ipc/Channels.ts`           | Defines bridge contracts, validates input/senders, dispatches requests to services.                 |

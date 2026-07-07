@@ -1,6 +1,8 @@
-import { detectAgentProviders } from "@cycle/agents/detection";
-import { agentProviderProfileFromDetection } from "@cycle/agents/providers";
-import type { AgentProviderProfile } from "@cycle/agents/types";
+import {
+  agentProviderProfileFromDetection,
+  detectAgentProviders,
+  type AgentProviderProfile,
+} from "@cycle/agents";
 import { Context, Effect, Layer } from "effect";
 
 export type AgentProviderProfilesShape = {

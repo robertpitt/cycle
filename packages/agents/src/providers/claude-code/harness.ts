@@ -4,8 +4,8 @@ import type {
   AgentHarnessAdapter,
   AgentHarnessCapabilities,
   HarnessExecuteRequest,
-} from "../../runtime/harness.ts";
-import { harnessError } from "../../runtime/harness.ts";
+} from "../../AgentHarnessRegistry.ts";
+import { harnessError } from "../../AgentHarnessRegistry.ts";
 import { makeClaudeCodeAgentService, type ClaudeCodeAgentServiceOptions } from "./service.ts";
 import { claudeCodeProviderId } from "./constants.ts";
 

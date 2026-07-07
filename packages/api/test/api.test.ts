@@ -1,16 +1,14 @@
 import { strict as assert } from "node:assert";
-import { defaultAgentCapabilities } from "@cycle/agents/providers";
 import {
   AgentTaskServiceLive,
   AgentTaskStore,
-  makeInMemoryAgentTaskStore,
-} from "@cycle/agents/task";
-import type {
-  AgentProviderId,
-  AgentProviderProfile,
-  AgentService,
-  AgentTurnRequest,
-} from "@cycle/agents/types";
+  defaultAgentCapabilities,
+  type AgentProviderId,
+  type AgentProviderProfile,
+  type AgentService,
+  type AgentTurnRequest,
+} from "@cycle/agents";
+import { makeInMemoryAgentTaskStore } from "@cycle/agents/testing";
 import { DatabaseService, type DatabaseServiceShape } from "@cycle/database";
 import { type TicketDocument } from "@cycle/contracts";
 import { Effect, Layer, Tracer } from "effect";

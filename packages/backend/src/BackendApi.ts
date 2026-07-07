@@ -4,20 +4,20 @@ import {
   type RepositoryDirectoryEntry,
   type RepositoryOpenRequest,
 } from "@cycle/api";
-import { mcpBearerTokenEnvVar } from "@cycle/agents/codex";
-import { AgentProviderDetector } from "@cycle/agents/detection";
 import {
-  agentProviderDefinitionById,
-  agentProviderProfileFromDetection,
-  supportedAgentProviders,
-} from "@cycle/agents/providers";
-import { makeDefaultAgentServiceRegistry } from "@cycle/agents/service";
-import type { AgentModelCatalog, AgentProviderId, AgentProviderProfile } from "@cycle/agents/types";
-import {
+  AgentProviderDetector,
   AgentTaskServiceLive,
   AgentTaskStore,
+  agentProviderDefinitionById,
+  agentProviderProfileFromDetection,
+  makeDefaultAgentServiceRegistry,
   makeNodeSqliteAgentTaskStore,
-} from "@cycle/agents/task";
+  mcpBearerTokenEnvVar,
+  supportedAgentProviders,
+  type AgentModelCatalog,
+  type AgentProviderId,
+  type AgentProviderProfile,
+} from "@cycle/agents";
 import { makeSqliteAgentChatStore } from "@cycle/agent-chat/store";
 import {
   AppConfig,

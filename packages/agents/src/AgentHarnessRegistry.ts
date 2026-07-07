@@ -4,16 +4,17 @@ import type {
   AgentEvent,
   AgentProviderId,
   AgentUserInputAnswer,
-} from "../types.ts";
+} from "./types.ts";
 import type {
   AgentAttemptRecord,
   AgentPromptBundle,
   AgentProviderBindingRecord,
   AgentRunRecord,
   AgentSessionRecord,
-} from "./contracts.ts";
-import { AgentRuntimeFailure, type AgentRuntimeError } from "../errors/index.ts";
-import type { AgentAuthorityProfile, AgentMcpConnection } from "./policy.ts";
+} from "./AgentRuntimeContracts.ts";
+import { AgentRuntimeFailure, type AgentRuntimeError } from "./errors/index.ts";
+import type { AgentAuthorityProfile } from "./AgentAuthorityPolicy.ts";
+import type { AgentMcpConnection } from "./AgentMcpConnector.ts";
 
 export type AgentHarnessCapabilities = {
   readonly approvalRequests: boolean;

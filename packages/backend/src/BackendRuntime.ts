@@ -1,4 +1,4 @@
-import { AgentProviderDetectorLive } from "@cycle/agents/detection";
+import { AgentProviderDetectorLive } from "@cycle/agents";
 import { AppConfigLive } from "@cycle/config/app-config";
 import { GitRepositoryLive, WorktreeServiceLive } from "@cycle/git";
 import { Context, Effect, Layer } from "effect";

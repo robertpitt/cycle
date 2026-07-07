@@ -1,7 +1,7 @@
-import { makeClaudeCodeAgentService } from "../providers/claude-code/service.ts";
-import type { ClaudeCodeAgentServiceOptions } from "../providers/claude-code/service.ts";
-import { makeCodexAgentService } from "../providers/codex/service.ts";
-import type { CodexAgentServiceOptions } from "../providers/codex/types.ts";
+import { makeClaudeCodeAgentService } from "./providers/claude-code/service.ts";
+import type { ClaudeCodeAgentServiceOptions } from "./providers/claude-code/service.ts";
+import { makeCodexAgentService } from "./providers/codex/service.ts";
+import type { CodexAgentServiceOptions } from "./providers/codex/types.ts";
 import {
   makeAgentServiceRegistry,
   type AgentServiceRegistryShape,
