@@ -114,7 +114,7 @@ export type AgentHarnessAdapter = {
 
 export type AgentHarnessRegistryShape = {
   readonly get: (harnessId: string) => Effect.Effect<AgentHarnessAdapter, AgentRuntimeError>;
-  readonly list: () => Effect.Effect<readonly AgentHarnessAdapter[], AgentRuntimeError>;
+  readonly list: Effect.Effect<readonly AgentHarnessAdapter[], AgentRuntimeError>;
 };
 
 export class AgentHarnessRegistry extends Context.Service<
@@ -140,7 +140,7 @@ export const makeAgentHarnessRegistry = (
           )
         : Effect.succeed(harness);
     },
-    list: () => Effect.succeed([...harnesses]),
+    list: Effect.sync(() => [...harnesses]),
   };
 };
 

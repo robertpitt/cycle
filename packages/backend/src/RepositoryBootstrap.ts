@@ -21,7 +21,7 @@ export type RepositoryBootstrapService = {
   readonly notifyRepositoryChanged: (repositoryId: string) => Effect.Effect<void>;
   readonly pushRepositoryToRemote: (repositoryId: string) => Effect.Effect<SyncResult, unknown>;
   readonly start: () => Effect.Effect<void>;
-  readonly status: () => Effect.Effect<BootstrapStatus>;
+  readonly status: Effect.Effect<BootstrapStatus>;
   readonly syncRepositoryFromRemote: (repositoryId: string) => Effect.Effect<void, unknown>;
 };
 
@@ -197,7 +197,7 @@ export const RepositoryBootstrapLive = Layer.effect(
         .pipe(Effect.map((snapshot) => snapshot?.id ?? null));
 
     const repositoryById = (repositoryId: string): Effect.Effect<RepositoryRecord, unknown> =>
-      settings.read().pipe(
+      settings.read.pipe(
         Effect.flatMap((config) => {
           const repository = config.localWorkspace.repositories.find(
             (candidate) => candidate.id === repositoryId,
@@ -454,78 +454,77 @@ export const RepositoryBootstrapLive = Layer.effect(
         return pushResult;
       });
 
-    const syncConfiguredRepositoriesFromRemote = (): Effect.Effect<void> =>
-      Effect.gen(function* () {
-        remoteSyncCycle += 1;
-        const cycle = remoteSyncCycle;
-        let remoteFailed = 0;
-        let remoteSkipped = 0;
-        let remoteSynced = 0;
-        const repositories = yield* settings.read().pipe(
-          Effect.map((config) => config.localWorkspace.repositories),
-          Effect.catch((error) =>
-            errorLog("bootstrap background sync skipped: unable to read app config", {
-              error: errorMessage(error),
-            }).pipe(Effect.as([] as ReadonlyArray<RepositoryRecord>)),
-          ),
-        );
+    const syncConfiguredRepositoriesFromRemote: Effect.Effect<void> = Effect.gen(function* () {
+      remoteSyncCycle += 1;
+      const cycle = remoteSyncCycle;
+      let remoteFailed = 0;
+      let remoteSkipped = 0;
+      let remoteSynced = 0;
+      const repositories = yield* settings.read.pipe(
+        Effect.map((config) => config.localWorkspace.repositories),
+        Effect.catch((error) =>
+          errorLog("bootstrap background sync skipped: unable to read app config", {
+            error: errorMessage(error),
+          }).pipe(Effect.as([] as ReadonlyArray<RepositoryRecord>)),
+        ),
+      );
 
-        yield* Effect.forEach(
-          repositories,
-          (repository) => {
-            const lastSynced = remoteSyncedSnapshots.get(repository.id);
-            const runtimeRepository = opened.get(repository.id);
-            if (runtimeRepository === undefined) return Effect.void;
-            if (runtimeRepository.metadata.defaultRemote === undefined) {
-              remoteSkipped += 1;
-            } else {
-              remoteSynced += 1;
-            }
-            return snapshotIdForStore(runtimeRepository.store).pipe(
-              Effect.flatMap((currentSnapshot) =>
-                pendingRemoteSync.has(repository.id) || lastSynced !== currentSnapshot
-                  ? syncRepositoryFromRemoteUnsafe(repository.id, { pushFirst: true })
-                  : syncRepositoryFromRemoteUnsafe(repository.id),
-              ),
-              Effect.catch((error) =>
-                Effect.sync(() => {
-                  remoteFailed += 1;
-                  if (runtimeRepository.metadata.defaultRemote !== undefined) remoteSynced -= 1;
-                  setRepositoryStatus(runtimeRepository.record, {
+      yield* Effect.forEach(
+        repositories,
+        (repository) => {
+          const lastSynced = remoteSyncedSnapshots.get(repository.id);
+          const runtimeRepository = opened.get(repository.id);
+          if (runtimeRepository === undefined) return Effect.void;
+          if (runtimeRepository.metadata.defaultRemote === undefined) {
+            remoteSkipped += 1;
+          } else {
+            remoteSynced += 1;
+          }
+          return snapshotIdForStore(runtimeRepository.store).pipe(
+            Effect.flatMap((currentSnapshot) =>
+              pendingRemoteSync.has(repository.id) || lastSynced !== currentSnapshot
+                ? syncRepositoryFromRemoteUnsafe(repository.id, { pushFirst: true })
+                : syncRepositoryFromRemoteUnsafe(repository.id),
+            ),
+            Effect.catch((error) =>
+              Effect.sync(() => {
+                remoteFailed += 1;
+                if (runtimeRepository.metadata.defaultRemote !== undefined) remoteSynced -= 1;
+                setRepositoryStatus(runtimeRepository.record, {
+                  error: errorMessage(error),
+                  stage: "ready",
+                });
+              }).pipe(
+                Effect.andThen(
+                  errorLog("bootstrap background repository sync failed", {
                     error: errorMessage(error),
-                    stage: "ready",
-                  });
-                }).pipe(
-                  Effect.andThen(
-                    errorLog("bootstrap background repository sync failed", {
-                      error: errorMessage(error),
-                      repositoryId: repository.id,
-                    }),
-                  ),
+                    repositoryId: repository.id,
+                  }),
                 ),
               ),
-            );
-          },
-          { concurrency: REPOSITORY_BACKGROUND_OPERATION_CONCURRENCY },
-        );
+            ),
+          );
+        },
+        { concurrency: REPOSITORY_BACKGROUND_OPERATION_CONCURRENCY },
+      );
 
-        yield* (cycle === 1 ? info : debug)("bootstrap remote sync phase completed", {
-          cycle,
-          remoteFailed,
-          remoteMissingGitDbRefs: 0,
-          remoteSkipped,
-          remoteSynced,
-          repositories: repositories.length,
-          ...summarizeRepositoryStatuses(repositoryStatuses.values()),
-        });
+      yield* (cycle === 1 ? info : debug)("bootstrap remote sync phase completed", {
+        cycle,
+        remoteFailed,
+        remoteMissingGitDbRefs: 0,
+        remoteSkipped,
+        remoteSynced,
+        repositories: repositories.length,
+        ...summarizeRepositoryStatuses(repositoryStatuses.values()),
       });
+    });
 
     const waitForBackgroundSyncSignal = Effect.race(
       Effect.sleep(BACKGROUND_REMOTE_SYNC_POLL_INTERVAL_MS),
       Queue.take(changeSignals).pipe(Effect.asVoid),
     );
 
-    const runBackgroundSyncLoop = syncConfiguredRepositoriesFromRemote().pipe(
+    const runBackgroundSyncLoop = syncConfiguredRepositoriesFromRemote.pipe(
       Effect.andThen(waitForBackgroundSyncSignal),
       Effect.forever,
     );
@@ -539,7 +538,7 @@ export const RepositoryBootstrapLive = Layer.effect(
       });
       yield* info("bootstrap started");
 
-      const config = yield* settings.read().pipe(
+      const config = yield* settings.read.pipe(
         Effect.catch((error) =>
           Effect.sync(() => {
             setStatus({
@@ -621,7 +620,7 @@ export const RepositoryBootstrapLive = Layer.effect(
       notifyRepositoryChanged,
       pushRepositoryToRemote,
       start,
-      status: () => Effect.sync(snapshot),
+      status: Effect.sync(snapshot),
       syncRepositoryFromRemote,
     });
   }),

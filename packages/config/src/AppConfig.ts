@@ -17,8 +17,8 @@ const cycleAppConfigFileName = "app-config.json";
 
 export type AppConfigService = {
   readonly configPath: Effect.Effect<string, AppConfigError>;
-  readonly getThemePreference: () => Effect.Effect<ThemePreference, AppConfigError>;
-  readonly read: () => Effect.Effect<AppConfigState, AppConfigError>;
+  readonly getThemePreference: Effect.Effect<ThemePreference, AppConfigError>;
+  readonly read: Effect.Effect<AppConfigState, AppConfigError>;
   readonly replace: (next: AppConfigState) => Effect.Effect<AppConfigState, AppConfigError>;
   readonly setThemePreference: (
     preference: ThemePreference,
@@ -35,8 +35,8 @@ export class AppConfig extends Context.Service<AppConfig, AppConfigService>()(
   "@cycle/config/AppConfig",
 ) {}
 
-const generateStaticToken = (): Effect.Effect<string, AppConfigError, Crypto.Crypto> =>
-  Effect.gen(function* () {
+const generateStaticToken: Effect.Effect<string, AppConfigError, Crypto.Crypto> = Effect.gen(
+  function* () {
     const crypto = yield* Crypto.Crypto;
     const bytes = yield* crypto.randomBytes(32).pipe(
       Effect.mapError(
@@ -49,7 +49,8 @@ const generateStaticToken = (): Effect.Effect<string, AppConfigError, Crypto.Cry
       ),
     );
     return Encoding.encodeBase64Url(bytes);
-  });
+  },
+);
 
 const ensureApiDefaults = (
   config: AppConfigState,
@@ -64,7 +65,7 @@ const ensureApiDefaults = (
 
     if (value.api.staticToken.trim().length === 0) {
       shouldWrite = true;
-      const staticToken = yield* generateStaticToken();
+      const staticToken = yield* generateStaticToken;
       value = {
         ...value,
         api: {
@@ -237,8 +238,9 @@ export const AppConfigLive = Layer.effect(
         Effect.provideService(Path.Path, path),
       );
 
-    const read = (): Effect.Effect<AppConfigState, AppConfigError> =>
-      providePlatform(readOrRecoverConfig(resolvedConfigPath));
+    const read: Effect.Effect<AppConfigState, AppConfigError> = providePlatform(
+      readOrRecoverConfig(resolvedConfigPath),
+    );
 
     const replace = (next: AppConfigState): Effect.Effect<AppConfigState, AppConfigError> =>
       providePlatform(writeValidatedConfig(resolvedConfigPath, next));
@@ -247,7 +249,7 @@ export const AppConfigLive = Layer.effect(
       mutator: (current: AppConfigState) => AppConfigState,
     ): Effect.Effect<AppConfigState, AppConfigError> =>
       Effect.gen(function* () {
-        const current = yield* read();
+        const current = yield* read;
         const next = yield* Effect.try({
           try: () => mutator(current),
           catch: (cause) =>
@@ -262,7 +264,7 @@ export const AppConfigLive = Layer.effect(
 
     return {
       configPath: Effect.succeed(resolvedConfigPath),
-      getThemePreference: () => read().pipe(Effect.map((config) => config.theme.preference)),
+      getThemePreference: read.pipe(Effect.map((config) => config.theme.preference)),
       read,
       replace,
       setThemePreference: (preference) =>

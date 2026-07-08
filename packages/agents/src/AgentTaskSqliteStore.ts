@@ -90,10 +90,9 @@ export const makeSqliteAgentTaskStore = (db: SqliteDatabaseLike): AgentTaskStore
         );
         return clone(event);
       }),
-    close: () =>
-      effect(() => {
-        db.close?.();
-      }),
+    close: effect(() => {
+      db.close?.();
+    }),
     findActiveTaskByIdempotencyKey: (idempotencyKey) =>
       effect(() => {
         const rows = db

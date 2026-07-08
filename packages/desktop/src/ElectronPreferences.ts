@@ -20,11 +20,11 @@ import type {
 import { type CompleteOnboardingInput, type ProfileUpdateInput } from "./shared/Profile.ts";
 
 export type ElectronPreferencesService = {
-  readonly clearCache: () => Effect.Effect<void, ElectronError>;
+  readonly clearCache: Effect.Effect<void, ElectronError>;
   readonly completeOnboarding: (
     input: CompleteOnboardingInput,
   ) => Effect.Effect<AppConfigState, AppConfigError | ElectronError>;
-  readonly read: () => Effect.Effect<AppConfigState, AppConfigError>;
+  readonly read: Effect.Effect<AppConfigState, AppConfigError>;
   readonly removeRepository: (id: string) => Effect.Effect<AppConfigState, AppConfigError>;
   readonly setInterfaceDensity: (
     density: InterfaceDensity,
@@ -38,10 +38,7 @@ export type ElectronPreferencesService = {
   readonly startThemeLifecycleSupervision: (
     handlers: ElectronThemeLifecycleHandlers,
   ) => Effect.Effect<void, never, Scope.Scope>;
-  readonly syncThemePreference: () => Effect.Effect<
-    ElectronThemeState,
-    AppConfigError | ElectronError
-  >;
+  readonly syncThemePreference: Effect.Effect<ElectronThemeState, AppConfigError | ElectronError>;
   readonly themeState: Effect.Effect<ElectronThemeState>;
   readonly updateProfile: (
     input: ProfileUpdateInput,
@@ -71,29 +68,28 @@ export class ElectronPreferences extends Context.Service<
       const electronTheme = yield* ElectronTheme;
       const settings = yield* LocalSettings;
 
-      const syncThemePreference = () =>
-        settings.read().pipe(
-          Effect.map((config) => config.theme.preference),
-          Effect.flatMap(electronTheme.setSource),
-        );
+      const clearCache = Effect.tryPromise({
+        try: () => session.defaultSession.clearCache(),
+        catch: (cause) =>
+          new ElectronError({
+            category: "electron",
+            cause,
+            message: cause instanceof Error ? cause.message : "session.clearCache failed.",
+            operation: "session.clearCache",
+          }),
+      });
+      const syncThemePreference = settings.read.pipe(
+        Effect.map((config) => config.theme.preference),
+        Effect.flatMap(electronTheme.setSource),
+      );
 
       return {
-        clearCache: () =>
-          Effect.tryPromise({
-            try: () => session.defaultSession.clearCache(),
-            catch: (cause) =>
-              new ElectronError({
-                category: "electron",
-                cause,
-                message: cause instanceof Error ? cause.message : "session.clearCache failed.",
-                operation: "session.clearCache",
-              }),
-          }),
+        clearCache,
         completeOnboarding: (input) =>
           settings
             .completeOnboarding(input)
             .pipe(Effect.tap(() => electronTheme.setSource(input.themePreference))),
-        read: () => settings.read(),
+        read: settings.read,
         removeRepository: (id) => settings.removeRepository(id),
         setInterfaceDensity: (density) => settings.setInterfaceDensity(density),
         setThemePreference: (preference) =>

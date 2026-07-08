@@ -177,11 +177,10 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
         calls.push("IssueGet");
         return issues.find((issue) => issue.id === ticketId) ?? null;
       }),
-    listRepositories: () =>
-      Effect.sync(() => {
-        calls.push("RepositoryList");
-        return [makeRepositoryStatus()];
-      }),
+    listRepositories: Effect.sync(() => {
+      calls.push("RepositoryList");
+      return [makeRepositoryStatus()];
+    }),
     listTickets: () =>
       Effect.sync(() => {
         calls.push("IssueList");

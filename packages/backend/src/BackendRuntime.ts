@@ -28,7 +28,7 @@ export class BackendHandleService extends Context.Service<BackendHandleService, 
 
 export type BackendRuntimeService = {
   readonly start: (options?: BackendStartOptions) => Effect.Effect<BackendHandle, BackendError>;
-  readonly status: () => Effect.Effect<BackendStatus, BackendError>;
+  readonly status: Effect.Effect<BackendStatus, BackendError>;
 };
 
 export class BackendRuntime extends Context.Service<BackendRuntime, BackendRuntimeService>()(
@@ -89,28 +89,26 @@ export const BackendRuntimeLive = Layer.effect(
         return backendHandle;
       });
 
-    const status = () =>
-      Effect.gen(function* () {
-        const bootstrapStatus = yield* bootstrap.status();
-        const currentApi = apiHandle;
+    const status: Effect.Effect<BackendStatus, BackendError> = Effect.gen(function* () {
+      const bootstrapStatus = yield* bootstrap.status;
+      const currentApi = apiHandle;
 
-        return {
-          api: {
-            ...(currentApi?.baseUrl === undefined ? {} : { baseUrl: currentApi.baseUrl }),
-            ...(currentApi?.mcpUrl === undefined ? {} : { mcpUrl: currentApi.mcpUrl }),
-            ...(currentApi?.port === undefined ? {} : { port: currentApi.port }),
-            state:
-              currentApi === undefined ? "stopped" : currentApi.started ? "running" : "disabled",
-          },
-          bootstrap: bootstrapStatus,
-          lifecycle,
-          ...(lastFailure === undefined ? {} : { lastFailure }),
-          repositories: bootstrapStatus.repositories,
-          ...(currentApi?.runtimeFile === undefined ? {} : { runtimeFile: currentApi.runtimeFile }),
-          ...(startedAt === undefined ? {} : { startedAt }),
-          updatedAt: nowIso(),
-        } satisfies BackendStatus;
-      });
+      return {
+        api: {
+          ...(currentApi?.baseUrl === undefined ? {} : { baseUrl: currentApi.baseUrl }),
+          ...(currentApi?.mcpUrl === undefined ? {} : { mcpUrl: currentApi.mcpUrl }),
+          ...(currentApi?.port === undefined ? {} : { port: currentApi.port }),
+          state: currentApi === undefined ? "stopped" : currentApi.started ? "running" : "disabled",
+        },
+        bootstrap: bootstrapStatus,
+        lifecycle,
+        ...(lastFailure === undefined ? {} : { lastFailure }),
+        repositories: bootstrapStatus.repositories,
+        ...(currentApi?.runtimeFile === undefined ? {} : { runtimeFile: currentApi.runtimeFile }),
+        ...(startedAt === undefined ? {} : { startedAt }),
+        updatedAt: nowIso(),
+      } satisfies BackendStatus;
+    });
 
     return BackendRuntime.of({
       start,

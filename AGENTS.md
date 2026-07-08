@@ -8,6 +8,7 @@ Keep comments concise and avoid bloated narration.
 ## Effect v4 design rules
 
 - Prefer `Effect.gen` for multi-step Effect code and `Effect.fn("name")` for functions that return effects. The `Effect.fn` name should match the function name; pass extra behavior such as `Effect.catch`, `Effect.annotateLogs`, or tracing as additional arguments instead of piping the returned function.
+- Avoid zero-argument thunks that only return an `Effect`. They are typically an anti-pattern; define the `Effect` directly and reuse it. Use a thunk returning an `Effect` only when synchronous code must run before the effect is created.
 - When raising an error inside `Effect.gen` or `Effect.fn`, use `return yield* new MyError(...)` so TypeScript understands execution does not continue.
 - Wrap boundary code deliberately: `Effect.succeed` for already-available values, `Effect.sync` for non-throwing synchronous side effects, `Effect.try` for throwing synchronous code, and `Effect.tryPromise` for Promise APIs. Map thrown or rejected causes into typed domain errors.
 - Define custom recoverable errors with `Schema.TaggedErrorClass` or `Schema.ErrorClass`; use `Effect.catchTag` and `Effect.catchTags` for targeted recovery. For parent errors with typed `reason` fields, use `Effect.catchReason`, `Effect.catchReasons`, or `Effect.unwrapReason`.

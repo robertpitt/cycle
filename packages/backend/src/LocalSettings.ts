@@ -53,8 +53,8 @@ export type LocalSettingsService = {
   readonly completeOnboarding: (
     input: CompleteOnboardingInput,
   ) => Effect.Effect<AppConfigState, AppConfigError>;
-  readonly getProfile: () => Effect.Effect<ProfileConfig, AppConfigError>;
-  readonly read: () => Effect.Effect<AppConfigState, AppConfigError>;
+  readonly getProfile: Effect.Effect<ProfileConfig, AppConfigError>;
+  readonly read: Effect.Effect<AppConfigState, AppConfigError>;
   readonly removeRepository: (id: string) => Effect.Effect<AppConfigState, AppConfigError>;
   readonly setInterfaceDensity: (
     density: InterfaceDensity,
@@ -86,10 +86,10 @@ export const LocalSettingsLive = Layer.effect(
     const appConfig = yield* AppConfig;
     const localWorkspace = yield* LocalWorkspace;
 
-    const getProfile = () => appConfig.read().pipe(Effect.map((config) => config.profile));
+    const getProfile = appConfig.read.pipe(Effect.map((config) => config.profile));
     const updateProfile = (input: ProfileUpdateInput) =>
       Effect.gen(function* () {
-        const current = yield* appConfig.read();
+        const current = yield* appConfig.read;
         const profile = yield* normalizeProfileUpdate(current.profile, input);
         const next = yield* appConfig.replace({
           ...current,
@@ -125,22 +125,20 @@ export const LocalSettingsLive = Layer.effect(
           }));
         }),
       getProfile,
-      read: () => appConfig.read(),
+      read: appConfig.read,
       removeRepository: (id) =>
-        localWorkspace.removeRepository(id).pipe(Effect.flatMap(() => appConfig.read())),
+        localWorkspace.removeRepository(id).pipe(Effect.flatMap(() => appConfig.read)),
       setInterfaceDensity: (density) => appConfig.setInterfaceDensity(density),
       setThemePreference: (preference) => appConfig.setThemePreference(preference),
       shouldAutoSyncRepository: (repositoryId) =>
-        appConfig
-          .read()
-          .pipe(
-            Effect.map(
-              (config) =>
-                config.localWorkspace.repositories.find(
-                  (repository) => repository.id === repositoryId,
-                )?.preferences.autoSync ?? false,
-            ),
+        appConfig.read.pipe(
+          Effect.map(
+            (config) =>
+              config.localWorkspace.repositories.find(
+                (repository) => repository.id === repositoryId,
+              )?.preferences.autoSync ?? false,
           ),
+        ),
       updateAgentProviderPreference: (input) =>
         appConfig.update((current) => {
           const knownProvider = supportedAgentProviders.find(

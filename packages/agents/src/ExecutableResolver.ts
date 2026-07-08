@@ -211,15 +211,14 @@ const readEnvironmentFromLoginShell = (
   );
 };
 
-const readPathFromLaunchctl = (): Effect.Effect<
+const readPathFromLaunchctl: Effect.Effect<
   string | undefined,
   never,
   ChildProcessSpawner.ChildProcessSpawner
-> =>
-  execFileText("/bin/launchctl", ["getenv", "PATH"], { timeout: 2000 }).pipe(
-    Effect.map((value) => trimNonEmpty(value)),
-    Effect.catch(() => Effect.as(Effect.void, undefined)),
-  );
+> = execFileText("/bin/launchctl", ["getenv", "PATH"], { timeout: 2000 }).pipe(
+  Effect.map((value) => trimNonEmpty(value)),
+  Effect.catch(() => Effect.as(Effect.void, undefined)),
+);
 
 const readEnvironmentFromWindowsShell = (
   names: ReadonlyArray<string>,
@@ -414,7 +413,7 @@ const hydratePosixEnvironment = (
     }
 
     const launchctlPath =
-      platform === "darwin" && !shellPath ? yield* readPathFromLaunchctl() : undefined;
+      platform === "darwin" && !shellPath ? yield* readPathFromLaunchctl : undefined;
     const mergedPath = mergePathValues(shellPath ?? launchctlPath, readEnvPath(env), platform);
 
     return mergedPath ? mergeEnvironment(env, { PATH: mergedPath }) : { ...env };

@@ -269,9 +269,9 @@ const makeLayer = (
 
   const preferences = Layer.succeed(ElectronPreferences)(
     ElectronPreferences.of({
-      clearCache: () => Effect.void,
+      clearCache: Effect.void,
       completeOnboarding: () => Effect.succeed(config),
-      read: () => Effect.succeed(config),
+      read: Effect.succeed(config),
       removeRepository: () => Effect.succeed(config),
       setInterfaceDensity: () => Effect.succeed(config),
       setThemePreference: () => Effect.succeed(config),
@@ -282,12 +282,11 @@ const makeLayer = (
           return false;
         }),
       startThemeLifecycleSupervision: () => Effect.void,
-      syncThemePreference: () =>
-        Effect.succeed({
-          resolvedMode: "light",
-          shouldUseDarkColors: false,
-          source: "system",
-        }),
+      syncThemePreference: Effect.succeed({
+        resolvedMode: "light",
+        shouldUseDarkColors: false,
+        source: "system",
+      }),
       themeState: Effect.succeed({
         resolvedMode: "light",
         shouldUseDarkColors: false,
@@ -376,7 +375,7 @@ const makeLayer = (
             repositories[0] ??
             makeRepository(input.path),
         ),
-      listRepositories: () => Effect.succeed(repositories),
+      listRepositories: Effect.succeed(repositories),
       markRepositoryOpened: (id) =>
         Effect.succeed(repositories.find((repository) => repository.id === id) ?? null),
       removeRepository: () => Effect.succeed(repositories),
@@ -412,7 +411,7 @@ describe("DesktopBootstrapLive", () => {
         Effect.gen(function* () {
           const bootstrap = yield* DesktopBootstrap;
           yield* bootstrap.ensureRepositoryOpened(repository.id);
-          return yield* bootstrap.status();
+          return yield* bootstrap.status;
         }),
       ).pipe(Effect.provide(makeLayer(repository, events))),
     );
@@ -557,13 +556,11 @@ describe("DesktopBootstrapLive", () => {
           yield* bootstrap.start();
           yield* waitUntilEffect(
             () =>
-              bootstrap
-                .status()
-                .pipe(
-                  Effect.map((snapshot) =>
-                    snapshot.repositories.every((repository) => repository.stage === "ready"),
-                  ),
+              bootstrap.status.pipe(
+                Effect.map((snapshot) =>
+                  snapshot.repositories.every((repository) => repository.stage === "ready"),
                 ),
+              ),
             "repositories did not open",
           );
           yield* bootstrap.notifyRepositoryChanged(skippedRepository.id);
@@ -623,20 +620,18 @@ describe("DesktopBootstrapLive", () => {
           yield* bootstrap.start();
           yield* waitUntilEffect(
             () =>
-              bootstrap
-                .status()
-                .pipe(
-                  Effect.map((snapshot) =>
-                    snapshot.repositories.every((repository) => repository.stage === "ready"),
-                  ),
+              bootstrap.status.pipe(
+                Effect.map((snapshot) =>
+                  snapshot.repositories.every((repository) => repository.stage === "ready"),
                 ),
+              ),
             "repositories did not open",
           );
           yield* bootstrap.notifyRepositoryChanged(badRepository.id);
           yield* bootstrap.notifyRepositoryChanged(goodRepository.id);
           yield* waitUntilEffect(
             () =>
-              bootstrap.status().pipe(
+              bootstrap.status.pipe(
                 Effect.map((snapshot) => {
                   const bad = snapshot.repositories.find(
                     (repository) => repository.repositoryId === badRepository.id,
@@ -653,7 +648,7 @@ describe("DesktopBootstrapLive", () => {
               ),
             "background sync failure did not stay isolated",
           );
-          return yield* bootstrap.status();
+          return yield* bootstrap.status;
         }),
       ).pipe(
         Effect.provide(

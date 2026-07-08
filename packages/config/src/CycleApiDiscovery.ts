@@ -106,7 +106,7 @@ const readAppConfigApiToken = (
   env: Readonly<Record<string, string | undefined>>,
 ): Effect.Effect<string | undefined, never, Crypto.Crypto | FileSystem.FileSystem | Path.Path> =>
   AppConfig.pipe(
-    Effect.flatMap((appConfig) => appConfig.read()),
+    Effect.flatMap((appConfig) => appConfig.read),
     Effect.map((config) => {
       const token = config.api.staticToken.trim();
       return token.length === 0 ? undefined : token;

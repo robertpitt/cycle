@@ -267,7 +267,7 @@ describe("@cycle/git-db", () => {
       yield* committed.put("scratch/provider.json", { enabled: true });
       yield* committed.commit({ message: "Commit scratch document" });
       yield* aborted.put("scratch/aborted.json", { enabled: false });
-      yield* aborted.abort();
+      yield* aborted.abort;
 
       const putAfterCommit = yield* Effect.flip(
         committed.put("scratch/after-commit.json", { enabled: false }),
@@ -292,7 +292,7 @@ describe("@cycle/git-db", () => {
         message: "Commit via helper",
       });
       const pointer = yield* store.pointer("main");
-      const current = yield* pointer.current();
+      const current = yield* pointer.current;
       const read = yield* store.snapshot(snapshot.id);
       const sync = yield* store.sync({ mode: "fetch" });
 

@@ -191,7 +191,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
   const gitRepository = yield* GitRepository;
   const worktreeService = yield* WorktreeService;
   const localWorkspace = yield* LocalWorkspace;
-  const config = yield* appConfig.read();
+  const config = yield* appConfig.read;
   const paths = yield* backendPaths(options);
   const services = yield* Effect.context<BackendApiStartRequirements>();
   const environment = yield* Effect.sync(() => ({
@@ -212,7 +212,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
   const listRepositories = (): Promise<readonly RepositoryDirectoryEntry[]> =>
     runPromise(
       Effect.gen(function* () {
-        const repositories = yield* localWorkspace.listRepositories();
+        const repositories = yield* localWorkspace.listRepositories;
         return repositories.map((repository) => ({
           displayName: repository.displayName,
           id: repository.id,
@@ -245,8 +245,8 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
           sessionStore: agentSessionStore,
         });
         const listAgentProviderProfiles = async (): Promise<readonly AgentProviderProfile[]> => {
-          const currentConfig = await runPromise(appConfig.read());
-          const detected = await runPromise(agentProviderDetector.detect());
+          const currentConfig = await runPromise(appConfig.read);
+          const detected = await runPromise(agentProviderDetector.detect);
           const detectedById = new Map(detected.map((provider) => [provider.id, provider]));
 
           return Promise.all(
@@ -328,7 +328,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
                     themePreference: input.themePreference,
                   }),
                 ),
-              read: () => runPromise(settings.read()),
+              read: () => runPromise(settings.read),
               removeRepository: (repositoryId) =>
                 runPromise(settings.removeRepository(repositoryId)),
               setInterfaceDensity: (density) => runPromise(settings.setInterfaceDensity(density)),
@@ -380,7 +380,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
 
           return { agentChatStore, agentSessionStore, agentTaskStore, handle };
         } catch (error) {
-          await Effect.runPromise(agentTaskStore.close());
+          await Effect.runPromise(agentTaskStore.close);
           await agentChatStore.close?.();
           await agentSessionStore.close?.();
           throw error;
@@ -397,7 +397,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
       Effect.tryPromise({
         try: async () => {
           await handle.close();
-          await Effect.runPromise(agentTaskStore.close());
+          await Effect.runPromise(agentTaskStore.close);
           await agentChatStore.close?.();
           await agentSessionStore.close?.();
         },

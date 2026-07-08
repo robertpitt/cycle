@@ -197,7 +197,7 @@ Requirements:
 
 Specific attention:
 
-- `packages/git-db/src/store/Store.ts:362` currently reports against the uninitialized structure
+- `packages/git-db/src/Store.ts:362` currently reports against the uninitialized structure
   cache path. The implementation MUST decide whether reading an uninitialized cache is an internal
   defect or a typed store lifecycle error, then represent it explicitly.
 - `packages/api/test/api.test.ts:77,1639,2810,2867` MUST stop returning Promise-shaped values from
@@ -262,7 +262,7 @@ Requirements:
 The large `unnecessaryFailYieldableError` cluster is concentrated in:
 
 - `packages/database/src/services/DatabaseService.ts`
-- `packages/git-db/src/store/Store.ts`
+- `packages/git-db/src/Store.ts`
 - `packages/git/src/object-store/*`
 - `packages/git/src/repository/GitRepositoryLive.ts`
 - `packages/git/src/worktree/WorktreeServiceLive.ts`
@@ -289,7 +289,7 @@ nearby code changes.
 | `effectSucceedWithVoid`         | `packages/desktop/src/main/DesktopApi.ts`                   | 86                                                                                                                         |
 | `effectSucceedWithVoid`         | `packages/desktop/src/main/DesktopIpc.ts`                   | 170                                                                                                                        |
 | `effectSucceedWithVoid`         | `packages/desktop/src/shared/DesktopConfigLive.ts`          | 25                                                                                                                         |
-| `effectSucceedWithVoid`         | `packages/git-db/src/store/Store.ts`                        | 1505                                                                                                                       |
+| `effectSucceedWithVoid`         | `packages/git-db/src/Store.ts`                              | 1505                                                                                                                       |
 | `effectSucceedWithVoid`         | `packages/git/src/object-store/GitFilesystemObject.ts`      | 149                                                                                                                        |
 | `effectSucceedWithVoid`         | `packages/git/src/object-store/GitInMemory.ts`              | 47, 64, 219                                                                                                                |
 | `globalErrorInEffectFailure`    | `packages/api/src/mcp/server/runtime.ts`                    | 167                                                                                                                        |
@@ -298,7 +298,7 @@ nearby code changes.
 | `globalErrorInEffectFailure`    | `packages/desktop/test/main-program.test.ts`                | 68                                                                                                                         |
 | `layerMergeAllWithDependencies` | `packages/api/src/CycleApi.ts`                              | 141                                                                                                                        |
 | `lazyPromiseInEffectSync`       | `packages/api/test/api.test.ts`                             | 77, 1639, 2810, 2867                                                                                                       |
-| `lazyPromiseInEffectSync`       | `packages/git-db/src/store/Store.ts`                        | 362                                                                                                                        |
+| `lazyPromiseInEffectSync`       | `packages/git-db/src/Store.ts`                              | 362                                                                                                                        |
 | `missingEffectContext`          | `packages/desktop/test/desktop-bootstrap.test.ts`           | 300                                                                                                                        |
 | `runEffectInsideEffect`         | `packages/api/src/http/handlers/v1/chat/ws.ts`              | 208                                                                                                                        |
 | `runEffectInsideEffect`         | `packages/api/src/mcp/server/runtime.ts`                    | 141                                                                                                                        |
@@ -328,8 +328,8 @@ nearby code changes.
 | `unnecessaryFailYieldableError` | `packages/desktop/src/main/DesktopApi.ts`                   | 186                                                                                                                        |
 | `unnecessaryFailYieldableError` | `packages/desktop/src/main/DesktopIpc.ts`                   | 279                                                                                                                        |
 | `unnecessaryFailYieldableError` | `packages/desktop/src/main/LocalWorkspaceLive.ts`           | 102                                                                                                                        |
-| `unnecessaryFailYieldableError` | `packages/git-db/src/store/Event.ts`                        | 83                                                                                                                         |
-| `unnecessaryFailYieldableError` | `packages/git-db/src/store/Store.ts`                        | 537, 593, 672, 729, 791, 806, 821, 1062, 1112, 1140, 1422, 1473, 1572                                                      |
+| `unnecessaryFailYieldableError` | `packages/git-db/src/Event.ts`                              | 83                                                                                                                         |
+| `unnecessaryFailYieldableError` | `packages/git-db/src/Store.ts`                              | 537, 593, 672, 729, 791, 806, 821, 1062, 1112, 1140, 1422, 1473, 1572                                                      |
 | `unnecessaryFailYieldableError` | `packages/git/src/command/GitCommand.ts`                    | 127                                                                                                                        |
 | `unnecessaryFailYieldableError` | `packages/git/src/object-store/GitFilesystem.ts`            | 98, 166                                                                                                                    |
 | `unnecessaryFailYieldableError` | `packages/git/src/object-store/GitFilesystemObject.ts`      | 54, 82, 91, 101                                                                                                            |

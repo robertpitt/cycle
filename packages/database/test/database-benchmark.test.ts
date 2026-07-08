@@ -179,7 +179,7 @@ describe("@cycle/database benchmark", () => {
         assert.strictEqual(afterExternalSync.entries.length, EXTERNAL_BATCH_COUNT);
         reportBenchmark(timings);
         yield* cleanupBenchmarkRef(store);
-        yield* database.close();
+        yield* database.close;
       }).pipe(Effect.provide(DatabaseTest("bench"))),
     TEST_TIMEOUT_MS,
   );

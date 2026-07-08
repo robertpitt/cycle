@@ -84,7 +84,7 @@ type ServerNotificationEffectHandler<
 
 export type CodexAppServerServiceShape = {
   readonly child?: ChildProcessWithoutNullStreams;
-  readonly close: () => Effect.Effect<void, CodexAppServerError>;
+  readonly close: Effect.Effect<void, CodexAppServerError>;
   readonly handleServerNotification: <M extends ServerNotificationMethod>(
     method: M,
     handler: ServerNotificationEffectHandler<M>,
@@ -296,7 +296,7 @@ const fromClientPromise = <A>(run: () => Promise<A>): Effect.Effect<A, CodexAppS
 
 export const makeCodexAppServer = (client: CodexAppServerClient): CodexAppServerServiceShape => ({
   ...(client.child === undefined ? {} : { child: client.child }),
-  close: () => fromClientPromise(() => client.close()),
+  close: fromClientPromise(() => client.close()),
   handleServerNotification: (method, handler) =>
     Effect.sync(() => {
       client.handleServerNotification(method, (params) => Effect.runPromise(handler(params)));
@@ -323,7 +323,7 @@ export const makeCodexAppServerLayer = (options: CodexAppServerChildProcessOptio
         catch: normalizeToCodexAppServerError,
       }).pipe(Effect.map(makeCodexAppServer));
 
-      yield* Effect.addFinalizer(() => service.close().pipe(Effect.catch(() => Effect.void)));
+      yield* Effect.addFinalizer(() => service.close.pipe(Effect.catch(() => Effect.void)));
 
       return service;
     }),

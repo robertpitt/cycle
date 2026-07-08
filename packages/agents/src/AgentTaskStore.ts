@@ -13,7 +13,7 @@ export type AgentTaskStoreShape = {
   readonly appendEvent: (
     event: AgentTaskEventInput,
   ) => Effect.Effect<AgentTaskEvent, AgentTaskServiceError>;
-  readonly close: () => Effect.Effect<void, AgentTaskServiceError>;
+  readonly close: Effect.Effect<void, AgentTaskServiceError>;
   readonly findActiveTaskByIdempotencyKey: (
     idempotencyKey: string,
   ) => Effect.Effect<AgentTask | undefined, AgentTaskServiceError>;

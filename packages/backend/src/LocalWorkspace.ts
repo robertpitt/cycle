@@ -50,10 +50,7 @@ export type LocalWorkspaceService = {
   readonly initializeRepositoryPath: (
     input: InitializeRepositoryPathInput,
   ) => Effect.Effect<RepositoryRecordType, AppConfigError>;
-  readonly listRepositories: () => Effect.Effect<
-    ReadonlyArray<RepositoryRecordType>,
-    AppConfigError
-  >;
+  readonly listRepositories: Effect.Effect<ReadonlyArray<RepositoryRecordType>, AppConfigError>;
   readonly markRepositoryOpened: (
     id: string,
   ) => Effect.Effect<RepositoryRecordType | null, AppConfigError>;
@@ -141,8 +138,9 @@ export const LocalWorkspaceLive = Layer.effect(
       return baseName === "" ? repositoryPath : baseName;
     };
 
-    const listRepositories = () =>
-      appConfig.read().pipe(Effect.map((config) => config.localWorkspace.repositories));
+    const listRepositories = appConfig.read.pipe(
+      Effect.map((config) => config.localWorkspace.repositories),
+    );
 
     const upsertRepositoryPath = (input: UpsertRepositoryPathInput) =>
       Effect.gen(function* () {
@@ -151,7 +149,7 @@ export const LocalWorkspaceLive = Layer.effect(
         const identity = yield* repositoryIdentity(normalizedPath);
         const id = identity.repositoryId;
         const now = new Date().toISOString();
-        const repositories = yield* listRepositories();
+        const repositories = yield* listRepositories;
         const collision = repositories.find(
           (repository) =>
             repository.id === id &&

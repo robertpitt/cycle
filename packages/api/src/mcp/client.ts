@@ -40,7 +40,7 @@ const CycleApiEnvelopeSchema = Schema.Struct({
 });
 
 export type CycleMcpApiClientShape = {
-  readonly discover: () => Effect.Effect<CycleMcpApiDiscoveryResult, CycleMcpDiscoveryError>;
+  readonly discover: Effect.Effect<CycleMcpApiDiscoveryResult, CycleMcpDiscoveryError>;
   readonly request: <T = unknown>(options: {
     readonly body?: unknown;
     readonly method: string;
@@ -67,7 +67,7 @@ export const makeCycleMcpApiClientEffect = (
     const startupDiscovery = options.requireApiOnStart
       ? yield* discoverCycleApiEffect(options)
       : undefined;
-    const discover = () =>
+    const discover =
       startupDiscovery === undefined
         ? discoverCycleApiEffect(options).pipe(Effect.provide(NodeServices.layer))
         : Effect.succeed(startupDiscovery);
@@ -81,7 +81,7 @@ export const makeCycleMcpApiClientEffect = (
         readonly requestId?: string;
       }) =>
         Effect.gen(function* () {
-          const discovery = yield* discover().pipe(
+          const discovery = yield* discover.pipe(
             Effect.mapError((error) =>
               cycleMcpApiError({
                 code: error.code,

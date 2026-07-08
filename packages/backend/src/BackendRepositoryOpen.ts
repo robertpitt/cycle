@@ -48,7 +48,7 @@ const resolveRepository = (localWorkspace: LocalWorkspace["Service"], input: Rep
             displayName: input.displayName,
             path: input.path,
           })
-        : repositoryById(yield* localWorkspace.listRepositories(), input.repositoryId ?? "");
+        : repositoryById(yield* localWorkspace.listRepositories, input.repositoryId ?? "");
 
     if (repository === undefined) {
       return yield* new AppConfigError({

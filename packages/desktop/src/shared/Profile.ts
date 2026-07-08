@@ -25,7 +25,7 @@ export type ProfileService = {
   readonly completeOnboarding: (
     input: CompleteOnboardingInput,
   ) => Effect.Effect<AppConfigState, AppConfigError>;
-  readonly getProfile: () => Effect.Effect<ProfileConfig, AppConfigError>;
+  readonly getProfile: Effect.Effect<ProfileConfig, AppConfigError>;
   readonly updateProfile: (
     input: ProfileUpdateInput,
   ) => Effect.Effect<ProfileConfig, AppConfigError>;

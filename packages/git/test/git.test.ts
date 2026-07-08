@@ -53,32 +53,31 @@ const withTempDir = <A, E, R>(
     }),
   );
 
-const createRepo = (): Effect.Effect<string, TestFailure> =>
-  Effect.gen(function* () {
-    const repo = yield* attemptPromise(() => mkdtemp(path.join(os.tmpdir(), "cycle-git-")));
+const createRepo: Effect.Effect<string, TestFailure> = Effect.gen(function* () {
+  const repo = yield* attemptPromise(() => mkdtemp(path.join(os.tmpdir(), "cycle-git-")));
 
-    yield* git(repo, ["init", "--initial-branch=main"]);
-    yield* attemptPromise(() => writeFile(path.join(repo, "source.txt"), "source\n"));
-    yield* git(repo, ["add", "source.txt"]);
-    yield* git(repo, [
-      "-c",
-      "user.name=Test User",
-      "-c",
-      "user.email=test@example.com",
-      "commit",
-      "-m",
-      "Initial source commit",
-    ]);
+  yield* git(repo, ["init", "--initial-branch=main"]);
+  yield* attemptPromise(() => writeFile(path.join(repo, "source.txt"), "source\n"));
+  yield* git(repo, ["add", "source.txt"]);
+  yield* git(repo, [
+    "-c",
+    "user.name=Test User",
+    "-c",
+    "user.email=test@example.com",
+    "commit",
+    "-m",
+    "Initial source commit",
+  ]);
 
-    return repo;
-  });
+  return repo;
+});
 
 const withRepo = <A, E, R>(
   f: (repo: string) => Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E | unknown, R> =>
   Effect.scoped(
     Effect.gen(function* () {
-      const repo = yield* Effect.acquireRelease(createRepo(), cleanupDir);
+      const repo = yield* Effect.acquireRelease(createRepo, cleanupDir);
 
       return yield* f(repo);
     }),

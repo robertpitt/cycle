@@ -9,7 +9,7 @@ export const ProfileLive = Layer.effect(
 
     return {
       completeOnboarding: (input) => settings.completeOnboarding(input),
-      getProfile: () => settings.getProfile(),
+      getProfile: settings.getProfile,
       updateProfile: (input) => settings.updateProfile(input),
     };
   }),

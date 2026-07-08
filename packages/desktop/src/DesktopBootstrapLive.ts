@@ -13,8 +13,8 @@ const LocalSettingsFromElectronPreferences = Layer.effect(
 
     return LocalSettings.of({
       completeOnboarding: (input) => mapConfigError(preferences.completeOnboarding(input)),
-      getProfile: () => preferences.read().pipe(Effect.map((config) => config.profile)),
-      read: () => preferences.read(),
+      getProfile: preferences.read.pipe(Effect.map((config) => config.profile)),
+      read: preferences.read,
       removeRepository: (id) => preferences.removeRepository(id),
       setInterfaceDensity: (density) => preferences.setInterfaceDensity(density),
       setThemePreference: (preference) =>

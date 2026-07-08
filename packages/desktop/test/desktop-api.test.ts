@@ -86,15 +86,15 @@ const makeLayer = (config: AppConfigState) =>
     Layer.succeed(
       AgentProviderDetector,
       AgentProviderDetector.of({
-        detect: () => Effect.succeed([]),
+        detect: Effect.succeed([]),
       }),
     ),
     Layer.succeed(
       AppConfig,
       AppConfig.of({
         configPath: Effect.succeed("test-app-config.json"),
-        getThemePreference: () => Effect.succeed(config.theme.preference),
-        read: () => Effect.succeed(config),
+        getThemePreference: Effect.succeed(config.theme.preference),
+        read: Effect.succeed(config),
         replace: (next) => Effect.succeed(next),
         setInterfaceDensity: (density) =>
           Effect.succeed({
@@ -138,7 +138,7 @@ const makeLayer = (config: AppConfigState) =>
       LocalWorkspace,
       LocalWorkspace.of({
         initializeRepositoryPath: () => Effect.die("not implemented"),
-        listRepositories: () => Effect.succeed([]),
+        listRepositories: Effect.succeed([]),
         markRepositoryOpened: () => Effect.succeed(null),
         removeRepository: () => Effect.succeed([]),
         updateRepositoryPreferences: () => Effect.succeed(null),
@@ -148,9 +148,9 @@ const makeLayer = (config: AppConfigState) =>
     Layer.succeed(
       ElectronPreferences,
       ElectronPreferences.of({
-        clearCache: () => Effect.void,
+        clearCache: Effect.void,
         completeOnboarding: () => Effect.succeed(config),
-        read: () => Effect.succeed(config),
+        read: Effect.succeed(config),
         removeRepository: () => Effect.succeed(config),
         setInterfaceDensity: (density) =>
           Effect.succeed({
@@ -171,12 +171,11 @@ const makeLayer = (config: AppConfigState) =>
         updateAgentProviderPreference: () => Effect.succeed(config),
         shouldAutoSyncRepository: () => Effect.succeed(false),
         startThemeLifecycleSupervision: () => Effect.void,
-        syncThemePreference: () =>
-          Effect.succeed({
-            resolvedMode: "light",
-            shouldUseDarkColors: false,
-            source: config.theme.preference,
-          }),
+        syncThemePreference: Effect.succeed({
+          resolvedMode: "light",
+          shouldUseDarkColors: false,
+          source: config.theme.preference,
+        }),
         themeState: Effect.succeed({
           resolvedMode: "light",
           shouldUseDarkColors: false,
@@ -197,13 +196,12 @@ const makeLayer = (config: AppConfigState) =>
         notifyRepositoryChanged: () => Effect.void,
         pushRepositoryToRemote: () => Effect.die("not implemented"),
         start: () => Effect.void,
-        status: () =>
-          Effect.succeed({
-            blocking: false,
-            message: "ready",
-            phase: "ready",
-            repositories: [],
-          }),
+        status: Effect.succeed({
+          blocking: false,
+          message: "ready",
+          phase: "ready",
+          repositories: [],
+        }),
         syncRepositoryFromRemote: () => Effect.void,
       }),
     ),

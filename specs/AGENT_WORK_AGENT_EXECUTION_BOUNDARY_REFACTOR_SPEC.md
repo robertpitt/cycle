@@ -179,24 +179,24 @@ The final package graph MUST satisfy:
 @cycle/desktop
   -> @cycle/api
   -> @cycle/usecases
-  -> @cycle/agents
+  -> @cycle/agents/agent-task-schemas
   -> @cycle/database
   -> @cycle/git
 
 @cycle/api
   -> @cycle/usecases
-  -> @cycle/agents/schemas
+  -> @cycle/agents
 
 @cycle/usecases
   -> @cycle/agents
   -> @cycle/database
   -> @cycle/git
 
-@cycle/agents
+@cycle/agents/agent-task-schemas
   -> @cycle/database connection primitives
   -> provider dependencies
 
-@cycle/agents/schemas
+@cycle/agents
   browser-safe, no Node-only provider imports
 ```
 
@@ -204,7 +204,7 @@ The final package graph MUST satisfy:
 
 `@cycle/agents` MUST NOT import from `@cycle/api` or `@cycle/usecases`.
 
-Renderer code MAY import task schemas from a browser-safe `@cycle/agents/schemas` export. That export
+Renderer code MAY import task schemas from the browser-safe `@cycle/agents/agent-task-schemas` export. That export
 MUST NOT pull provider SDKs, Node-only modules, or package side effects into the renderer bundle.
 
 No production file MUST import from `@cycle/usecases/agent-work` after the migration.
@@ -659,7 +659,7 @@ file handles, or unredacted user credentials.
 
 ### Phase 1: Define AgentTask Contracts
 
-1. Add browser-safe `@cycle/agents/schemas` exports for `AgentTask`, `AgentTaskRequest`,
+1. Add browser-safe `@cycle/agents/agent-task-schemas` exports for `AgentTask`, `AgentTaskRequest`,
    `AgentTaskEvent`, query payloads, and command payloads.
 2. Add `AgentTaskService` and store interfaces inside `@cycle/agents`.
 3. Add static tests proving the schema export is renderer-safe.
@@ -705,7 +705,7 @@ file handles, or unredacted user credentials.
 | Area                | Required validation                                                                                                                                            |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Package boundaries  | Static checks prove `@cycle/agents` imports neither `@cycle/api` nor `@cycle/usecases`, and production code imports nothing from `@cycle/usecases/agent-work`. |
-| Schema safety       | Renderer can import `@cycle/agents/schemas` without Node-only provider dependencies.                                                                           |
+| Schema safety       | Renderer can import `@cycle/agents/agent-task-schemas` without Node-only provider dependencies.                                                                 |
 | Task lifecycle      | Unit tests cover create, queue, start, running, waiting, cancel, complete, fail, retry, and terminal state behavior.                                           |
 | Idempotency         | Duplicate active creates with the same idempotency key return or identify the existing task.                                                                   |
 | Persistence         | Store tests cover task CRUD, event sequence ordering, replay, leases, checkpoints, idempotency records, and close/dispose behavior.                            |

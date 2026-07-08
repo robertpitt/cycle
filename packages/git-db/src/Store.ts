@@ -123,7 +123,7 @@ export type StoreServiceShape = {
     path?: string,
     options?: ReadOptions,
   ) => Effect.Effect<ReadonlyArray<Entry>, GitDbError>;
-  readonly localPointers: () => Effect.Effect<ReadonlyArray<string>, GitDbError>;
+  readonly localPointers: Effect.Effect<ReadonlyArray<string>, GitDbError>;
   readonly pointer: (name: string) => Effect.Effect<StorePointer, GitDbError>;
   readonly pointerRef: (pointer: string) => Effect.Effect<string, GitDbError>;
   readonly refPrefix: string;
@@ -149,8 +149,8 @@ export type EnsureRepositoryIdentityOptions = {
 };
 
 export type StorePointer = {
-  readonly begin: () => Effect.Effect<Transaction, GitDbError>;
-  readonly current: () => Effect.Effect<Snapshot | null, GitDbError>;
+  readonly begin: Effect.Effect<Transaction, GitDbError>;
+  readonly current: Effect.Effect<Snapshot | null, GitDbError>;
   readonly delete: (options?: MovePointerOptions) => Effect.Effect<void, GitDbError>;
   readonly fork: (targetName: string) => Effect.Effect<StorePointer, GitDbError>;
   readonly forkFrom: (source: string) => Effect.Effect<StorePointer, GitDbError>;
@@ -162,7 +162,7 @@ export type StorePointer = {
 };
 
 export type Transaction = {
-  readonly abort: () => Effect.Effect<void, GitDbError>;
+  readonly abort: Effect.Effect<void, GitDbError>;
   readonly base: Snapshot | null;
   readonly commit: (options?: CommitOptions) => Effect.Effect<Snapshot, GitDbError>;
   readonly delete: (path: string) => Effect.Effect<void, GitDbError>;
@@ -388,7 +388,7 @@ const makeStore = (runtime: StoreRuntime): StoreServiceShape => {
     begin: (pointer = config.defaultPointer) =>
       Effect.gen(function* () {
         const storePointer = yield* store.pointer(pointer);
-        return yield* storePointer.begin();
+        return yield* storePointer.begin;
       }),
     config,
     currentSnapshotForPointer: (pointer) =>
@@ -486,15 +486,14 @@ const makeStore = (runtime: StoreRuntime): StoreServiceShape => {
         return snapshots;
       }),
     list: (path = "", options: ReadOptions = {}) => listStoreEntries(store, runtime, path, options),
-    localPointers: () =>
-      adapter.listRefs(`${refPrefix}/`).pipe(
-        Effect.map((refs) =>
-          refs
-            .map((ref) => ref.name.slice(`${refPrefix}/`.length))
-            .filter((name) => isValidPointerName(name))
-            .sort(),
-        ),
+    localPointers: adapter.listRefs(`${refPrefix}/`).pipe(
+      Effect.map((refs) =>
+        refs
+          .map((ref) => ref.name.slice(`${refPrefix}/`.length))
+          .filter((name) => isValidPointerName(name))
+          .sort(),
       ),
+    ),
     pointer: (name) =>
       validatePointerName(name).pipe(
         Effect.map((pointerName) => makeStorePointer(store, runtime, pointerName)),
@@ -782,12 +781,11 @@ const makeStorePointer = (
   const { adapter } = runtime;
 
   const pointer: StorePointer = {
-    begin: () =>
-      Effect.gen(function* () {
-        const base = yield* pointer.current();
-        return yield* makeTransaction(store, runtime, name, base);
-      }),
-    current: () => store.currentSnapshotForPointer(name),
+    begin: Effect.gen(function* () {
+      const base = yield* pointer.current;
+      return yield* makeTransaction(store, runtime, name, base);
+    }),
+    current: store.currentSnapshotForPointer(name),
     delete: (options: MovePointerOptions = {}) =>
       gitDbOperation(
         "pointer.delete",
@@ -828,7 +826,7 @@ const makeStorePointer = (
       ),
     fork: (targetName) =>
       Effect.gen(function* () {
-        const current = yield* pointer.current();
+        const current = yield* pointer.current;
 
         if (current === null) {
           return yield* new PointerNotFoundError({
@@ -873,7 +871,7 @@ const makeStorePointer = (
             });
           }
 
-          const current = yield* pointer.current();
+          const current = yield* pointer.current;
           const expected = Object.hasOwn(options, "expectedSnapshot")
             ? (options.expectedSnapshot ?? null)
             : (current?.id ?? null);
@@ -905,11 +903,10 @@ const makeTransaction = (
     });
 
     const tx: Transaction = {
-      abort: () =>
-        TxRef.set(state, {
-          active: false,
-          mutations: HashMap.empty(),
-        }),
+      abort: TxRef.set(state, {
+        active: false,
+        mutations: HashMap.empty(),
+      }),
       base,
       commit: (options: CommitOptions = {}) =>
         gitDbOperation(
@@ -1256,7 +1253,7 @@ const sync = (
     const divergence = options.onDiverged ?? "error";
     const pointerNames = options.pointers
       ? yield* Effect.forEach(options.pointers, validatePointerName)
-      : yield* store.localPointers();
+      : yield* store.localPointers;
     const results: Array<PointerSyncResult> = [];
     const fetchesRemote = mode === "fetch" || mode === "pull" || mode === "full";
     const remotePrefix = yield* store.remoteRefPrefix(remote);

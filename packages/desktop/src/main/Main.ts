@@ -3,7 +3,7 @@ import { DesktopLive } from "./AppLayer.ts";
 import { runDesktop } from "./MainProgram.ts";
 
 const runtime = ManagedRuntime.make(DesktopLive);
-const main = Effect.scoped(runDesktop());
+const main = Effect.scoped(runDesktop);
 
 runtime
   .runPromise(main)

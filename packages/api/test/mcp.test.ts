@@ -17,11 +17,10 @@ import { describe, it } from "vitest";
 
 const context = (requests: Array<unknown>, response: unknown = { data: null, meta: {} }) => ({
   api: {
-    discover: () =>
-      Effect.succeed({
-        baseUrl: "http://127.0.0.1:4738",
-        token: "secret",
-      }),
+    discover: Effect.succeed({
+      baseUrl: "http://127.0.0.1:4738",
+      token: "secret",
+    }),
     request: <T = unknown>(request: {
       readonly body?: unknown;
       readonly method: string;
@@ -353,11 +352,10 @@ describe("@cycle/api/mcp", () => {
     ];
     const toolContext = {
       api: {
-        discover: () =>
-          Effect.succeed({
-            baseUrl: "http://127.0.0.1:4738",
-            token: "secret",
-          }),
+        discover: Effect.succeed({
+          baseUrl: "http://127.0.0.1:4738",
+          token: "secret",
+        }),
         request: <T = unknown>(request: {
           readonly body?: unknown;
           readonly method: string;
@@ -540,11 +538,10 @@ describe("@cycle/api/mcp", () => {
         },
         {
           api: {
-            discover: () =>
-              Effect.succeed({
-                baseUrl: "http://127.0.0.1:4738",
-                token: "secret",
-              }),
+            discover: Effect.succeed({
+              baseUrl: "http://127.0.0.1:4738",
+              token: "secret",
+            }),
             request: () =>
               Effect.fail(
                 cycleMcpApiError({

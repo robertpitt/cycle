@@ -15,8 +15,8 @@ const LocalSettingsFromProfile = Layer.effect(
 
     return LocalSettings.of({
       completeOnboarding: unavailable,
-      getProfile: () => profile.getProfile(),
-      read: unavailable,
+      getProfile: profile.getProfile,
+      read: unavailable(),
       removeRepository: unavailable,
       setInterfaceDensity: unavailable,
       setThemePreference: unavailable,

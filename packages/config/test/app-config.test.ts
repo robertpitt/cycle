@@ -86,7 +86,7 @@ describe("@cycle/config AppConfig", () => {
       homeDirectory,
       Effect.gen(function* () {
         const appConfig = yield* AppConfig;
-        return yield* appConfig.read();
+        return yield* appConfig.read;
       }),
     );
 
@@ -112,7 +112,7 @@ describe("@cycle/config AppConfig", () => {
       homeDirectory,
       Effect.gen(function* () {
         const appConfig = yield* AppConfig;
-        return yield* appConfig.read();
+        return yield* appConfig.read;
       }),
     );
 
@@ -129,7 +129,7 @@ describe("@cycle/config AppConfig", () => {
       homeDirectory,
       Effect.gen(function* () {
         const appConfig = yield* AppConfig;
-        return yield* appConfig.read();
+        return yield* appConfig.read;
       }),
     );
 
@@ -199,7 +199,7 @@ describe("@cycle/config AppConfig", () => {
       homeDirectory,
       Effect.gen(function* () {
         const appConfig = yield* AppConfig;
-        return yield* appConfig.read();
+        return yield* appConfig.read;
       }),
     );
 
@@ -231,7 +231,7 @@ describe("@cycle/config AppConfig", () => {
         const appConfig = yield* AppConfig;
         yield* appConfig.setThemePreference("dark");
         yield* appConfig.setInterfaceDensity("spacious");
-        return yield* appConfig.read();
+        return yield* appConfig.read;
       }).pipe(Effect.provide(AppConfigTest(initial))),
     );
 

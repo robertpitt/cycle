@@ -38,7 +38,7 @@ export const makeInMemoryAgentTaskStore = (): AgentTaskStoreShape => {
         events.set(event.taskId, [...current, clone(event)]);
         return clone(event);
       }),
-    close: () => Effect.void,
+    close: Effect.void,
     findActiveTaskByIdempotencyKey: (idempotencyKey) =>
       effect(() =>
         clone(

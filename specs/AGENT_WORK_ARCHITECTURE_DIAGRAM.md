@@ -567,16 +567,16 @@ flowchart LR
 Current hard constraints for the next provider:
 
 - `packages/contracts/src/schemas/Agents.ts` currently defines `AgentProviderId` as only `"codex"`.
-- `packages/agents/src/providers/catalog.ts` currently only lists the Codex provider and `isAgentProviderId` only accepts `"codex"`.
+- `packages/agents/src/providers/catalog.ts` lists the Codex and Claude Code providers and `isAgentProviderId` accepts both ids.
 - `packages/desktop/src/renderer/lib/agentProviders.ts` also has a local `isAgentProviderId` that only accepts `"codex"`.
-- `packages/agents/src/services/DefaultAgentServices.ts` only registers `{ provider: "codex", service: codexService }`.
+- `packages/agents/src/DefaultAgentServices.ts` registers Codex and Claude Code provider services.
 - The current chat execution path uses `AgentServiceRegistry`, so a new provider needs an `AgentService` implementation to run today.
-- `packages/agents/src/runtime/harness.ts` and `packages/agents/src/runtime/codex-harness.ts` define the newer harness seam. Implementing that is useful for the runtime direction, but it is not the primary path the current chat page uses.
+- `packages/agents/src/AgentHarnessRegistry.ts` and `packages/agents/src/AgentCodexHarness.ts` define the newer harness seam. Implementing that is useful for the runtime direction, but it is not the primary path the current chat page uses.
 
 ## Current Read
 
 The issue agent task page now has a cleaner task boundary than the old `agent-work` folder: usecases
-map ticket data into a generic `AgentTaskRequest`, and `@cycle/agents/task` owns task state and
+map ticket data into a generic `AgentTaskRequest`, and `@cycle/agents` owns task state and
 events. The part that still feels incomplete is execution: queued tasks are persisted and visible,
 but the task scheduler is not yet wired through to a provider runtime.
 

@@ -11,8 +11,8 @@ export const AppConfigTest = (
     AppConfig,
     AppConfig.of({
       configPath: Effect.succeed("test-app-config.json"),
-      getThemePreference: () => Effect.succeed(state.theme.preference),
-      read: () => Effect.succeed(state),
+      getThemePreference: Effect.sync(() => state.theme.preference),
+      read: Effect.sync(() => state),
       replace: (next) =>
         Effect.sync(() => {
           state = next;

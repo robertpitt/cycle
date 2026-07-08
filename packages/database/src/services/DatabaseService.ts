@@ -273,7 +273,7 @@ export type DatabaseServiceShape = {
     input?: ArchiveTicketInput,
     options?: CommitOptions,
   ) => Effect.Effect<TicketDocument, DatabaseFailure>;
-  readonly close: () => Effect.Effect<void>;
+  readonly close: Effect.Effect<void>;
   readonly commitDraft: (
     repositoryId: string,
     draftId: string,
@@ -299,7 +299,7 @@ export type DatabaseServiceShape = {
     repositoryId: string,
     ticketId: string,
   ) => Effect.Effect<TicketDocument | null, DatabaseFailure>;
-  readonly listRepositories: () => Effect.Effect<ReadonlyArray<RepositoryStatus>, DatabaseFailure>;
+  readonly listRepositories: Effect.Effect<ReadonlyArray<RepositoryStatus>, DatabaseFailure>;
   readonly createInitiative: (
     repositoryId: string,
     input: CreateTicketInput,
@@ -1081,7 +1081,7 @@ export const makeDatabaseService = (
           yield* ensureActorUserProfile(repository, tx, actor, now);
 
           if (!defaults.changed) {
-            yield* tx.abort();
+            yield* tx.abort;
             return null;
           }
 
@@ -2517,13 +2517,12 @@ export const makeDatabaseService = (
     archiveLabel,
     archiveTemplate,
     archiveTicket,
-    close: () =>
-      Effect.sync(() => {
-        if (closed) return;
-        closed = true;
-        repositories.clear();
-        projection.close();
-      }),
+    close: Effect.sync(() => {
+      if (closed) return;
+      closed = true;
+      repositories.clear();
+      projection.close();
+    }),
     commitDraft,
     createInitiative,
     createDraft,
@@ -2545,7 +2544,7 @@ export const makeDatabaseService = (
     listInbox,
     listLabels: (repositoryId, query = {}) =>
       sqlite("list labels", () => projection.listLabels(repositoryId, query)),
-    listRepositories: () => sqlite("list repositories", () => projection.listRepositories()),
+    listRepositories: sqlite("list repositories", () => projection.listRepositories()),
     listTemplates: (repositoryId, query = {}) =>
       sqlite("list templates", () => projection.listTemplates(repositoryId, query)),
     listTickets: (query = {}) => sqlite("list tickets", () => projection.listTickets(query)),
@@ -2644,7 +2643,7 @@ export const DatabaseLive = Layer.effect(
 
     return yield* Effect.acquireRelease(
       Effect.succeed(DatabaseService.of(makeDatabaseService(identity, ids))),
-      (service) => service.close(),
+      (service) => service.close,
     );
   }),
 );
@@ -2658,7 +2657,7 @@ export const DatabaseLiveWithOptions = (options: DatabaseServiceOptions) =>
 
       return yield* Effect.acquireRelease(
         Effect.succeed(DatabaseService.of(makeDatabaseService(identity, ids, options))),
-        (service) => service.close(),
+        (service) => service.close,
       );
     }),
   );

@@ -25,7 +25,7 @@ export type AgentTaskReconcileResult = {
 };
 
 export type AgentTaskSchedulerHandle = {
-  readonly close: () => Effect.Effect<void, AgentTaskServiceError>;
+  readonly close: Effect.Effect<void, AgentTaskServiceError>;
 };
 
 export type AgentTaskServiceShape = {
@@ -47,12 +47,12 @@ export type AgentTaskServiceShape = {
   readonly listTasks: (
     query?: AgentTaskListQuery,
   ) => Effect.Effect<AgentTaskPage, AgentTaskServiceError>;
-  readonly reconcile: () => Effect.Effect<AgentTaskReconcileResult, AgentTaskServiceError>;
+  readonly reconcile: Effect.Effect<AgentTaskReconcileResult, AgentTaskServiceError>;
   readonly retryTask: (
     taskId: string,
     input?: RetryAgentTaskInput,
   ) => Effect.Effect<AgentTask | undefined, AgentTaskServiceError>;
-  readonly startScheduler: () => Effect.Effect<AgentTaskSchedulerHandle, AgentTaskServiceError>;
+  readonly startScheduler: Effect.Effect<AgentTaskSchedulerHandle, AgentTaskServiceError>;
   readonly subscribe: (
     query: AgentTaskSubscriptionQuery,
   ) => Stream.Stream<AgentTaskEvent, AgentTaskServiceError>;
@@ -231,19 +231,18 @@ export const makeAgentTaskService = (
           entries: [...entries],
         })),
       ),
-    reconcile: () =>
-      store.listTasks().pipe(
-        Effect.map((tasks) => ({
-          failed: [],
-          queued: tasks.filter((task) => task.status === "queued").map((task) => task.taskId),
-          recoverable: tasks
-            .filter((task) => task.status === "running" || task.status === "starting")
-            .map((task) => task.taskId),
-          waitingForInput: tasks
-            .filter((task) => task.status === "waiting_for_input")
-            .map((task) => task.taskId),
-        })),
-      ),
+    reconcile: store.listTasks().pipe(
+      Effect.map((tasks) => ({
+        failed: [],
+        queued: tasks.filter((task) => task.status === "queued").map((task) => task.taskId),
+        recoverable: tasks
+          .filter((task) => task.status === "running" || task.status === "starting")
+          .map((task) => task.taskId),
+        waitingForInput: tasks
+          .filter((task) => task.status === "waiting_for_input")
+          .map((task) => task.taskId),
+      })),
+    ),
     retryTask: (taskId, input = {}) =>
       store.getTask(taskId).pipe(
         Effect.flatMap((task) => {
@@ -267,10 +266,9 @@ export const makeAgentTaskService = (
           );
         }),
       ),
-    startScheduler: () =>
-      Effect.succeed({
-        close: () => Effect.void,
-      }),
+    startScheduler: Effect.sync(() => ({
+      close: Effect.void,
+    })),
     subscribe: (query) =>
       Stream.unwrap(
         Effect.gen(function* () {

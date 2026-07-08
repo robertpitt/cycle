@@ -5,7 +5,7 @@ import { ProcessLifecycle, type ProcessLifecycleEvent } from "./ProcessLifecycle
 import { ElectronError } from "./errors/ElectronError.ts";
 
 export type ElectronAppLifecycleHandlers = {
-  readonly onActivate: () => Effect.Effect<void, unknown>;
+  readonly onActivate: Effect.Effect<void, unknown>;
 };
 
 export type ElectronAppService = {
@@ -13,11 +13,11 @@ export type ElectronAppService = {
   readonly awaitShutdown: Effect.Effect<void>;
   readonly getPath: (name: "home") => Effect.Effect<string>;
   readonly platform: NodeJS.Platform;
-  readonly quit: () => Effect.Effect<void>;
+  readonly quit: Effect.Effect<void>;
   readonly startLifecycleSupervision: (
     handlers: ElectronAppLifecycleHandlers,
   ) => Effect.Effect<void, never, Scope.Scope>;
-  readonly whenReady: () => Effect.Effect<void, ElectronError>;
+  readonly whenReady: Effect.Effect<void, ElectronError>;
 };
 
 export class ElectronApp extends Context.Service<ElectronApp, ElectronAppService>()(
@@ -94,14 +94,14 @@ export const ElectronAppLive = Layer.effect(
       awaitShutdown: Deferred.await(shutdown),
       getPath: (name) => Effect.sync(() => app.getPath(name)),
       platform: process.platform,
-      quit: () => Effect.sync(() => app.quit()),
+      quit: Effect.sync(() => app.quit()),
       startLifecycleSupervision: (handlers: ElectronAppLifecycleHandlers) =>
         Effect.gen(function* () {
-          const processEvents = yield* processLifecycle.events();
+          const processEvents = yield* processLifecycle.events;
           yield* superviseProcessEvents(processEvents, requestShutdown);
 
           const onActivate = (): void => {
-            runHandler("activate", handlers.onActivate());
+            runHandler("activate", handlers.onActivate);
           };
           const onBeforeQuit = (): void => {
             runHandler("before-quit", requestShutdown);
@@ -125,17 +125,16 @@ export const ElectronAppLive = Layer.effect(
               }),
           );
         }),
-      whenReady: () =>
-        Effect.tryPromise({
-          try: () => app.whenReady().then(() => undefined),
-          catch: (cause) =>
-            new ElectronError({
-              category: "electron",
-              cause,
-              message: cause instanceof Error ? cause.message : "app.whenReady failed.",
-              operation: "app.whenReady",
-            }),
-        }),
+      whenReady: Effect.tryPromise({
+        try: () => app.whenReady().then(() => undefined),
+        catch: (cause) =>
+          new ElectronError({
+            category: "electron",
+            cause,
+            message: cause instanceof Error ? cause.message : "app.whenReady failed.",
+            operation: "app.whenReady",
+          }),
+      }),
     };
   }),
 );

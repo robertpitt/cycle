@@ -131,7 +131,7 @@ describe("desktop app config", () => {
       userData,
       Effect.gen(function* () {
         const appConfig = yield* AppConfig;
-        return yield* appConfig.read();
+        return yield* appConfig.read;
       }),
     );
 
@@ -157,7 +157,7 @@ describe("desktop app config", () => {
       userData,
       Effect.gen(function* () {
         const appConfig = yield* AppConfig;
-        return yield* appConfig.read();
+        return yield* appConfig.read;
       }),
     );
 
@@ -176,7 +176,7 @@ describe("desktop app config", () => {
           displayName: "  Robert Pitt  ",
           email: "  robert@example.com ",
         });
-        const updated = yield* profile.getProfile();
+        const updated = yield* profile.getProfile;
         const completed = yield* profile.completeOnboarding({
           displayName: "Robert",
           email: "robert@example.com",
@@ -244,7 +244,7 @@ describe("desktop app config", () => {
       userData,
       Effect.gen(function* () {
         const appConfig = yield* AppConfig;
-        return yield* appConfig.read();
+        return yield* appConfig.read;
       }),
     );
 
@@ -271,7 +271,7 @@ describe("desktop app config", () => {
       userData,
       Effect.gen(function* () {
         const appConfig = yield* AppConfig;
-        return yield* appConfig.read();
+        return yield* appConfig.read;
       }),
     );
 
@@ -301,7 +301,7 @@ describe("desktop app config", () => {
           },
         });
         const opened = yield* workspace.markRepositoryOpened(first.id);
-        const beforeRemoval = yield* workspace.listRepositories();
+        const beforeRemoval = yield* workspace.listRepositories;
         const afterRemoval = yield* workspace.removeRepository(first.id);
         return { afterRemoval, beforeRemoval, collapsed, first, opened, second };
       }),
@@ -326,7 +326,7 @@ describe("desktop app config", () => {
       userData,
       Effect.gen(function* () {
         const appConfig = yield* AppConfig;
-        return yield* appConfig.read();
+        return yield* appConfig.read;
       }),
     );
 
@@ -352,7 +352,7 @@ describe("desktop app config", () => {
       userData,
       Effect.gen(function* () {
         const appConfig = yield* AppConfig;
-        return yield* appConfig.read();
+        return yield* appConfig.read;
       }),
     );
 
@@ -377,7 +377,7 @@ describe("desktop app config", () => {
       userData,
       Effect.gen(function* () {
         const appConfig = yield* AppConfig;
-        return yield* appConfig.read();
+        return yield* appConfig.read;
       }),
     );
 
@@ -398,7 +398,7 @@ describe("desktop app config", () => {
       userData,
       Effect.gen(function* () {
         const appConfig = yield* AppConfig;
-        return yield* appConfig.read();
+        return yield* appConfig.read;
       }),
     );
 
@@ -450,7 +450,7 @@ describe("desktop app config", () => {
       userData,
       Effect.gen(function* () {
         const appConfig = yield* AppConfig;
-        return yield* appConfig.read();
+        return yield* appConfig.read;
       }),
     );
 
@@ -476,7 +476,7 @@ describe("desktop app config", () => {
       userData,
       Effect.gen(function* () {
         const appConfig = yield* AppConfig;
-        return yield* appConfig.read();
+        return yield* appConfig.read;
       }),
     );
 

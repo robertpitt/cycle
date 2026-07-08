@@ -354,7 +354,7 @@ describe("@cycle/database", () => {
       });
       const events = yield* GitDbEvent.list(store);
       const pointer = yield* store.pointer("main");
-      const current = yield* pointer.current();
+      const current = yield* pointer.current;
 
       assert.strictEqual(status.activeSnapshotId, null);
       assert.strictEqual(status.cycleMetadata, undefined);
@@ -1326,7 +1326,7 @@ describe("@cycle/database", () => {
         repositoryId: "reopened-removed-pointer-repo",
         store,
       });
-      const current = yield* pointer.current();
+      const current = yield* pointer.current;
       const events = yield* GitDbEvent.list(store);
       const listed = yield* database.listTickets({
         repositoryIds: ["reopened-removed-pointer-repo"],

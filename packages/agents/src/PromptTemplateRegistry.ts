@@ -1,9 +1,5 @@
 import { Context, Effect, Layer, Schema } from "effect";
-import type {
-  AgentRunRecord,
-  AgentRunStartRequest,
-  JsonObject,
-} from "./AgentRuntimeContracts.ts";
+import type { AgentRunRecord, AgentRunStartRequest, JsonObject } from "./AgentRuntimeContracts.ts";
 import { AgentRuntimeFailure, type AgentRuntimeError } from "./errors/index.ts";
 import type { AgentAuthorityProfile } from "./AgentAuthorityPolicy.ts";
 import type { AgentMcpConnection } from "./AgentMcpConnector.ts";
@@ -33,7 +29,7 @@ export type AgentPromptRenderInput = {
 
 export type PromptTemplateRegistryShape = {
   readonly get: (templateId: string) => Effect.Effect<AgentPromptTemplate, AgentRuntimeError>;
-  readonly list: () => Effect.Effect<readonly AgentPromptTemplate[], AgentRuntimeError>;
+  readonly list: Effect.Effect<readonly AgentPromptTemplate[], AgentRuntimeError>;
 };
 
 export class PromptTemplateRegistry extends Context.Service<
@@ -55,7 +51,7 @@ export const makePromptTemplateRegistry = (
         ? Effect.fail(promptTemplateNotRegistered(templateId))
         : Effect.succeed(template);
     },
-    list: () => Effect.succeed([...templates]),
+    list: Effect.sync(() => [...templates]),
   };
 };
 
@@ -202,4 +198,3 @@ export const PromptTemplateRegistryLive = Layer.succeed(
   PromptTemplateRegistry,
   PromptTemplateRegistry.of(makePromptTemplateRegistry()),
 );
-

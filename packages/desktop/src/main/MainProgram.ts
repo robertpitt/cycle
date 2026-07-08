@@ -74,7 +74,7 @@ export const runDesktopStartupWorkflow = <
     yield* workflow.awaitShutdown;
   }).pipe(Effect.ensuring(workflow.destroyAllWindows.pipe(Effect.catchCause(() => Effect.void))));
 
-export const runDesktop = Effect.fn("runDesktop")(function* () {
+export const runDesktop = Effect.gen(function* () {
   const app = yield* ElectronApp;
   const backend = yield* BackendRuntime;
   const bootstrap = yield* DesktopBootstrap;
@@ -85,23 +85,22 @@ export const runDesktop = Effect.fn("runDesktop")(function* () {
 
   yield* runDesktopStartupWorkflow({
     awaitShutdown: app.awaitShutdown,
-    createMainWindow: desktopWindow.createMainWindow(),
-    destroyAllWindows: desktopWindow.destroyAll(),
-    registerIpcHandlers: registerDesktopIpc(),
+    createMainWindow: desktopWindow.createMainWindow,
+    destroyAllWindows: desktopWindow.destroyAll,
+    registerIpcHandlers: registerDesktopIpc,
     startAppLifecycleSupervision: app.startLifecycleSupervision({
-      onActivate: () =>
-        Effect.gen(function* () {
-          const hasOpenWindows = yield* desktopWindow.hasOpenWindows();
-          if (hasOpenWindows) {
-            yield* desktopWindow.focusMainWindow();
-            return;
-          }
-          yield* desktopWindow.createMainWindow();
-        }),
+      onActivate: Effect.gen(function* () {
+        const hasOpenWindows = yield* desktopWindow.hasOpenWindows;
+        if (hasOpenWindows) {
+          yield* desktopWindow.focusMainWindow;
+          return;
+        }
+        yield* desktopWindow.createMainWindow;
+      }),
     }),
     startBootstrapSupervision: bootstrap.start(),
-    startThemeLifecycleSupervision: startDesktopThemeLifecycle(),
-    syncThemePreference: preferences.syncThemePreference(),
-    waitForElectronReady: app.whenReady(),
+    startThemeLifecycleSupervision: startDesktopThemeLifecycle,
+    syncThemePreference: preferences.syncThemePreference,
+    waitForElectronReady: app.whenReady,
   });
 });

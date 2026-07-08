@@ -27,10 +27,10 @@ this specification.
 The current application has a Codex-specific provider stack and several hard-coded assumptions:
 
 - `packages/contracts/src/schemas/Agents.ts` defines `AgentProviderId` as only `"codex"`.
-- `packages/agents/src/providers/catalog.ts` lists only Codex and `isAgentProviderId` only accepts
-  `"codex"`.
+- `packages/agents/src/providers/catalog.ts` lists Codex and Claude Code, and
+  `isAgentProviderId` accepts both ids.
 - `packages/desktop/src/renderer/lib/agentProviders.ts` has a renderer-local `"codex"` guard.
-- `packages/agents/src/services/DefaultAgentServices.ts` registers only the Codex service.
+- `packages/agents/src/DefaultAgentServices.ts` registers the Codex and Claude Code services.
 - The chat runtime path currently executes through `AgentServiceRegistry`.
 - The newer `AgentHarnessAdapter` and `AgentRuntime` abstractions exist, but they are not the
   primary execution path for the whole application.

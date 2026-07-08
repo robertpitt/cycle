@@ -24,7 +24,7 @@ export type AgentDurabilityShape = {
     ownerId: string,
     leaseDurationMs: number,
   ) => Effect.Effect<AgentRunLease | undefined, AgentRuntimeError>;
-  readonly close: () => Effect.Effect<void, AgentRuntimeError>;
+  readonly close: Effect.Effect<void, AgentRuntimeError>;
   readonly createAttempt: (
     attempt: AgentAttemptRecord,
   ) => Effect.Effect<AgentAttemptRecord, AgentRuntimeError>;
@@ -152,7 +152,7 @@ export const makeInMemoryAgentDurability = (): AgentDurabilityShape => {
         leases.set(runId, next);
         return next;
       }),
-    close: () => Effect.void,
+    close: Effect.void,
     createAttempt: (attempt) =>
       effect(() => {
         attempts.set(attempt.attemptId, attempt);

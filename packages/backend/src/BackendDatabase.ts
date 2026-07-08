@@ -14,7 +14,7 @@ export const BackendDatabaseIdentityLive = Layer.effect(
     const settings = yield* LocalSettings;
 
     return DatabaseIdentity.of({
-      currentActor: settings.getProfile().pipe(
+      currentActor: settings.getProfile.pipe(
         Effect.map((current) => ({
           email: current.email.trim().length === 0 ? undefined : current.email,
           name: current.displayName.trim().length === 0 ? "Cycle User" : current.displayName,

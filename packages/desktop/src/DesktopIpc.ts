@@ -239,46 +239,45 @@ const readDesktopApiRuntimeBaseUrl = (
     return parseRuntimeBaseUrlFromDiscoveryText(yield* fs.readFileString(runtimePath, "utf8"));
   }).pipe(Effect.catch(() => Effect.as(Effect.void, undefined)));
 
-const selectRepositoryFolder = (): Effect.Effect<
+const selectRepositoryFolder: Effect.Effect<
   { readonly path: string; readonly status: "selected" } | { readonly status: "cancelled" },
   ElectronError
-> =>
-  Effect.gen(function* () {
-    const result = yield* Effect.tryPromise({
-      try: async () => {
-        const window = currentDesktopWindow();
-        const options: OpenDialogOptions = {
-          buttonLabel: "Add Repository",
-          message: "Choose a project folder to add to Cycle.",
-          properties: ["openDirectory"],
-          title: "Add Repository",
-        };
-
-        return window === null
-          ? await dialog.showOpenDialog(options)
-          : await dialog.showOpenDialog(window, options);
-      },
-      catch: (cause) =>
-        new ElectronError({
-          category: "security",
-          cause,
-          message: "Unable to open repository folder picker.",
-          operation: "dialog.selectRepositoryFolder",
-        }),
-    });
-
-    const selectedPath = result.filePaths[0];
-    if (result.canceled || selectedPath === undefined) {
-      return {
-        status: "cancelled" as const,
+> = Effect.gen(function* () {
+  const result = yield* Effect.tryPromise({
+    try: async () => {
+      const window = currentDesktopWindow();
+      const options: OpenDialogOptions = {
+        buttonLabel: "Add Repository",
+        message: "Choose a project folder to add to Cycle.",
+        properties: ["openDirectory"],
+        title: "Add Repository",
       };
-    }
 
-    return {
-      path: selectedPath,
-      status: "selected" as const,
-    };
+      return window === null
+        ? await dialog.showOpenDialog(options)
+        : await dialog.showOpenDialog(window, options);
+    },
+    catch: (cause) =>
+      new ElectronError({
+        category: "security",
+        cause,
+        message: "Unable to open repository folder picker.",
+        operation: "dialog.selectRepositoryFolder",
+      }),
   });
+
+  const selectedPath = result.filePaths[0];
+  if (result.canceled || selectedPath === undefined) {
+    return {
+      status: "cancelled" as const,
+    };
+  }
+
+  return {
+    path: selectedPath,
+    status: "selected" as const,
+  };
+});
 
 const registerIpcHandler = <A, B>(
   runtime: ElectronRuntimeService,
@@ -316,7 +315,7 @@ const broadcastThemeState = (state: ElectronThemeState): Effect.Effect<void> =>
     window.webContents.send(themeStateChangedChannel, state);
   });
 
-export const startDesktopThemeLifecycle = Effect.fn("startDesktopThemeLifecycle")(function* () {
+export const startDesktopThemeLifecycle = Effect.gen(function* () {
   const preferences = yield* ElectronPreferences;
 
   yield* preferences.startThemeLifecycleSupervision({
@@ -324,7 +323,7 @@ export const startDesktopThemeLifecycle = Effect.fn("startDesktopThemeLifecycle"
   });
 });
 
-export const registerDesktopIpc = Effect.fn("registerDesktopIpc")(function* () {
+export const registerDesktopIpc = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const runtime = yield* ElectronRuntime;
@@ -351,7 +350,7 @@ export const registerDesktopIpc = Effect.fn("registerDesktopIpc")(function* () {
     decodeEmptyRequest,
     () =>
       Effect.gen(function* () {
-        const config = yield* preferences.read();
+        const config = yield* preferences.read;
         const runtimeBaseUrl = yield* readDesktopApiRuntimeBaseUrl(diagnosticsRuntimePath).pipe(
           Effect.provideService(FileSystem.FileSystem, fs),
         );
@@ -392,7 +391,7 @@ export const registerDesktopIpc = Effect.fn("registerDesktopIpc")(function* () {
     decodeEmptyRequest,
     () =>
       Effect.gen(function* () {
-        const config = yield* preferences.read();
+        const config = yield* preferences.read;
         const runtimeFile = yield* readRuntimeDiscoveryFile(fs, diagnosticsRuntimePath);
         const runtimeValue = runtimeFile.status === "present" ? runtimeFile.value : undefined;
         const runtimeBaseUrl = stringField(runtimeValue, "baseUrl")?.replace(/\/+$/u, "");
@@ -446,17 +445,20 @@ export const registerDesktopIpc = Effect.fn("registerDesktopIpc")(function* () {
     runtime,
     getBootstrapStatusChannel,
     decodeEmptyRequest,
-    () => bootstrap.status(),
+    () => bootstrap.status,
     BootstrapStatus,
   );
-  yield* registerIpcHandler(runtime, clearCacheChannel, decodeEmptyRequest, () =>
-    preferences.clearCache(),
+  yield* registerIpcHandler(
+    runtime,
+    clearCacheChannel,
+    decodeEmptyRequest,
+    () => preferences.clearCache,
   );
   yield* registerIpcHandler(
     runtime,
     selectRepositoryFolderChannel,
     decodeEmptyRequest,
-    selectRepositoryFolder,
+    () => selectRepositoryFolder,
     SelectRepositoryFolderResultSchema,
   );
 });
