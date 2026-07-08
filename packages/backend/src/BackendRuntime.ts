@@ -1,6 +1,8 @@
 import { AgentProviderDetectorLive } from "@cycle/agents";
 import { AppConfigLive } from "@cycle/config/app-config";
 import { GitRepositoryLive, WorktreeServiceLive } from "@cycle/git";
+import { GitStoresLive, RepositoryPathsLive } from "@cycle/git-store";
+import { NodeServices } from "@effect/platform-node";
 import { Context, Effect, Layer } from "effect";
 import { BackendApi, BackendApiLive, type BackendApiHandle } from "./BackendApi.ts";
 import { BackendDatabaseLive } from "./BackendDatabase.ts";
@@ -36,6 +38,15 @@ export class BackendRuntime extends Context.Service<BackendRuntime, BackendRunti
 ) {}
 
 const nowIso = (): string => new Date().toISOString();
+
+const GitStoresServiceLive = GitStoresLive.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      NodeServices.layer,
+      RepositoryPathsLive.pipe(Layer.provide(NodeServices.layer)),
+    ),
+  ),
+);
 
 export const BackendRuntimeLive = Layer.effect(
   BackendRuntime,
@@ -146,7 +157,7 @@ export const launchBackend = (
 const makeBackendServiceLayers = (options: BackendStartOptions = {}) => {
   const AppConfigServiceLive = AppConfigLive;
   const LocalWorkspaceServiceLive = LocalWorkspaceLive.pipe(
-    Layer.provide(Layer.mergeAll(AppConfigServiceLive, GitRepositoryLive)),
+    Layer.provide(Layer.mergeAll(AppConfigServiceLive, GitRepositoryLive, GitStoresServiceLive)),
   );
   const LocalSettingsServiceLive = LocalSettingsLive.pipe(
     Layer.provide(Layer.mergeAll(AppConfigServiceLive, LocalWorkspaceServiceLive)),
@@ -158,6 +169,7 @@ const makeBackendServiceLayers = (options: BackendStartOptions = {}) => {
     Layer.provide(
       Layer.mergeAll(
         BackendDatabaseServiceLive,
+        GitStoresServiceLive,
         LocalSettingsServiceLive,
         GitRepositoryLive,
         LocalWorkspaceServiceLive,
@@ -170,6 +182,7 @@ const makeBackendServiceLayers = (options: BackendStartOptions = {}) => {
         AgentProviderDetectorLive,
         AppConfigServiceLive,
         BackendDatabaseServiceLive,
+        GitStoresServiceLive,
         GitRepositoryLive,
         LocalSettingsServiceLive,
         LocalWorkspaceServiceLive,

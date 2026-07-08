@@ -3,8 +3,8 @@
 `@cycle/git` owns Cycle's reusable Git capabilities. It provides Effect services and schemas for
 Git command execution, object/ref storage, repository lifecycle checks, and Git transport errors.
 
-Use this package when code needs Git behavior directly. Higher-level packages such as
-`@cycle/git-db` should build on these services instead of shelling out or reading `.git` directly.
+Use this package when code needs Git behavior directly. Higher-level packages should build on these
+services instead of shelling out or reading `.git` directly.
 
 ## Responsibilities
 
@@ -187,15 +187,15 @@ The intended dependency direction is:
 
 ```txt
 @cycle/git
-  -> @cycle/git-db
+  -> @cycle/git-store
     -> @cycle/database
       -> @cycle/usecases
         -> @cycle/api
         -> @cycle/desktop
 ```
 
-`@cycle/git-db` imports Git schemas, errors, and services from this package. It should not duplicate
-Git object codecs, command runners, ref validation, or repository lifecycle checks.
+Higher-level Git storage packages should not duplicate Git object codecs, command runners, ref
+validation, or repository lifecycle checks.
 
 ## Verification
 

@@ -1,4 +1,4 @@
-import { Cache, Context, Effect, FileSystem, Layer } from "effect";
+import { Context, Effect, FileSystem, Layer, Option, Scope } from "effect";
 import {
   FilesystemProtocolError,
   PackObjectParseError,
@@ -6,10 +6,14 @@ import {
   type GitStoreError,
 } from "./GitStoreErrors.ts";
 import type { GitObjectType, ObjectId } from "./GitStoreSchemas.ts";
-import { bytesToHex } from "./internal/bytes.ts";
-import { inflatePackData } from "./internal/compression.ts";
+import { bytesToHex, concatBytes } from "./internal/bytes.ts";
+import { inflatePackDataAttempt } from "./internal/compression.ts";
 import type { GitObject } from "./internal/git-object.ts";
 import { PackIndexStore } from "./PackIndexStore.ts";
+
+const packHeaderWindowSize = 128;
+const packInflateInitialChunkSize = 16 * 1024;
+const packInflateMaxChunkSize = 1024 * 1024;
 
 type ParsedPackedObject =
   | {
@@ -46,25 +50,9 @@ export const PackObjectStoreLive = Layer.effect(
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const indexStore = yield* PackIndexStore;
-    const packCache = yield* Cache.make<string, Uint8Array, GitStoreError>({
-      capacity: 16,
-      lookup: (packPath) =>
-        fs.readFile(packPath).pipe(
-          Effect.mapError(
-            (cause) =>
-              new FilesystemProtocolError({
-                cause,
-                message: `read pack file failed for ${packPath}: ${causeMessage(cause)}`,
-                operation: "read pack file",
-                path: packPath,
-              }),
-          ),
-        ),
-    });
 
     const readObjectAt = (
       packPath: string,
-      pack: Uint8Array,
       offset: number,
       seenOffsets: ReadonlySet<number> = new Set(),
     ): Effect.Effect<GitObject, GitStoreError> =>
@@ -76,8 +64,9 @@ export const PackObjectStoreLive = Layer.effect(
           });
         }
 
-        const parsed = yield* parsePackedObjectHeader(pack, offset, packPath);
-        const inflated = yield* inflatePackData(pack.subarray(parsed.dataOffset), packPath);
+        const header = yield* readPackWindow(fs, packPath, offset, packHeaderWindowSize);
+        const parsed = yield* parsePackedObjectHeader(header, offset, packPath);
+        const inflated = yield* readInflatedPackData(fs, packPath, parsed.dataOffset);
 
         if (inflated.byteLength !== parsed.size) {
           return yield* new PackObjectParseError({
@@ -101,7 +90,7 @@ export const PackObjectStoreLive = Layer.effect(
         const nextSeen = new Set([...seenOffsets, offset]);
         const base =
           parsed.type === "ofs-delta"
-            ? yield* readObjectAt(packPath, pack, parsed.baseOffset, nextSeen)
+            ? yield* readObjectAt(packPath, parsed.baseOffset, nextSeen)
             : parsed.type === "ref-delta"
               ? yield* readObjectById(parsed.baseObjectId)
               : null;
@@ -125,9 +114,7 @@ export const PackObjectStoreLive = Layer.effect(
 
         if (location === null) return null;
 
-        const pack = yield* Cache.get(packCache, location.packPath);
-
-        return yield* readObjectAt(location.packPath, pack, location.objectOffset);
+        return yield* readObjectAt(location.packPath, location.objectOffset);
       });
 
     const readObject = Effect.fn("PackObjectStore.readObject")(function* (id: ObjectId) {
@@ -138,13 +125,106 @@ export const PackObjectStoreLive = Layer.effect(
   }),
 );
 
+const readPackWindow = (
+  fs: FileSystem.FileSystem,
+  packPath: string,
+  offset: number,
+  size: number,
+): Effect.Effect<Uint8Array, GitStoreError> =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const file = yield* openPackFile(fs, packPath);
+
+      yield* file.seek(offset, "start");
+
+      return yield* readPackChunk(file, packPath, size).pipe(
+        Effect.map((chunk) => chunk ?? new Uint8Array()),
+      );
+    }),
+  );
+
+const readInflatedPackData = (
+  fs: FileSystem.FileSystem,
+  packPath: string,
+  offset: number,
+): Effect.Effect<Uint8Array, GitStoreError> =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const file = yield* openPackFile(fs, packPath);
+      const chunks: Array<Uint8Array> = [];
+      let chunkSize = packInflateInitialChunkSize;
+
+      yield* file.seek(offset, "start");
+
+      while (true) {
+        const chunk = yield* readPackChunk(file, packPath, chunkSize);
+
+        if (chunk === null) {
+          return yield* new PackObjectParseError({
+            message: `Packed object data ended before inflate completed: ${packPath}`,
+            path: packPath,
+          });
+        }
+
+        chunks.push(chunk);
+
+        const result = yield* inflatePackDataAttempt(concatBytes(chunks));
+
+        if (result._tag === "success") return result.bytes;
+        if (result._tag === "failure") {
+          return yield* new PackObjectParseError({
+            cause: result.cause,
+            message: `Could not inflate packed object data: ${packPath}`,
+            path: packPath,
+          });
+        }
+
+        chunkSize = Math.min(chunkSize * 2, packInflateMaxChunkSize);
+      }
+    }),
+  );
+
+const openPackFile = (
+  fs: FileSystem.FileSystem,
+  packPath: string,
+): Effect.Effect<FileSystem.File, GitStoreError, Scope.Scope> =>
+  fs.open(packPath, { flag: "r" }).pipe(
+    Effect.mapError(
+      (cause) =>
+        new FilesystemProtocolError({
+          cause,
+          message: `open pack file failed for ${packPath}: ${causeMessage(cause)}`,
+          operation: "open pack file",
+          path: packPath,
+        }),
+    ),
+  );
+
+const readPackChunk = (
+  file: FileSystem.File,
+  packPath: string,
+  size: number,
+): Effect.Effect<Uint8Array | null, GitStoreError> =>
+  file.readAlloc(size).pipe(
+    Effect.map(Option.getOrNull),
+    Effect.mapError(
+      (cause) =>
+        new FilesystemProtocolError({
+          cause,
+          message: `read pack file failed for ${packPath}: ${causeMessage(cause)}`,
+          operation: "read pack file",
+          path: packPath,
+        }),
+    ),
+  );
+
 const parsePackedObjectHeader = (
   pack: Uint8Array,
   objectOffset: number,
   packPath: string,
 ): Effect.Effect<ParsedPackedObject, GitStoreError> =>
   Effect.gen(function* () {
-    let offset = objectOffset;
+    let offset = 0;
     let byte = pack[offset++];
 
     if (byte === undefined) {
@@ -186,7 +266,7 @@ const parsePackedObjectHeader = (
 
       return {
         baseOffset: result.baseOffset,
-        dataOffset: result.nextOffset,
+        dataOffset: objectOffset + result.nextOffset,
         objectOffset,
         size,
         type,
@@ -205,7 +285,7 @@ const parsePackedObjectHeader = (
 
       return {
         baseObjectId: bytesToHex(pack.subarray(offset, baseEnd)) as ObjectId,
-        dataOffset: baseEnd,
+        dataOffset: objectOffset + baseEnd,
         objectOffset,
         size,
         type,
@@ -213,7 +293,7 @@ const parsePackedObjectHeader = (
     }
 
     return {
-      dataOffset: offset,
+      dataOffset: objectOffset + offset,
       objectOffset,
       size,
       type,

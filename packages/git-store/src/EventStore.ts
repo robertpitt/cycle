@@ -7,9 +7,16 @@ import {
 import type { Change, Snapshot, StorePath } from "./GitStoreSchemas.ts";
 import { Document } from "./Document.ts";
 import { GitStore, type GitStoreTransaction } from "./GitStore.ts";
-import { aggregatePath, parseEventPath, validateEventSegment } from "./internal/event-path.ts";
+import {
+  aggregatePath,
+  parseEventPath,
+  validateEventSegment,
+  type ParsedEventPath,
+} from "./internal/event-path.ts";
 import { normalizeStorePath } from "./internal/refs.ts";
 import { stableJsonBytes, encodeSchemaValue } from "./internal/json.ts";
+
+export type { ParsedEventPath } from "./internal/event-path.ts";
 
 export const EVENT_ROOT = "collections/events";
 
@@ -40,6 +47,13 @@ export type EventChange = {
   readonly eventId: string;
   readonly path: string;
 };
+
+export const aggregateEventPath = (
+  input: Pick<EventPathInput, "aggregateId" | "aggregateType">,
+): string => aggregatePath({ ...input, root: EVENT_ROOT });
+
+export const parseEventMetadataPath = (path: string): ParsedEventPath | null =>
+  parseEventPath(path, EVENT_ROOT);
 
 export type EventStoreShape = {
   readonly append: <TPayload>(

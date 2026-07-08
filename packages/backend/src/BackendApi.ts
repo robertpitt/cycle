@@ -22,6 +22,7 @@ import { AppConfig } from "@cycle/config/app-config";
 import { defaultAgentProviderPreference, type AppConfigState } from "@cycle/contracts/schemas/app";
 import { DatabaseService } from "@cycle/database";
 import { GitRepository } from "@cycle/git";
+import { GitStores } from "@cycle/git-store";
 import { WorktreeService } from "@cycle/git/worktree";
 import { logError } from "@cycle/logging";
 import { repositoryIdFromInput } from "@cycle/usecases";
@@ -50,6 +51,7 @@ type BackendApiStartRequirements =
   | AppConfig
   | DatabaseService
   | GitRepository
+  | GitStores
   | LocalSettings
   | LocalWorkspace
   | Path.Path
@@ -189,6 +191,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
   const database = yield* DatabaseService;
   const settings = yield* LocalSettings;
   const gitRepository = yield* GitRepository;
+  const gitStores = yield* GitStores;
   const worktreeService = yield* WorktreeService;
   const localWorkspace = yield* LocalWorkspace;
   const config = yield* appConfig.read;
@@ -306,6 +309,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
             Layer.mergeAll(
               databaseLayer,
               Layer.succeed(GitRepository, GitRepository.of(gitRepository)),
+              Layer.succeed(GitStores, GitStores.of(gitStores)),
               Layer.succeed(LocalWorkspace, LocalWorkspace.of(localWorkspace)),
             ),
           ),
@@ -442,6 +446,7 @@ export const BackendApiLive = Layer.effect(
     const appConfig = yield* AppConfig;
     const database = yield* DatabaseService;
     const gitRepository = yield* GitRepository;
+    const gitStores = yield* GitStores;
     const localSettings = yield* LocalSettings;
     const localWorkspace = yield* LocalWorkspace;
     const path = yield* Path.Path;
@@ -456,6 +461,7 @@ export const BackendApiLive = Layer.effect(
           Effect.provideService(AppConfig, appConfig),
           Effect.provideService(DatabaseService, database),
           Effect.provideService(GitRepository, gitRepository),
+          Effect.provideService(GitStores, gitStores),
           Effect.provideService(LocalSettings, localSettings),
           Effect.provideService(LocalWorkspace, localWorkspace),
           Effect.provideService(Path.Path, path),

@@ -21,7 +21,7 @@ Configuration behavior is currently being extracted from `@cycle/desktop` into `
 Consumers already import subpaths such as `@cycle/config/app-config`,
 `@cycle/config/discovery`, and `@cycle/config/testing`, but test coverage and compatibility wrappers
 still live mainly in downstream packages. The refactor must complete the package boundary, align the
-source layout with the `@cycle/git` and `@cycle/git-db` service-file convention, and avoid changing
+source layout with the `@cycle/git` and `@cycle/git-store` service-file convention, and avoid changing
 persisted config semantics or forcing consumers to import desktop internals.
 
 ## 4. Goals
@@ -49,7 +49,7 @@ persisted config semantics or forcing consumers to import desktop internals.
    provider executable detection, or desktop-specific profile/workspace workflows into
    `@cycle/config`.
 3. This refactor MUST NOT make `@cycle/config` depend on `@cycle/desktop`, `@cycle/database`,
-   `@cycle/git`, `@cycle/git-db`, `@cycle/api`, or `@cycle/cli`.
+   `@cycle/git`, `@cycle/git-store`, `@cycle/api`, or `@cycle/cli`.
 4. This refactor MUST NOT remove downstream compatibility wrappers in `@cycle/desktop` unless all
    consumers are migrated in the same change.
 

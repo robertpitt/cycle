@@ -14,6 +14,7 @@ import { ObjectCodec } from "./ObjectCodec.ts";
 export type LooseObjectStoreShape = {
   readonly looseObjectPath: (id: ObjectId) => string;
   readonly readObject: (id: ObjectId) => Effect.Effect<GitObject, GitStoreError>;
+  readonly readObjectOption: (id: ObjectId) => Effect.Effect<GitObject | null, GitStoreError>;
   readonly writeObject: (
     type: GitObjectType,
     body: Uint8Array,
@@ -37,30 +38,41 @@ export const LooseObjectStoreLive = Layer.effect(
     const looseObjectPath = (id: ObjectId): string =>
       path.join(runtime.config.commonGitDir, "objects", id.slice(0, 2), id.slice(2));
 
-    const readObject = Effect.fn("LooseObjectStore.readObject")(function* (id: ObjectId) {
+    const readExistingObject = (id: ObjectId, filePath: string) =>
+      Effect.gen(function* () {
+        const compressed = yield* fs.readFile(filePath).pipe(
+          Effect.mapError(
+            (cause) =>
+              new FilesystemProtocolError({
+                cause,
+                message: `read loose object failed for ${filePath}: ${causeMessage(cause)}`,
+                operation: "read loose object",
+                path: filePath,
+              }),
+          ),
+        );
+
+        return yield* codec.inflateLooseObject(compressed, id);
+      });
+
+    const readObjectOption = Effect.fn("LooseObjectStore.readObjectOption")(function* (
+      id: ObjectId,
+    ) {
       const filePath = looseObjectPath(id);
       const exists = yield* fs.exists(filePath).pipe(Effect.catch(() => Effect.succeed(false)));
 
-      if (!exists) {
-        return yield* new ObjectNotFoundError({
-          message: `Object not found: ${id}`,
-          objectId: id,
-        });
-      }
+      return exists ? yield* readExistingObject(id, filePath) : null;
+    });
 
-      const compressed = yield* fs.readFile(filePath).pipe(
-        Effect.mapError(
-          (cause) =>
-            new FilesystemProtocolError({
-              cause,
-              message: `read loose object failed for ${filePath}: ${causeMessage(cause)}`,
-              operation: "read loose object",
-              path: filePath,
-            }),
-        ),
-      );
+    const readObject = Effect.fn("LooseObjectStore.readObject")(function* (id: ObjectId) {
+      const object = yield* readObjectOption(id);
 
-      return yield* codec.inflateLooseObject(compressed, id);
+      return object === null
+        ? yield* new ObjectNotFoundError({
+            message: `Object not found: ${id}`,
+            objectId: id,
+          })
+        : object;
     });
 
     const writeObject = Effect.fn("LooseObjectStore.writeObject")(function* (
@@ -112,6 +124,7 @@ export const LooseObjectStoreLive = Layer.effect(
     return LooseObjectStore.of({
       looseObjectPath,
       readObject,
+      readObjectOption,
       writeObject,
     });
   }),

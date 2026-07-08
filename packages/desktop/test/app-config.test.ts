@@ -8,6 +8,7 @@ import { ConfigProvider, Effect, Layer } from "effect";
 import { detectAgentProviders } from "@cycle/agents";
 import { AppConfig, AppConfigLive, parseAppConfig } from "@cycle/config/app-config";
 import { GitRepositoryLive } from "@cycle/git";
+import { GitStoresTestLive } from "@cycle/git-store/testing";
 import { NodeServices } from "@effect/platform-node";
 import { afterEach, describe, it } from "vitest";
 import { LocalWorkspace, LocalWorkspaceLive } from "@cycle/backend/workspace";
@@ -47,7 +48,7 @@ const makeServicesLayer = (userData: string) => {
   const appConfig = makeConfigLayer(userData);
   const gitRepository = GitRepositoryLive;
   const localWorkspace = LocalWorkspaceLive.pipe(
-    Layer.provide(Layer.mergeAll(appConfig, gitRepository)),
+    Layer.provide(Layer.mergeAll(appConfig, gitRepository, GitStoresTestLive)),
   );
   const localSettings = LocalSettingsLive.pipe(
     Layer.provide(Layer.mergeAll(appConfig, localWorkspace)),
@@ -331,6 +332,34 @@ describe("desktop app config", () => {
     );
 
     assert.equal(config.localWorkspace.repositories.length, 0);
+  });
+
+  it("reuses an existing local repository identity without probing an unavailable remote", async () => {
+    const userData = await makeTempDir();
+    const repositoryPath = join(userData, "project");
+    await mkdir(repositoryPath);
+    await execFileAsync("git", ["init"], { cwd: repositoryPath });
+
+    const result = await runServices(
+      userData,
+      Effect.gen(function* () {
+        const workspace = yield* LocalWorkspace;
+        const first = yield* workspace.upsertRepositoryPath({ path: repositoryPath });
+
+        yield* Effect.tryPromise(() =>
+          execFileAsync("git", ["remote", "add", "origin", join(userData, "missing.git")], {
+            cwd: repositoryPath,
+          }),
+        );
+
+        const second = yield* workspace.upsertRepositoryPath({ path: repositoryPath });
+
+        return { first, second };
+      }),
+    );
+
+    assert.equal(result.second.id, result.first.id);
+    assert.equal(result.second.gitDbRootCommitId, result.first.gitDbRootCommitId);
   });
 
   it("rejects repositories that are not git initialised", async () => {

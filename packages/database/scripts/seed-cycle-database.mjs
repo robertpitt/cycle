@@ -2,13 +2,15 @@
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
-import { Event as GitDbEvent, GitDbFilesystem, Store as GitDbStore } from "@cycle/git-db";
+import { GitStoresLive, RepositoryPathsLive } from "@cycle/git-store";
+import { NodeServices } from "@effect/platform-node";
 import { Effect, Layer } from "effect";
 import {
   DatabaseIdGeneratorDeterministic,
   DatabaseIdentityTest,
   DatabaseLive,
   DatabaseService,
+  makeGitRepositoryStoreEffect,
   makeFrontmatter,
   makeTicketDocument,
 } from "../src/index.ts";
@@ -35,6 +37,14 @@ const labelGroups = [
 ];
 
 const config = parseArgs(process.argv.slice(2));
+const GitStoresScriptLive = GitStoresLive.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      NodeServices.layer,
+      RepositoryPathsLive.pipe(Layer.provide(NodeServices.layer)),
+    ),
+  ),
+);
 
 if (config.help) {
   printHelp();
@@ -54,7 +64,12 @@ function seed(options) {
   );
 
   return Effect.gen(function* () {
-    const store = yield* GitDbStore.StoreService;
+    const store = yield* makeGitRepositoryStoreEffect({
+      cwd: options.repoRoot,
+      database: options.database,
+      defaultPointer: options.pointer,
+      gitDir: options.gitDir,
+    });
     const database = yield* DatabaseService;
     const beforeSnapshot = yield* store.currentSnapshotForPointer(options.pointer);
     const startedAt = performance.now();
@@ -64,45 +79,46 @@ function seed(options) {
 
     for (let batchStart = 0; batchStart < options.tickets; batchStart += options.batchSize) {
       const batchEnd = Math.min(batchStart + options.batchSize, options.tickets);
-      const tx = yield* store.begin(options.pointer);
-
-      for (let index = batchStart; index < batchEnd; index += 1) {
-        const ticket = makeSeedTicket(index, options);
-
-        yield* GitDbEvent.append(tx, {
-          aggregateId: ticket.id,
-          aggregateType: "ticket",
-          eventId: seedEventId("ticket", ticket.id, index),
-          payload: {
-            op: "ticket.create",
-            value: ticket,
-          },
-        });
-        ticketsWritten += 1;
-
-        for (const [recordIndex, record] of makeSeedRecords(ticket, index, options).entries()) {
-          yield* GitDbEvent.append(tx, {
-            aggregateId: record.id,
-            aggregateType: "record",
-            eventId: seedEventId("record", record.id, recordIndex),
-            payload: {
-              op: "record.add",
-              value: record,
-            },
-          });
-          if (record.recordType === "comment") commentsWritten += 1;
-        }
-      }
-
-      const snapshot = yield* tx.commit({
+      const result = yield* store.transaction({
         author: actor,
         committer: actor,
         message: `Seed ${options.prefix} tickets ${batchStart + 1}-${batchEnd}`,
-      });
+        pointer: options.pointer,
+      }, (tx) =>
+        Effect.gen(function* () {
+          for (let index = batchStart; index < batchEnd; index += 1) {
+            const ticket = makeSeedTicket(index, options);
+
+            yield* store.appendEvent(tx, {
+              aggregateId: ticket.id,
+              aggregateType: "ticket",
+              eventId: seedEventId("ticket", ticket.id, index),
+              payload: {
+                op: "ticket.create",
+                value: ticket,
+              },
+            });
+            ticketsWritten += 1;
+
+            for (const [recordIndex, record] of makeSeedRecords(ticket, index, options).entries()) {
+              yield* store.appendEvent(tx, {
+                aggregateId: record.id,
+                aggregateType: "record",
+                eventId: seedEventId("record", record.id, recordIndex),
+                payload: {
+                  op: "record.add",
+                  value: record,
+                },
+              });
+              if (record.recordType === "comment") commentsWritten += 1;
+            }
+          }
+        }),
+      );
 
       commitsWritten += 1;
       console.log(
-        `Committed batch ${commitsWritten}: tickets ${batchStart + 1}-${batchEnd} -> ${snapshot.id.slice(0, 12)}`,
+        `Committed batch ${commitsWritten}: tickets ${batchStart + 1}-${batchEnd} -> ${result.snapshot.id.slice(0, 12)}`,
       );
     }
 
@@ -135,17 +151,7 @@ function seed(options) {
         2,
       ),
     );
-  }).pipe(
-    Effect.provide(databaseLayer),
-    Effect.provide(
-      GitDbFilesystem({
-        cwd: options.repoRoot,
-        database: options.database,
-        defaultPointer: options.pointer,
-        gitDir: options.gitDir,
-      }),
-    ),
-  );
+  }).pipe(Effect.provide(Layer.mergeAll(databaseLayer, GitStoresScriptLive)));
 }
 
 function makeSeedTicket(index, options) {

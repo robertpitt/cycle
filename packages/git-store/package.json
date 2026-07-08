@@ -9,6 +9,8 @@
     "./document": "./src/Document.ts",
     "./errors": "./src/GitStoreErrors.ts",
     "./events": "./src/EventStore.ts",
+    "./changes": "./src/GitStoreChanges.ts",
+    "./remote-transport": "./src/GitRemoteTransport.ts",
     "./loose-object-store": "./src/LooseObjectStore.ts",
     "./loose-refs": "./src/LooseRefStore.ts",
     "./object-codec": "./src/ObjectCodec.ts",
@@ -25,6 +27,7 @@
     "./schemas": "./src/GitStoreSchemas.ts",
     "./store": "./src/GitStore.ts",
     "./store-instances": "./src/GitStoreInstances.ts",
+    "./sync": "./src/GitStoreSync.ts",
     "./stores": "./src/GitStores.ts",
     "./testing": "./src/testing/index.ts"
   },

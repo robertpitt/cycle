@@ -1,6 +1,7 @@
 export * from "./domain/index.ts";
 export * from "./errors/index.ts";
 export * from "./paths.ts";
+export * from "./store/RepositoryStore.ts";
 export {
   DatabaseIdGenerator,
   DatabaseIdGeneratorLive,

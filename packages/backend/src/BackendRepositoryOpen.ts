@@ -1,9 +1,14 @@
 import { AppConfigError } from "@cycle/config/app-config";
 import type { RepositoryRecord } from "@cycle/contracts/schemas/app";
 import type { RepositoryOpenInput } from "@cycle/contracts/schemas";
-import { DatabaseService, type RepositoryMetadata } from "@cycle/database";
+import {
+  DatabaseService,
+  makeGitRepositoryStoreEffect,
+  type RepositoryMetadata,
+  type RepositoryStoreShape,
+} from "@cycle/database";
 import { GitRepository, type GitRepositoryMetadata } from "@cycle/git";
-import { GitDb, Store as GitDbStore } from "@cycle/git-db";
+import { GitStores, type GitStoresShape } from "@cycle/git-store";
 import { mapDatabaseFailure, RepositoryOpenService, type UseCaseContext } from "@cycle/usecases";
 import { Effect, Layer } from "effect";
 import { LocalWorkspace } from "./LocalWorkspace.ts";
@@ -21,18 +26,15 @@ const repositoryMetadata = (metadata: GitRepositoryMetadata): RepositoryMetadata
 });
 
 const makeLocalStore = (
+  gitStores: GitStoresShape,
   repositoryPath: string,
   gitDir: string,
-): Effect.Effect<GitDbStore.StoreServiceShape, unknown> =>
-  GitDbStore.StoreService.pipe(
-    Effect.provide(
-      GitDb.GitDbFilesystem({
-        cwd: repositoryPath,
-        database: "cycle",
-        gitDir,
-      }),
-    ),
-  );
+): Effect.Effect<RepositoryStoreShape> =>
+  makeGitRepositoryStoreEffect({
+    cwd: repositoryPath,
+    database: "cycle",
+    gitDir,
+  }).pipe(Effect.provideService(GitStores, GitStores.of(gitStores)));
 
 const repositoryById = (
   repositories: ReadonlyArray<RepositoryRecord>,
@@ -72,6 +74,7 @@ export const BackendRepositoryOpenServiceLive = Layer.effect(
   Effect.gen(function* () {
     const database = yield* DatabaseService;
     const gitRepository = yield* GitRepository;
+    const gitStores = yield* GitStores;
     const localWorkspace = yield* LocalWorkspace;
 
     return RepositoryOpenService.of({
@@ -80,7 +83,11 @@ export const BackendRepositoryOpenServiceLive = Layer.effect(
           const repository = yield* resolveRepository(localWorkspace, input);
           const inspected = yield* gitRepository.metadata(repository.path);
           const metadata = repositoryMetadata(inspected);
-          const store = yield* makeLocalStore(repository.path, metadata.gitDir ?? inspected.gitDir);
+          const store = yield* makeLocalStore(
+            gitStores,
+            repository.path,
+            metadata.gitDir ?? inspected.gitDir,
+          );
 
           return yield* database.openRepository({
             displayName: repository.displayName,

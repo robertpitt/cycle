@@ -3,6 +3,7 @@ import {
   lineEndingPattern,
   trailingNewlinePattern,
   trailingSlashesPattern,
+  whitespacePattern,
 } from "./patterns.ts";
 
 export const firstLine = (value: string): string => splitLines(value)[0] ?? "";
@@ -16,6 +17,12 @@ export const splitSpacePair = (value: string): readonly [string, string | undefi
   const index = value.indexOf(" ");
 
   return index === -1 ? [value, undefined] : [value.slice(0, index), value.slice(index + 1)];
+};
+
+export const splitWhitespacePair = (value: string): readonly [string, string | undefined] => {
+  const [first, second] = value.trim().split(whitespacePattern, 2);
+
+  return [first ?? "", second];
 };
 
 export const stripLeadingSlashes = (value: string): string =>

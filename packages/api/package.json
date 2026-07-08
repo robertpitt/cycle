@@ -35,7 +35,6 @@
   },
   "devDependencies": {
     "@cycle/database": "workspace:*",
-    "@cycle/git-db": "workspace:*",
     "vitest": "^4.1.8"
   }
 }

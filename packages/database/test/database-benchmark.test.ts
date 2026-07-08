@@ -1,9 +1,17 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
-import { Event as GitDbEvent, GitDbFilesystem, Store as GitDbStore } from "@cycle/git-db";
+import { rmSync } from "node:fs";
+import { withTestIdentity } from "@cycle/git-store/testing";
 import { Effect } from "effect";
-import { DatabaseService, makeFrontmatter, makeTicketDocument, type Actor } from "../src/index.ts";
+import {
+  DatabaseService,
+  makeFrontmatter,
+  makeGitRepositoryStoreEffect,
+  makeTicketDocument,
+  type Actor,
+  type RepositoryStoreShape,
+} from "../src/index.ts";
 import { DatabaseTest } from "../src/testing/index.ts";
 import { assert, describe, it } from "./effect-vitest.ts";
 
@@ -149,15 +157,15 @@ describe("@cycle/database benchmark", () => {
 
         yield* timed(
           timings,
-          `write external GitDB batch of ${EXTERNAL_BATCH_COUNT} tickets`,
+          `write external git-store batch of ${EXTERNAL_BATCH_COUNT} tickets`,
           () => writeExternalTicketBatch(store, EXTERNAL_BATCH_COUNT),
           (count) => ({
             operations: count,
-            unit: "gitdb events",
+            unit: "git-store events",
           }),
         );
 
-        yield* timed(timings, "explicit sync external GitDB batch into SQLite", () =>
+        yield* timed(timings, "explicit sync external git-store batch into SQLite", () =>
           database.syncRepository("cycle-local"),
         );
 
@@ -186,15 +194,13 @@ describe("@cycle/database benchmark", () => {
 });
 
 const makeFilesystemStore = (database: string) =>
-  GitDbStore.StoreService.pipe(
-    Effect.provide(
-      GitDbFilesystem({
-        cwd: REPO_ROOT,
-        database,
-        defaultPointer: "main",
-        gitDir: ".git",
-      }),
-    ),
+  makeGitRepositoryStoreEffect(
+    withTestIdentity({
+      cwd: REPO_ROOT,
+      database,
+      defaultPointer: "main",
+      gitDir: ".git",
+    }),
   );
 
 const timed = <A>(
@@ -220,11 +226,10 @@ const timed = <A>(
   });
 
 const writeExternalTicketBatch = (
-  store: GitDbStore.StoreServiceShape,
+  store: RepositoryStoreShape,
   count: number,
 ): Effect.Effect<number, unknown, never> =>
   Effect.gen(function* () {
-    const tx = yield* store.begin();
     const actor: Actor = {
       email: "benchmark@example.invalid",
       name: "Benchmark External Writer",
@@ -232,60 +237,67 @@ const writeExternalTicketBatch = (
     };
     const now = new Date().toISOString();
 
-    for (let index = 0; index < count; index += 1) {
-      const id = `EXT-${(index + 1).toString(36).toUpperCase().padStart(5, "0")}`;
-      const ticket = makeTicketDocument(
-        makeFrontmatter(
-          {
-            assignee: assigneeFor(index),
-            body: externalBodyFor(index),
-            labels: ["external", index % 2 === 0 ? "sqlite" : "sync"],
-            priority: priorityFor(index),
-            repository: repositoryKeyFor(index),
-            title: `External benchmark ticket ${String(index + 1).padStart(4, "0")}`,
-            type: "task",
-          },
-          id,
-          actor,
-          now,
-        ),
-        externalBodyFor(index),
-      );
-
-      yield* GitDbEvent.append(tx, {
-        aggregateId: id,
-        aggregateType: "ticket",
-        eventId: `evt_external_${String(index + 1).padStart(5, "0")}`,
-        payload: {
-          op: "ticket.create",
-          value: ticket,
+    yield* store.transaction(
+      {
+        author: {
+          email: actor.email ?? "",
+          name: actor.name,
         },
-      });
-    }
+        committer: {
+          email: actor.email ?? "",
+          name: actor.name,
+        },
+        message: `Benchmark external batch: ${count} tickets`,
+      },
+      (tx) =>
+        Effect.gen(function* () {
+          for (let index = 0; index < count; index += 1) {
+            const id = `EXT-${(index + 1).toString(36).toUpperCase().padStart(5, "0")}`;
+            const ticket = makeTicketDocument(
+              makeFrontmatter(
+                {
+                  assignee: assigneeFor(index),
+                  body: externalBodyFor(index),
+                  labels: ["external", index % 2 === 0 ? "sqlite" : "sync"],
+                  priority: priorityFor(index),
+                  repository: repositoryKeyFor(index),
+                  title: `External benchmark ticket ${String(index + 1).padStart(4, "0")}`,
+                  type: "task",
+                },
+                id,
+                actor,
+                now,
+              ),
+              externalBodyFor(index),
+            );
 
-    yield* tx.commit({
-      author: {
-        email: actor.email,
-        name: actor.name,
-      },
-      committer: {
-        email: actor.email,
-        name: actor.name,
-      },
-      message: `Benchmark external batch: ${count} tickets`,
-    });
+            yield* store.appendEvent(tx, {
+              aggregateId: id,
+              aggregateType: "ticket",
+              eventId: `evt_external_${String(index + 1).padStart(5, "0")}`,
+              payload: {
+                op: "ticket.create",
+                value: ticket,
+              },
+            });
+          }
+        }),
+    );
 
     return count;
   });
 
 const cleanupBenchmarkRef = (
-  store: GitDbStore.StoreServiceShape,
+  store: RepositoryStoreShape,
 ): Effect.Effect<void, never, never> =>
-  Effect.gen(function* () {
-    const pointer = yield* store.pointer("main");
-
-    yield* pointer.delete();
-  }).pipe(Effect.orElseSucceed(() => undefined));
+  store.pointerRef("main").pipe(
+    Effect.flatMap((ref) =>
+      Effect.sync(() => {
+        rmSync(path.join(REPO_ROOT, ".git", ref), { force: true });
+      }),
+    ),
+    Effect.orElseSucceed(() => undefined),
+  );
 
 const bodyFor = (index: number): string =>
   [
@@ -299,15 +311,15 @@ const bodyFor = (index: number): string =>
     "",
     "## Implementation Plan",
     "",
-    "- Measure GitDB write throughput.",
+    "- Measure git-store write throughput.",
     "- Measure SQLite sync and search throughput.",
   ].join("\n");
 
 const externalBodyFor = (index: number): string =>
-  `External GitDB batch ticket ${index + 1} for explicit sync benchmarking.`;
+  `External git-store batch ticket ${index + 1} for explicit sync benchmarking.`;
 
 const labelsFor = (index: number): ReadonlyArray<string> => [
-  index % 2 === 0 ? "sqlite" : "gitdb",
+  index % 2 === 0 ? "sqlite" : "git-store",
   index % 5 === 0 ? "sync" : "benchmark",
 ];
 

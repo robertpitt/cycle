@@ -79,7 +79,7 @@ that code is not part of this package's target contract.
 Cycle runtime layers are:
 
 ```text
-Level 1: @cycle/git and @cycle/git-db
+Level 1: @cycle/git and @cycle/git-store
   Git repository inspection, Git objects, GitDB documents, refs, fetch, push, history, diffs
 
 Level 2: @cycle/database

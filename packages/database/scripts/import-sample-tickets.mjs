@@ -3,13 +3,15 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { GitDbFilesystem, Store as GitDbStore } from "@cycle/git-db";
+import { GitStoresLive, RepositoryPathsLive } from "@cycle/git-store";
+import { NodeServices } from "@effect/platform-node";
 import { Effect, Layer } from "effect";
 import {
   DatabaseIdGenerator,
   DatabaseIdentityTest,
   DatabaseLive,
   DatabaseService,
+  makeGitRepositoryStoreEffect,
   normalizeKey,
 } from "../src/index.ts";
 
@@ -18,6 +20,14 @@ const defaultRepoRoot = path.resolve(scriptDir, "../../..");
 const defaultCsv = path.join(scriptDir, "sample-tickets.csv");
 
 const config = parseArgs(process.argv.slice(2));
+const GitStoresScriptLive = GitStoresLive.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      NodeServices.layer,
+      RepositoryPathsLive.pipe(Layer.provide(NodeServices.layer)),
+    ),
+  ),
+);
 
 if (config.help) {
   printHelp();
@@ -64,7 +74,12 @@ function importTickets(options) {
       return;
     }
 
-    const store = yield* GitDbStore.StoreService;
+    const store = yield* makeGitRepositoryStoreEffect({
+      cwd: options.repoRoot,
+      database: options.database,
+      defaultPointer: options.pointer,
+      gitDir: options.gitDir,
+    });
     const database = yield* DatabaseService;
     const status = yield* database.openRepository({
       displayName: options.displayName,
@@ -119,17 +134,7 @@ function importTickets(options) {
         2,
       ),
     );
-  }).pipe(
-    Effect.provide(databaseLayer),
-    Effect.provide(
-      GitDbFilesystem({
-        cwd: options.repoRoot,
-        database: options.database,
-        defaultPointer: options.pointer,
-        gitDir: options.gitDir,
-      }),
-    ),
-  );
+  }).pipe(Effect.provide(Layer.mergeAll(databaseLayer, GitStoresScriptLive)));
 }
 
 function randomIdGenerator() {

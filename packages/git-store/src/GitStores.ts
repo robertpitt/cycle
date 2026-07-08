@@ -2,7 +2,11 @@ import { Context, Effect, Layer, Scope } from "effect";
 import type { GitStoreError } from "./GitStoreErrors.ts";
 import type { GitStoreOpenOptions } from "./GitStoreSchemas.ts";
 import { GitStore, type GitStoreShape } from "./GitStore.ts";
-import { GitStoreInstances, encodeGitStoreInstanceKey } from "./GitStoreInstances.ts";
+import {
+  encodeGitStoreInstanceKey,
+  GitStoreInstances,
+  GitStoreInstancesLive,
+} from "./GitStoreInstances.ts";
 import { RepositoryPaths } from "./RepositoryPaths.ts";
 
 export type GitStoresShape = {
@@ -26,36 +30,41 @@ export const GitStoresLive = Layer.effect(
     const paths = yield* RepositoryPaths;
     const instances = yield* GitStoreInstances;
 
-    const instanceKey = (options: GitStoreOpenOptions) =>
-      paths.resolve(options).pipe(Effect.map(encodeGitStoreInstanceKey));
+    const contextFor = (options: GitStoreOpenOptions) =>
+      Effect.gen(function* () {
+        const resolved = yield* paths.resolve(options);
 
-    const scoped = Effect.fn("GitStores.scoped")(function* (options: GitStoreOpenOptions) {
-      const key = yield* instanceKey(options);
-      const context = yield* instances.contextEffect(key);
+        return yield* instances.contextEffect(encodeGitStoreInstanceKey(resolved));
+      });
 
-      return Context.get(context, GitStore);
-    });
+    const scoped = (
+      options: GitStoreOpenOptions,
+    ): Effect.Effect<GitStoreShape, GitStoreError, Scope.Scope> =>
+      Effect.gen(function* () {
+        const context = yield* contextFor(options);
 
-    const withStore = Effect.fn("GitStores.withStore")(function* <A, E, R>(
+        return Context.get(context, GitStore);
+      });
+
+    const withStore = <A, E, R>(
       options: GitStoreOpenOptions,
       use: (store: GitStoreShape) => Effect.Effect<A, E, R>,
-    ) {
-      return yield* Effect.scoped(
+    ): Effect.Effect<A, GitStoreError | E, R> =>
+      Effect.scoped(
         Effect.gen(function* () {
-          const key = yield* instanceKey(options);
-          const context = yield* instances.contextEffect(key);
+          const context = yield* contextFor(options);
           const store = Context.get(context, GitStore);
 
           return yield* Effect.provide(use(store), context);
         }),
       );
-    });
 
-    const invalidate = Effect.fn("GitStores.invalidate")(function* (options: GitStoreOpenOptions) {
-      const key = yield* instanceKey(options);
+    const invalidate = (options: GitStoreOpenOptions): Effect.Effect<void, GitStoreError> =>
+      Effect.gen(function* () {
+        const resolved = yield* paths.resolve(options);
 
-      yield* instances.invalidate(key);
-    });
+        yield* instances.invalidate(encodeGitStoreInstanceKey(resolved));
+      });
 
     return GitStores.of({
       invalidate,
@@ -63,4 +72,4 @@ export const GitStoresLive = Layer.effect(
       withStore,
     });
   }),
-);
+).pipe(Layer.provide(GitStoreInstancesLive));

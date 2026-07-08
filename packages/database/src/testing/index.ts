@@ -1,3 +1,4 @@
+import { GitStoresTestLive } from "@cycle/git-store/testing";
 import { Effect, Layer } from "effect";
 import type { Actor } from "../domain/index.ts";
 import {
@@ -54,6 +55,11 @@ export const DatabaseIdGeneratorDeterministic = (prefix?: string) =>
   Layer.succeed(DatabaseIdGenerator, DatabaseIdGenerator.of(makeDeterministicIdGenerator(prefix)));
 
 export const DatabaseTest = (prefix?: string) =>
-  DatabaseLiveWithOptions({ projectionPath: ":memory:" }).pipe(
-    Layer.provide(Layer.mergeAll(DatabaseIdentityTest(), DatabaseIdGeneratorDeterministic(prefix))),
+  Layer.mergeAll(
+    DatabaseLiveWithOptions({ projectionPath: ":memory:" }).pipe(
+      Layer.provide(
+        Layer.mergeAll(DatabaseIdentityTest(), DatabaseIdGeneratorDeterministic(prefix)),
+      ),
+    ),
+    GitStoresTestLive,
   );

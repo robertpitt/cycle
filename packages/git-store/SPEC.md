@@ -11,16 +11,17 @@ Location: `packages/git-store`
 ## 1. Purpose
 
 `@cycle/git-store` is a new Effect-native package for storing Cycle documents and append-only event
-files directly in a Git object database and Git refs. It is a greenfield replacement candidate for
-`@cycle/git-db`, not an in-place refactor of that package.
+files directly in a Git object database and Git refs. It is the replacement for the legacy GitDB
+implementation, not an in-place refactor of that code.
 
-The package MUST preserve compatibility with Git data already written by `@cycle/git-db`, including
-standard Git loose and packed objects, commits, trees, refs under `refs/gitdb/<database>/<pointer>`,
-event paths under `collections/events`, and Cycle repository identity derived from the GitDB root
-commit.
+The package MUST preserve compatibility with Git data already written by the legacy GitDB
+implementation, including standard Git loose and packed objects, commits, trees, refs under
+`refs/gitdb/<database>/<pointer>`, event paths under `collections/events`, and Cycle repository
+identity derived from the GitDB root commit.
 
 This specification authorizes work inside `packages/git-store` only. It MUST NOT require edits to
-`packages/git-db`, downstream consumers, or other packages during the initial implementation phase.
+the legacy GitDB package, downstream consumers, or other packages during the initial implementation
+phase.
 
 ## 2. Normative Language
 
@@ -33,24 +34,25 @@ choice when callers, tests, or operators need to reason about behavior.
 
 ## 3. Problem Statement
 
-`@cycle/git-db` currently provides the required product behavior, but it carries historical API
-shape, package coupling, and an adapter boundary centered on `@cycle/git`. Cycle now needs a smaller
+The legacy GitDB implementation currently provides the required product behavior, but it carries
+historical API shape, package coupling, and an adapter boundary centered on `@cycle/git`. Cycle now needs a smaller
 package that uses Effect primitives directly for local Git storage: `FileSystem`, `Path`, `Scope`,
 `Stream`, `Crypto`, `Encoding`, `Clock`, `Config`, `Cache`, `Semaphore`, `Context.Service`, and
 `Layer`.
 
-The correctness boundary for the new package is the Git filesystem protocol. Objects MUST be stored
-as canonical Git object bytes. Refs MUST be updated through Git-compatible lockfiles and atomic
-renames. Transactions MUST write objects before moving refs. The package MUST keep remote fetch,
-pull, push, and CLI interop out of core storage so local behavior remains small, testable, and
-deterministic.
+The correctness boundary for the new package is the Git filesystem protocol plus a small, explicit
+remote synchronization boundary. Objects MUST be stored as canonical Git object bytes. Refs MUST be
+updated through Git-compatible lockfiles and atomic renames. Transactions MUST write objects before
+moving refs. Local storage behavior MUST remain deterministic and testable. Remote fetch, pull,
+push, and sync MUST be isolated behind `GitRemoteTransport` so the hot-path document store does not
+own transport authentication, network policy, or provider-specific command behavior.
 
 ## 4. Goals
 
 `@cycle/git-store` MUST:
 
 1. Provide a new streamlined API that preserves core GitDB functionality without preserving the
-   current public `@cycle/git-db` API names or subpaths.
+   current public legacy GitDB API names or subpaths.
 2. Read existing GitDB data stored under `refs/gitdb/<database>/<pointer>` without migration.
 3. Write standard Git blobs, trees, commits, loose objects, and refs that normal Git tooling can
    inspect.
@@ -60,8 +62,7 @@ deterministic.
    payloads.
 6. Resolve Cycle repository identity from the root commit reachable from `refs/gitdb/cycle/main`,
    and initialize it only through an explicit ensure operation, compatible with
-   `specs/GITDB_REPOSITORY_ID_SPEC.md` except for remote fetch/push behavior that is delegated
-   outside this package.
+   `specs/GITDB_REPOSITORY_ID_SPEC.md`.
 7. Use Effect services and layers for mutable state, dependencies, side effects, resource lifetime,
    typed errors, configuration, and validation.
 8. Keep service files in `src/` as one primary `ServiceName.ts` file per `Context.Service` class.
@@ -69,17 +70,22 @@ deterministic.
 9. Keep internal helpers under `src/internal/` and testing-only layers under `src/testing/`.
 10. Avoid convenience facade packages and cross-package re-exports. Every public symbol MUST have a
     clear owning module inside `@cycle/git-store`.
+11. Expose near-real-time local ref change notifications for active store instances without eager
+    tree diffs or full repository scans.
+12. Provide lean `fetch`, `pull`, `push`, and `sync` orchestration over the current store pointer
+    using a pluggable remote transport and fast-forward-only local reconciliation.
 
 ## 5. Non-Goals
 
 `@cycle/git-store` MUST NOT:
 
-1. Modify `packages/git-db` or migrate existing consumers in the initial package implementation.
-2. Preserve `@cycle/git-db` public API compatibility for `StoreService`, old package subpaths,
+1. Modify the legacy GitDB package or migrate existing consumers in the initial package implementation.
+2. Preserve legacy GitDB public API compatibility for `StoreService`, old package subpaths,
    pointer wrappers, sync helpers, or in-memory GitDB layers.
-3. Own remote fetch, pull, push, rebase, merge, transport authentication, or force-with-lease
-   behavior. Those workflows MAY be implemented by another package using `git-store` refs and
-   commits.
+3. Own provider-specific transport authentication, credential prompting, remote hosting policy,
+   rebase, merge, conflict-resolution UI, or branch-management workflows. Remote operations exposed
+   by this package MUST be limited to explicit ref-oriented fetch, pull, push, and sync orchestration
+   through `GitRemoteTransport`.
 4. Mutate the normal Git worktree, Git index, `HEAD`, user branches, tags, notes, or checked-out
    files.
 5. Guarantee atomic multi-ref transactions across multiple ref files. Normal filesystems cannot
@@ -98,24 +104,27 @@ deterministic.
 
 The package is layered as follows:
 
-| Layer | Public abstraction | Primary Effect APIs |
-| --- | --- | --- |
-| Repository discovery | `RepositoryPaths` | `FileSystem`, `Path`, `Config` |
-| Raw file operations | internal `GitFiles` helper | `FileSystem`, `Path`, `Scope` |
-| Object IDs and codecs | `ObjectId`, `ObjectCodec` | `Crypto.digest`, `Encoding.encodeHex` |
-| Loose objects | `LooseObjectStore` | `FileSystem`, `Path`, `Crypto`, `Scope` |
-| Pack objects | `PackIndexStore`, `PackObjectStore` | `FileSystem.stream`, `Stream`, binary parsing |
-| Unified objects | `ObjectStore` | loose objects, pack objects, `Cache` |
-| Loose refs | `LooseRefStore` | `FileSystem`, `Path`, `Scope` |
-| Packed refs | `PackedRefsStore` | `FileSystem`, `Path`, pure parser |
-| Unified ref reads | `RefReader` | loose refs, packed refs |
-| Ref updates | `RefTransaction` | `RefReader`, `FileSystem.open({ flag: "wx" })`, file sync, `Scope`, `Effect.uninterruptibleMask`, optional `Semaphore` |
-| Public ref facade | `RefStore` | `RefReader`, `RefTransaction` |
-| Reflog | `ReflogStore` | `FileSystem`, `Clock` |
-| Commit object creation | `CommitWriter` | `ObjectStore`, `RefTransaction`, `Clock` |
-| Repository identity | `RepositoryIdentity` | `CommitWriter`, `RefReader`, `Crypto` |
-| Document/event store | `GitStore`, `EventStore` | `CommitWriter`, `ObjectStore`, `RefReader`, `Schema` |
-| Runtime store registry | `GitStoreInstances`, `GitStores` | `LayerMap.Service`, `Scope`, `Config` |
+| Layer                  | Public abstraction                  | Primary Effect APIs                                                                                                    |
+| ---------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Repository discovery   | `RepositoryPaths`                   | `FileSystem`, `Path`, `Config`                                                                                         |
+| Raw file operations    | internal `GitFiles` helper          | `FileSystem`, `Path`, `Scope`                                                                                          |
+| Object IDs and codecs  | `ObjectId`, `ObjectCodec`           | `Crypto.digest`, `Encoding.encodeHex`                                                                                  |
+| Loose objects          | `LooseObjectStore`                  | `FileSystem`, `Path`, `Crypto`, `Scope`                                                                                |
+| Pack objects           | `PackIndexStore`, `PackObjectStore` | `FileSystem.stream`, `Stream`, binary parsing                                                                          |
+| Unified objects        | `ObjectStore`                       | loose objects, pack objects, `Cache`                                                                                   |
+| Loose refs             | `LooseRefStore`                     | `FileSystem`, `Path`, `Scope`                                                                                          |
+| Packed refs            | `PackedRefsStore`                   | `FileSystem`, `Path`, pure parser                                                                                      |
+| Unified ref reads      | `RefReader`                         | loose refs, packed refs                                                                                                |
+| Ref updates            | `RefTransaction`                    | `RefReader`, `FileSystem.open({ flag: "wx" })`, file sync, `Scope`, `Effect.uninterruptibleMask`, optional `Semaphore` |
+| Public ref facade      | `RefStore`                          | `RefReader`, `RefTransaction`                                                                                          |
+| Reflog                 | `ReflogStore`                       | `FileSystem`, `Clock`                                                                                                  |
+| Commit object creation | `CommitWriter`                      | `ObjectStore`, `RefTransaction`, `Clock`                                                                               |
+| Repository identity    | `RepositoryIdentity`                | `CommitWriter`, `RefReader`, `Crypto`                                                                                  |
+| Document/event store   | `GitStore`, `EventStore`            | `CommitWriter`, `ObjectStore`, `RefReader`, `Schema`                                                                   |
+| Ref change stream      | `GitStoreChanges`                   | `RefReader`, `PubSub`, `Stream`, `Clock`, `Ref`, `Scope`                                                               |
+| Remote transport       | `GitRemoteTransport`                | implementation-defined Git transport, typed errors                                                                     |
+| Sync orchestration     | `GitStoreSync`                      | `GitStoreChanges`, `GitRemoteTransport`, `ObjectStore`, `RefTransaction`, `Semaphore`                                  |
+| Runtime store registry | `GitStoreInstances`, `GitStores`    | `LayerMap.Service`, `Scope`, `Config`                                                                                  |
 
 The layer dependency graph MUST be implemented with `Layer.effect`, `Layer.succeed`,
 `Layer.provide`, and `Layer.provideMerge`. Production Node entrypoints SHOULD provide
@@ -143,6 +152,9 @@ flowchart TD
   RefTransaction["RefTransactionLive"]
   CommitWriter["CommitWriterLive"]
   RepositoryIdentity["RepositoryIdentityLive"]
+  GitStoreChanges["GitStoreChangesLive"]
+  GitRemoteTransport["GitRemoteTransportLive"]
+  GitStoreSync["GitStoreSyncLive"]
   GitStore["GitStoreLive"]
   GitStoreInstances["GitStoreInstancesLive"]
   GitStores["GitStoresLive"]
@@ -170,9 +182,17 @@ flowchart TD
   RefTransaction --> CommitWriter
   CommitWriter --> RepositoryIdentity
   RefReader --> RepositoryIdentity
+  RefReader --> GitStoreChanges
+  GitRemoteTransport --> GitStoreSync
+  GitStoreChanges --> GitStoreSync
+  ObjectStore --> GitStoreSync
+  RefTransaction --> GitStoreSync
+  RefReader --> GitStoreSync
+  GitStoreChanges --> GitStore
   CommitWriter --> GitStore
   ObjectStore --> GitStore
   RefReader --> GitStore
+  GitStoreSync --> GitStoreInstances
   GitStore --> GitStoreInstances
   RepositoryPaths --> GitStoreInstances
   GitStoreInstances --> GitStores
@@ -188,42 +208,44 @@ Runtime source under `packages/git-store/src` SHOULD depend only on:
 - `@effect/platform-node` when a Node live layer is needed to provide platform services;
 - platform compression only through an internal utility or a small documented adapter.
 
-The package MUST NOT use `node:child_process` or the real `git` CLI in core source. CLI comparison is
-allowed only in tests, benchmarks, or debug-only helpers outside the core service graph.
+Storage-core services MUST NOT use `node:child_process` or the real `git` CLI. The only runtime
+exception is `GitRemoteTransport.ts`, which MAY invoke Git for explicit caller-triggered remote
+operations. CLI comparison remains allowed in tests, benchmarks, or debug-only helpers outside the
+core service graph.
 
 ### 6.3 Effect Component Usage Requirements
 
 The package MUST use Effect v4 primitives as follows:
 
-| Effect component | Required usage in `@cycle/git-store` |
-| --- | --- |
-| `Context.Service` | Define each public service key as `export class ServiceName extends Context.Service<ServiceName, ServiceShape>()("@cycle/git-store/ServiceName") {}`. Reuse the class as the only service tag. |
-| `Layer.effect` | Build services that need dependencies, caches, semaphores, or config. Return implementations with `ServiceName.of(...)`. |
-| `Layer.succeed` | Provide already-available pure service implementations or deterministic test fakes. |
-| `Layer.provide` | Hide implementation dependencies when exporting a final live layer. |
-| `Layer.provideMerge` | Compose lower-level services when the caller should still receive both the high-level service and lower-level services. |
-| `Layer.unwrap` | Select a layer from `Config` or another effect only when construction depends on runtime config. |
-| `LayerMap.Service` | Manage keyed `GitStore` instances for runtimes that have several repositories or databases open at once. The implementation MUST NOT hand-roll a mutable map of open stores. |
-| `Effect.fn("name")` | Define exported functions and service methods that return effects. The name SHOULD be `ServiceName.method` or match the exported function name. Add tracing options or transforms through `Effect.fn`, not by wrapping the constructed function value. |
-| `Effect.gen` | Sequence multi-step workflows such as object writes, ref transactions, commit creation, and identity initialization. |
-| `Effect.succeed` | Wrap already-available pure values. |
-| `Effect.sync` | Wrap non-throwing synchronous side effects or synchronous allocation that is not already exposed as an Effect API. |
-| `Effect.try` | Wrap synchronous code that can throw, such as zlib compression or UTF-8 decoder construction. Map failures into typed package errors. |
-| `Effect.tryPromise` | Wrap Promise APIs only at platform boundaries not already covered by Effect services. Core filesystem operations SHOULD use `FileSystem` instead. |
-| `Effect.acquireRelease` / `Effect.addFinalizer` | Manage lockfiles, temporary files, and other resources whose cleanup must run when a scope exits. |
-| `Effect.scoped` / `Scope` | Bound file handles and temporary file lifetimes. Any `FileSystem.open` use MUST run inside a scope. |
-| `Effect.uninterruptibleMask` | Protect the critical rename/release section of ref updates and object finalization while allowing interruptible acquisition and validation. |
-| `Semaphore` | Optionally serialize same-process writes per ref. It MUST complement, not replace, lockfiles. |
-| `Ref` | Hold process-local mutable structures such as a map of per-ref semaphores or in-memory test state. |
-| `TxRef` | Hold transaction-local active/mutation state when multiple transaction operations must remain atomic from the caller's perspective. |
-| `Cache` | Cache decoded immutable objects, commit graphs, tree entries, pack indexes, and packed refs with bounded capacities. |
-| `Stream` | Read packfiles and large files incrementally through `FileSystem.stream`, `Stream.mapAccum*`, and `Stream.runFold*`. |
-| `Crypto` | Generate secure random bytes and compute Git object digests. SHA-1 is allowed only for Git compatibility. |
-| `Encoding` | Encode digest bytes with `Encoding.encodeHex`; decode user-provided hex with `Encoding.decodeHex` or schema validation. |
-| `Clock` | Generate commit timestamps and reflog timestamps. Code MUST NOT use `Date.now()` or `new Date()` in business logic. |
-| `Config` / `ConfigProvider` | Define structured config with `Config.schema`, `Config.all`, `Config.nested`, and `Config.withDefault`. Tests SHOULD provide deterministic config through `ConfigProvider.layer` or `ConfigProvider.layerAdd`. |
-| `Schema` | Define public DTOs, branded identifiers, tagged errors, and document/event payload codecs. |
-| `Effect.withSpan` / `Effect.annotateLogs` | Add operation spans and structured log annotations at service method boundaries. |
+| Effect component                                | Required usage in `@cycle/git-store`                                                                                                                                                                                                                   |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Context.Service`                               | Define each public service key as `export class ServiceName extends Context.Service<ServiceName, ServiceShape>()("@cycle/git-store/ServiceName") {}`. Reuse the class as the only service tag.                                                         |
+| `Layer.effect`                                  | Build services that need dependencies, caches, semaphores, or config. Return implementations with `ServiceName.of(...)`.                                                                                                                               |
+| `Layer.succeed`                                 | Provide already-available pure service implementations or deterministic test fakes.                                                                                                                                                                    |
+| `Layer.provide`                                 | Hide implementation dependencies when exporting a final live layer.                                                                                                                                                                                    |
+| `Layer.provideMerge`                            | Compose lower-level services when the caller should still receive both the high-level service and lower-level services.                                                                                                                                |
+| `Layer.unwrap`                                  | Select a layer from `Config` or another effect only when construction depends on runtime config.                                                                                                                                                       |
+| `LayerMap.Service`                              | Manage keyed `GitStore` instances for runtimes that have several repositories or databases open at once. The implementation MUST NOT hand-roll a mutable map of open stores.                                                                           |
+| `Effect.fn("name")`                             | Define exported functions and service methods that return effects. The name SHOULD be `ServiceName.method` or match the exported function name. Add tracing options or transforms through `Effect.fn`, not by wrapping the constructed function value. |
+| `Effect.gen`                                    | Sequence multi-step workflows such as object writes, ref transactions, commit creation, and identity initialization.                                                                                                                                   |
+| `Effect.succeed`                                | Wrap already-available pure values.                                                                                                                                                                                                                    |
+| `Effect.sync`                                   | Wrap non-throwing synchronous side effects or synchronous allocation that is not already exposed as an Effect API.                                                                                                                                     |
+| `Effect.try`                                    | Wrap synchronous code that can throw, such as zlib compression or UTF-8 decoder construction. Map failures into typed package errors.                                                                                                                  |
+| `Effect.tryPromise`                             | Wrap Promise APIs only at platform boundaries not already covered by Effect services. Core filesystem operations SHOULD use `FileSystem` instead.                                                                                                      |
+| `Effect.acquireRelease` / `Effect.addFinalizer` | Manage lockfiles, temporary files, and other resources whose cleanup must run when a scope exits.                                                                                                                                                      |
+| `Effect.scoped` / `Scope`                       | Bound file handles and temporary file lifetimes. Any `FileSystem.open` use MUST run inside a scope.                                                                                                                                                    |
+| `Effect.uninterruptibleMask`                    | Protect the critical rename/release section of ref updates and object finalization while allowing interruptible acquisition and validation.                                                                                                            |
+| `Semaphore`                                     | Optionally serialize same-process writes per ref. It MUST complement, not replace, lockfiles.                                                                                                                                                          |
+| `Ref`                                           | Hold process-local mutable structures such as a map of per-ref semaphores or in-memory test state.                                                                                                                                                     |
+| `TxRef`                                         | Hold transaction-local active/mutation state when multiple transaction operations must remain atomic from the caller's perspective.                                                                                                                    |
+| `Cache`                                         | Cache decoded immutable objects, commit graphs, tree entries, pack indexes, and packed refs with bounded capacities.                                                                                                                                   |
+| `Stream`                                        | Read packfiles and large files incrementally through `FileSystem.stream`, `Stream.mapAccum*`, and `Stream.runFold*`.                                                                                                                                   |
+| `Crypto`                                        | Generate secure random bytes and compute Git object digests. SHA-1 is allowed only for Git compatibility.                                                                                                                                              |
+| `Encoding`                                      | Encode digest bytes with `Encoding.encodeHex`; decode user-provided hex with `Encoding.decodeHex` or schema validation.                                                                                                                                |
+| `Clock`                                         | Generate commit timestamps and reflog timestamps. Code MUST NOT use `Date.now()` or `new Date()` in business logic.                                                                                                                                    |
+| `Config` / `ConfigProvider`                     | Define structured config with `Config.schema`, `Config.all`, `Config.nested`, and `Config.withDefault`. Tests SHOULD provide deterministic config through `ConfigProvider.layer` or `ConfigProvider.layerAdd`.                                         |
+| `Schema`                                        | Define public DTOs, branded identifiers, tagged errors, and document/event payload codecs.                                                                                                                                                             |
+| `Effect.withSpan` / `Effect.annotateLogs`       | Add operation spans and structured log annotations at service method boundaries.                                                                                                                                                                       |
 
 The implementation MUST NOT introduce zero-argument functions whose only purpose is returning an
 already-created `Effect`. Reusable effects SHOULD be values. Functions returning effects SHOULD be
@@ -345,10 +367,13 @@ src/
   CommitWriter.ts
   Document.ts
   EventStore.ts
+  GitRemoteTransport.ts
   GitStore.ts
+  GitStoreChanges.ts
   GitStoreInstances.ts
   GitStoreErrors.ts
   GitStoreSchemas.ts
+  GitStoreSync.ts
   GitStores.ts
   LooseObjectStore.ts
   LooseRefStore.ts
@@ -410,7 +435,7 @@ The implementation MUST define a minimal export map. The export map MUST satisfy
 - `./schemas`, `./errors`, and `./testing` MUST be public subpaths;
 - `src/internal/*` MUST NOT be exported;
 - test-only layers MUST be exported only through `./testing`;
-- no package subpath MAY re-export symbols from `@cycle/git-db` or `@cycle/git`.
+- no package subpath MAY re-export symbols from the legacy GitDB package or `@cycle/git`.
 
 The initial package implementation MUST use this export map unless a later specification changes the
 public surface:
@@ -423,6 +448,8 @@ public surface:
     "./document": "./src/Document.ts",
     "./errors": "./src/GitStoreErrors.ts",
     "./events": "./src/EventStore.ts",
+    "./changes": "./src/GitStoreChanges.ts",
+    "./remote-transport": "./src/GitRemoteTransport.ts",
     "./loose-object-store": "./src/LooseObjectStore.ts",
     "./loose-refs": "./src/LooseRefStore.ts",
     "./object-codec": "./src/ObjectCodec.ts",
@@ -439,6 +466,7 @@ public surface:
     "./schemas": "./src/GitStoreSchemas.ts",
     "./store": "./src/GitStore.ts",
     "./store-instances": "./src/GitStoreInstances.ts",
+    "./sync": "./src/GitStoreSync.ts",
     "./stores": "./src/GitStores.ts",
     "./testing": "./src/testing/index.ts"
   }
@@ -465,18 +493,16 @@ keys MUST NOT share mutable transaction state.
 ```ts
 export type GitStoresShape = {
   readonly scoped: (
-    options: GitStoreOpenOptions
-  ) => Effect.Effect<GitStoreShape, GitStoreError, Scope.Scope>
+    options: GitStoreOpenOptions,
+  ) => Effect.Effect<GitStoreShape, GitStoreError, Scope.Scope>;
 
   readonly withStore: <A, E, R>(
     options: GitStoreOpenOptions,
-    use: (store: GitStoreShape) => Effect.Effect<A, E, R>
-  ) => Effect.Effect<A, GitStoreError | E, R>
+    use: (store: GitStoreShape) => Effect.Effect<A, E, R>,
+  ) => Effect.Effect<A, GitStoreError | E, R>;
 
-  readonly invalidate: (
-    options: GitStoreOpenOptions
-  ) => Effect.Effect<void, GitStoreError>
-}
+  readonly invalidate: (options: GitStoreOpenOptions) => Effect.Effect<void, GitStoreError>;
+};
 ```
 
 `GitStoreInstances.ts` MUST use `LayerMap.Service` or an equivalent Effect `LayerMap` service, not a
@@ -484,36 +510,104 @@ hand-written `Map`, to cache and release keyed `GitStore` contexts. The live lay
 an implementation-defined idle TTL so long-running runtimes can release stores that are no longer
 in use.
 
+Active store instances MUST also provide `GitStoreChanges`, `GitRemoteTransport`, and
+`GitStoreSync` in the same keyed context returned by `GitStoreInstances`. Consumers that use
+`GitStores.withStore` MUST be able to yield those companion services inside the callback without
+re-opening the repository.
+
 `GitStore.ts` MUST define the primary per-store document and transaction API. It SHOULD expose a
 service shape equivalent to:
 
 ```ts
 export type GitStoreShape = {
-  readonly key: GitStoreKey
-  readonly config: GitStoreConfig
+  readonly key: GitStoreKey;
+  readonly config: GitStoreConfig;
 
   readonly transaction: <A, E, R>(
     options: TransactionOptions,
-    use: (tx: GitStoreTransaction) => Effect.Effect<A, E, R>
-  ) => Effect.Effect<TransactionResult<A>, GitStoreError | E, R>
+    use: (tx: GitStoreTransaction) => Effect.Effect<A, E, R>,
+  ) => Effect.Effect<TransactionResult<A>, GitStoreError | E, R>;
 
   readonly get: (
     path: string,
-    options?: ReadOptions
-  ) => Effect.Effect<Document | null, GitStoreError>
+    options?: ReadOptions,
+  ) => Effect.Effect<Document | null, GitStoreError>;
   readonly list: (
     path?: string,
-    options?: ReadOptions
-  ) => Effect.Effect<ReadonlyArray<TreeEntry>, GitStoreError>
-  readonly snapshot: (id: string) => Effect.Effect<Snapshot, GitStoreError>
-  readonly resolveSnapshotId: (from?: string) => Effect.Effect<ObjectId | null, GitStoreError>
+    options?: ReadOptions,
+  ) => Effect.Effect<ReadonlyArray<TreeEntry>, GitStoreError>;
+  readonly snapshot: (id: string) => Effect.Effect<Snapshot, GitStoreError>;
+  readonly resolveSnapshotId: (from?: string) => Effect.Effect<ObjectId | null, GitStoreError>;
   readonly history: (
     from?: string,
-    options?: HistoryOptions
-  ) => Effect.Effect<ReadonlyArray<Snapshot>, GitStoreError>
-  readonly diff: (a: string, b: string) => Effect.Effect<ChangeSet, GitStoreError>
-  readonly pointerRef: (pointer: string) => Effect.Effect<RefName, GitStoreError>
-}
+    options?: HistoryOptions,
+  ) => Effect.Effect<ReadonlyArray<Snapshot>, GitStoreError>;
+  readonly diff: (a: string, b: string) => Effect.Effect<ChangeSet, GitStoreError>;
+  readonly pointerRef: (pointer: string) => Effect.Effect<RefName, GitStoreError>;
+};
+```
+
+`GitStoreChanges.ts` MUST define the per-store local ref watcher API. It SHOULD expose a service
+shape equivalent to:
+
+```ts
+export type GitStoreChangeSource = "local" | "external" | "fetch" | "pull" | "push" | "sync";
+
+export type GitStoreRefChange = {
+  readonly ref: RefName;
+  readonly before: ObjectId | null;
+  readonly after: ObjectId | null;
+  readonly source: GitStoreChangeSource;
+  readonly observedAt: string;
+};
+
+export type GitStoreChangesShape = {
+  readonly changes: Stream.Stream<GitStoreRefChange>;
+  readonly current: (options?: {
+    readonly pointer?: string;
+    readonly ref?: string;
+  }) => Effect.Effect<ObjectId | null, GitStoreError>;
+  readonly poll: (options?: {
+    readonly pointer?: string;
+    readonly ref?: string;
+    readonly source?: GitStoreChangeSource;
+  }) => Effect.Effect<ObjectId | null, GitStoreError>;
+  readonly wake: (options?: {
+    readonly pointer?: string;
+    readonly ref?: string;
+    readonly source?: GitStoreChangeSource;
+  }) => Effect.Effect<void, GitStoreError>;
+};
+```
+
+`GitStoreSync.ts` MUST define explicit remote synchronization operations. It SHOULD expose a service
+shape equivalent to:
+
+```ts
+export type GitSyncOptions = {
+  readonly pointer?: string;
+  readonly ref?: string;
+  readonly remote?: string;
+  readonly remoteRef?: string;
+};
+
+export type GitSyncResult = {
+  readonly ref: RefName;
+  readonly remote: string;
+  readonly remoteRef: string;
+  readonly before: ObjectId | null;
+  readonly after: ObjectId | null;
+  readonly remoteBefore: ObjectId | null;
+  readonly remoteAfter: ObjectId | null;
+  readonly status: "noop" | "fetched" | "fast-forward" | "pushed";
+};
+
+export type GitStoreSyncShape = {
+  readonly fetch: (options?: GitSyncOptions) => Effect.Effect<GitSyncResult, GitStoreError>;
+  readonly pull: (options?: GitSyncOptions) => Effect.Effect<GitSyncResult, GitStoreError>;
+  readonly push: (options?: GitSyncOptions) => Effect.Effect<GitSyncResult, GitStoreError>;
+  readonly sync: (options?: GitSyncOptions) => Effect.Effect<GitSyncResult, GitStoreError>;
+};
 ```
 
 `TransactionOptions` MUST include the pointer selection and commit metadata needed to write a commit,
@@ -524,21 +618,21 @@ author/committer identity overrides.
 
 ```ts
 export type TransactionResult<A> = {
-  readonly snapshot: Snapshot
-  readonly value: A
-}
+  readonly snapshot: Snapshot;
+  readonly value: A;
+};
 ```
 
 `GitStoreTransaction` SHOULD expose only scoped transaction view operations:
 
 ```ts
 export type GitStoreTransaction = {
-  readonly base: Snapshot | null
-  readonly delete: (path: string) => Effect.Effect<void, GitStoreError>
-  readonly get: (path: string) => Effect.Effect<Document | null, GitStoreError>
-  readonly list: (path?: string) => Effect.Effect<ReadonlyArray<TreeEntry>, GitStoreError>
-  readonly put: (path: string, input: DocumentInput) => Effect.Effect<void, GitStoreError>
-}
+  readonly base: Snapshot | null;
+  readonly delete: (path: string) => Effect.Effect<void, GitStoreError>;
+  readonly get: (path: string) => Effect.Effect<Document | null, GitStoreError>;
+  readonly list: (path?: string) => Effect.Effect<ReadonlyArray<TreeEntry>, GitStoreError>;
+  readonly put: (path: string, input: DocumentInput) => Effect.Effect<void, GitStoreError>;
+};
 ```
 
 The implementation MUST NOT expose a public `begin` method that returns a long-lived transaction
@@ -559,7 +653,7 @@ The package SHOULD support tagged inputs equivalent to:
 type DocumentInput =
   | { readonly _tag: "Bytes"; readonly bytes: Uint8Array }
   | { readonly _tag: "Text"; readonly text: string; readonly encoding?: string }
-  | { readonly _tag: "Json"; readonly value: unknown; readonly schema?: Schema.Top }
+  | { readonly _tag: "Json"; readonly value: unknown; readonly schema?: Schema.Top };
 ```
 
 `Document.ts` SHOULD export small constructors equivalent to `Document.bytes`, `Document.text`, and
@@ -726,7 +820,7 @@ caller selected a documented testing layer that supplies deterministic identity 
 11. Accept missing `extensions.objectFormat` and explicit `sha1`.
 12. Reject `sha256` and any other object format with a typed unsupported-object-format error.
 13. Fail with typed errors for missing repositories, unsupported object formats, invalid gitdir
-   files, invalid commondir files, and unsafe paths.
+    files, invalid commondir files, and unsafe paths.
 
 Repository discovery MUST NOT initialize Git repositories or modify working-tree files.
 
@@ -1028,12 +1122,12 @@ Transaction path conflict rules MUST preserve Git tree invariants:
 
 The following examples are normative:
 
-| Mutation sequence | Result |
-| --- | --- |
-| `put("a", blob)` then `put("a/b", blob)` | fail with `PathConflictError` |
+| Mutation sequence                                           | Result                        |
+| ----------------------------------------------------------- | ----------------------------- |
+| `put("a", blob)` then `put("a/b", blob)`                    | fail with `PathConflictError` |
 | `put("a/b", blob)` when the base snapshot has `a` as a blob | fail with `PathConflictError` |
-| `delete("a")` then `put("a/b", blob)` | allowed |
-| `put("a/b", blob)` then `delete("a")` | fail with `PathConflictError` |
+| `delete("a")` then `put("a/b", blob)`                       | allowed                       |
+| `put("a/b", blob)` then `delete("a")`                       | fail with `PathConflictError` |
 
 Failed `put` or `delete` operations MUST leave staged transaction state unchanged.
 
@@ -1123,7 +1217,80 @@ Every public transaction method MUST be an `Effect.fn("GitStoreTransaction.metho
 from an `Effect.fn` implementation. Methods MUST use `Effect.withSpan` and `Effect.annotateLogs` at
 the transaction boundary or inherit those annotations from the enclosing `GitStore` method.
 
-### 11.5 Event Append
+### 11.5 Ref Change Watching
+
+Each active store instance MUST maintain a lightweight watcher for the default pointer ref. The
+watcher MUST read only the watched ref value on each poll; it MUST NOT scan trees, list objects,
+compute diffs, or walk history on the polling hot path.
+
+`GitStoreChanges` MUST:
+
+1. keep the last observed object ID per watched ref in Effect-managed state;
+2. expose a `Stream` backed by a bounded or sliding `PubSub`;
+3. poll the default pointer ref in a scoped background fiber while the keyed store instance is
+   active;
+4. provide explicit `poll` and `wake` methods for deterministic tests and callers that know a ref
+   may have changed;
+5. emit `{ before, after }` only when the effective ref value changes after an initial baseline has
+   been established;
+6. use `source = "local"` when notified by a successful local transaction;
+7. use `source = "external"` when a polling cycle observes a change not caused by an explicit sync
+   operation;
+8. use a replay buffer large enough for late subscribers to observe recent changes in the same
+   active store scope.
+
+A poll MAY miss intermediate ref values if another process moves a ref several times between
+polls. This is acceptable. Consumers that require every introduced commit MUST walk history or call
+`diff` from the emitted `before` and `after` commit IDs.
+
+`GitStore.transaction` SHOULD call `GitStoreChanges.wake({ source: "local" })` after a successful
+ref update so same-process subscribers do not wait for the next interval.
+
+### 11.6 Remote Fetch, Pull, Push, and Sync
+
+Remote operations MUST be explicit caller actions. The local ref watcher MUST NOT perform network
+access on its own.
+
+`GitStoreSync.fetch(options)` MUST:
+
+1. resolve the local ref from `options.ref`, `options.pointer`, or the default pointer;
+2. resolve the remote name, defaulting to `origin`;
+3. resolve the remote ref, defaulting to the local ref;
+4. ask `GitRemoteTransport.lsRemote` for the current remote object ID;
+5. call `GitRemoteTransport.fetch` only when the remote ref exists;
+6. leave the local pointer unchanged;
+7. emit or wake the local change watcher only if local refs changed as a result of the fetch.
+
+`GitStoreSync.pull(options)` MUST:
+
+1. perform the fetch workflow;
+2. read the local ref after fetch;
+3. if the remote ref is missing, return `status = "noop"`;
+4. if the local ref is missing, move it to the fetched remote object with `expected = null`;
+5. if local and remote are equal, return `status = "noop"`;
+6. if local is an ancestor of remote, fast-forward the local ref with expected-value validation;
+7. if remote is an ancestor of local, return `status = "noop"` so `sync` can push the local
+   advancement;
+8. if neither side is an ancestor of the other, fail with a typed sync conflict and leave the local ref
+   unchanged.
+
+`GitStoreSync.push(options)` MUST:
+
+1. read the local ref;
+2. return `status = "noop"` when the local ref is missing;
+3. ask `GitRemoteTransport.lsRemote` for the current remote object ID;
+4. call `GitRemoteTransport.push` with the local object ID and the observed remote object ID as the
+   expected lease;
+5. return `status = "pushed"` when the transport accepts the push.
+
+`GitStoreSync.sync(options)` MUST pull first, then push only when the post-pull local ref differs
+from the remote ref observed after the pull. Sync MUST serialize concurrent fetch/pull/push/sync
+calls for the same active store with a `Semaphore` or equivalent Effect primitive.
+
+The initial implementation is fast-forward-only. It MUST NOT auto-merge, rebase, force-push, or
+create conflict commits. Those behaviors require a higher-level policy layer.
+
+### 11.7 Event Append
 
 `EventStore` MUST preserve current GitDB event semantics.
 
@@ -1161,7 +1328,7 @@ Event payloads SHOULD omit generated timestamp, actor, aggregate ID, and event I
 domain payload explicitly needs them. Event identity and aggregate targeting are source truth in the
 path.
 
-### 11.6 Event Listing and Introduced Events
+### 11.8 Event Listing and Introduced Events
 
 `EventStore.list` MUST walk event paths from a snapshot or pointer, parse aggregate metadata from
 paths, decode JSON payloads, and return events sorted by lexical path.
@@ -1170,7 +1337,7 @@ paths, decode JSON payloads, and return events sorted by lexical path.
 modified, or deleted by that snapshot. Higher layers use this to project new events and detect
 append-only violations.
 
-### 11.7 History and Diff
+### 11.9 History and Diff
 
 `GitStore.history` MUST traverse commits reachable from a pointer or object ID. It MUST support
 bounded `max`, optional path filtering, and optional timestamp range filtering.
@@ -1260,12 +1427,20 @@ re-run `resolveIdentity` and return the identity created by the winner when that
 ### 12.5 Remote Behavior Boundary
 
 Remote fetch-before-create and push-with-lease workflows from
-`specs/GITDB_REPOSITORY_ID_SPEC.md` are system-level requirements for Cycle, but they are outside
-core `@cycle/git-store`. This package MUST expose local ref reads, expected ref updates, commit
-creation, identity resolution, and explicit identity ensure behavior needed by a separate
-remote-sync package to implement those workflows.
+`specs/GITDB_REPOSITORY_ID_SPEC.md` are system-level requirements for Cycle. `@cycle/git-store`
+MUST provide local ref reads, expected ref updates, commit creation, identity resolution, explicit
+identity ensure behavior, near-real-time local ref changes, and fast-forward-only synchronization
+orchestration needed for those workflows.
 
-Core `git-store` MUST NOT perform network access or shell out to `git fetch` / `git push`.
+Provider-specific authentication, credential prompting, network authorization, remote naming
+policy, remote repository creation, and merge/rebase conflict policy remain outside core storage.
+Those responsibilities MUST be handled by the configured `GitRemoteTransport` implementation or a
+higher-level package.
+
+The built-in Node transport MAY invoke the `git` executable for explicit fetch and push calls. It
+MUST be isolated in `GitRemoteTransport.ts`, MUST NOT run in background watcher loops, and MUST map
+process failures into typed package errors. Core object, ref, transaction, identity, event, and
+watcher services MUST NOT import child-process APIs.
 
 ## 13. Integration Contracts
 
@@ -1374,6 +1549,44 @@ Callers that need to write objects first and move refs later MUST be able to do 
 `ensureIdentity` MUST call the same root validation logic as `resolveIdentity`. It MAY create the
 bootstrap root commit only when the identity ref is missing.
 
+### 13.8 GitStoreChanges
+
+`GitStoreChanges` MUST provide a single active-store change stream and deterministic polling
+operations. It MUST depend on `RefReader` and MUST NOT depend on `GitStore`, `EventStore`, or
+remote transport services.
+
+The change stream payload MUST contain only ref movement metadata. It MUST NOT embed document
+contents, event payloads, or computed diffs. Consumers that need details MUST call `GitStore.diff`,
+`GitStore.history`, or `EventStore.introduced`.
+
+The live layer MUST shut down its `PubSub` and polling fiber when the active store layer scope
+closes.
+
+### 13.9 GitRemoteTransport
+
+`GitRemoteTransport` MUST provide operations equivalent to:
+
+- `lsRemote(input)`;
+- `fetch(input)`;
+- `push(input)`.
+
+Transport inputs MUST include `cwd`, `remote`, and `ref`. Push inputs MUST include the local target
+object ID and MAY include the expected remote object ID used as a lease. The transport MUST return
+`null` from `lsRemote` when the remote ref is missing.
+
+The default Node transport MAY delegate to the `git` executable. It MUST use argument arrays rather
+than shell string interpolation. It SHOULD fetch and push exactly the requested refspec instead of
+running broad repository synchronization commands.
+
+### 13.10 GitStoreSync
+
+`GitStoreSync` MUST orchestrate remote operations over one local ref at a time. It MUST depend on
+`GitRemoteTransport`, `RefReader`, `RefTransaction`, `ObjectStore`, and `GitStoreChanges`.
+
+The service MUST validate local refs and pointer names through the same helpers used by `GitStore`.
+It MUST serialize concurrent sync operations in the same active store context. It MUST fail with a
+typed conflict when pull cannot fast-forward.
+
 ## 14. Error Contract
 
 `GitStoreErrors.ts` MUST define recoverable errors with `Schema.TaggedErrorClass`. Tags MUST use:
@@ -1402,6 +1615,8 @@ The package MUST include typed errors for at least:
 - event append conflict;
 - missing commit identity;
 - repository identity conflict;
+- remote transport failure;
+- sync conflict or divergence;
 - filesystem protocol failure.
 
 `GitStoreErrors.ts` MUST export a `GitStoreError` union covering package recoverable errors.
@@ -1642,8 +1857,10 @@ ensureIdentity(pointer = "main"):
 
 ### 19.1 Package Boundary
 
-- `packages/git-store` builds without importing from `@cycle/git-db`.
-- Core runtime source does not import from `node:child_process`.
+- `packages/git-store` builds without importing from the legacy GitDB package.
+- Storage-core services do not import from `node:child_process`.
+- Only `GitRemoteTransport.ts` may import child-process APIs, and only for the explicit Node Git
+  transport.
 - Public exports do not expose `src/internal/*`.
 - Every root service file exports one primary service and its matching live layer.
 - Testing layers are exported only from `@cycle/git-store/testing`.
@@ -1732,14 +1949,28 @@ ensureIdentity(pointer = "main"):
 - Legacy unsharded ticket event paths are read by `EventStore.list`.
 - `EventStore.introduced` reports added event files from a commit diff.
 
-### 19.7 Existing GitDB Compatibility
+### 19.7 Change Streams and Sync
 
-- A fixture repository created by `@cycle/git-db` can be opened by `@cycle/git-store`.
+- `GitStoreChanges.poll` establishes an initial baseline without emitting a change.
+- A local transaction that moves the default pointer emits a `GitStoreRefChange` with
+  `source = "local"`.
+- An external ref move observed by `poll` emits `source = "external"` and includes the previous and
+  current object IDs.
+- Change subscribers receive recent changes through the active store replay buffer.
+- `GitStoreSync.pull` fast-forwards a missing or ancestor local ref to the fetched remote object.
+- `GitStoreSync.pull` fails with a typed sync conflict when local and remote have diverged.
+- `GitStoreSync.push` calls the transport with the observed remote object ID as the expected lease.
+- `GitStoreSync.sync` pulls before pushing and serializes concurrent operations for one active
+  store instance.
+
+### 19.8 Existing GitDB Compatibility
+
+- A fixture repository created by the legacy GitDB implementation can be opened by `@cycle/git-store`.
 - `git-store` reads existing snapshots, event files, tree entries, and documents.
 - `git-store` derives the same repository ID from the existing root commit.
 - A new `git-store` commit on top of an existing GitDB pointer is readable by normal Git tooling.
 
-### 19.8 Identity
+### 19.9 Identity
 
 - Missing `refs/gitdb/cycle/main` makes `resolveIdentity` return `null` without writing objects or
   refs.
@@ -1767,11 +1998,12 @@ An implementation is conformant when:
 9. Object handling is SHA-1-only: object IDs are 40 hex characters, tree object IDs are 20 raw
    bytes, and SHA-256 repositories are rejected.
 10. `GitStores` supports several keyed `GitStore` instances in one runtime through Effect-managed
-   scoped resources.
+    scoped resources.
 11. Document writes use scoped transaction callbacks, not a public `begin` method returning a
-   transaction pointer.
-12. The package can read data created by `@cycle/git-db` without migration.
-13. Remote sync remains outside the package.
+    transaction pointer.
+12. The package can read data created by the legacy GitDB implementation without migration.
+13. Active stores expose local ref changes through `GitStoreChanges`.
+14. Remote sync is explicit, fast-forward-only, and isolated behind `GitRemoteTransport`.
 
 ## 21. Implementation-Defined Areas
 
@@ -1793,56 +2025,61 @@ Single document commit:
 
 ```ts
 const program = Effect.gen(function* () {
-  const stores = yield* GitStores
+  const stores = yield* GitStores;
 
   return yield* stores.withStore({ cwd: "/repo", database: "cycle" }, (store) =>
     store.transaction({ pointer: "main", message: "Add ticket TCK-123" }, (tx) =>
-      tx.put("tickets/TCK-123.json", Document.json({
-        id: "TCK-123",
-        title: "Add git-store package",
-        status: "open"
-      }))
-    )
-  )
-})
+      tx.put(
+        "tickets/TCK-123.json",
+        Document.json({
+          id: "TCK-123",
+          title: "Add git-store package",
+          status: "open",
+        }),
+      ),
+    ),
+  );
+});
 ```
 
 Multi-file commit with a callback return value:
 
 ```ts
 const program = Effect.gen(function* () {
-  const stores = yield* GitStores
+  const stores = yield* GitStores;
 
   return yield* stores.withStore({ cwd: "/repo", database: "cycle" }, (store) =>
     store.transaction({ pointer: "main", message: "Add ticket assets" }, (tx) =>
       Effect.gen(function* () {
-        yield* tx.put("tickets/TCK-124.json", Document.json({ id: "TCK-124" }))
-        yield* tx.put("tickets/TCK-124/notes.md", Document.text("# Notes\n"))
-        yield* tx.put("tickets/TCK-124/blob.bin", Document.bytes(new Uint8Array([1, 2, 3])))
+        yield* tx.put("tickets/TCK-124.json", Document.json({ id: "TCK-124" }));
+        yield* tx.put("tickets/TCK-124/notes.md", Document.text("# Notes\n"));
+        yield* tx.put("tickets/TCK-124/blob.bin", Document.bytes(new Uint8Array([1, 2, 3])));
 
-        return yield* tx.list("tickets/TCK-124")
-      })
-    )
-  )
-})
+        return yield* tx.list("tickets/TCK-124");
+      }),
+    ),
+  );
+});
 ```
 
 Several stores open in one runtime:
 
 ```ts
 const program = Effect.gen(function* () {
-  const stores = yield* GitStores
+  const stores = yield* GitStores;
 
-  return yield* Effect.scoped(Effect.gen(function* () {
-    const appStore = yield* stores.scoped({ cwd: "/repos/app", database: "cycle" })
-    const docsStore = yield* stores.scoped({ cwd: "/repos/docs", database: "cycle" })
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const appStore = yield* stores.scoped({ cwd: "/repos/app", database: "cycle" });
+      const docsStore = yield* stores.scoped({ cwd: "/repos/docs", database: "cycle" });
 
-    const appHead = yield* appStore.resolveSnapshotId("main")
-    const docsHead = yield* docsStore.resolveSnapshotId("main")
+      const appHead = yield* appStore.resolveSnapshotId("main");
+      const docsHead = yield* docsStore.resolveSnapshotId("main");
 
-    return { appHead, docsHead }
-  }))
-})
+      return { appHead, docsHead };
+    }),
+  );
+});
 ```
 
 Conflict-aware write:
@@ -1850,17 +2087,17 @@ Conflict-aware write:
 ```ts
 const writeSettings = (expectedSnapshot: ObjectId | null) =>
   Effect.gen(function* () {
-    const stores = yield* GitStores
+    const stores = yield* GitStores;
 
     return yield* stores.withStore({ cwd: "/repo", database: "cycle" }, (store) =>
       store.transaction(
         { pointer: "main", expectedSnapshot, message: "Update project settings" },
-        (tx) => tx.put("settings/project.json", Document.json({ gitStore: true }))
-      )
-    )
+        (tx) => tx.put("settings/project.json", Document.json({ gitStore: true })),
+      ),
+    );
   }).pipe(
     Effect.catchTag("@cycle/git-store/RefExpectedValueConflictError", (error) =>
-      Effect.succeed({ _tag: "Conflict", error })
-    )
-  )
+      Effect.succeed({ _tag: "Conflict", error }),
+    ),
+  );
 ```

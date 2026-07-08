@@ -44,6 +44,7 @@
   "devDependencies": {
     "@cycle/database": "workspace:*",
     "@cycle/git": "workspace:*",
+    "@cycle/git-store": "workspace:*",
     "@cycle/sqlite": "workspace:*",
     "@swc/core": "^1.15.41",
     "@tailwindcss/vite": "^4.3.0",

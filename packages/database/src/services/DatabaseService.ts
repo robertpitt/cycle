@@ -1,4 +1,3 @@
-import { Event as GitDbEvent, type Store as GitDbStore, type SyncResult } from "@cycle/git-db";
 import { Context, Effect, Layer } from "effect";
 import {
   CURRENT_SCHEMA_VERSION,
@@ -83,6 +82,11 @@ import {
   ValidationError,
 } from "../errors/index.ts";
 import { Projection } from "../store/Projection.ts";
+import type {
+  RepositorySnapshot,
+  RepositoryStoreShape,
+  RepositorySyncResult,
+} from "../store/RepositoryStore.ts";
 import { DatabaseIdGenerator, type DatabaseIdGeneratorShape } from "./DatabaseIdGenerator.ts";
 import { DatabaseIdentity, type DatabaseIdentityShape } from "./DatabaseIdentity.ts";
 
@@ -91,7 +95,7 @@ type RepositoryRuntime = {
   readonly displayName: string;
   readonly gitDir?: string;
   readonly repositoryId: string;
-  readonly store: GitDbStore.StoreServiceShape;
+  readonly store: RepositoryStoreShape;
   readonly worktreePath?: string;
 };
 
@@ -221,24 +225,6 @@ type InboxSourceEventInput = InboxSourceEvent extends infer Source
     : never
   : never;
 
-type GitDbSnapshot = {
-  readonly author?: GitDbIdentity;
-  readonly committer?: GitDbIdentity;
-  readonly createdAt?: string;
-  readonly id: string;
-  readonly message?: string;
-  readonly parents: ReadonlyArray<string>;
-  readonly root: string;
-};
-
-type GitDbIdentity = {
-  readonly date: string;
-  readonly email: string;
-  readonly name: string;
-  readonly timestamp: number;
-  readonly timezone: string;
-};
-
 export type DatabaseServiceOptions = {
   readonly projectionPath?: string;
 };
@@ -247,6 +233,23 @@ type MaterializationTrace = (
   message: string,
   data?: Readonly<Record<string, unknown>>,
 ) => Effect.Effect<void>;
+
+type DatabaseTransaction = {
+  readonly abort: Effect.Effect<void, DatabaseFailure>;
+  readonly appendEvent: (
+    input: {
+      readonly aggregateId: string;
+      readonly aggregateType: string;
+      readonly eventId: string;
+      readonly payload: DatabaseEventPayload;
+    },
+  ) => Effect.Effect<string, DatabaseFailure>;
+  readonly commit: (options: {
+    readonly author?: ReturnType<typeof gitIdentity>;
+    readonly committer?: ReturnType<typeof gitIdentity>;
+    readonly message: string;
+  }) => Effect.Effect<RepositorySnapshot, DatabaseFailure>;
+};
 
 export type DatabaseServiceShape = {
   readonly addComment: (
@@ -369,7 +372,9 @@ export type DatabaseServiceShape = {
     repositoryId: string,
     query?: RepositoryHistoryQuery,
   ) => Effect.Effect<HistoryPage, DatabaseFailure>;
-  readonly pushRepository: (repositoryId: string) => Effect.Effect<SyncResult, DatabaseFailure>;
+  readonly pushRepository: (
+    repositoryId: string,
+  ) => Effect.Effect<RepositorySyncResult, DatabaseFailure>;
   readonly repositoryStatus: (
     repositoryId: string,
   ) => Effect.Effect<RepositoryStatus, DatabaseFailure>;
@@ -500,7 +505,7 @@ const isRemotePushRejection = (error: unknown): boolean => {
     readonly stderr?: unknown;
   };
 
-  if (record._tag !== "RemotePushError") return false;
+  if (record._tag !== "RemotePushError" && record._tag !== "GitRemoteError") return false;
 
   const text = `${String(record.message ?? "")}\n${String(record.stderr ?? "")}`;
 
@@ -546,7 +551,7 @@ export const makeDatabaseService = (
       ),
     );
 
-  const pushStore = (repository: RepositoryRuntime): Effect.Effect<SyncResult, unknown> =>
+  const pushStore = (repository: RepositoryRuntime): Effect.Effect<RepositorySyncResult, unknown> =>
     repository.store
       .sync({
         mode: "push",
@@ -795,7 +800,9 @@ export const makeDatabaseService = (
       );
     });
 
-  const pushRepository = (repositoryId: string): Effect.Effect<SyncResult, DatabaseFailure> =>
+  const pushRepository = (
+    repositoryId: string,
+  ): Effect.Effect<RepositorySyncResult, DatabaseFailure> =>
     Effect.gen(function* () {
       const repository = yield* getRepository(repositoryId);
       const result = yield* storage("push repository", pushStore(repository));
@@ -863,7 +870,7 @@ export const makeDatabaseService = (
     });
 
   const appendEvent = (
-    tx: GitDbStore.Transaction,
+    tx: DatabaseTransaction,
     aggregateType: string,
     aggregateId: string,
     payload: DatabaseEventPayload,
@@ -871,19 +878,16 @@ export const makeDatabaseService = (
     Effect.gen(function* () {
       const eventId = yield* nextEventId(ids);
 
-      return yield* storage(
-        `append ${aggregateType} event`,
-        GitDbEvent.append(tx, {
-          aggregateId,
-          aggregateType,
-          eventId,
-          payload: stripUndefined(payload) as Readonly<Record<string, unknown>>,
-        }),
-      );
+      return yield* tx.appendEvent({
+        aggregateId,
+        aggregateType,
+        eventId,
+        payload,
+      });
     });
 
   const appendTicketUpdateEvents = (
-    tx: GitDbStore.Transaction,
+    tx: DatabaseTransaction,
     current: TicketDocument,
     next: TicketDocument,
   ): Effect.Effect<void, DatabaseFailure> =>
@@ -917,7 +921,7 @@ export const makeDatabaseService = (
 
   const ensureActorUserProfile = (
     repository: RepositoryRuntime,
-    tx: GitDbStore.Transaction,
+    tx: DatabaseTransaction,
     actor: Actor,
     now: string,
   ): Effect.Effect<void, DatabaseFailure> =>
@@ -958,7 +962,7 @@ export const makeDatabaseService = (
 
   const ensureDefaultWorkflowMetadataInTransaction = (
     repository: RepositoryRuntime,
-    tx: GitDbStore.Transaction,
+    tx: DatabaseTransaction,
     actor: Actor,
     now: string,
   ): Effect.Effect<
@@ -1028,12 +1032,73 @@ export const makeDatabaseService = (
     label: string,
     actor: Actor,
     now: string,
-  ): Effect.Effect<GitDbStore.Transaction, DatabaseFailure> =>
+  ): Effect.Effect<DatabaseTransaction, DatabaseFailure> =>
     Effect.gen(function* () {
-      const tx = yield* storage(`begin ${label}`, repository.store.begin());
+      const tx = makeDatabaseTransaction(repository, label, actor);
+
       yield* ensureDefaultWorkflowMetadataInTransaction(repository, tx, actor, now);
       return tx;
     });
+
+  const makeDatabaseTransaction = (
+    repository: RepositoryRuntime,
+    label: string,
+    actor: Actor,
+  ): DatabaseTransaction => {
+    const events: Array<Parameters<RepositoryStoreShape["appendEvent"]>[1]> = [];
+    let closed = false;
+
+    const assertOpen = (): Effect.Effect<void, DatabaseFailure> =>
+      closed
+        ? Effect.die(new Error(`Transaction is already closed: ${label}`))
+        : Effect.void;
+
+    return {
+      abort: Effect.sync(() => {
+        closed = true;
+        events.length = 0;
+      }),
+      appendEvent: (input) =>
+        assertOpen().pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              const payload = stripUndefined(input.payload) as Readonly<Record<string, unknown>>;
+              const event = {
+                ...input,
+                payload,
+              };
+
+              events.push(event);
+
+              return `${repository.store.aggregatePath(input)}/${input.eventId}.json`;
+            }),
+          ),
+        ),
+      commit: (commitOptions) =>
+        assertOpen().pipe(
+          Effect.andThen(
+            storage(
+              `commit ${label}`,
+              repository.store.transaction(
+                {
+                  ...commitOptions,
+                  author: commitOptions.author ?? gitIdentity(actor),
+                  committer: commitOptions.committer ?? gitIdentity(actor),
+                },
+                (tx) =>
+                  Effect.forEach(events, (event) => repository.store.appendEvent(tx, event), {
+                    discard: true,
+                  }),
+              ),
+            ),
+          ),
+          Effect.map((result) => {
+            closed = true;
+            return result.snapshot;
+          }),
+        ),
+    };
+  };
 
   const generateTicketId = (
     repository: RepositoryRuntime,
@@ -1067,10 +1132,7 @@ export const makeDatabaseService = (
       const snapshot = yield* storage(
         "seed default repository metadata",
         Effect.gen(function* () {
-          const tx = yield* storage(
-            "begin seed default repository metadata",
-            repository.store.begin(),
-          );
+          const tx = makeDatabaseTransaction(repository, "seed default repository metadata", actor);
           const defaults = yield* ensureDefaultWorkflowMetadataInTransaction(
             repository,
             tx,
@@ -2746,27 +2808,27 @@ const buildMaterialization = (
       ? [...folded.templates.values()]
       : valuesForIds(folded.templates, folded.changedTemplates);
     const tickets = ticketValues.map((ticket) => ({
-      path: eventAggregatePath("ticket", ticket.id),
+      path: eventAggregatePath(repository, "ticket", ticket.id),
       value: ticket,
     }));
     const records = recordValues.map((record) => ({
-      path: eventAggregatePath("record", record.id),
+      path: eventAggregatePath(repository, "record", record.id),
       value: record,
     }));
     const users = userValues.map((user) => ({
-      path: eventAggregatePath("user", user.id),
+      path: eventAggregatePath(repository, "user", user.id),
       value: user,
     }));
     const labels = labelValues.map((label) => ({
-      path: eventAggregatePath("label", label.id),
+      path: eventAggregatePath(repository, "label", label.id),
       value: label,
     }));
     const views = viewValues.map((view) => ({
-      path: eventAggregatePath("view", view.id),
+      path: eventAggregatePath(repository, "view", view.id),
       value: view,
     }));
     const templates = templateValues.map((template) => ({
-      path: eventAggregatePath("template", template.id),
+      path: eventAggregatePath(repository, "template", template.id),
       value: template,
     }));
     const warnings = [...folded.warnings];
@@ -2781,7 +2843,7 @@ const buildMaterialization = (
           warning(
             repository.repositoryId,
             currentSnapshotId,
-            eventAggregatePath("ticket", ticket.id),
+            eventAggregatePath(repository, "ticket", ticket.id),
             "ticket",
             ticket.id,
             new Error(`unknown child issue id: ${childId}`),
@@ -2869,7 +2931,7 @@ const readMaterializationHistory = (
   {
     readonly fullRebuild: boolean;
     readonly sequenceStart: number;
-    readonly snapshots: ReadonlyArray<GitDbSnapshot>;
+    readonly snapshots: ReadonlyArray<RepositorySnapshot>;
   },
   DatabaseFailure
 > =>
@@ -2934,14 +2996,14 @@ const readHistorySince = (
 ): Effect.Effect<
   {
     readonly reachedPrevious: boolean;
-    readonly snapshots: ReadonlyArray<GitDbSnapshot>;
+    readonly snapshots: ReadonlyArray<RepositorySnapshot>;
   },
   DatabaseFailure
 > =>
   Effect.gen(function* () {
     const seen = new Set<string>();
     const stack = [currentSnapshotId];
-    const snapshots: Array<GitDbSnapshot> = [];
+    const snapshots: Array<RepositorySnapshot> = [];
     let reachedPrevious = false;
 
     while (stack.length > 0) {
@@ -3024,15 +3086,18 @@ const emptyFoldedEvents = (): FoldedEvents => ({
   warnings: [],
 });
 
-const eventAggregatePath = (aggregateType: string, aggregateId: string): string =>
-  GitDbEvent.aggregatePath({ aggregateId, aggregateType });
+const eventAggregatePath = (
+  repository: RepositoryRuntime,
+  aggregateType: string,
+  aggregateId: string,
+): string => repository.store.aggregatePath({ aggregateId, aggregateType });
 
 const foldRepositoryEvents = (
   repository: RepositoryRuntime,
   snapshotId?: string,
   trace?: MaterializationTrace,
   options: {
-    readonly history?: ReadonlyArray<GitDbSnapshot>;
+    readonly history?: ReadonlyArray<RepositorySnapshot>;
     readonly seed?: FoldedEvents;
     readonly seedFromProjection?: {
       readonly projection: Projection;
@@ -3067,12 +3132,12 @@ const foldRepositoryEvents = (
     for (const snapshot of history.slice().reverse()) {
       const introduced = yield* storage(
         "read introduced events",
-        GitDbEvent.introduced(repository.store, snapshot),
+        repository.store.introduced(snapshot),
       );
       introducedEvents += introduced.length;
       folded.commitChanges.push({
         changes: introduced.map((event) =>
-          eventPathChange(changeTypeFromDiff(event.change), event.path),
+          eventPathChange(repository, changeTypeFromDiff(event.change), event.path),
         ),
         repositoryId: repository.repositoryId,
         snapshotId: snapshot.id,
@@ -3797,7 +3862,7 @@ const actorFromSnapshot = (snapshot: {
 
 const buildCommitRows = (
   repository: RepositoryRuntime,
-  history: ReadonlyArray<GitDbSnapshot>,
+  history: ReadonlyArray<RepositorySnapshot>,
   sequenceStart: number,
 ) =>
   history
@@ -3828,10 +3893,11 @@ const changeTypeFromDiff = (change: {
       : "modified";
 
 const eventPathChange = (
+  repository: RepositoryRuntime,
   changeType: "added" | "deleted" | "modified",
   path: string,
 ): CommitChange => {
-  const event = GitDbEvent.parseEventPath(path);
+  const event = repository.store.parseEventPath(path);
 
   return {
     changeType,
@@ -4680,7 +4746,7 @@ const warning = (
 });
 
 const gitIdentity = (actor: Actor) => ({
-  email: actor.email,
+  email: actor.email ?? "",
   name: actor.name,
 });
 

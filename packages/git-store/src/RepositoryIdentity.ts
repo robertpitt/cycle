@@ -7,8 +7,14 @@ import {
 } from "./GitStoreErrors.ts";
 import type { ObjectId, RefName } from "./GitStoreSchemas.ts";
 import { CommitWriter } from "./CommitWriter.ts";
+import { GitRemoteTransport } from "./GitRemoteTransport.ts";
 import { ObjectStore } from "./ObjectStore.ts";
 import { RefReader } from "./RefReader.ts";
+import { RefTransaction } from "./RefTransaction.ts";
+
+export type EnsureRepositoryIdentityOptions = {
+  readonly remote?: string;
+};
 
 export type RepositoryIdentityInfo = {
   readonly ref: RefName;
@@ -17,7 +23,9 @@ export type RepositoryIdentityInfo = {
 };
 
 export type RepositoryIdentityShape = {
-  readonly ensureIdentity: () => Effect.Effect<RepositoryIdentityInfo, GitStoreError>;
+  readonly ensureIdentity: (
+    options?: EnsureRepositoryIdentityOptions,
+  ) => Effect.Effect<RepositoryIdentityInfo, GitStoreError>;
   readonly resolveIdentity: () => Effect.Effect<RepositoryIdentityInfo | null, GitStoreError>;
 };
 
@@ -31,9 +39,15 @@ export const RepositoryIdentityLive = Layer.effect(
   Effect.gen(function* () {
     const objects = yield* ObjectStore;
     const refs = yield* RefReader;
+    const refTx = yield* RefTransaction;
     const commits = yield* CommitWriter;
     const crypto = yield* Crypto.Crypto;
+    const remote = yield* GitRemoteTransport;
     const identityRef = "refs/gitdb/cycle/main" as RefName;
+    const bootstrapIdentity = {
+      email: "cycle@example.invalid",
+      name: "Cycle",
+    } as const;
 
     const identityFromHead = Effect.fn("RepositoryIdentity.identityFromHead")(function* (
       head: ObjectId,
@@ -63,10 +77,57 @@ export const RepositoryIdentityLive = Layer.effect(
       return head === null ? null : yield* identityFromHead(head);
     });
 
-    const ensureIdentity = Effect.fn("RepositoryIdentity.ensureIdentity")(function* () {
+    const adoptRemoteIdentity = Effect.fn("RepositoryIdentity.adoptRemoteIdentity")(function* (
+      remoteName: string,
+    ) {
+      const remoteHead = yield* remote.lsRemote({
+        ref: identityRef,
+        remote: remoteName,
+      });
+
+      if (remoteHead === null) return null;
+
+      yield* remote.fetch({
+        ref: identityRef,
+        remote: remoteName,
+      });
+
+      const remoteIdentity = yield* identityFromHead(remoteHead);
+      const localIdentity = yield* resolveIdentity();
+
+      if (
+        localIdentity !== null &&
+        localIdentity.rootCommitId !== remoteIdentity.rootCommitId
+      ) {
+        return yield* new RepositoryIdentityConflictError({
+          message: `Repository identity conflict between local ${localIdentity.rootCommitId} and remote ${remoteIdentity.rootCommitId}`,
+          ref: identityRef,
+          roots: [localIdentity.rootCommitId, remoteIdentity.rootCommitId],
+        });
+      }
+
+      if (localIdentity === null) {
+        yield* refTx.update(identityRef, remoteHead, { expected: null }).pipe(
+          Effect.catchTag("RefExpectedValueConflictError", () => Effect.void),
+        );
+      }
+
+      return remoteIdentity;
+    });
+
+    const ensureIdentity = Effect.fn("RepositoryIdentity.ensureIdentity")(function* (
+      options: EnsureRepositoryIdentityOptions = {},
+    ) {
       const existing = yield* resolveIdentity();
 
-      if (existing !== null) return existing;
+      if (options.remote !== undefined) {
+        const remoteIdentity = yield* adoptRemoteIdentity(options.remote);
+
+        if (existing !== null && remoteIdentity === null) return existing;
+        if (remoteIdentity !== null) return remoteIdentity;
+      } else if (existing !== null) {
+        return existing;
+      }
 
       const random = yield* crypto.randomBytes(16).pipe(
         Effect.mapError(
@@ -83,6 +144,8 @@ export const RepositoryIdentityLive = Layer.effect(
       const emptyTree = yield* objects.writeTree([]);
       const commitId = yield* commits
         .commitToRef({
+          author: bootstrapIdentity,
+          committer: bootstrapIdentity,
           expected: null,
           message: `Initialize Cycle GitDB\n\nSeed: ${seed}`,
           parents: [],

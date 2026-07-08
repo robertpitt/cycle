@@ -98,9 +98,6 @@ importers:
       '@cycle/database':
         specifier: workspace:*
         version: link:../database
-      '@cycle/git-db':
-        specifier: workspace:*
-        version: link:../git-db
       vitest:
         specifier: ^4.1.8
         version: 4.1.8(@types/node@25.9.2)(@vitest/coverage-v8@4.1.8)(vite@8.0.16(@types/node@25.9.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -128,9 +125,9 @@ importers:
       '@cycle/git':
         specifier: workspace:*
         version: link:../git
-      '@cycle/git-db':
+      '@cycle/git-store':
         specifier: workspace:*
-        version: link:../git-db
+        version: link:../git-store
       '@cycle/logging':
         specifier: workspace:*
         version: link:../logging
@@ -203,9 +200,9 @@ importers:
 
   packages/database:
     dependencies:
-      '@cycle/git-db':
+      '@cycle/git-store':
         specifier: workspace:*
-        version: link:../git-db
+        version: link:../git-store
       '@cycle/sqlite':
         specifier: workspace:*
         version: link:../sqlite
@@ -271,6 +268,9 @@ importers:
       '@cycle/git':
         specifier: workspace:*
         version: link:../git
+      '@cycle/git-store':
+        specifier: workspace:*
+        version: link:../git-store
       '@cycle/sqlite':
         specifier: workspace:*
         version: link:../sqlite
@@ -315,11 +315,8 @@ importers:
         specifier: ^4.1.8
         version: 4.1.8(@types/node@25.9.2)(@vitest/coverage-v8@4.1.8)(vite@8.0.16(@types/node@25.9.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
-  packages/git-db:
+  packages/git-store:
     dependencies:
-      '@cycle/git':
-        specifier: workspace:*
-        version: link:../git
       '@effect/platform-node':
         specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.11.1)
@@ -490,9 +487,9 @@ importers:
       '@cycle/database':
         specifier: workspace:*
         version: link:../database
-      '@cycle/git-db':
+      '@cycle/git-store':
         specifier: workspace:*
-        version: link:../git-db
+        version: link:../git-store
       effect:
         specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78

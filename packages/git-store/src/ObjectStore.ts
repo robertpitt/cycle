@@ -93,20 +93,22 @@ export const ObjectStoreLive = Layer.effect(
     const objectCache = yield* Cache.make<ObjectId, GitObject, GitStoreError>({
       capacity: 4096,
       lookup: (id) =>
-        loose.readObject(id).pipe(
-          Effect.catchTag("ObjectNotFoundError", () =>
-            packed.readObject(id).pipe(
-              Effect.flatMap((object) =>
-                object === null
-                  ? Effect.fail(
-                      new ObjectNotFoundError({
-                        message: `Object not found: ${id}`,
-                        objectId: id,
-                      }),
-                    )
-                  : Effect.succeed(object),
-              ),
-            ),
+        loose.readObjectOption(id).pipe(
+          Effect.flatMap((looseObject) =>
+            looseObject === null
+              ? packed.readObject(id).pipe(
+                  Effect.flatMap((packedObject) =>
+                    packedObject === null
+                      ? Effect.fail(
+                          new ObjectNotFoundError({
+                            message: `Object not found: ${id}`,
+                            objectId: id,
+                          }),
+                        )
+                      : Effect.succeed(packedObject),
+                  ),
+                )
+              : Effect.succeed(looseObject),
           ),
           Effect.flatMap((object) =>
             codec.hash(object.type, object.body).pipe(

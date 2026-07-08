@@ -1,8 +1,11 @@
 import { Layer, LayerMap } from "effect";
 import { CommitWriterLive } from "./CommitWriter.ts";
 import { EventStoreLive } from "./EventStore.ts";
+import { GitRemoteTransportLive } from "./GitRemoteTransport.ts";
 import { GitStoreLive } from "./GitStore.ts";
+import { GitStoreChangesLive } from "./GitStoreChanges.ts";
 import type { GitStoreConfig, GitStoreKey } from "./GitStoreSchemas.ts";
+import { GitStoreSyncLive } from "./GitStoreSync.ts";
 import { LooseObjectStoreLive } from "./LooseObjectStore.ts";
 import { LooseRefStoreLive } from "./LooseRefStore.ts";
 import { ObjectCodecLive } from "./ObjectCodec.ts";
@@ -49,19 +52,25 @@ export const makeGitStoreLayer = (descriptor: GitStoreInstanceDescriptor) => {
   const refReader = RefReaderLive.pipe(Layer.provideMerge(packedRefs));
   const refTransactions = RefTransactionLive.pipe(Layer.provideMerge(refReader));
   const refs = RefStoreLive.pipe(Layer.provideMerge(refTransactions));
-  const reflog = ReflogStoreLive.pipe(Layer.provideMerge(refs));
-  const commitWriter = CommitWriterLive.pipe(Layer.provideMerge(reflog));
-  const store = GitStoreLive.pipe(Layer.provideMerge(commitWriter));
-  const identity = RepositoryIdentityLive.pipe(Layer.provideMerge(store));
+  const changes = GitStoreChangesLive.pipe(Layer.provideMerge(refs));
+  const commitWriter = CommitWriterLive.pipe(Layer.provideMerge(refTransactions));
+  const remoteTransport = GitRemoteTransportLive.pipe(Layer.provideMerge(changes));
+  const sync = GitStoreSyncLive.pipe(Layer.provideMerge(Layer.mergeAll(remoteTransport, commitWriter)));
+  const reflog = ReflogStoreLive.pipe(Layer.provideMerge(sync));
+  const store = GitStoreLive.pipe(Layer.provideMerge(Layer.mergeAll(commitWriter, changes)));
+  const identity = RepositoryIdentityLive.pipe(
+    Layer.provideMerge(Layer.mergeAll(store, remoteTransport, commitWriter)),
+  );
 
-  return EventStoreLive.pipe(Layer.provideMerge(identity));
+  return EventStoreLive.pipe(Layer.provideMerge(Layer.mergeAll(identity, sync, reflog)));
 };
 
 export class GitStoreInstances extends LayerMap.Service<GitStoreInstances>()(
   "@cycle/git-store/GitStoreInstances",
   {
     idleTimeToLive: "5 minutes",
-    lookup: (key: GitStoreInstanceKey) => makeGitStoreLayer(decodeGitStoreInstanceKey(key)),
+    lookup: (key: GitStoreInstanceKey) =>
+      Layer.fresh(makeGitStoreLayer(decodeGitStoreInstanceKey(key))),
   },
 ) {}
 

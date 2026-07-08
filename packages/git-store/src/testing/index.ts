@@ -1,6 +1,5 @@
 import { NodeServices } from "@effect/platform-node";
 import { Layer } from "effect";
-import { GitStoreInstancesLive } from "../GitStoreInstances.ts";
 import { GitStores, GitStoresLive } from "../GitStores.ts";
 import { RepositoryPathsLive } from "../RepositoryPaths.ts";
 
@@ -18,8 +17,9 @@ export const withTestIdentity = <Options extends object>(
 
 export const GitStoresTestLive: Layer.Layer<GitStores> = GitStoresLive.pipe(
   Layer.provide(
-    Layer.mergeAll(RepositoryPathsLive, GitStoreInstancesLive).pipe(
-      Layer.provide(NodeServices.layer),
+    Layer.mergeAll(
+      NodeServices.layer,
+      RepositoryPathsLive.pipe(Layer.provide(NodeServices.layer)),
     ),
   ),
 ) as Layer.Layer<GitStores>;

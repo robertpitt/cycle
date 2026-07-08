@@ -195,24 +195,25 @@ export const runAutomationUseCase = (
 export const repositoryOpenInputFrom = (
   payload: Readonly<Record<string, unknown>>,
   requestId: string,
-): Effect.Effect<RepositoryInput | HttpServerResponse.HttpServerResponse> =>
-  Effect.gen(function* () {
-    if (typeof payload.path === "string" || typeof payload.repositoryId === "string") {
-      return {
-        displayName: optionalString(payload.displayName),
-        path: optionalString(payload.path),
-        repositoryId: optionalString(payload.repositoryId),
-        syncOnOpen: typeof payload.syncOnOpen === "boolean" ? payload.syncOnOpen : undefined,
-      };
-    }
+): Effect.Effect<RepositoryInput | HttpServerResponse.HttpServerResponse> => {
+  if (typeof payload.path === "string" || typeof payload.repositoryId === "string") {
+    return Effect.succeed({
+      displayName: optionalString(payload.displayName),
+      path: optionalString(payload.path),
+      repositoryId: optionalString(payload.repositoryId),
+      syncOnOpen: typeof payload.syncOnOpen === "boolean" ? payload.syncOnOpen : undefined,
+    });
+  }
 
-    return errorResponse(
+  return Effect.succeed(
+    errorResponse(
       requestId,
       400,
       "INVALID_REPOSITORY_OPEN_INPUT",
       "Repository path or repository id is required.",
-    );
-  });
+    ),
+  );
+};
 
 const optionalHeader = (headers: Headers.Headers | undefined, key: string): string | undefined => {
   const value = headers?.[key];

@@ -28,12 +28,12 @@
     "@cycle/contracts": "workspace:*",
     "@cycle/database": "workspace:*",
     "@cycle/git": "workspace:*",
-    "@cycle/git-db": "workspace:*",
     "@cycle/logging": "workspace:*",
     "@cycle/sqlite": "workspace:*",
     "@cycle/usecases": "workspace:*",
     "@effect/platform-node": "4.0.0-beta.78",
-    "effect": "4.0.0-beta.78"
+    "effect": "4.0.0-beta.78",
+    "@cycle/git-store": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^4.1.8"

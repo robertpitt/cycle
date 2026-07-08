@@ -1,5 +1,11 @@
-import { Event as GitDbEvent, GitDbInMemory, Store as GitDbStore } from "@cycle/git-db";
+import { EVENT_ROOT } from "@cycle/git-store/events";
+import { Document } from "@cycle/git-store/document";
+import { withTestIdentity } from "@cycle/git-store/testing";
+import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { Crypto, Effect, Layer } from "effect";
 import {
   CURRENT_SCHEMA_VERSION,
@@ -10,28 +16,53 @@ import {
   extractMentionTags,
   makeFrontmatter,
   makeTicketDocument,
+  makeGitRepositoryStoreEffect,
   updatedDateKey,
   type Actor,
   type CreateTicketInput,
   type LinkedRecord,
+  type RepositoryStoreShape,
   type TicketDocument,
 } from "../src/index.ts";
 import { DatabaseTest } from "../src/testing/index.ts";
 import { Projection } from "../src/store/Projection.ts";
 import { assert, describe, it } from "./effect-vitest.ts";
 
+const storeGitDirs = new WeakMap<RepositoryStoreShape, string>();
+
 const makeStore = (database: string) =>
-  GitDbStore.StoreService.pipe(Effect.provide(GitDbInMemory({ database })));
+  Effect.gen(function* () {
+    const cwd = yield* Effect.sync(() => {
+      const directory = mkdtempSync(path.join(tmpdir(), "cycle-database-test-"));
+
+      execFileSync("git", ["init", "--initial-branch=main"], {
+        cwd: directory,
+        stdio: "ignore",
+      });
+
+      return directory;
+    });
+    const store = yield* makeGitRepositoryStoreEffect(
+      withTestIdentity({
+        cwd,
+        database,
+      }),
+    );
+
+    storeGitDirs.set(store, path.join(cwd, ".git"));
+
+    return store;
+  });
 
 const countEventDocumentReads = (
-  store: GitDbStore.StoreServiceShape,
+  store: RepositoryStoreShape,
   counter: {
     eventDocumentReads: number;
   },
-): GitDbStore.StoreServiceShape => ({
+): RepositoryStoreShape => ({
   ...store,
   get: (path, options) => {
-    if (path.startsWith(`${GitDbEvent.EVENT_ROOT}/`)) {
+    if (path.startsWith(`${EVENT_ROOT}/`)) {
       counter.eventDocumentReads += 1;
     }
 
@@ -48,7 +79,7 @@ const TestCrypto = Layer.succeed(
 );
 
 const collectStorePaths = (
-  store: GitDbStore.StoreServiceShape,
+  store: RepositoryStoreShape,
   root = "",
 ): Effect.Effect<ReadonlyArray<string>, unknown, never> =>
   Effect.gen(function* () {
@@ -66,6 +97,59 @@ const collectStorePaths = (
     return paths.sort();
   });
 
+type TestEventDocument = {
+  readonly aggregateId: string;
+  readonly aggregateType: string;
+  readonly eventId: string;
+  readonly path: string;
+  readonly payload: unknown;
+};
+
+const listEvents = (
+  store: RepositoryStoreShape,
+): Effect.Effect<ReadonlyArray<TestEventDocument>, unknown, never> =>
+  Effect.gen(function* () {
+    const paths = yield* collectStorePaths(store, EVENT_ROOT);
+    const events = yield* Effect.forEach(paths, (eventPath) =>
+      Effect.gen(function* () {
+        const parsed = store.parseEventPath(eventPath);
+        if (parsed === null) return null;
+
+        const document = yield* store.get(eventPath);
+        if (document === null) return null;
+
+        return {
+          aggregateId: parsed.aggregateId,
+          aggregateType: parsed.aggregateType,
+          eventId: parsed.eventId,
+          path: parsed.path,
+          payload: document.json(),
+        };
+      }),
+    );
+
+    return events.filter((event): event is TestEventDocument => event !== null);
+  });
+
+const currentPointer = (store: RepositoryStoreShape, pointer = "main") =>
+  store.resolveSnapshotId(pointer);
+
+const deletePointer = (
+  store: RepositoryStoreShape,
+  pointer = "main",
+): Effect.Effect<void, unknown, never> =>
+  store.pointerRef(pointer).pipe(
+    Effect.flatMap((ref) =>
+      Effect.sync(() => {
+        const gitDir = storeGitDirs.get(store);
+
+        if (gitDir !== undefined) {
+          rmSync(path.join(gitDir, ref), { force: true });
+        }
+      }),
+    ),
+  );
+
 const externalActor: Actor = {
   email: "other@example.invalid",
   name: "Other User",
@@ -73,7 +157,7 @@ const externalActor: Actor = {
 };
 
 const appendExternalTicket = (
-  store: GitDbStore.StoreServiceShape,
+  store: RepositoryStoreShape,
   input: {
     readonly eventId: string;
     readonly ticket: CreateTicketInput;
@@ -86,34 +170,35 @@ const appendExternalTicket = (
       makeFrontmatter(input.ticket, input.ticketId, externalActor, now),
       input.ticket.body ?? "External ticket body.",
     );
-    const tx = yield* store.begin();
-
-    yield* GitDbEvent.append(tx, {
-      aggregateId: input.ticketId,
-      aggregateType: "ticket",
-      eventId: input.eventId,
-      payload: {
-        op: "ticket.create",
-        value: ticket,
+    yield* store.transaction(
+      {
+        author: {
+          email: externalActor.email ?? "",
+          name: externalActor.name,
+        },
+        committer: {
+          email: externalActor.email ?? "",
+          name: externalActor.name,
+        },
+        message: `External create ${input.ticketId}`,
       },
-    });
-    yield* tx.commit({
-      author: {
-        email: externalActor.email,
-        name: externalActor.name,
-      },
-      committer: {
-        email: externalActor.email,
-        name: externalActor.name,
-      },
-      message: `External create ${input.ticketId}`,
-    });
+      (tx) =>
+        store.appendEvent(tx, {
+          aggregateId: input.ticketId,
+          aggregateType: "ticket",
+          eventId: input.eventId,
+          payload: {
+            op: "ticket.create",
+            value: ticket,
+          },
+        }),
+    );
 
     return ticket;
   });
 
 const appendExternalTicketUpdate = (
-  store: GitDbStore.StoreServiceShape,
+  store: RepositoryStoreShape,
   input: {
     readonly eventId: string;
     readonly field: "body" | "priority" | "title" | "assignee";
@@ -122,33 +207,34 @@ const appendExternalTicketUpdate = (
   },
 ) =>
   Effect.gen(function* () {
-    const tx = yield* store.begin();
-
-    yield* GitDbEvent.append(tx, {
-      aggregateId: input.ticketId,
-      aggregateType: "ticket",
-      eventId: input.eventId,
-      payload: {
-        field: input.field,
-        op: "ticket.update",
-        value: input.value,
+    yield* store.transaction(
+      {
+        author: {
+          email: externalActor.email ?? "",
+          name: externalActor.name,
+        },
+        committer: {
+          email: externalActor.email ?? "",
+          name: externalActor.name,
+        },
+        message: `External update ${input.ticketId}`,
       },
-    });
-    yield* tx.commit({
-      author: {
-        email: externalActor.email,
-        name: externalActor.name,
-      },
-      committer: {
-        email: externalActor.email,
-        name: externalActor.name,
-      },
-      message: `External update ${input.ticketId}`,
-    });
+      (tx) =>
+        store.appendEvent(tx, {
+          aggregateId: input.ticketId,
+          aggregateType: "ticket",
+          eventId: input.eventId,
+          payload: {
+            field: input.field,
+            op: "ticket.update",
+            value: input.value,
+          },
+        }),
+    );
   });
 
 const appendExternalComment = (
-  store: GitDbStore.StoreServiceShape,
+  store: RepositoryStoreShape,
   input: {
     readonly body: string;
     readonly eventId: string;
@@ -170,28 +256,29 @@ const appendExternalComment = (
       recordType: "comment",
       schemaVersion: CURRENT_SCHEMA_VERSION,
     };
-    const tx = yield* store.begin();
-
-    yield* GitDbEvent.append(tx, {
-      aggregateId: record.id,
-      aggregateType: "record",
-      eventId: input.eventId,
-      payload: {
-        op: "record.add",
-        value: record,
+    yield* store.transaction(
+      {
+        author: {
+          email: externalActor.email ?? "",
+          name: externalActor.name,
+        },
+        committer: {
+          email: externalActor.email ?? "",
+          name: externalActor.name,
+        },
+        message: `External comment ${input.ticketId}`,
       },
-    });
-    yield* tx.commit({
-      author: {
-        email: externalActor.email,
-        name: externalActor.name,
-      },
-      committer: {
-        email: externalActor.email,
-        name: externalActor.name,
-      },
-      message: `External comment ${input.ticketId}`,
-    });
+      (tx) =>
+        store.appendEvent(tx, {
+          aggregateId: record.id,
+          aggregateType: "record",
+          eventId: input.eventId,
+          payload: {
+            op: "record.add",
+            value: record,
+          },
+        }),
+    );
   });
 
 describe("@cycle/database", () => {
@@ -352,9 +439,8 @@ describe("@cycle/database", () => {
         store,
         syncOnOpen: false,
       });
-      const events = yield* GitDbEvent.list(store);
-      const pointer = yield* store.pointer("main");
-      const current = yield* pointer.current;
+      const events = yield* listEvents(store);
+      const current = yield* currentPointer(store);
 
       assert.strictEqual(status.activeSnapshotId, null);
       assert.strictEqual(status.cycleMetadata, undefined);
@@ -377,7 +463,7 @@ describe("@cycle/database", () => {
         title: "First write ticket",
         type: "task",
       });
-      const events = yield* GitDbEvent.list(store);
+      const events = yield* listEvents(store);
       const sourceProfile = yield* database.getUser("first-write-repo", "test@example.invalid");
       const status = yield* database.repositoryStatus("first-write-repo");
       const history = yield* store.history("main");
@@ -444,7 +530,7 @@ describe("@cycle/database", () => {
         store.get(change.path).pipe(Effect.map((document) => document?.json())),
       );
       const allPaths = yield* collectStorePaths(store);
-      const events = yield* GitDbEvent.list(store);
+      const events = yield* listEvents(store);
       const activeBeforeRebuild = yield* database.listTickets({
         repositoryIds: [repositoryId],
       });
@@ -488,7 +574,7 @@ describe("@cycle/database", () => {
       assert.ok(
         allPaths.some((path) =>
           path.startsWith(
-            `${GitDbEvent.aggregatePath({
+            `${store.aggregatePath({
               aggregateId: ticket.id,
               aggregateType: "ticket",
             })}/`,
@@ -805,52 +891,58 @@ describe("@cycle/database", () => {
           ),
           "Self-authored @reviewer mention.",
         );
-        const tx = yield* store.begin();
-
-        yield* GitDbEvent.append(tx, {
-          aggregateId: selfTicket.id,
-          aggregateType: "ticket",
-          eventId: "evt_inbox_self_mention",
-          payload: {
-            op: "ticket.create",
-            value: selfTicket,
+        yield* store.transaction(
+          {
+            author: {
+              email: userId,
+              name: "Mentioned User",
+            },
+            committer: {
+              email: userId,
+              name: "Mentioned User",
+            },
+            message: "Add self, unknown, and invalid inbox sources",
           },
-        });
-        yield* GitDbEvent.append(tx, {
-          aggregateId: "EXT-00004",
-          aggregateType: "ticket",
-          eventId: "evt_inbox_unknown_mention",
-          payload: {
-            op: "ticket.create",
-            value: makeTicketDocument(
-              makeFrontmatter(
-                {
-                  body: "Unknown @missing-user mention.",
-                  title: "Unknown mention",
-                  type: "task",
+          (tx) =>
+            Effect.gen(function* () {
+              yield* store.appendEvent(tx, {
+                aggregateId: selfTicket.id,
+                aggregateType: "ticket",
+                eventId: "evt_inbox_self_mention",
+                payload: {
+                  op: "ticket.create",
+                  value: selfTicket,
                 },
-                "EXT-00004",
-                externalActor,
-                now,
-              ),
-              "Unknown @missing-user mention.",
-            ),
-          },
-        });
-        yield* tx.put("collections/events/ticket/broken-inbox/evt_broken_inbox.json", {
-          op: "ticket.not-supported",
-        });
-        yield* tx.commit({
-          author: {
-            email: userId,
-            name: "Mentioned User",
-          },
-          committer: {
-            email: userId,
-            name: "Mentioned User",
-          },
-          message: "Add self, unknown, and invalid inbox sources",
-        });
+              });
+              yield* store.appendEvent(tx, {
+                aggregateId: "EXT-00004",
+                aggregateType: "ticket",
+                eventId: "evt_inbox_unknown_mention",
+                payload: {
+                  op: "ticket.create",
+                  value: makeTicketDocument(
+                    makeFrontmatter(
+                      {
+                        body: "Unknown @missing-user mention.",
+                        title: "Unknown mention",
+                        type: "task",
+                      },
+                      "EXT-00004",
+                      externalActor,
+                      now,
+                    ),
+                    "Unknown @missing-user mention.",
+                  ),
+                },
+              });
+              yield* tx.put(
+                "collections/events/ticket/broken-inbox/evt_broken_inbox.json",
+                Document.json({
+                  op: "ticket.not-supported",
+                }),
+              );
+            }),
+        );
 
         const status = yield* database.syncRepository(repositoryId);
         const page = yield* database.listInbox({
@@ -1229,14 +1321,18 @@ describe("@cycle/database", () => {
           title: "Valid ticket",
           type: "task",
         });
-        const tx = yield* store.begin();
-
-        yield* tx.put("collections/events/ticket/broken-ticket/evt_broken.json", {
-          op: "ticket.not-supported",
-        });
-        yield* tx.commit({
-          message: "Add broken issue document",
-        });
+        yield* store.transaction(
+          {
+            message: "Add broken issue document",
+          },
+          (tx) =>
+            tx.put(
+              "collections/events/ticket/broken-ticket/evt_broken.json",
+              Document.json({
+                op: "ticket.not-supported",
+              }),
+            ),
+        );
 
         const status = yield* database.syncRepository("warning-repo");
         const warnings = yield* database.materializationWarnings("warning-repo");
@@ -1272,9 +1368,7 @@ describe("@cycle/database", () => {
       const beforeRemoval = yield* database.listTickets({
         repositoryIds: ["removed-pointer-repo"],
       });
-      const pointer = yield* store.pointer("main");
-
-      yield* pointer.delete();
+      yield* deletePointer(store);
 
       const status = yield* database.syncRepository("removed-pointer-repo");
       const afterRemoval = yield* database.listTickets({
@@ -1317,17 +1411,15 @@ describe("@cycle/database", () => {
         title: "Reopened pointer removal ticket",
         type: "task",
       });
-      const pointer = yield* store.pointer("main");
-
-      yield* pointer.delete();
+      yield* deletePointer(store);
       yield* database.syncRepository("reopened-removed-pointer-repo");
 
       const reopened = yield* database.openRepository({
         repositoryId: "reopened-removed-pointer-repo",
         store,
       });
-      const current = yield* pointer.current;
-      const events = yield* GitDbEvent.list(store);
+      const current = yield* currentPointer(store);
+      const events = yield* listEvents(store);
       const listed = yield* database.listTickets({
         repositoryIds: ["reopened-removed-pointer-repo"],
       });
@@ -1358,7 +1450,7 @@ describe("@cycle/database", () => {
         type: "task",
       });
 
-      const events = yield* GitDbEvent.list(store);
+      const events = yield* listEvents(store);
       const userEvent = events.find(
         (event) => event.aggregateType === "user" && event.aggregateId === "test@example.invalid",
       );
@@ -1469,7 +1561,7 @@ describe("@cycle/database", () => {
       const records = yield* database.ticketRecords("linear-metadata-repo", initiative.id, {
         recordType: "initiative-update",
       });
-      const events = yield* GitDbEvent.list(store);
+      const events = yield* listEvents(store);
 
       assert.strictEqual(updatedLabel.color, "orange");
       assert.strictEqual(updatedView.pinned, true);

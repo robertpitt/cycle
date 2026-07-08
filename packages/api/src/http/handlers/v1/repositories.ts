@@ -58,7 +58,6 @@ export const listRepositories = ({ request }: V1Request<"listRepositories">) =>
 
 export const openRepository = ({ payload }: V1Request<"openRepository">) =>
   Effect.gen(function* () {
-    const runtime = yield* CycleApiRuntime;
     const { requestId } = yield* CycleRequestContext;
     const input = yield* repositoryOpenInputFrom(payload, requestId);
     if (HttpServerResponse.isHttpServerResponse(input)) return input;

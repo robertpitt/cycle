@@ -1,6 +1,13 @@
-import { DatabaseService, type RepositoryMetadata, type RepositoryStatus } from "@cycle/database";
+import {
+  DatabaseService,
+  makeGitRepositoryStoreEffect,
+  type RepositoryMetadata,
+  type RepositoryStatus,
+  type RepositoryStoreShape,
+  type RepositorySyncResult,
+} from "@cycle/database";
 import { GitRepository, type GitRepositoryMetadata } from "@cycle/git";
-import { GitDb, Store as GitDbStore, type SyncResult } from "@cycle/git-db";
+import { GitStores, type GitStoresShape } from "@cycle/git-store";
 import { logDebug, logError, logInfo } from "@cycle/logging";
 import type * as BackendContractSchemas from "@cycle/contracts/schemas/backend";
 import { Context, Effect, Layer, Queue, Scope } from "effect";
@@ -19,7 +26,9 @@ type BootstrapStatus = BackendContractSchemas.BootstrapStatus;
 export type RepositoryBootstrapService = {
   readonly ensureRepositoryOpened: (repositoryId: string) => Effect.Effect<void, unknown>;
   readonly notifyRepositoryChanged: (repositoryId: string) => Effect.Effect<void>;
-  readonly pushRepositoryToRemote: (repositoryId: string) => Effect.Effect<SyncResult, unknown>;
+  readonly pushRepositoryToRemote: (
+    repositoryId: string,
+  ) => Effect.Effect<RepositorySyncResult, unknown>;
   readonly start: () => Effect.Effect<void>;
   readonly status: Effect.Effect<BootstrapStatus>;
   readonly syncRepositoryFromRemote: (repositoryId: string) => Effect.Effect<void, unknown>;
@@ -33,10 +42,12 @@ export class RepositoryBootstrap extends Context.Service<
 type RuntimeRepository = {
   readonly metadata: RepositoryMetadata;
   readonly record: RepositoryRecord;
-  readonly store: GitDbStore.StoreServiceShape;
+  readonly store: RepositoryStoreShape;
 };
 
 const nowIso = (): string => new Date().toISOString();
+
+const elapsedMs = (startedAt: number): number => Number((performance.now() - startedAt).toFixed(2));
 
 const repositoryMetadata = (metadata: GitRepositoryMetadata): RepositoryMetadata => ({
   ...(metadata.currentBranch === undefined ? {} : { currentBranch: metadata.currentBranch }),
@@ -117,6 +128,7 @@ export const RepositoryBootstrapLive = Layer.effect(
     const settings = yield* LocalSettings;
     const database = yield* DatabaseService;
     const gitRepository = yield* GitRepository;
+    const gitStores = yield* GitStores;
     const localWorkspace = yield* LocalWorkspace;
     const scope = yield* Scope.Scope;
     const changeSignals = yield* Queue.unbounded<string>();
@@ -164,33 +176,28 @@ export const RepositoryBootstrapLive = Layer.effect(
     const makeLocalStore = (
       repositoryPath: string,
       gitDir: string,
-    ): Effect.Effect<GitDbStore.StoreServiceShape, unknown> =>
-      GitDbStore.StoreService.pipe(
-        Effect.provide(
-          GitDb.GitDbFilesystem({
-            cwd: repositoryPath,
-            database: "cycle",
-            gitDir,
-          }),
-        ),
-      );
+    ): Effect.Effect<RepositoryStoreShape> =>
+      makeRepositoryStore(gitStores, repositoryPath, gitDir);
+
+    const makeRepositoryStore = (
+      stores: GitStoresShape,
+      repositoryPath: string,
+      gitDir: string,
+    ): Effect.Effect<RepositoryStoreShape> =>
+      makeGitRepositoryStoreEffect({
+        cwd: repositoryPath,
+        database: "cycle",
+        gitDir,
+      }).pipe(Effect.provideService(GitStores, GitStores.of(stores)));
 
     const makeTransportStore = (
       repositoryPath: string,
       gitDir: string,
-    ): Effect.Effect<GitDbStore.StoreServiceShape, unknown> =>
-      GitDbStore.StoreService.pipe(
-        Effect.provide(
-          GitDb.GitDbLive({
-            cwd: repositoryPath,
-            database: "cycle",
-            gitDir,
-          }),
-        ),
-      );
+    ): Effect.Effect<RepositoryStoreShape> =>
+      makeRepositoryStore(gitStores, repositoryPath, gitDir);
 
     const snapshotIdForStore = (
-      store: GitDbStore.StoreServiceShape,
+      store: RepositoryStoreShape,
     ): Effect.Effect<string | null, unknown> =>
       store
         .currentSnapshotForPointer(DEFAULT_POINTER)
@@ -217,6 +224,7 @@ export const RepositoryBootstrapLive = Layer.effect(
 
     const openRepositoryUnsafe = (repository: RepositoryRecord): Effect.Effect<void, unknown> =>
       Effect.gen(function* () {
+        const openedAt = performance.now();
         setStatus({
           blocking: true,
           message: `Loading ${repository.displayName}`,
@@ -232,24 +240,81 @@ export const RepositoryBootstrapLive = Layer.effect(
           repositoryId: repository.id,
         });
 
-        const inspected = yield* gitRepository.metadata(repository.path);
-        const metadata = repositoryMetadata(inspected);
-        const store = yield* makeLocalStore(repository.path, metadata.gitDir ?? inspected.gitDir);
-        const registered = yield* database.openRepository({
-          displayName: repository.displayName,
-          gitDir: metadata.gitDir,
-          metadata,
+        const metadataStartedAt = performance.now();
+        const inspected = yield* gitRepository.metadata(repository.path).pipe(
+          Effect.withSpan("backend.bootstrap.repository.metadata", {
+            attributes: {
+              "backend.repository.displayName": repository.displayName,
+              "backend.repository.path": repository.path,
+              "backend.repositoryId": repository.id,
+              service: "@cycle/backend",
+            },
+          }),
+        );
+        yield* info("bootstrap repository metadata inspected", {
+          elapsedMs: elapsedMs(metadataStartedAt),
           repositoryId: repository.id,
-          store,
-          syncOnOpen: false,
-          worktreePath: repository.path,
+        });
+        const metadata = repositoryMetadata(inspected);
+        const storeStartedAt = performance.now();
+        const store = yield* makeLocalStore(
+          repository.path,
+          metadata.gitDir ?? inspected.gitDir,
+        ).pipe(
+          Effect.withSpan("backend.bootstrap.repository.store", {
+            attributes: {
+              "backend.repository.displayName": repository.displayName,
+              "backend.repository.path": repository.path,
+              "backend.repositoryId": repository.id,
+              service: "@cycle/backend",
+            },
+          }),
+        );
+        yield* info("bootstrap repository store created", {
+          elapsedMs: elapsedMs(storeStartedAt),
+          repositoryId: repository.id,
+        });
+        const registerStartedAt = performance.now();
+        const registered = yield* database
+          .openRepository({
+            displayName: repository.displayName,
+            gitDir: metadata.gitDir,
+            metadata,
+            repositoryId: repository.id,
+            store,
+            syncOnOpen: false,
+            worktreePath: repository.path,
+          })
+          .pipe(
+            Effect.withSpan("backend.bootstrap.repository.register", {
+              attributes: {
+                "backend.repository.displayName": repository.displayName,
+                "backend.repository.path": repository.path,
+                "backend.repositoryId": repository.id,
+                service: "@cycle/backend",
+              },
+            }),
+          );
+        yield* info("bootstrap repository registered", {
+          elapsedMs: elapsedMs(registerStartedAt),
+          repositoryId: repository.id,
         });
         setRepositoryStatus(repository, {
           ...repositoryStatusFromProjection(repository, registered),
           stage: "opening",
         });
 
-        const projection = yield* database.syncRepository(repository.id);
+        const materializeStartedAt = performance.now();
+        const projection = yield* database.syncRepository(repository.id).pipe(
+          Effect.withSpan("backend.bootstrap.repository.materialize", {
+            attributes: {
+              "backend.repository.displayName": repository.displayName,
+              "backend.repository.path": repository.path,
+              "backend.repositoryId": repository.id,
+              service: "@cycle/backend",
+            },
+          }),
+        );
         const runtimeRepository = {
           metadata,
           record: repository,
@@ -259,8 +324,10 @@ export const RepositoryBootstrapLive = Layer.effect(
         remoteSyncedSnapshots.set(repository.id, yield* snapshotIdForStore(store));
         setRepositoryStatus(repository, repositoryStatusFromProjection(repository, projection));
         yield* info("bootstrap local materialization finished", {
+          elapsedMs: elapsedMs(materializeStartedAt),
           ...projectionLogFields(projection),
           repositoryId: repository.id,
+          totalElapsedMs: elapsedMs(openedAt),
         });
       }).pipe(
         Effect.catch((error) =>
@@ -290,6 +357,8 @@ export const RepositoryBootstrapLive = Layer.effect(
       ensureRepositoryOpenedUnsafe(repository).pipe(
         Effect.withSpan("backend.bootstrap.openRepository", {
           attributes: {
+            "backend.repository.displayName": repository.displayName,
+            "backend.repository.path": repository.path,
             "backend.repositoryId": repository.id,
             service: "@cycle/backend",
           },
@@ -313,9 +382,36 @@ export const RepositoryBootstrapLive = Layer.effect(
       Effect.forEach(
         repositories,
         (repository) =>
-          localWorkspace.upsertRepositoryPath({
-            displayName: repository.displayName,
-            path: repository.path,
+          Effect.gen(function* () {
+            const startedAt = performance.now();
+            yield* debug("bootstrap resolving repository path", {
+              displayName: repository.displayName,
+              path: repository.path,
+              repositoryId: repository.id,
+            });
+            const resolved = yield* localWorkspace
+              .upsertRepositoryPath({
+                displayName: repository.displayName,
+                path: repository.path,
+              })
+              .pipe(
+                Effect.withSpan("backend.bootstrap.resolveRepositoryPath", {
+                  attributes: {
+                    "backend.configuredRepositoryId": repository.id,
+                    "backend.repository.displayName": repository.displayName,
+                    "backend.repository.path": repository.path,
+                    service: "@cycle/backend",
+                  },
+                }),
+              );
+            yield* info("bootstrap repository path resolved", {
+              configuredRepositoryId: repository.id,
+              displayName: resolved.displayName,
+              elapsedMs: elapsedMs(startedAt),
+              path: resolved.path,
+              repositoryId: resolved.id,
+            });
+            return resolved;
           }),
         {
           concurrency: 1,
@@ -409,7 +505,9 @@ export const RepositoryBootstrapLive = Layer.effect(
         ),
       );
 
-    const pushRepositoryToRemote = (repositoryId: string): Effect.Effect<SyncResult, unknown> =>
+    const pushRepositoryToRemote = (
+      repositoryId: string,
+    ): Effect.Effect<RepositorySyncResult, unknown> =>
       Effect.gen(function* () {
         const repository = yield* repositoryById(repositoryId);
         yield* ensureRepositoryOpenedUnsafe(repository);
@@ -511,7 +609,7 @@ export const RepositoryBootstrapLive = Layer.effect(
       yield* (cycle === 1 ? info : debug)("bootstrap remote sync phase completed", {
         cycle,
         remoteFailed,
-        remoteMissingGitDbRefs: 0,
+        remoteMissingGitStoreRefs: 0,
         remoteSkipped,
         remoteSynced,
         repositories: repositories.length,
@@ -530,6 +628,7 @@ export const RepositoryBootstrapLive = Layer.effect(
     );
 
     const runBootstrap = Effect.gen(function* () {
+      const bootstrapStartedAt = performance.now();
       setStatus({
         blocking: true,
         message: "Loading configured repositories",
@@ -538,7 +637,19 @@ export const RepositoryBootstrapLive = Layer.effect(
       });
       yield* info("bootstrap started");
 
+      const settingsStartedAt = performance.now();
       const config = yield* settings.read.pipe(
+        Effect.withSpan("backend.bootstrap.readSettings", {
+          attributes: {
+            service: "@cycle/backend",
+          },
+        }),
+        Effect.tap((loadedConfig) =>
+          info("bootstrap settings loaded", {
+            elapsedMs: elapsedMs(settingsStartedAt),
+            repositories: loadedConfig.localWorkspace.repositories.length,
+          }),
+        ),
         Effect.catch((error) =>
           Effect.sync(() => {
             setStatus({
@@ -557,7 +668,26 @@ export const RepositoryBootstrapLive = Layer.effect(
         message: "Opening repository projections",
         phase: "loading-repositories",
       });
-      const repositories = yield* resolveConfiguredRepositories(config.localWorkspace.repositories);
+      const resolveStartedAt = performance.now();
+      yield* info("bootstrap resolving configured repositories", {
+        repositories: config.localWorkspace.repositories.length,
+      });
+      const repositories = yield* resolveConfiguredRepositories(
+        config.localWorkspace.repositories,
+      ).pipe(
+        Effect.withSpan("backend.bootstrap.resolveConfiguredRepositories", {
+          attributes: {
+            "backend.repository.count": config.localWorkspace.repositories.length,
+            service: "@cycle/backend",
+          },
+        }),
+        Effect.tap((resolved) =>
+          info("bootstrap configured repositories resolved", {
+            elapsedMs: elapsedMs(resolveStartedAt),
+            repositories: resolved.length,
+          }),
+        ),
+      );
 
       for (const repository of repositories) {
         setRepositoryStatus(repository, {
@@ -565,7 +695,22 @@ export const RepositoryBootstrapLive = Layer.effect(
         });
       }
 
-      yield* openConfiguredRepositories(repositories);
+      const openStartedAt = performance.now();
+      yield* openConfiguredRepositories(repositories).pipe(
+        Effect.withSpan("backend.bootstrap.openConfiguredRepositories", {
+          attributes: {
+            "backend.repository.count": repositories.length,
+            service: "@cycle/backend",
+          },
+        }),
+        Effect.tap(() =>
+          info("bootstrap configured repositories opened", {
+            elapsedMs: elapsedMs(openStartedAt),
+            repositories: repositories.length,
+            ...summarizeRepositoryStatuses(repositoryStatuses.values()),
+          }),
+        ),
+      );
 
       setStatus({
         blocking: false,
@@ -579,6 +724,7 @@ export const RepositoryBootstrapLive = Layer.effect(
       yield* info("bootstrap local open phase completed", {
         openedRepositories: [...opened.keys()],
         repositories: repositories.length,
+        totalElapsedMs: elapsedMs(bootstrapStartedAt),
       });
 
       yield* runBackgroundSyncLoop.pipe(Effect.forkScoped);

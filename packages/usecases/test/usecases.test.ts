@@ -1,5 +1,14 @@
-import { DatabaseService, type DatabaseServiceShape, type TicketDocument } from "@cycle/database";
-import { GitDbInMemory, Store as GitDbStore } from "@cycle/git-db";
+import {
+  DatabaseService,
+  makeGitRepositoryStoreEffect,
+  type DatabaseServiceShape,
+  type TicketDocument,
+} from "@cycle/database";
+import { withTestIdentity } from "@cycle/git-store/testing";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { Effect, Layer, Result } from "effect";
 import type { Span } from "effect/Tracer";
 import {
@@ -48,12 +57,21 @@ const withOpenRepository = <A, E>(
 ): Effect.Effect<A, unknown, never> =>
   Effect.gen(function* () {
     const database = yield* DatabaseService;
-    const store = yield* GitDbStore.StoreService.pipe(
-      Effect.provide(
-        GitDbInMemory({
-          database: "cycle-usecases",
-        }),
-      ),
+    const cwd = yield* Effect.sync(() => {
+      const directory = mkdtempSync(path.join(tmpdir(), "cycle-usecases-test-"));
+
+      execFileSync("git", ["init", "--initial-branch=main"], {
+        cwd: directory,
+        stdio: "ignore",
+      });
+
+      return directory;
+    });
+    const store = yield* makeGitRepositoryStoreEffect(
+      withTestIdentity({
+        cwd,
+        database: "cycle-usecases",
+      }),
     );
 
     yield* database.openRepository({

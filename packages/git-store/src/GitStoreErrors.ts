@@ -218,6 +218,29 @@ export class RepositoryIdentityConflictError extends Schema.TaggedErrorClass<Rep
   roots: Schema.Array(Schema.String),
 }) {}
 
+export class GitRemoteError extends Schema.TaggedErrorClass<GitRemoteError>(
+  "@cycle/git-store/GitRemoteError",
+)("GitRemoteError", {
+  cause: Cause,
+  message: Schema.String,
+  operation: Schema.String,
+  ref: Schema.String,
+  remote: Schema.String,
+  status: Schema.optional(Schema.Number),
+  stderr: Schema.optional(Schema.String),
+  stdout: Schema.optional(Schema.String),
+}) {}
+
+export class GitSyncConflictError extends Schema.TaggedErrorClass<GitSyncConflictError>(
+  "@cycle/git-store/GitSyncConflictError",
+)("GitSyncConflictError", {
+  local: Schema.NullOr(Schema.String),
+  mergeBase: Schema.optional(Schema.String),
+  message: Schema.String,
+  ref: Schema.String,
+  remote: Schema.NullOr(Schema.String),
+}) {}
+
 export class FilesystemProtocolError extends Schema.TaggedErrorClass<FilesystemProtocolError>(
   "@cycle/git-store/FilesystemProtocolError",
 )("FilesystemProtocolError", {
@@ -257,6 +280,8 @@ export type GitStoreError =
   | EventAppendConflictError
   | MissingCommitIdentityError
   | RepositoryIdentityConflictError
+  | GitRemoteError
+  | GitSyncConflictError
   | FilesystemProtocolError;
 
 export const causeMessage = (cause: unknown): string =>

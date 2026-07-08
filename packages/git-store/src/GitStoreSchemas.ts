@@ -1,5 +1,9 @@
 import { Schema } from "effect";
-import { objectIdPattern, safeSegmentPattern } from "./internal/patterns.ts";
+import {
+  objectIdPattern,
+  safeSegmentPattern,
+  storePathSegmentPattern,
+} from "./internal/patterns.ts";
 import { splitPath } from "./internal/strings.ts";
 
 const filter = (expected: string, predicate: (value: string) => boolean) =>
@@ -39,11 +43,38 @@ export const isSafeSegment = (value: string): boolean =>
   !hasAsciiControlOrSpace(value) &&
   !hasRefForbiddenCharacter(value);
 
+const isValidRefSegment = (value: string): boolean =>
+  value !== "" &&
+  value !== "." &&
+  value !== ".." &&
+  !value.startsWith(".") &&
+  !value.endsWith(".lock") &&
+  !value.includes("/") &&
+  !value.includes("\\") &&
+  !value.includes("\0") &&
+  !value.includes("@{") &&
+  !hasAsciiControlOrSpace(value) &&
+  !hasRefForbiddenCharacter(value);
+
+const isValidStoreSegment = (value: string): boolean =>
+  storePathSegmentPattern.test(value) &&
+  value !== "." &&
+  value !== ".." &&
+  !value.startsWith(".") &&
+  !value.endsWith(".") &&
+  !value.endsWith(".lock") &&
+  !value.includes("/") &&
+  !value.includes("\\") &&
+  !value.includes("\0") &&
+  !value.includes("@{") &&
+  !hasAsciiControlOrSpace(value) &&
+  !hasRefForbiddenCharacter(value);
+
 export const isValidStorePath = (value: string): boolean =>
   value === "" ||
   (!value.includes("\\") &&
     !value.includes("\0") &&
-    splitPath(value).every((segment) => isSafeSegment(segment)));
+    splitPath(value).every((segment) => isValidStoreSegment(segment)));
 
 export const isValidRefName = (value: string): boolean => {
   if (
@@ -61,7 +92,7 @@ export const isValidRefName = (value: string): boolean => {
     return false;
   }
 
-  return splitPath(value).every(isSafeSegment);
+  return splitPath(value).every(isValidRefSegment);
 };
 
 export const ObjectId = Schema.String.check(

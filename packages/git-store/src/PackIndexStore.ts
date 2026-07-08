@@ -23,6 +23,17 @@ export type PackLocation = {
   readonly packPath: string;
 };
 
+type PackIndexEntry = {
+  readonly entry: string;
+  readonly index: ParsedPackIndex;
+  readonly packPath: string;
+};
+
+type PackDirectoryKey = {
+  readonly entries: ReadonlyArray<string>;
+  readonly packDirectory: string;
+};
+
 export type PackIndexStoreShape = {
   readonly findPackedObject: (id: ObjectId) => Effect.Effect<PackLocation | null, GitStoreError>;
   readonly readPackIndex: (indexPath: string) => Effect.Effect<ParsedPackIndex, GitStoreError>;
@@ -59,6 +70,28 @@ export const PackIndexStoreLive = Layer.effect(
       return yield* Cache.get(indexCache, indexPath);
     });
 
+    const directoryCache = yield* Cache.make<string, ReadonlyArray<PackIndexEntry>, GitStoreError>({
+      capacity: 8,
+      lookup: (key) => {
+        const decoded = decodePackDirectoryKey(key);
+
+        return Effect.forEach(decoded.entries, (entry) => {
+          const indexPath = path.join(decoded.packDirectory, entry);
+
+          return readPackIndex(indexPath).pipe(
+            Effect.map((index) => ({
+              entry,
+              index,
+              packPath: path.join(
+                decoded.packDirectory,
+                `${entry.slice(0, -".idx".length)}.pack`,
+              ),
+            })),
+          );
+        });
+      },
+    });
+
     const findPackedObject = Effect.fn("PackIndexStore.findPackedObject")(function* (id: ObjectId) {
       const packDirectory = path.join(runtime.config.commonGitDir, "objects", "pack");
       const exists = yield* fs
@@ -67,7 +100,7 @@ export const PackIndexStoreLive = Layer.effect(
 
       if (!exists) return null;
 
-      const entries = yield* fs.readDirectory(packDirectory).pipe(
+      const entries = (yield* fs.readDirectory(packDirectory).pipe(
         Effect.mapError(
           (cause) =>
             new FilesystemProtocolError({
@@ -77,17 +110,24 @@ export const PackIndexStoreLive = Layer.effect(
               path: packDirectory,
             }),
         ),
+      ))
+        .filter((name) => name.endsWith(".idx"))
+        .sort();
+
+      if (entries.length === 0) return null;
+
+      const indexes = yield* Cache.get(
+        directoryCache,
+        encodePackDirectoryKey({ entries, packDirectory }),
       );
 
-      for (const entry of entries.filter((name) => name.endsWith(".idx")).sort()) {
-        const indexPath = path.join(packDirectory, entry);
-        const index = yield* readPackIndex(indexPath);
+      for (const { index, packPath } of indexes) {
         const objectOffset = yield* lookupIndexOffset(index, id);
 
         if (objectOffset !== null) {
           return {
             objectOffset,
-            packPath: path.join(packDirectory, `${entry.slice(0, -".idx".length)}.pack`),
+            packPath,
           };
         }
       }
@@ -153,6 +193,11 @@ const parsePackIndex = (
       offsetsOffset,
     };
   });
+
+const encodePackDirectoryKey = (key: PackDirectoryKey): string => JSON.stringify(key);
+
+const decodePackDirectoryKey = (key: string): PackDirectoryKey =>
+  JSON.parse(key) as PackDirectoryKey;
 
 const lookupIndexOffset = (
   index: ParsedPackIndex,

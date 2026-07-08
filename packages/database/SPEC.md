@@ -46,7 +46,7 @@ history, sync, and offline collaboration keep the same durability model.
 2. Replace `@cycle/ticket-db` as the Cycle ticket domain and repository read/write package.
 3. Maintain one app-wide in-memory SQLite database containing projections for multiple
    repositories.
-4. Use `@cycle/git-db` as the durable source of truth for repository ticket data.
+4. Use `@cycle/git-store` as the durable source of truth for repository ticket data.
 5. Watch and materialize the GitDB ref `refs/gitdb/cycle/main` for each opened repository.
 6. Serve read queries from the latest fully materialized SQLite snapshot for each repository.
 7. Continue serving the previous fully materialized snapshot while background resync is running.
@@ -71,7 +71,7 @@ history, sync, and offline collaboration keep the same durability model.
 4. Implement a hosted multi-tenant database service.
 5. Require network access for local reads, writes, or search.
 6. Automatically merge divergent GitDB histories.
-7. Replace `@cycle/git-db` object, tree, commit, ref, fetch, or push responsibilities.
+7. Replace `@cycle/git-store` object, tree, commit, ref, fetch, or push responsibilities.
 8. Materialize draft sessions into the primary committed-ticket read model before drafts are
    committed.
 9. Guarantee that invalid third-party or manually edited GitDB objects appear in query results.
@@ -83,7 +83,7 @@ history, sync, and offline collaboration keep the same durability model.
 Cycle storage layers are:
 
 ```text
-Level 1: @cycle/git-db
+Level 1: @cycle/git-store
   Git-backed documents, collections, snapshots, refs, history, diffs, fetch, push
 
 Level 2: @cycle/database
@@ -99,7 +99,7 @@ Level 3+: adapters and applications
 
 - Repository registry: tracks opened repositories, their GitDB store configuration, active
   materialized snapshot, sync status, and warning counts.
-- GitDB source adapter: reads and writes repository data through `@cycle/git-db`.
+- GitDB source adapter: reads and writes repository data through `@cycle/git-store`.
 - SQLite runtime: owns one app-wide in-memory SQLite database and schema migrations.
 - Projector: converts GitDB snapshots and diffs into relational tables.
 - Sync scheduler: polls `refs/gitdb/cycle/main`, serializes per-repository sync work, and applies
@@ -114,7 +114,7 @@ Level 3+: adapters and applications
 Core runtime dependencies are:
 
 - `effect` for services, layers, schemas, concurrency, logging, clocks, and tests.
-- `@cycle/git-db` for durable Git-backed storage.
+- `@cycle/git-store` for durable Git-backed storage.
 - Effect SQLite, specifically the Node SQLite Effect SQL package used by the application runtime.
 - A caller-provided identity capability for authorship and provenance.
 - A caller-provided ID generator for distributed-safe ticket, draft, record, and execution IDs.

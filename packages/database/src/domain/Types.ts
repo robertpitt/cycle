@@ -305,7 +305,7 @@ export type RepositoryInput = {
   readonly gitDir?: string;
   readonly metadata?: RepositoryMetadata;
   readonly repositoryId: string;
-  readonly store: import("@cycle/git-db").Store.StoreServiceShape;
+  readonly store: import("../store/RepositoryStore.ts").RepositoryStoreShape;
   readonly syncOnOpen?: boolean;
   readonly worktreePath?: string;
 };

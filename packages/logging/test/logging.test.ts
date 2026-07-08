@@ -73,8 +73,8 @@ describe("@cycle/logging", () => {
   });
 
   it("normalizes package service names for OTLP resources", () => {
-    expect(normalizePackageName("@cycle/git-db")).toBe("git-db");
-    expect(normalizePackageName("cycle.git_db")).toBe("git-db");
+    expect(normalizePackageName("@cycle/git-store")).toBe("git-store");
+    expect(normalizePackageName("cycle.git_store")).toBe("git-store");
     expect(normalizeService("api")).toBe("@cycle/api");
     expect(normalizeService("@cycle/usecases")).toBe("@cycle/usecases");
 

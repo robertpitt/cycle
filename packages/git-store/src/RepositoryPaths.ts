@@ -43,9 +43,8 @@ export const RepositoryPathsLive = Layer.effect(
 
     const readFirstLine = (target: string) => fs.readFileString(target).pipe(Effect.map(firstLine));
 
-    const resolveGitDirFile = Effect.fn("RepositoryPaths.resolveGitDirFile")(function* (
-      gitFile: string,
-    ) {
+    const resolveGitDirFile = (gitFile: string): Effect.Effect<string, GitStoreError> =>
+      Effect.gen(function* () {
       const line = yield* readFirstLine(gitFile).pipe(
         Effect.mapError(
           () =>
@@ -71,9 +70,8 @@ export const RepositoryPathsLive = Layer.effect(
         : path.resolve(path.dirname(gitFile), value);
     });
 
-    const readCommonGitDir = Effect.fn("RepositoryPaths.readCommonGitDir")(function* (
-      gitDir: string,
-    ) {
+    const readCommonGitDir = (gitDir: string): Effect.Effect<string, GitStoreError> =>
+      Effect.gen(function* () {
       const commonDirFile = path.join(gitDir, "commondir");
       const exists = yield* fileExists(commonDirFile);
 
@@ -100,9 +98,8 @@ export const RepositoryPathsLive = Layer.effect(
       return path.isAbsolute(value) ? path.resolve(value) : path.resolve(gitDir, value);
     });
 
-    const readObjectFormat = Effect.fn("RepositoryPaths.readObjectFormat")(function* (
-      commonGitDir: string,
-    ) {
+    const readObjectFormat = (commonGitDir: string): Effect.Effect<string, GitStoreError> =>
+      Effect.gen(function* () {
       const configPath = path.join(commonGitDir, "config");
       const exists = yield* fileExists(configPath);
 
@@ -127,9 +124,10 @@ export const RepositoryPathsLive = Layer.effect(
       return "sha1";
     });
 
-    const resolve = Effect.fn("RepositoryPaths.resolve")(function* (
+    const resolve = (
       options: GitStoreOpenOptions = {},
-    ) {
+    ): Effect.Effect<ResolvedRepository, GitStoreError> =>
+      Effect.gen(function* () {
       const cwd = path.resolve(options.cwd ?? ".");
       const initialGitDir = path.resolve(cwd, options.gitDir ?? ".git");
       const verify = options.verifyGitDir ?? true;

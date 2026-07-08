@@ -4,8 +4,10 @@ import {
   defaultRepositoryPreferences,
   type RepositoryRecord as RepositoryRecordType,
 } from "@cycle/contracts/schemas/app";
+import { makeGitRepositoryStoreEffect } from "@cycle/database";
 import { GitRepository, type GitRepositoryServiceShape } from "@cycle/git";
-import { GitDb, Store as GitDbStore } from "@cycle/git-db";
+import { GitStores } from "@cycle/git-store";
+import { logDebug, logInfo } from "@cycle/logging";
 import { Context, Effect, Layer, Path, Schema } from "effect";
 
 export const UpsertRepositoryPathInput = Schema.Struct({
@@ -69,6 +71,20 @@ export class LocalWorkspace extends Context.Service<LocalWorkspace, LocalWorkspa
   "@cycle/backend/LocalWorkspace",
 ) {}
 
+const elapsedMs = (startedAt: number): number => Number((performance.now() - startedAt).toFixed(2));
+
+const workspaceLogFields = (fields: Readonly<Record<string, unknown>> = {}) => ({
+  ...fields,
+  component: "workspace",
+  service: "backend",
+});
+
+const info = (message: string, fields?: Readonly<Record<string, unknown>>) =>
+  logInfo("backend", message, workspaceLogFields(fields));
+
+const debug = (message: string, fields?: Readonly<Record<string, unknown>>) =>
+  logDebug("backend", message, workspaceLogFields(fields));
+
 const ensureGitRepository = (gitRepository: GitRepositoryServiceShape, repositoryPath: string) =>
   gitRepository.ensure(repositoryPath).pipe(
     Effect.mapError(
@@ -101,24 +117,101 @@ export const LocalWorkspaceLive = Layer.effect(
   Effect.gen(function* () {
     const appConfig = yield* AppConfig;
     const gitRepository = yield* GitRepository;
+    const gitStores = yield* GitStores;
     const path = yield* Path.Path;
 
     const repositoryIdentity = (repositoryPath: string) =>
       Effect.gen(function* () {
-        const metadata = yield* gitRepository.metadata(repositoryPath);
-        const store = yield* GitDbStore.StoreService.pipe(
-          Effect.provide(
-            GitDb.GitDbLive({
-              cwd: repositoryPath,
-              database: "cycle",
-              gitDir: metadata.gitDir,
-            }),
-          ),
+        const startedAt = performance.now();
+        const metadataStartedAt = performance.now();
+        const metadata = yield* gitRepository.metadata(repositoryPath).pipe(
+          Effect.withSpan("backend.localWorkspace.repositoryIdentity.metadata", {
+            attributes: {
+              "backend.repository.path": repositoryPath,
+              service: "@cycle/backend",
+            },
+          }),
         );
-
-        return yield* store.ensureRepositoryIdentity({
-          remote: metadata.defaultRemote,
+        yield* debug("local workspace repository metadata inspected", {
+          elapsedMs: elapsedMs(metadataStartedAt),
+          gitDir: metadata.gitDir,
+          path: repositoryPath,
         });
+
+        const storeStartedAt = performance.now();
+        const store = yield* makeGitRepositoryStoreEffect({
+          cwd: repositoryPath,
+          database: "cycle",
+          gitDir: metadata.gitDir,
+        }).pipe(
+          Effect.provideService(GitStores, GitStores.of(gitStores)),
+          Effect.withSpan("backend.localWorkspace.repositoryIdentity.store", {
+            attributes: {
+              "backend.repository.gitDir": metadata.gitDir,
+              "backend.repository.path": repositoryPath,
+              service: "@cycle/backend",
+            },
+          }),
+        );
+        yield* debug("local workspace repository identity store created", {
+          elapsedMs: elapsedMs(storeStartedAt),
+          gitDir: metadata.gitDir,
+          path: repositoryPath,
+        });
+
+        const localIdentityStartedAt = performance.now();
+        const localIdentity = yield* store.resolveIdentity().pipe(
+          Effect.withSpan("backend.localWorkspace.repositoryIdentity.resolveIdentity", {
+            attributes: {
+              "backend.repository.gitDir": metadata.gitDir,
+              "backend.repository.path": repositoryPath,
+              service: "@cycle/backend",
+            },
+          }),
+        );
+        const resolveIdentityMs = elapsedMs(localIdentityStartedAt);
+        if (localIdentity !== null) {
+          yield* info("local workspace repository identity resolved", {
+            elapsedMs: elapsedMs(startedAt),
+            ensureIdentityMs: 0,
+            gitDir: metadata.gitDir,
+            path: repositoryPath,
+            remote: metadata.defaultRemote ?? null,
+            repositoryId: localIdentity.repositoryId,
+            resolveIdentityMs,
+            rootCommitId: localIdentity.rootCommitId,
+            source: "local",
+          });
+          return localIdentity;
+        }
+
+        const identityStartedAt = performance.now();
+        const identity = yield* store
+          .ensureIdentity({
+            remote: metadata.defaultRemote,
+          })
+          .pipe(
+            Effect.withSpan("backend.localWorkspace.repositoryIdentity.ensureIdentity", {
+              attributes: {
+                "backend.repository.gitDir": metadata.gitDir,
+                "backend.repository.path": repositoryPath,
+                "backend.repository.remote": metadata.defaultRemote ?? "none",
+                service: "@cycle/backend",
+              },
+            }),
+          );
+        yield* info("local workspace repository identity resolved", {
+          elapsedMs: elapsedMs(startedAt),
+          ensureIdentityMs: elapsedMs(identityStartedAt),
+          gitDir: metadata.gitDir,
+          path: repositoryPath,
+          remote: metadata.defaultRemote ?? null,
+          repositoryId: identity.repositoryId,
+          resolveIdentityMs,
+          rootCommitId: identity.rootCommitId,
+          source: metadata.defaultRemote === undefined ? "created" : "remote-or-created",
+        });
+        return identity;
       }).pipe(
         Effect.mapError(
           (cause) =>
@@ -144,12 +237,56 @@ export const LocalWorkspaceLive = Layer.effect(
 
     const upsertRepositoryPath = (input: UpsertRepositoryPathInput) =>
       Effect.gen(function* () {
+        const startedAt = performance.now();
         const normalizedPath = normalizeRepositoryPath(input.path);
-        yield* ensureGitRepository(gitRepository, normalizedPath);
-        const identity = yield* repositoryIdentity(normalizedPath);
+        yield* debug("local workspace repository path upsert started", {
+          displayName: input.displayName,
+          path: normalizedPath,
+        });
+
+        const ensureStartedAt = performance.now();
+        yield* ensureGitRepository(gitRepository, normalizedPath).pipe(
+          Effect.withSpan("backend.localWorkspace.ensureGitRepository", {
+            attributes: {
+              "backend.repository.path": normalizedPath,
+              service: "@cycle/backend",
+            },
+          }),
+        );
+        yield* debug("local workspace git repository ensured", {
+          elapsedMs: elapsedMs(ensureStartedAt),
+          path: normalizedPath,
+        });
+
+        const identityStartedAt = performance.now();
+        const identity = yield* repositoryIdentity(normalizedPath).pipe(
+          Effect.withSpan("backend.localWorkspace.repositoryIdentity", {
+            attributes: {
+              "backend.repository.path": normalizedPath,
+              service: "@cycle/backend",
+            },
+          }),
+        );
+        yield* info("local workspace repository identity loaded", {
+          elapsedMs: elapsedMs(identityStartedAt),
+          path: normalizedPath,
+          repositoryId: identity.repositoryId,
+          rootCommitId: identity.rootCommitId,
+        });
         const id = identity.repositoryId;
         const now = new Date().toISOString();
-        const repositories = yield* listRepositories;
+        const listStartedAt = performance.now();
+        const repositories = yield* listRepositories.pipe(
+          Effect.withSpan("backend.localWorkspace.listRepositories", {
+            attributes: {
+              service: "@cycle/backend",
+            },
+          }),
+        );
+        yield* debug("local workspace configured repositories loaded", {
+          elapsedMs: elapsedMs(listStartedAt),
+          repositories: repositories.length,
+        });
         const collision = repositories.find(
           (repository) =>
             repository.id === id &&
@@ -191,17 +328,36 @@ export const LocalWorkspaceLive = Layer.effect(
                 path: normalizedPath,
               };
 
-        const updated = yield* appConfig.update((current) => ({
-          ...current,
-          localWorkspace: {
-            repositories:
-              existing === undefined
-                ? [...current.localWorkspace.repositories, nextRepository]
-                : current.localWorkspace.repositories.map((repository) =>
-                    repository.id === existing.id ? nextRepository : repository,
-                  ),
-          },
-        }));
+        const updateStartedAt = performance.now();
+        const updated = yield* appConfig
+          .update((current) => ({
+            ...current,
+            localWorkspace: {
+              repositories:
+                existing === undefined
+                  ? [...current.localWorkspace.repositories, nextRepository]
+                  : current.localWorkspace.repositories.map((repository) =>
+                      repository.id === existing.id ? nextRepository : repository,
+                    ),
+            },
+          }))
+          .pipe(
+            Effect.withSpan("backend.localWorkspace.updateRepositoryPath", {
+              attributes: {
+                "backend.repository.path": normalizedPath,
+                "backend.repositoryId": id,
+                service: "@cycle/backend",
+              },
+            }),
+          );
+        yield* info("local workspace repository path upserted", {
+          created: existing === undefined,
+          elapsedMs: elapsedMs(startedAt),
+          path: normalizedPath,
+          repositories: updated.localWorkspace.repositories.length,
+          repositoryId: id,
+          updateMs: elapsedMs(updateStartedAt),
+        });
 
         return (
           updated.localWorkspace.repositories.find((repository) => repository.id === id) ??

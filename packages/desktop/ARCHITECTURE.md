@@ -53,7 +53,7 @@ flowchart TD
   Http["Local HTTP API"]
   Ipc["ipcMain handlers"]
   Services["Effect services"]
-  Domain["Use cases, database, GitDB"]
+  Domain["Use cases, database, Git store"]
 
   Main --> Services
   Main --> Http
@@ -144,7 +144,7 @@ flowchart TD
   ApplicationLifecycle["ApplicationLifecycleLive"]
   ElectronServices["Electron app, runtime, theme, window, shell"]
   ApplicationServices["Config, preferences, API, database, bootstrap"]
-  ExternalServices["Git, GitDB, agents, logging, Node services"]
+  ExternalServices["Git, git-store, agents, logging, Node services"]
 
   DesktopLive --> ElectronLifecycle
   DesktopLive --> ApplicationLifecycle
@@ -215,16 +215,16 @@ tpl_  template ids
 view_ view ids
 ```
 
-### GitDB Stores
+### Git Stores
 
-Owner: `DesktopBootstrapLive`, backed by `@cycle/git-db`.
+Owner: `DesktopBootstrapLive`, backed by `@cycle/git-store` through the database store facade.
 
 Each opened repository receives:
 
-- a local filesystem GitDB store for projection reads/materialization
-- a transport GitDB store when remote pull/push is needed
+- a local filesystem git-store for projection reads/materialization
+- git-store remote orchestration when remote pull/push is needed
 
-The current GitDB database name is `cycle`, and the default pointer used for
+The current durable database name is `cycle`, and the default pointer used for
 remote sync/push is `main`.
 
 ### In-Memory State
@@ -627,7 +627,7 @@ Workspace package dependencies:
 | `@cycle/usecases`  | Named usecase definitions run by the local HTTP API.                 |
 | `@cycle/database`  | Projection database, repository status, ticket operations.           |
 | `@cycle/git`       | Git repository validation, initialization, and metadata inspection.  |
-| `@cycle/git-db`    | GitDB local and transport stores, remote sync/push result types.     |
+| `@cycle/git-store` | Git-backed document/event storage and remote sync/push orchestration. |
 
 Third-party runtime dependencies:
 

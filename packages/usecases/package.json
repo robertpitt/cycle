@@ -18,8 +18,8 @@
     "@cycle/agents": "workspace:*",
     "@cycle/contracts": "workspace:*",
     "@cycle/database": "workspace:*",
-    "@cycle/git-db": "workspace:*",
-    "effect": "4.0.0-beta.78"
+    "effect": "4.0.0-beta.78",
+    "@cycle/git-store": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^4.1.8"

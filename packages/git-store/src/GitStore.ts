@@ -23,6 +23,7 @@ import {
 } from "./GitStoreSchemas.ts";
 import { Document, encodeDocumentInput, makeDocument, type DocumentInput } from "./Document.ts";
 import { CommitWriter } from "./CommitWriter.ts";
+import { GitStoreChanges } from "./GitStoreChanges.ts";
 import { ObjectCodec } from "./ObjectCodec.ts";
 import { ObjectStore } from "./ObjectStore.ts";
 import { RefReader } from "./RefReader.ts";
@@ -119,6 +120,7 @@ export const GitStoreLive = Layer.effect(
     const objects = yield* ObjectStore;
     const codec = yield* ObjectCodec;
     const commits = yield* CommitWriter;
+    const changes = yield* GitStoreChanges;
     const refs = yield* RefReader;
     const refTx = yield* RefTransaction;
 
@@ -546,6 +548,7 @@ export const GitStoreLive = Layer.effect(
         });
 
         yield* refTx.update(ref, commitId, { expected });
+        yield* changes.poll({ ref, source: "local" });
 
         return yield* snapshot(commitId);
       }).pipe(

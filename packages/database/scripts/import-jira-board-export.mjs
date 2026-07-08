@@ -4,7 +4,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
-import { Event as GitDbEvent, GitDbFilesystem, Store as GitDbStore } from "@cycle/git-db";
+import { GitStoresLive, RepositoryPathsLive } from "@cycle/git-store";
+import { NodeServices } from "@effect/platform-node";
 import { Effect, Layer } from "effect";
 import {
   CURRENT_SCHEMA_VERSION,
@@ -12,6 +13,7 @@ import {
   DatabaseIdentityTest,
   DatabaseLiveWithOptions,
   DatabaseService,
+  makeGitRepositoryStoreEffect,
   makeFrontmatter,
   makeTicketDocument,
   normalizeKey,
@@ -23,6 +25,14 @@ const defaultCsv = path.join(defaultRepoRoot, "jira-board-export.csv");
 const jiraKeyPattern = /^([A-Z0-9]{2,5})-([0-9A-Z]+)$/u;
 
 const config = parseArgs(process.argv.slice(2));
+const GitStoresScriptLive = GitStoresLive.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      NodeServices.layer,
+      RepositoryPathsLive.pipe(Layer.provide(NodeServices.layer)),
+    ),
+  ),
+);
 
 if (config.help) {
   printHelp();
@@ -59,7 +69,12 @@ function importJiraBoardExport(options) {
       syncOnly: options.syncOnly,
     });
 
-    const store = yield* GitDbStore.StoreService;
+    const store = yield* makeGitRepositoryStoreEffect({
+      cwd: options.repoRoot,
+      database: options.database,
+      defaultPointer: options.pointer,
+      gitDir: options.gitDir,
+    });
 
     if (options.syncOnly) {
       const beforeSnapshot = yield* store.currentSnapshotForPointer(options.pointer);
@@ -154,63 +169,65 @@ function importJiraBoardExport(options) {
       let batchLabelsWritten = 0;
       let batchRecordsWritten = 0;
       let batchTicketsWritten = 0;
-      const tx = yield* store.begin(options.pointer);
-
-      if (batchStart === 0) {
-        for (const label of labels) {
-          yield* GitDbEvent.append(tx, {
-            aggregateId: label.id,
-            aggregateType: "label",
-            eventId: eventId(options.eventSuffix, "label", label.id),
-            payload: {
-              op: "label.upsert",
-              value: label,
-            },
-          });
-          labelsWritten += 1;
-          batchLabelsWritten += 1;
-        }
-      }
-
-      for (const ticket of tickets.slice(batchStart, batchEnd)) {
-        yield* GitDbEvent.append(tx, {
-          aggregateId: ticket.id,
-          aggregateType: "ticket",
-          eventId: eventId(options.eventSuffix, "ticket-create"),
-          payload: {
-            op: "ticket.create",
-            value: ticket,
-          },
-        });
-        ticketsWritten += 1;
-        batchTicketsWritten += 1;
-
-        for (const record of recordsForTicket(ticket, importActor, importedAt)) {
-          yield* GitDbEvent.append(tx, {
-            aggregateId: record.id,
-            aggregateType: "record",
-            eventId: eventId(options.eventSuffix, "record-add"),
-            payload: {
-              op: "record.add",
-              value: record,
-            },
-          });
-          recordsWritten += 1;
-          batchRecordsWritten += 1;
-        }
-      }
 
       const appendMs = elapsedMs(batchStartedAt);
       const commitStartedAt = performance.now();
-      const snapshot = yield* tx.commit({
+      const result = yield* store.transaction({
         author: importActor,
         committer: importActor,
         message: `Import Jira board tickets ${batchStart + 1}-${batchEnd}`,
-      });
+        pointer: options.pointer,
+      }, (tx) =>
+        Effect.gen(function* () {
+          if (batchStart === 0) {
+            for (const label of labels) {
+              yield* store.appendEvent(tx, {
+                aggregateId: label.id,
+                aggregateType: "label",
+                eventId: eventId(options.eventSuffix, "label", label.id),
+                payload: {
+                  op: "label.upsert",
+                  value: label,
+                },
+              });
+              labelsWritten += 1;
+              batchLabelsWritten += 1;
+            }
+          }
+
+          for (const ticket of tickets.slice(batchStart, batchEnd)) {
+            yield* store.appendEvent(tx, {
+              aggregateId: ticket.id,
+              aggregateType: "ticket",
+              eventId: eventId(options.eventSuffix, "ticket-create"),
+              payload: {
+                op: "ticket.create",
+                value: ticket,
+              },
+            });
+            ticketsWritten += 1;
+            batchTicketsWritten += 1;
+
+            for (const record of recordsForTicket(ticket, importActor, importedAt)) {
+              yield* store.appendEvent(tx, {
+                aggregateId: record.id,
+                aggregateType: "record",
+                eventId: eventId(options.eventSuffix, "record-add"),
+                payload: {
+                  op: "record.add",
+                  value: record,
+                },
+              });
+              recordsWritten += 1;
+              batchRecordsWritten += 1;
+            }
+          }
+        }),
+      );
 
       commitsWritten += 1;
       console.log(
-        `Committed batch ${commitsWritten}: tickets ${batchStart + 1}-${batchEnd} -> ${snapshot.id.slice(0, 12)} (append ${appendMs}ms, commit ${elapsedMs(commitStartedAt)}ms, total ${elapsedMs(batchStartedAt)}ms, labels ${batchLabelsWritten}, tickets ${batchTicketsWritten}, records ${batchRecordsWritten})`,
+        `Committed batch ${commitsWritten}: tickets ${batchStart + 1}-${batchEnd} -> ${result.snapshot.id.slice(0, 12)} (append ${appendMs}ms, commit ${elapsedMs(commitStartedAt)}ms, total ${elapsedMs(batchStartedAt)}ms, labels ${batchLabelsWritten}, tickets ${batchTicketsWritten}, records ${batchRecordsWritten})`,
       );
     }
 
@@ -242,17 +259,7 @@ function importJiraBoardExport(options) {
         2,
       ),
     );
-  }).pipe(
-    Effect.provide(databaseLayer),
-    Effect.provide(
-      GitDbFilesystem({
-        cwd: options.repoRoot,
-        database: options.database,
-        defaultPointer: options.pointer,
-        gitDir: options.gitDir,
-      }),
-    ),
-  );
+  }).pipe(Effect.provide(Layer.mergeAll(databaseLayer, GitStoresScriptLive)));
 }
 
 function syncProjection(store, options) {

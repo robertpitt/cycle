@@ -360,10 +360,6 @@ export const normalizePackageName = (value: string): string => {
     .replace(/^-|-$/gu, "");
 
   switch (normalized) {
-    case "gitdb":
-      return "git-db";
-    case "git-db":
-      return "git-db";
     case "":
       return DEFAULT_PACKAGE_NAME;
     default:

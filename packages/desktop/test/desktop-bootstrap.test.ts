@@ -12,6 +12,7 @@ import {
 import type { RepositoryStatus } from "@cycle/contracts/schemas";
 import { GitRepository } from "@cycle/git";
 import { Data, Effect, Layer } from "effect";
+import { GitStoresTestLive } from "@cycle/git-store/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { ElectronRuntimeLive } from "../src/ElectronRuntime.ts";
 import { defaultAppConfig, type RepositoryRecord } from "@cycle/contracts/schemas/app";
@@ -392,7 +393,15 @@ const makeLayer = (
 
   return DesktopBootstrapLive.pipe(
     Layer.provide(
-      Layer.mergeAll(ElectronRuntimeLive, preferences, database, git, localWorkspace, logger),
+      Layer.mergeAll(
+        ElectronRuntimeLive,
+        preferences,
+        database,
+        git,
+        GitStoresTestLive,
+        localWorkspace,
+        logger,
+      ),
     ),
   );
 };
@@ -451,6 +460,19 @@ describe("DesktopBootstrapLive", () => {
           yield* waitUntil(
             () => events.filter((event) => event === `syncRepository:${repository.id}`).length >= 2,
             "background publish did not run",
+          );
+          yield* waitUntilEffect(
+            () =>
+              bootstrap.status.pipe(
+                Effect.map((snapshot) => {
+                  const status = snapshot.repositories.find(
+                    (candidate) => candidate.repositoryId === repository.id,
+                  );
+
+                  return status?.stage === "ready";
+                }),
+              ),
+            "background publish did not finish",
           );
         }),
       ).pipe(Effect.provide(makeLayer(repository, events, { defaultRemote: "origin" }))),

@@ -8,5 +8,7 @@ export const leadingSlashesPattern = /^\/+/u;
 export const lineEndingPattern = /\r?\n/u;
 export const objectIdPattern = /^[0-9a-f]{40}$/u;
 export const safeSegmentPattern = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;
+export const storePathSegmentPattern = /^[A-Za-z0-9_][A-Za-z0-9._@+-]*$/u;
 export const trailingNewlinePattern = /\n$/u;
 export const trailingSlashesPattern = /\/+$/u;
+export const whitespacePattern = /\s+/u;

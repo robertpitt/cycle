@@ -95,7 +95,7 @@ concerns to entrypoints.
    definitions currently owned by `@cycle/api`.
 4. Own domain workflow policy already owned by `@cycle/usecases`.
 5. Own durable ticket, projection, GitDB, or Git primitives already owned by `@cycle/database`,
-   `@cycle/git-db`, and `@cycle/git`.
+   `@cycle/git-store`, and `@cycle/git`.
 6. Make stdio MCP start a second backend implicitly.
 7. Introduce hosted, remote, or multi-tenant backend behavior.
 8. Preserve deprecated desktop-owned backend APIs as long-term public contracts. Breaking changes
@@ -111,7 +111,7 @@ The target package graph is:
 @cycle/contracts
 @cycle/config
 @cycle/git
-@cycle/git-db
+@cycle/git-store
 @cycle/database
 @cycle/usecases
 @cycle/agents
@@ -129,7 +129,7 @@ The target package graph is:
 Dependency rules:
 
 - `@cycle/backend` MAY depend on `@cycle/api`, `@cycle/config`, `@cycle/database`, `@cycle/git`,
-  `@cycle/git-db`, `@cycle/usecases`, `@cycle/agents`, `@cycle/agent-chat`, `@cycle/logging`,
+  `@cycle/git-store`, `@cycle/usecases`, `@cycle/agents`, `@cycle/agent-chat`, `@cycle/logging`,
   `@cycle/sqlite`, `effect`, and `@effect/platform-node` types or services.
 - `@cycle/backend` MUST NOT depend on `@cycle/desktop`, `@cycle/ui`, Electron, React, or CLI command
   modules.
@@ -184,7 +184,7 @@ runtime contract MUST remain composable with caller-provided global layers.
 
 ### 7.1 Source Layout and File Naming
 
-`@cycle/backend` source layout MUST follow the `@cycle/git` and `@cycle/git-db` package convention:
+`@cycle/backend` source layout MUST follow the `@cycle/git` and `@cycle/git-store` package convention:
 most implementation files live directly under `src/`, files are named after the service or public
 boundary they export, and a service file owns its service contract plus live and test layers when
 those layers are available.

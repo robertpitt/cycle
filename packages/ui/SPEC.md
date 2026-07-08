@@ -368,7 +368,7 @@ Production source files in `@cycle/ui` MUST NOT import:
 - `@cycle/database`
 - `@cycle/desktop`
 - `@cycle/git`
-- `@cycle/git-db`
+- `@cycle/git-store`
 - `@cycle/usecases`
 - `@cycle/api`
 - `@tanstack/react-query`
