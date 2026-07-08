@@ -1,10 +1,14 @@
 import {
   CodexAppServerSchemaDecodeError,
   CodexAppServerSchemaEncodeError,
-} from "./errors/index.ts";
+} from "./CodexAppServerErrors.ts";
 import type {
+  ClientNotification as GeneratedClientNotification,
+  ClientRequest as GeneratedClientRequest,
   InitializeParams as GeneratedInitializeParams,
   InitializeResponse as GeneratedInitializeResponse,
+  ServerNotification as GeneratedServerNotification,
+  ServerRequest as GeneratedServerRequest,
 } from "./_generated/index.ts";
 import type { JsonValue as GeneratedJsonValue } from "./_generated/serde_json/JsonValue.ts";
 import type {
@@ -56,19 +60,77 @@ import type {
   UserInput as GeneratedUserInput,
   WarningNotification as GeneratedWarningNotification,
 } from "./_generated/v2/index.ts";
-import type {
-  ClientNotificationMethod,
-  ClientRequestMethod,
-  ClientRequestParamsByMethod,
-  ClientRequestResponsesByMethod,
-  ServerNotificationMethod,
-  ServerNotificationParamsByMethod,
-  ServerRequestMethod,
-  ServerRequestParamsByMethod,
-  ServerRequestResponsesByMethod,
-} from "./rpc.ts";
 
 type WithUnknownFields<T> = T & { readonly [key: string]: unknown };
+type MethodMember<U extends { readonly method: string }, M extends U["method"]> = Extract<
+  U,
+  { readonly method: M }
+>;
+type ParamsFor<U extends { readonly method: string }, M extends U["method"]> =
+  MethodMember<U, M> extends { readonly params: infer Params } ? Params : undefined;
+
+export type ClientRequestMethod = GeneratedClientRequest["method"];
+export type ClientNotificationMethod = GeneratedClientNotification["method"];
+export type ServerRequestMethod = GeneratedServerRequest["method"];
+export type ServerNotificationMethod = GeneratedServerNotification["method"];
+
+type KnownClientRequestParamsByMethod = {
+  readonly initialize: InitializeParams;
+  readonly "thread/start": ThreadStartParams;
+  readonly "thread/resume": ThreadResumeParams;
+  readonly "config/mcpServer/reload": undefined;
+  readonly "mcpServerStatus/list": ListMcpServerStatusParams;
+  readonly "model/list": ModelListParams;
+  readonly "turn/start": TurnStartParams;
+  readonly "turn/interrupt": TurnInterruptParams;
+};
+
+type KnownServerRequestParamsByMethod = {
+  readonly "item/commandExecution/requestApproval": CommandExecutionRequestApprovalParams;
+  readonly "item/fileChange/requestApproval": FileChangeRequestApprovalParams;
+  readonly "item/tool/requestUserInput": ToolRequestUserInputParams;
+};
+
+type KnownServerNotificationParamsByMethod = {
+  readonly error: ErrorNotification;
+  readonly "thread/started": ThreadStartedNotification;
+  readonly "turn/started": TurnStartedNotification;
+  readonly "turn/completed": TurnCompletedNotification;
+  readonly "turn/diff/updated": TurnDiffUpdatedNotification;
+  readonly "turn/plan/updated": TurnPlanUpdatedNotification;
+  readonly "item/started": ItemStartedNotification;
+  readonly "item/completed": ItemCompletedNotification;
+  readonly "item/agentMessage/delta": ItemTextDeltaNotification;
+  readonly "item/plan/delta": ItemPlanDeltaNotification;
+  readonly "item/commandExecution/outputDelta": ItemCommandExecutionOutputDeltaNotification;
+  readonly "item/fileChange/outputDelta": ItemFileChangeOutputDeltaNotification;
+  readonly "item/reasoning/summaryTextDelta": ItemReasoningTextDeltaNotification;
+  readonly "item/reasoning/textDelta": ItemReasoningTextDeltaNotification;
+  readonly "serverRequest/resolved": ServerRequestResolvedNotification;
+  readonly warning: WarningNotification;
+};
+
+export type ClientRequestParamsByMethod = {
+  readonly [M in ClientRequestMethod]: M extends keyof KnownClientRequestParamsByMethod
+    ? KnownClientRequestParamsByMethod[M]
+    : ParamsFor<GeneratedClientRequest, M>;
+};
+
+export type ClientNotificationParamsByMethod = {
+  readonly [M in ClientNotificationMethod]: ParamsFor<GeneratedClientNotification, M>;
+};
+
+export type ServerRequestParamsByMethod = {
+  readonly [M in ServerRequestMethod]: M extends keyof KnownServerRequestParamsByMethod
+    ? KnownServerRequestParamsByMethod[M]
+    : ParamsFor<GeneratedServerRequest, M>;
+};
+
+export type ServerNotificationParamsByMethod = {
+  readonly [M in ServerNotificationMethod]: M extends keyof KnownServerNotificationParamsByMethod
+    ? KnownServerNotificationParamsByMethod[M]
+    : ParamsFor<GeneratedServerNotification, M>;
+};
 
 export type JsonPrimitive = Extract<GeneratedJsonValue, string | number | boolean | null>;
 export type JsonValue = GeneratedJsonValue;
@@ -215,6 +277,35 @@ export type ToolRequestUserInputParams = Omit<GeneratedToolRequestUserInputParam
 
 export type ToolRequestUserInputResponse = GeneratedToolRequestUserInputResponse;
 
+type KnownClientRequestResponsesByMethod = {
+  readonly initialize: InitializeResponse;
+  readonly "thread/start": ThreadStartResponse;
+  readonly "thread/resume": ThreadResumeResponse;
+  readonly "config/mcpServer/reload": McpServerRefreshResponse;
+  readonly "mcpServerStatus/list": ListMcpServerStatusResponse;
+  readonly "model/list": ModelListResponse;
+  readonly "turn/start": TurnStartResponse;
+  readonly "turn/interrupt": TurnInterruptResponse;
+};
+
+type KnownServerRequestResponsesByMethod = {
+  readonly "item/commandExecution/requestApproval": CommandExecutionRequestApprovalResponse;
+  readonly "item/fileChange/requestApproval": FileChangeRequestApprovalResponse;
+  readonly "item/tool/requestUserInput": ToolRequestUserInputResponse;
+};
+
+export type ClientRequestResponsesByMethod = {
+  readonly [M in ClientRequestMethod]: M extends keyof KnownClientRequestResponsesByMethod
+    ? KnownClientRequestResponsesByMethod[M]
+    : unknown;
+};
+
+export type ServerRequestResponsesByMethod = {
+  readonly [M in ServerRequestMethod]: M extends keyof KnownServerRequestResponsesByMethod
+    ? KnownServerRequestResponsesByMethod[M]
+    : unknown;
+};
+
 type Validator<T> = (value: unknown, path?: string) => T;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -244,6 +335,8 @@ const passObject = <T extends object = Record<string, unknown>>(
   value: unknown,
   path = "payload",
 ): T => readObject(value, path) as T;
+
+const passThrough: Validator<unknown> = (value) => value;
 
 const initializeParams: Validator<InitializeParams> = (value) => {
   const object = passObject(value);
@@ -470,7 +563,7 @@ const userInputResponse: Validator<ToolRequestUserInputResponse> = (value) => {
   return object;
 };
 
-const clientRequestParams = {
+const clientRequestParams: Partial<Record<ClientRequestMethod, Validator<unknown>>> = {
   initialize: initializeParams,
   "thread/start": threadStartParams,
   "thread/resume": threadResumeParams,
@@ -479,9 +572,9 @@ const clientRequestParams = {
   "model/list": modelListParams,
   "turn/start": turnStartParams,
   "turn/interrupt": turnInterruptParams,
-} satisfies Record<ClientRequestMethod, Validator<unknown>>;
+};
 
-const clientRequestResponses = {
+const clientRequestResponses: Partial<Record<ClientRequestMethod, Validator<unknown>>> = {
   initialize: initializeResponse,
   "thread/start": threadStartResponse,
   "thread/resume": threadResumeResponse,
@@ -490,21 +583,21 @@ const clientRequestResponses = {
   "model/list": modelListResponse,
   "turn/start": turnStartResponse,
   "turn/interrupt": emptyResponse,
-} satisfies Record<ClientRequestMethod, Validator<unknown>>;
+};
 
-const serverRequestParams = {
+const serverRequestParams: Partial<Record<ServerRequestMethod, Validator<unknown>>> = {
   "item/commandExecution/requestApproval": commandApprovalParams,
   "item/fileChange/requestApproval": fileApprovalParams,
   "item/tool/requestUserInput": userInputParams,
-} satisfies Record<ServerRequestMethod, Validator<unknown>>;
+};
 
-const serverRequestResponses = {
+const serverRequestResponses: Partial<Record<ServerRequestMethod, Validator<unknown>>> = {
   "item/commandExecution/requestApproval": commandApprovalResponse,
   "item/fileChange/requestApproval": fileApprovalResponse,
   "item/tool/requestUserInput": userInputResponse,
-} satisfies Record<ServerRequestMethod, Validator<unknown>>;
+};
 
-const serverNotificationParams = {
+const serverNotificationParams: Partial<Record<ServerNotificationMethod, Validator<unknown>>> = {
   error: passObject,
   "thread/started": (value: unknown) => {
     const object = passObject<ThreadStartedNotification>(value);
@@ -553,14 +646,15 @@ const serverNotificationParams = {
     return object;
   },
   warning: passObject,
-} satisfies Record<ServerNotificationMethod, Validator<unknown>>;
+};
 
 export const encodeClientRequestParams = <M extends ClientRequestMethod>(
   method: M,
   value: ClientRequestParamsByMethod[M],
 ): ClientRequestParamsByMethod[M] => {
   try {
-    return clientRequestParams[method](value) as ClientRequestParamsByMethod[M];
+    const validator = clientRequestParams[method] ?? passThrough;
+    return validator(value) as ClientRequestParamsByMethod[M];
   } catch (error) {
     throw new CodexAppServerSchemaEncodeError({
       method,
@@ -575,7 +669,8 @@ export const decodeClientRequestResponse = <M extends ClientRequestMethod>(
   value: unknown,
 ): ClientRequestResponsesByMethod[M] => {
   try {
-    return clientRequestResponses[method](value) as ClientRequestResponsesByMethod[M];
+    const validator = clientRequestResponses[method] ?? passThrough;
+    return validator(value) as ClientRequestResponsesByMethod[M];
   } catch (error) {
     throw new CodexAppServerSchemaDecodeError({
       method,
@@ -590,7 +685,8 @@ export const encodeServerRequestResponse = <M extends ServerRequestMethod>(
   value: ServerRequestResponsesByMethod[M],
 ): ServerRequestResponsesByMethod[M] => {
   try {
-    return serverRequestResponses[method](value) as ServerRequestResponsesByMethod[M];
+    const validator = serverRequestResponses[method] ?? passThrough;
+    return validator(value) as ServerRequestResponsesByMethod[M];
   } catch (error) {
     throw new CodexAppServerSchemaEncodeError({
       method,
@@ -605,7 +701,8 @@ export const decodeServerRequestParams = <M extends ServerRequestMethod>(
   value: unknown,
 ): ServerRequestParamsByMethod[M] => {
   try {
-    return serverRequestParams[method](value) as ServerRequestParamsByMethod[M];
+    const validator = serverRequestParams[method] ?? passThrough;
+    return validator(value) as ServerRequestParamsByMethod[M];
   } catch (error) {
     throw new CodexAppServerSchemaDecodeError({
       method,
@@ -620,7 +717,7 @@ export const decodeServerNotificationParams = <M extends ServerNotificationMetho
   value: unknown,
 ): ServerNotificationParamsByMethod[M] => {
   try {
-    const validator = serverNotificationParams[method] as Validator<unknown>;
+    const validator = serverNotificationParams[method] ?? passThrough;
     return validator(value) as ServerNotificationParamsByMethod[M];
   } catch (error) {
     throw new CodexAppServerSchemaDecodeError({

@@ -3,7 +3,6 @@ import type {
   AgentChatRuntimeShape,
   AgentChatStoreShape,
 } from "@cycle/agent-chat";
-import type { RepositoryInput } from "@cycle/contracts";
 import type {
   UseCaseInput,
   UseCaseMeta,
@@ -97,21 +96,9 @@ export type RuntimeDiscoveryFile = {
   readonly startedAt: string;
 };
 
-export type RepositoryOpenRequest = {
-  readonly displayName?: string;
-  readonly path?: string;
-  readonly repositoryId?: string;
-  readonly syncOnOpen?: boolean;
-};
-
 export type ApiRequestContext = {
   readonly requestId: string;
 };
-
-export type RepositoryOpenInputResolver = (
-  request: RepositoryOpenRequest,
-  context: ApiRequestContext,
-) => Promise<RepositoryInput>;
 
 export type RepositoryDirectoryEntry = {
   readonly displayName: string;
@@ -144,7 +131,6 @@ export type CycleApiOptions = {
   readonly mcp?: false | CycleApiMcpOptions;
   readonly now?: () => Date;
   readonly onUseCaseSuccess?: (event: CycleApiUseCaseSuccessEvent) => Promise<void> | void;
-  readonly repositoryOpenInput?: RepositoryOpenInputResolver;
   readonly startedAt?: Date;
   readonly staticToken: string;
   readonly useCaseLayer?: Layer.Layer<never, unknown, any>;
@@ -159,8 +145,8 @@ export type CycleApi = {
 };
 
 export type CycleApiRuntimeShape = {
-  readonly agentServices: AgentServiceRegistryShape;
-  readonly agentOrchestration: AgentOrchestrationServiceShape;
+  readonly agentServices?: AgentServiceRegistryShape;
+  readonly agentOrchestration?: AgentOrchestrationServiceShape;
   readonly agentChatEventBus?: AgentChatEventBusShape;
   readonly agentChatRuntime?: AgentChatRuntimeShape;
   readonly agentProviderProfiles: () => Promise<readonly AgentProviderProfile[]>;
@@ -174,7 +160,6 @@ export type CycleApiRuntimeShape = {
   readonly mcpUrl?: string;
   readonly now: () => Date;
   readonly onUseCaseSuccess?: (event: CycleApiUseCaseSuccessEvent) => Promise<void> | void;
-  readonly repositoryOpenInput?: RepositoryOpenInputResolver;
   readonly startedAt: string;
   readonly staticToken: string;
   readonly useCaseLayer: Layer.Layer<never, unknown, any>;

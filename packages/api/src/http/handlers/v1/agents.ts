@@ -1,6 +1,6 @@
 import { Effect, Result } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
-import { CycleApiError } from "@cycle/api";
+import { CycleApiError } from "../../../CycleApiError.ts";
 import { CycleApiRuntime } from "../../runtime/CycleApiRuntime.ts";
 import { AgentProvidersOutput } from "../../schemas/AgentProvidersResourceEnvelope.ts";
 import { CycleRequestContext } from "../../middleware/CycleRequestContextMiddleware.ts";

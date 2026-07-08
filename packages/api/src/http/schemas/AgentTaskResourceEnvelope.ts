@@ -1,4 +1,4 @@
-import * as AgentTaskSchemas from "@cycle/agents/agent-task-schemas";
+import * as AgentTaskSchemas from "@cycle/contracts/schemas/agents/agent-task-schemas";
 import { Schema } from "effect";
 import {
   AcceptedResourceEnvelopeOf,
@@ -64,7 +64,8 @@ export const AgentTaskListQueryParams = {
       Schema.isLessThanOrEqualTo(100),
     ),
   ).annotate({
-    description: "Maximum number of agent tasks to return. Defaults to 100 and must be between 1 and 100.",
+    description:
+      "Maximum number of agent tasks to return. Defaults to 100 and must be between 1 and 100.",
   }),
 };
 export const AgentTaskEventQueryParams = {
@@ -78,6 +79,7 @@ export const AgentTaskEventQueryParams = {
       Schema.isLessThanOrEqualTo(100),
     ),
   ).annotate({
-    description: "Maximum number of agent task events to return. Defaults to 100 and must be between 1 and 100.",
+    description:
+      "Maximum number of agent task events to return. Defaults to 100 and must be between 1 and 100.",
   }),
 };

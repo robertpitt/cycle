@@ -1,5 +1,6 @@
 import type { JsonObject } from "@cycle/contracts/schemas";
-import { AppConfigError, type ProfileConfig } from "@cycle/config/app-config";
+import { AppConfigError } from "@cycle/config/app-config";
+import type { ProfileConfig } from "@cycle/contracts/schemas/app";
 import { Effect } from "effect";
 import type { CompleteOnboardingInput, ProfileUpdateInput } from "../LocalSettings.ts";
 

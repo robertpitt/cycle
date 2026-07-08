@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "vitest";
 import { AppConfig, AppConfigLive } from "@cycle/config/app-config";
-import { AppConfigState } from "@cycle/config/app-config-schema";
+import { AppConfigState } from "@cycle/contracts/schemas/app";
 import { AppConfigTest } from "@cycle/config/testing";
 
 describe("@cycle/config package exports", () => {

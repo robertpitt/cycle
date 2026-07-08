@@ -1,17 +1,16 @@
-import {
-  AgentTaskFailure,
-  AgentTaskService,
-  type AgentTask,
-  type AgentTaskEvent,
-  type AgentTaskEventQuery,
-  type AgentTaskInput,
-  type AgentTaskListQuery,
-  type AgentTaskPage,
-  type AgentTaskRequest,
-  type AgentTaskSubscriptionQuery,
-  type CancelAgentTaskInput,
-  type RetryAgentTaskInput,
-} from "@cycle/agents";
+import { AgentTaskFailure, AgentTaskService } from "@cycle/agents";
+import type {
+  AgentTask,
+  AgentTaskEvent,
+  AgentTaskEventQuery,
+  AgentTaskInput,
+  AgentTaskListQuery,
+  AgentTaskPage,
+  AgentTaskRequest,
+  AgentTaskSubscriptionQuery,
+  CancelAgentTaskInput,
+  RetryAgentTaskInput,
+} from "@cycle/contracts/schemas/agents/agent-task-schemas";
 import { DatabaseService, type TicketDocument } from "@cycle/database";
 import { Context, Effect, Layer, Stream } from "effect";
 

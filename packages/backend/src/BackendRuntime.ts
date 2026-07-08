@@ -6,7 +6,7 @@ import { BackendApi, BackendApiLive, type BackendApiHandle } from "./BackendApi.
 import { BackendDatabaseLive } from "./BackendDatabase.ts";
 import { type BackendStartOptions } from "./BackendConfig.ts";
 import { BackendAlreadyStarted, type BackendError, errorMessage } from "./BackendErrors.ts";
-import { type BackendStatus } from "./BackendSchemas.ts";
+import { type BackendStatus } from "@cycle/contracts/schemas/backend";
 import { LocalSettingsLive } from "./LocalSettings.ts";
 import { LocalWorkspaceLive } from "./LocalWorkspace.ts";
 import { RepositoryBootstrap, RepositoryBootstrapLive } from "./RepositoryBootstrap.ts";

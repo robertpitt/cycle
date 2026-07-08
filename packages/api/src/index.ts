@@ -14,7 +14,5 @@ export type {
   CycleApiRuntimeShape,
   RepositoryDirectoryEntry,
   RepositoryDirectoryResolver,
-  RepositoryOpenInputResolver,
-  RepositoryOpenRequest,
   RuntimeDiscoveryFile,
 } from "./http/runtime/CycleApiRuntime.ts";

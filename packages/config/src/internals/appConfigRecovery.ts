@@ -1,6 +1,6 @@
 import type { JsonObject } from "@cycle/contracts/schemas";
 import { Config, ConfigProvider, Effect, Schema } from "effect";
-import { isAgentProviderId, supportedAgentProviders } from "../AgentProviders.ts";
+import { isAgentProviderId, supportedAgentProviders } from "@cycle/contracts/schemas/agents";
 import { AppConfigError } from "../AppConfigError.ts";
 import {
   AgentProvidersConfig,
@@ -19,16 +19,16 @@ import {
   defaultApiConfig,
   defaultAppConfig,
   defaultRepositoryPreferences,
-} from "../AppConfigSchema.ts";
+} from "@cycle/contracts/schemas/app";
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const parseSection = <A>(
-  schema: Schema.Codec<A>,
+  schema: Schema.Codec<A, unknown, unknown, unknown>,
   value: unknown,
 ): Effect.Effect<A, AppConfigError> =>
-  Config.schema(schema)
+  Config.schema(schema as Schema.Codec<A, unknown>)
     .parse(ConfigProvider.fromUnknown(value))
     .pipe(
       Effect.mapError(

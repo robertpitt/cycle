@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { Context, Effect, Layer } from "effect";
 import type {
   ClientNotificationMethod,
   ClientNotificationParamsByMethod,
@@ -10,15 +11,16 @@ import type {
   ServerRequestMethod,
   ServerRequestParamsByMethod,
   ServerRequestResponsesByMethod,
-} from "./rpc.ts";
+} from "./CodexAppServerSchemas.ts";
 import {
   CodexAppServerMissingHandlerError,
   CodexAppServerProcessExitedError,
   CodexAppServerRequestError,
   CodexAppServerSpawnError,
+  normalizeToCodexAppServerError,
   normalizeToRequestError,
   type CodexAppServerError,
-} from "./errors/index.ts";
+} from "./CodexAppServerErrors.ts";
 import {
   makeCodexAppServerProtocol,
   type CodexAppServerIncomingNotification,
@@ -26,7 +28,7 @@ import {
   type CodexAppServerProtocol,
   type CodexAppServerProtocolLogEvent,
   type CodexAppServerProtocolTransport,
-} from "./protocol.ts";
+} from "./CodexAppServerProtocol.ts";
 import {
   decodeClientRequestResponse,
   decodeServerNotificationParams,
@@ -34,7 +36,15 @@ import {
   encodeClientNotificationParams,
   encodeClientRequestParams,
   encodeServerRequestResponse,
-} from "./schema.ts";
+} from "./CodexAppServerSchemas.ts";
+import { readableBytes, readStderrLines } from "./internals/streams.ts";
+
+export * from "./CodexAppServerErrors.ts";
+export {
+  makeCodexAppServerProtocol,
+  type CodexAppServerProtocol,
+} from "./CodexAppServerProtocol.ts";
+export type * from "./CodexAppServerSchemas.ts";
 
 export type CodexAppServerClientOptions = {
   readonly logIncoming?: boolean;
@@ -63,6 +73,47 @@ type ServerRequestHandler<M extends ServerRequestMethod = ServerRequestMethod> =
 type ServerNotificationHandler<M extends ServerNotificationMethod = ServerNotificationMethod> = (
   params: ServerNotificationParamsByMethod[M],
 ) => Promise<void> | void;
+
+type ServerRequestEffectHandler<M extends ServerRequestMethod = ServerRequestMethod> = (
+  params: ServerRequestParamsByMethod[M],
+) => Effect.Effect<ServerRequestResponsesByMethod[M], CodexAppServerError>;
+
+type ServerNotificationEffectHandler<
+  M extends ServerNotificationMethod = ServerNotificationMethod,
+> = (params: ServerNotificationParamsByMethod[M]) => Effect.Effect<void, CodexAppServerError>;
+
+export type CodexAppServerServiceShape = {
+  readonly child?: ChildProcessWithoutNullStreams;
+  readonly close: () => Effect.Effect<void, CodexAppServerError>;
+  readonly handleServerNotification: <M extends ServerNotificationMethod>(
+    method: M,
+    handler: ServerNotificationEffectHandler<M>,
+  ) => Effect.Effect<void>;
+  readonly handleServerRequest: <M extends ServerRequestMethod>(
+    method: M,
+    handler: ServerRequestEffectHandler<M>,
+  ) => Effect.Effect<void>;
+  readonly notify: <M extends ClientNotificationMethod>(
+    method: M,
+    params: ClientNotificationParamsByMethod[M],
+  ) => Effect.Effect<void, CodexAppServerError>;
+  readonly raw: {
+    readonly notify: (method: string, params?: unknown) => Effect.Effect<void, CodexAppServerError>;
+    readonly protocol: CodexAppServerProtocol;
+    readonly request: (
+      method: string,
+      params?: unknown,
+    ) => Effect.Effect<unknown, CodexAppServerError>;
+  };
+  readonly request: <M extends ClientRequestMethod>(
+    method: M,
+    params: ClientRequestParamsByMethod[M],
+  ) => Effect.Effect<ClientRequestResponsesByMethod[M], CodexAppServerError>;
+};
+
+export class CodexAppServer extends Context.Service<CodexAppServer, CodexAppServerServiceShape>()(
+  "@cycle/agents/CodexAppServer",
+) {}
 
 export type CodexAppServerClient = {
   readonly child?: ChildProcessWithoutNullStreams;
@@ -183,30 +234,6 @@ export const makeCodexAppServerClient = (
   };
 };
 
-const lineReader = async function* (stream: NodeJS.ReadableStream): AsyncIterable<Uint8Array> {
-  for await (const chunk of stream) {
-    if (typeof chunk === "string") yield Buffer.from(chunk);
-    else yield chunk as Uint8Array;
-  }
-};
-
-const stderrLines = async (
-  stream: NodeJS.ReadableStream,
-  onLine: (line: string) => void,
-): Promise<void> => {
-  const decoder = new TextDecoder();
-  let remainder = "";
-  for await (const chunk of stream) {
-    const text =
-      typeof chunk === "string" ? chunk : decoder.decode(chunk as Uint8Array, { stream: true });
-    const lines = (remainder + text).split("\n");
-    remainder = lines.pop() ?? "";
-    for (const line of lines) onLine(line.replace(/\r$/u, ""));
-  }
-  const finalLine = remainder + decoder.decode();
-  if (finalLine.trim().length > 0) onLine(finalLine.replace(/\r$/u, ""));
-};
-
 export const spawnCodexAppServerClient = async (
   options: CodexAppServerChildProcessOptions,
 ): Promise<CodexAppServerClient> => {
@@ -235,7 +262,7 @@ export const spawnCodexAppServerClient = async (
       close: () => {
         if (!child.killed) child.kill();
       },
-      input: lineReader(child.stdout),
+      input: readableBytes(child.stdout),
       send: (line) =>
         new Promise<void>((resolve, reject) => {
           child.stdin.write(line, (error) => {
@@ -247,7 +274,7 @@ export const spawnCodexAppServerClient = async (
   });
 
   if (options.onStderr !== undefined) {
-    void stderrLines(child.stderr, options.onStderr).catch(() => undefined);
+    void readStderrLines(child.stderr, options.onStderr).catch(() => undefined);
   }
 
   child.on("error", (cause) => {
@@ -260,3 +287,46 @@ export const spawnCodexAppServerClient = async (
 
   return client;
 };
+
+const fromClientPromise = <A>(run: () => Promise<A>): Effect.Effect<A, CodexAppServerError> =>
+  Effect.tryPromise({
+    try: run,
+    catch: normalizeToCodexAppServerError,
+  });
+
+export const makeCodexAppServer = (client: CodexAppServerClient): CodexAppServerServiceShape => ({
+  ...(client.child === undefined ? {} : { child: client.child }),
+  close: () => fromClientPromise(() => client.close()),
+  handleServerNotification: (method, handler) =>
+    Effect.sync(() => {
+      client.handleServerNotification(method, (params) => Effect.runPromise(handler(params)));
+    }),
+  handleServerRequest: (method, handler) =>
+    Effect.sync(() => {
+      client.handleServerRequest(method, (params) => Effect.runPromise(handler(params)));
+    }),
+  notify: (method, params) => fromClientPromise(() => client.notify(method, params)),
+  raw: {
+    notify: (method, params) => fromClientPromise(() => client.raw.notify(method, params)),
+    protocol: client.raw.protocol,
+    request: (method, params) => fromClientPromise(() => client.raw.request(method, params)),
+  },
+  request: (method, params) => fromClientPromise(() => client.request(method, params)),
+});
+
+export const makeCodexAppServerLayer = (options: CodexAppServerChildProcessOptions) =>
+  Layer.effect(
+    CodexAppServer,
+    Effect.gen(function* () {
+      const service = yield* Effect.tryPromise({
+        try: () => spawnCodexAppServerClient(options),
+        catch: normalizeToCodexAppServerError,
+      }).pipe(Effect.map(makeCodexAppServer));
+
+      yield* Effect.addFinalizer(() => service.close().pipe(Effect.catch(() => Effect.void)));
+
+      return service;
+    }),
+  );
+
+export const CodexAppServerLive = makeCodexAppServerLayer;

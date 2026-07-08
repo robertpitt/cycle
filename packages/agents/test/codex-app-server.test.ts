@@ -5,7 +5,7 @@ import {
   CodexAppServerSchemaDecodeError,
   makeCodexAppServerClient,
   makeCodexAppServerProtocol,
-} from "@cycle/codex-app-server";
+} from "../src/providers/codex/app-server/CodexAppServer.ts";
 import { describe, it } from "vitest";
 
 class Pushable<T> implements AsyncIterable<T> {
@@ -42,7 +42,7 @@ class Pushable<T> implements AsyncIterable<T> {
 const parseLine = (line: string): Readonly<Record<string, unknown>> =>
   JSON.parse(line.trim()) as Readonly<Record<string, unknown>>;
 
-describe("@cycle/codex-app-server protocol", () => {
+describe("Codex app-server protocol", () => {
   it("correlates JSON-RPC requests across chunk boundaries", async () => {
     const input = new Pushable<string>();
     const outgoing: string[] = [];
@@ -79,7 +79,7 @@ describe("@cycle/codex-app-server protocol", () => {
 
     client.handleServerRequest("item/commandExecution/requestApproval", (payload) => {
       assert.equal(payload.itemId, "item_1");
-      return { decision: "accept" };
+      return { decision: "accept" as const };
     });
     input.push(
       JSON.stringify({

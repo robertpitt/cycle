@@ -4,7 +4,7 @@ import type {
   AgentTaskEvent,
   AgentTaskEventQuery,
   AgentTaskListQuery,
-} from "./AgentTaskSchemas.ts";
+} from "@cycle/contracts/schemas/agents/agent-task-schemas";
 import type { AgentTaskServiceError } from "./AgentTaskErrors.ts";
 
 export type AgentTaskEventInput = Omit<AgentTaskEvent, "sequence">;

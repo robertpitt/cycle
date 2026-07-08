@@ -16,7 +16,6 @@
     "./agent-runtime-contracts": "./src/AgentRuntimeContracts.ts",
     "./agent-runtime-events": "./src/AgentRuntimeEvents.ts",
     "./agent-task-errors": "./src/AgentTaskErrors.ts",
-    "./agent-task-schemas": "./src/AgentTaskSchemas.ts",
     "./agent-task-service": "./src/AgentTaskService.ts",
     "./agent-task-store": "./src/AgentTaskStore.ts",
     "./codex": "./src/codex.ts",
@@ -33,12 +32,12 @@
     "./types": "./src/types.ts"
   },
   "scripts": {
+    "generate:codex-app-server": "node ./scripts/generate-codex-app-server.mjs",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.197",
-    "@cycle/codex-app-server": "workspace:*",
     "@cycle/contracts": "workspace:*",
     "@cycle/sqlite": "workspace:*",
     "@effect/platform-node": "4.0.0-beta.78",

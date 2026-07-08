@@ -1,9 +1,9 @@
-import { AgentProviderId } from "@cycle/config/agent-providers";
+import { AgentProviderId } from "@cycle/contracts/schemas/agents";
 import {
   ThemePreference,
   type AppConfigState,
   type ProfileConfig,
-} from "@cycle/config/app-config-schema";
+} from "@cycle/contracts/schemas/app";
 import type { AppConfigError } from "@cycle/config/errors";
 import { Context, Effect, Schema } from "effect";
 

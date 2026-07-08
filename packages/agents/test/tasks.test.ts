@@ -1,12 +1,8 @@
 import { strict as assert } from "node:assert";
 import { Effect, Layer, Schema, Stream } from "effect";
 import { describe, it } from "vitest";
-import {
-  AgentTaskService,
-  AgentTaskServiceLive,
-  AgentTask,
-  AgentTaskRequest,
-} from "../src/index.ts";
+import { AgentTask, AgentTaskRequest } from "@cycle/contracts/schemas/agents/agent-task-schemas";
+import { AgentTaskService, AgentTaskServiceLive } from "../src/index.ts";
 import { AgentTaskStoreInMemory } from "../src/testing/index.ts";
 
 const makeIds = () => {

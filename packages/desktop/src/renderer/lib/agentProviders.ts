@@ -1,5 +1,8 @@
 import type { InitialSetupHarness } from "@cycle/ui/organisms";
-import { supportedAgentProviders, type DetectedAgentProvider } from "@cycle/config/agent-providers";
+import {
+  supportedAgentProviders,
+  type DetectedAgentProvider,
+} from "@cycle/contracts/schemas/agents";
 
 export const fallbackAgentProviders = (): ReadonlyArray<DetectedAgentProvider> =>
   supportedAgentProviders.map((provider) => ({

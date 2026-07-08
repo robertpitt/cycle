@@ -5,14 +5,12 @@ import { dirname, join } from "node:path";
 import { NodeServices } from "@effect/platform-node";
 import { ConfigProvider, Effect, Layer } from "effect";
 import { afterEach, describe, it } from "vitest";
+import { AppConfig, AppConfigLive, parseAppConfig } from "../src/AppConfig.ts";
 import {
-  AppConfig,
-  AppConfigLive,
   DEFAULT_API_PORT,
   defaultAppConfig,
-  parseAppConfig,
   type AppConfigState,
-} from "../src/AppConfig.ts";
+} from "@cycle/contracts/schemas/app";
 import { AppConfigTest } from "../src/testing/index.ts";
 
 const temporaryDirectories: Array<string> = [];

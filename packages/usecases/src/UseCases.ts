@@ -29,6 +29,10 @@ import {
   useCaseFailure,
   type UseCaseFailure,
 } from "./UseCaseFailure.ts";
+import {
+  RepositoryOpenService,
+  RepositoryOpenServiceUnavailableLive,
+} from "./RepositoryOpenService.ts";
 import type { AutomationEvaluation, AutomationViolation } from "@cycle/contracts/schemas";
 import type { UseCaseName } from "./contracts/index.ts";
 
@@ -50,9 +54,7 @@ const database = <A>(
   DatabaseService.use((db) => f(db).pipe(Effect.mapError(mapFailure(context))));
 
 export const RepositoryOpen = defineContractUseCase("RepositoryOpen", (input, context) =>
-  database(context, (db) =>
-    db.openRepository(input as Parameters<DatabaseServiceShape["openRepository"]>[0]),
-  ),
+  RepositoryOpenService.use((service) => service.open(input, context)),
 );
 
 export const RepositoryClose = defineContractUseCase("RepositoryClose", (_input, context) =>
@@ -813,6 +815,10 @@ export const WorkflowPolicyLive = Layer.succeed(
   } satisfies WorkflowPolicyShape),
 );
 
-export const UseCaseServicesLive = Layer.mergeAll(WorkflowPolicyLive, AgentTaskUsecasesLive);
+export const UseCaseServicesLive = Layer.mergeAll(
+  WorkflowPolicyLive,
+  AgentTaskUsecasesLive,
+  RepositoryOpenServiceUnavailableLive,
+);
 
 export type CycleUseCaseName = UseCaseName;

@@ -10,7 +10,7 @@ import {
   type AppConfigState,
   type InterfaceDensity,
   type ThemePreference,
-} from "@cycle/config/app-config-schema";
+} from "@cycle/contracts/schemas/app";
 import {
   useClearCacheMutation,
   useSetInterfaceDensityMutation,
@@ -18,8 +18,8 @@ import {
   useUpdateAgentProviderPreferenceMutation,
   useUpdateProfileMutation,
 } from "../mutations/index.ts";
-import type { DetectedAgentProvider } from "@cycle/config/agent-providers";
-import type { BootstrapStatus } from "@cycle/backend/bootstrap";
+import type { DetectedAgentProvider } from "@cycle/contracts/schemas/agents";
+import type { BootstrapStatus } from "@cycle/contracts/schemas/backend";
 import { useSettingsDiagnosticsQuery } from "../queries/index.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 import { Button, Input, Select, StatusIndicator } from "@cycle/ui/atoms";

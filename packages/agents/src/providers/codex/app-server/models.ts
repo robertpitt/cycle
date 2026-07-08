@@ -2,7 +2,7 @@ import {
   spawnCodexAppServerClient,
   type CodexAppServerClient,
   type Model,
-} from "@cycle/codex-app-server";
+} from "./CodexAppServer.ts";
 import type {
   AgentListModelsRequest,
   AgentModelCatalog,

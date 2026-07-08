@@ -193,50 +193,24 @@ export const runAutomationUseCase = (
 };
 
 export const repositoryOpenInputFrom = (
-  runtime: CycleApiRuntimeShape,
   payload: Readonly<Record<string, unknown>>,
   requestId: string,
 ): Effect.Effect<RepositoryInput | HttpServerResponse.HttpServerResponse> =>
   Effect.gen(function* () {
-    const resolver = runtime.repositoryOpenInput;
-
-    if (resolver !== undefined) {
-      return yield* Effect.tryPromise({
-        try: () =>
-          resolver(
-            {
-              displayName: optionalString(payload.displayName),
-              path: optionalString(payload.path),
-              repositoryId: optionalString(payload.repositoryId),
-              syncOnOpen: typeof payload.syncOnOpen === "boolean" ? payload.syncOnOpen : undefined,
-            },
-            { requestId },
-          ),
-        catch: () =>
-          errorResponse(
-            requestId,
-            500,
-            "REPOSITORY_OPEN_FAILED",
-            "Repository open input resolution failed.",
-          ),
-      }).pipe(Effect.catch((response) => Effect.succeed(response)));
-    }
-
-    if (typeof payload.repositoryId === "string" && payload.store !== undefined) {
+    if (typeof payload.path === "string" || typeof payload.repositoryId === "string") {
       return {
         displayName: optionalString(payload.displayName),
-        repositoryId: payload.repositoryId,
-        store: payload.store as RepositoryInput["store"],
+        path: optionalString(payload.path),
+        repositoryId: optionalString(payload.repositoryId),
         syncOnOpen: typeof payload.syncOnOpen === "boolean" ? payload.syncOnOpen : undefined,
-        worktreePath: optionalString(payload.worktreePath ?? payload.path),
       };
     }
 
     return errorResponse(
       requestId,
-      501,
-      "REPOSITORY_OPEN_UNAVAILABLE",
-      "Opening repositories requires a host-provided repositoryOpenInput resolver.",
+      400,
+      "INVALID_REPOSITORY_OPEN_INPUT",
+      "Repository path or repository id is required.",
     );
   });
 

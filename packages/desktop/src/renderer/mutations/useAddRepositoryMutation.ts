@@ -3,7 +3,7 @@ import {
   defaultAppConfig,
   type AppConfigState,
   type RepositoryRecord,
-} from "@cycle/config/app-config-schema";
+} from "@cycle/contracts/schemas/app";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 import { makeFallbackRepository } from "../lib/repositories.ts";

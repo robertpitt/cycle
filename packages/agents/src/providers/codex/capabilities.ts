@@ -46,5 +46,4 @@ export const codexProviderDefinition: AgentProviderDefinition = {
   executable: "codex",
   id: "codex",
   name: "Codex",
-  packageName: "@cycle/codex-app-server",
 };

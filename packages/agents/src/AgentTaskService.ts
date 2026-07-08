@@ -12,7 +12,7 @@ import type {
   AgentTaskSubscriptionQuery,
   CancelAgentTaskInput,
   RetryAgentTaskInput,
-} from "./AgentTaskSchemas.ts";
+} from "@cycle/contracts/schemas/agents/agent-task-schemas";
 import { AgentTaskFailure, type AgentTaskServiceError } from "./AgentTaskErrors.ts";
 import { AgentTaskStore, type AgentTaskStoreShape } from "./AgentTaskStore.ts";
 import { makeTimestampRandomId } from "./internal/id.ts";

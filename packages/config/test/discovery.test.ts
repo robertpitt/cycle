@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { NodeServices } from "@effect/platform-node";
 import { Crypto, Effect, FileSystem, Path } from "effect";
 import { afterEach, describe, it } from "vitest";
-import { defaultAppConfig } from "../src/AppConfig.ts";
+import { defaultAppConfig } from "@cycle/contracts/schemas/app";
 import { discoverCycleApiEffect } from "../src/CycleApiDiscovery.ts";
 import type { CycleApiDiscoveryError } from "../src/CycleApiDiscovery.ts";
 

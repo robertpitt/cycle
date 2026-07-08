@@ -1,5 +1,5 @@
 import { Effect, Result, Stream } from "effect";
-import { CycleApiError } from "@cycle/api";
+import { CycleApiError } from "../../../CycleApiError.ts";
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 import { CycleApiRuntime } from "../../runtime/CycleApiRuntime.ts";
 import { CycleRequestContext } from "../../middleware/CycleRequestContextMiddleware.ts";
@@ -120,6 +120,15 @@ export const createChatTurn = ({ payload, request }: ChatTurnRequest) =>
       requestId,
       runtime,
     });
+    if (runtime.agentServices === undefined) {
+      return errorResponse(
+        requestId,
+        501,
+        "AGENT_SERVICES_UNAVAILABLE",
+        "Agent provider services are not available in this host.",
+        false,
+      );
+    }
     const service = yield* runtime.agentServices.serviceFor(prepared.provider);
     const activeTurn = runtime.activeAgentTurns.begin({
       provider: prepared.provider,
@@ -209,6 +218,15 @@ export const createChatTurnStream = ({ payload, request }: ChatTurnRequest) =>
       requestId,
       runtime,
     });
+    if (runtime.agentServices === undefined) {
+      return errorResponse(
+        requestId,
+        501,
+        "AGENT_SERVICES_UNAVAILABLE",
+        "Agent provider services are not available in this host.",
+        false,
+      );
+    }
     const service = yield* runtime.agentServices.serviceFor(prepared.provider);
 
     if (!service.capabilities().streaming) {

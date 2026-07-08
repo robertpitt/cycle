@@ -1,6 +1,10 @@
 import { openSqliteSync, type SqliteDatabaseLike } from "@cycle/sqlite/sync";
 import { Effect, Layer } from "effect";
-import type { AgentTask, AgentTaskEvent, AgentTaskStatus } from "./AgentTaskSchemas.ts";
+import type {
+  AgentTask,
+  AgentTaskEvent,
+  AgentTaskStatus,
+} from "@cycle/contracts/schemas/agents/agent-task-schemas";
 import { agentTaskStorageFailure, type AgentTaskServiceError } from "./AgentTaskErrors.ts";
 import { AgentTaskStore, type AgentTaskStoreShape } from "./AgentTaskStore.ts";
 

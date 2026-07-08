@@ -4,7 +4,7 @@ import {
   CodexAppServerRequestError,
   CodexAppServerTransportError,
   type CodexAppServerError,
-} from "./errors/index.ts";
+} from "./CodexAppServerErrors.ts";
 
 const StrictDecodeOptions = { onExcessProperty: "error" } as const;
 

@@ -1,8 +1,5 @@
 import { Schema } from "effect";
-import {
-  BootstrapStatus as RepositoryBootstrapStatus,
-  BootstrapRepositoryStatus,
-} from "./RepositoryBootstrap.ts";
+import { BootstrapRepositoryStatus, BootstrapStatus } from "./BootstrapStatus.ts";
 
 export const BackendLifecycleState = Schema.Literals([
   "starting",
@@ -30,7 +27,7 @@ export const BackendStatus = Schema.Struct({
     port: Schema.optional(Schema.Number),
     state: BackendApiState,
   }),
-  bootstrap: RepositoryBootstrapStatus,
+  bootstrap: BootstrapStatus,
   lifecycle: BackendLifecycleState,
   lastFailure: Schema.optional(Schema.String),
   repositories: Schema.Array(BootstrapRepositoryStatus),

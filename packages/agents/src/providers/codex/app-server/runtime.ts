@@ -6,7 +6,7 @@ import {
   type JsonValue as CodexJsonValue,
   type ThreadItem,
   type ToolRequestUserInputParams,
-} from "@cycle/codex-app-server";
+} from "./CodexAppServer.ts";
 import type {
   AgentApprovalDecision,
   AgentApprovalRequest,
@@ -896,7 +896,7 @@ const registerHandlers = (
     // Cycle uses Codex sandbox modes as the command safety boundary. Command approvals are
     // therefore non-interactive so chat turns cannot hang waiting for an approval UI.
     return {
-      decision: "accept",
+      decision: "accept" as const,
     };
   });
 

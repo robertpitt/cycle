@@ -1,5 +1,4 @@
 export * from "./errors/index.ts";
-
 /**
  * Electron
  */

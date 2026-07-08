@@ -5,9 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./agent-providers": "./src/AgentProviders.ts",
     "./app-config": "./src/AppConfig.ts",
-    "./app-config-schema": "./src/AppConfigSchema.ts",
     "./discovery": "./src/CycleApiDiscovery.ts",
     "./errors": "./src/AppConfigError.ts",
     "./testing": "./src/testing/index.ts"

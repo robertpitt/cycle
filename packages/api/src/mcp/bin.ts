@@ -2,7 +2,7 @@
 import { defaultLayer as CycleLoggingLive } from "@cycle/logging";
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { Effect } from "effect";
-import { CycleApiError } from "@cycle/api";
+import { CycleApiError } from "../CycleApiError.ts";
 import {
   runCycleMcpStdio,
   startCycleMcpHttpServerEffect,

@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect";
 import { AppConfig } from "../AppConfig.ts";
-import { defaultAppConfig, type AppConfigState } from "../AppConfigSchema.ts";
+import { defaultAppConfig, type AppConfigState } from "@cycle/contracts/schemas/app";
 
 export const AppConfigTest = (
   initial: AppConfigState = defaultAppConfig(),

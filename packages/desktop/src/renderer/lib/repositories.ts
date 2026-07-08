@@ -1,7 +1,4 @@
-import {
-  defaultRepositoryPreferences,
-  type RepositoryRecord,
-} from "@cycle/config/app-config-schema";
+import { defaultRepositoryPreferences, type RepositoryRecord } from "@cycle/contracts/schemas/app";
 
 export const makeFallbackRepository = (path: string): RepositoryRecord => {
   const trimmed = path.trim();

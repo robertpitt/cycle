@@ -38,10 +38,7 @@ export const RepositoryOpenPayload = strictSchema(
     displayName: Schema.optional(Schema.String),
     path: Schema.optional(Schema.String),
     repositoryId: Schema.optional(Schema.String),
-    // Store is implementation-owned repository bootstrap data.
-    store: Schema.optional(Schema.Unknown),
     syncOnOpen: Schema.optional(Schema.Boolean),
-    worktreePath: Schema.optional(Schema.String),
   }),
 );
 

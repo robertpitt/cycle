@@ -31,9 +31,9 @@ import {
   type ProfileConfig,
   type RepositoryRecord as AppRepositoryRecord,
   type ThemePreference,
-} from "@cycle/config/app-config-schema";
-import type { AgentProviderId, DetectedAgentProvider } from "@cycle/config/agent-providers";
-import type { UpdateRepositoryPreferencesInput } from "@cycle/backend/workspace";
+} from "@cycle/contracts/schemas/app";
+import type { AgentProviderId, DetectedAgentProvider } from "@cycle/contracts/schemas/agents";
+import type { UpdateRepositoryPreferencesInput } from "@cycle/contracts/schemas/app";
 import type { CompleteOnboardingInput, ProfileUpdateInput } from "../../shared/Profile.ts";
 import { getDesktopBridge } from "./desktopBridge.ts";
 import {

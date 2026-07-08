@@ -60,7 +60,7 @@ export const openRepository = ({ payload }: V1Request<"openRepository">) =>
   Effect.gen(function* () {
     const runtime = yield* CycleApiRuntime;
     const { requestId } = yield* CycleRequestContext;
-    const input = yield* repositoryOpenInputFrom(runtime, payload, requestId);
+    const input = yield* repositoryOpenInputFrom(payload, requestId);
     if (HttpServerResponse.isHttpServerResponse(input)) return input;
     const result = yield* runUseCase(RepositoryOpen, input, meta(requestId));
     if (HttpServerResponse.isHttpServerResponse(result)) return result;

@@ -152,9 +152,11 @@ The package MUST export these categories from `@cycle/sqlite`:
 The package SHOULD also export narrower subpaths when useful:
 
 - `@cycle/sqlite/errors`
-- `@cycle/sqlite/vector`
 - `@cycle/sqlite/migrations`
 - `@cycle/sqlite/testing`
+
+Vector extension loading remains package-owned implementation detail behind the SQLite layer
+options and MUST NOT be exported from `src/internal` or `src/internals` as a public subpath.
 
 ### 7.2 Layer Factories
 

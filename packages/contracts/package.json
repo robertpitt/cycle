@@ -8,10 +8,13 @@
     "./domain": "./src/domain.ts",
     "./schemas": "./src/schemas/index.ts",
     "./schemas/agents": "./src/schemas/agents/index.ts",
+    "./schemas/agents/agent-task-schemas": "./src/schemas/agents/AgentTaskSchemas.ts",
+    "./schemas/app": "./src/schemas/app/index.ts",
     "./schemas/api": "./src/schemas/api/index.ts",
     "./schemas/api/requests": "./src/schemas/api/requests/index.ts",
     "./schemas/api/responses": "./src/schemas/api/responses/index.ts",
     "./schemas/automation": "./src/schemas/automation/index.ts",
+    "./schemas/backend": "./src/schemas/backend/index.ts",
     "./schemas/components": "./src/schemas/components/index.ts",
     "./schemas/entities": "./src/schemas/entities/index.ts"
   },

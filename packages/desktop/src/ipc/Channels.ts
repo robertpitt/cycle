@@ -1,5 +1,5 @@
 import type { ElectronThemeState } from "../ElectronTheme.ts";
-import type { BootstrapStatus } from "@cycle/backend/bootstrap";
+import type { BootstrapStatus } from "@cycle/contracts/schemas/backend";
 
 export const getThemeStateChannel = "cycle:desktop:theme/get-state";
 export const themeStateChangedChannel = "cycle:desktop:theme/state-changed";

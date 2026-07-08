@@ -644,6 +644,7 @@ describe("@cycle/api", () => {
       assert.match(openRepositorySpec, /"operationId":"openRepository"/);
       assert.match(serializedSpec, /"displayName"/);
       assert.match(serializedSpec, /"syncOnOpen"/);
+      assert.doesNotMatch(openRepositorySpec, /"store"/);
       assert.match(serializedSpec, /"activeGeneration"/);
 
       const pushRepositoryPath = body.paths?.["/v1/repositories/{repositoryId}/push"];

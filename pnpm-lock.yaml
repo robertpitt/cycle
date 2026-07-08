@@ -48,9 +48,6 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: ^0.3.197
         version: 0.3.197(@anthropic-ai/sdk@0.109.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)
-      '@cycle/codex-app-server':
-        specifier: workspace:*
-        version: link:../codex-app-server
       '@cycle/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -178,19 +175,6 @@ importers:
       '@cycle/api':
         specifier: workspace:*
         version: link:../api
-      vitest:
-        specifier: ^4.1.8
-        version: 4.1.8(@types/node@25.9.2)(@vitest/coverage-v8@4.1.8)(vite@8.0.16(@types/node@25.9.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
-
-  packages/codex-app-server:
-    dependencies:
-      '@effect/platform-node':
-        specifier: 4.0.0-beta.78
-        version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.11.1)
-      effect:
-        specifier: 4.0.0-beta.78
-        version: 4.0.0-beta.78
-    devDependencies:
       vitest:
         specifier: ^4.1.8
         version: 4.1.8(@types/node@25.9.2)(@vitest/coverage-v8@4.1.8)(vite@8.0.16(@types/node@25.9.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))

@@ -1,5 +1,5 @@
 import type { AgentRuntimeMode } from "../../../types.ts";
-import type { ApprovalPolicy, SandboxMode } from "@cycle/codex-app-server";
+import type { ApprovalPolicy, SandboxMode } from "./CodexAppServer.ts";
 
 export const defaultRuntimeMode: AgentRuntimeMode = "read-only";
 

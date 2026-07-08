@@ -16,10 +16,16 @@ import {
   type AgentTurnResult,
   type AgentUserInputAnswer,
 } from "@cycle/agents";
-import { Effect } from "effect";
+import { Context, Effect, Fiber, Layer, PubSub } from "effect";
 import type { ChatMessagePayload, ChatRepositoryPayload, ChatTurnPayload } from "../domain.ts";
 import { isRecord } from "../domain.ts";
-import { agentChatError, agentChatOk, type AgentChatResult } from "../errors.ts";
+import {
+  AgentChatFailure,
+  agentChatError,
+  agentChatFailureFromUnknown,
+  agentChatOk,
+  type AgentChatResult,
+} from "../errors.ts";
 import {
   assignedTicketImplementationWorkflowInstructions,
   bodyFromResult,
@@ -99,6 +105,7 @@ export type AgentChatRuntimeShape = {
       readonly staleCleared: boolean;
     }>
   >;
+  readonly close: () => Promise<void>;
   readonly createThread: (input: {
     readonly model?: string | null;
     readonly origin?: Readonly<Record<string, unknown>>;
@@ -161,10 +168,65 @@ export type AgentChatRuntimeShape = {
   }) => Promise<AgentChatResult<{ readonly thread: Readonly<Record<string, unknown>> }>>;
 };
 
+export type AgentChatRuntimeServiceShape = {
+  readonly runtime: AgentChatRuntimeShape;
+  readonly cancelTurn: AgentChatRuntimeShape["cancelTurn"] extends (
+    input: infer Input,
+  ) => Promise<infer Output>
+    ? (input: Input) => Effect.Effect<Output, AgentChatFailure>
+    : never;
+  readonly createThread: AgentChatRuntimeShape["createThread"] extends (
+    input: infer Input,
+  ) => Promise<infer Output>
+    ? (input: Input) => Effect.Effect<Output, AgentChatFailure>
+    : never;
+  readonly deleteThread: AgentChatRuntimeShape["deleteThread"] extends (
+    input: infer Input,
+  ) => Promise<infer Output>
+    ? (input: Input) => Effect.Effect<Output, AgentChatFailure>
+    : never;
+  readonly getThreadSnapshot: AgentChatRuntimeShape["getThreadSnapshot"] extends (
+    input: infer Input,
+  ) => Promise<infer Output>
+    ? (input: Input) => Effect.Effect<Output, AgentChatFailure>
+    : never;
+  readonly listThreads: AgentChatRuntimeShape["listThreads"] extends (
+    input?: infer Input,
+  ) => Promise<infer Output>
+    ? (input?: Input) => Effect.Effect<Output, AgentChatFailure>
+    : never;
+  readonly respondToApproval: AgentChatRuntimeShape["respondToApproval"] extends (
+    input: infer Input,
+  ) => Promise<infer Output>
+    ? (input: Input) => Effect.Effect<Output, AgentChatFailure>
+    : never;
+  readonly respondToQuestion: AgentChatRuntimeShape["respondToQuestion"] extends (
+    input: infer Input,
+  ) => Promise<infer Output>
+    ? (input: Input) => Effect.Effect<Output, AgentChatFailure>
+    : never;
+  readonly sendTurn: AgentChatRuntimeShape["sendTurn"] extends (
+    input: infer Input,
+  ) => Promise<infer Output>
+    ? (input: Input) => Effect.Effect<Output, AgentChatFailure>
+    : never;
+  readonly updateThreadSettings: AgentChatRuntimeShape["updateThreadSettings"] extends (
+    input: infer Input,
+  ) => Promise<infer Output>
+    ? (input: Input) => Effect.Effect<Output, AgentChatFailure>
+    : never;
+};
+
+export class AgentChatRuntime extends Context.Service<
+  AgentChatRuntime,
+  AgentChatRuntimeServiceShape
+>()("@cycle/agent-chat/AgentChatRuntime") {}
+
 type RuntimeState = {
   readonly activeTurnsByThreadId: Map<string, AbortController>;
   readonly dependencies: Required<Pick<AgentChatRuntimeDependencies, "now">> &
     Omit<AgentChatRuntimeDependencies, "now">;
+  readonly providerFibersByTurnId: Map<string, Fiber.Fiber<void>>;
 };
 
 export const makeAgentChatRuntime = (
@@ -176,11 +238,13 @@ export const makeAgentChatRuntime = (
       ...dependencies,
       now: dependencies.now ?? (() => new Date()),
     },
+    providerFibersByTurnId: new Map(),
   };
 
   const runtime: AgentChatRuntimeShape = {
     store: dependencies.store,
     cancelTurn: (input) => cancelChatTurn(state, input),
+    close: () => closeRuntime(state),
     createThread: (input) => createThread(state, input),
     deleteThread: (input) => deleteThread(state, input),
     getThreadSnapshot: (input) => getThreadSnapshot(state, input.threadId),
@@ -195,21 +259,129 @@ export const makeAgentChatRuntime = (
   return runtime;
 };
 
-export const makeAgentChatEventBus = (): AgentChatEventBusShape => {
-  const listeners = new Set<AgentChatPublisher>();
+const closeRuntime = (state: RuntimeState): Promise<void> =>
+  Effect.runPromise(
+    Effect.forEach([...state.providerFibersByTurnId.values()], Fiber.interrupt, {
+      concurrency: "unbounded",
+      discard: true,
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          state.providerFibersByTurnId.clear();
+          state.activeTurnsByThreadId.clear();
+        }),
+      ),
+    ),
+  );
+
+const forkProviderTask = (
+  state: RuntimeState,
+  turnId: string,
+  operation: () => Promise<void>,
+): void => {
+  const previous = state.providerFibersByTurnId.get(turnId);
+  if (previous !== undefined) Effect.runFork(Fiber.interrupt(previous));
+
+  const fiber = Effect.runFork(
+    Effect.tryPromise({
+      try: operation,
+      catch: (cause) =>
+        agentChatFailureFromUnknown(cause, {
+          code: "provider_execution_failed",
+          message: "agent chat provider task failed",
+        }),
+    }).pipe(
+      Effect.catch(() => Effect.void),
+      Effect.ensuring(Effect.sync(() => state.providerFibersByTurnId.delete(turnId))),
+    ),
+  );
+  state.providerFibersByTurnId.set(turnId, fiber);
+};
+
+const runtimeEffect = <A>(
+  operation: () => Promise<A>,
+  message: string,
+): Effect.Effect<A, AgentChatFailure> =>
+  Effect.tryPromise({
+    try: operation,
+    catch: (cause) =>
+      agentChatFailureFromUnknown(cause, {
+        code: "unknown",
+        message,
+      }),
+  });
+
+export const makeAgentChatRuntimeService = (
+  dependencies: AgentChatRuntimeDependencies,
+): AgentChatRuntimeServiceShape => {
+  const runtime = makeAgentChatRuntime(dependencies);
 
   return {
-    publish: async (event) => {
-      await Promise.all([...listeners].map((listener) => listener(event)));
-    },
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
+    runtime,
+    cancelTurn: (input) =>
+      runtimeEffect(() => runtime.cancelTurn(input), "cancel chat turn failed"),
+    createThread: (input) =>
+      runtimeEffect(() => runtime.createThread(input), "create chat thread failed"),
+    deleteThread: (input) =>
+      runtimeEffect(() => runtime.deleteThread(input), "delete chat thread failed"),
+    getThreadSnapshot: (input) =>
+      runtimeEffect(() => runtime.getThreadSnapshot(input), "get chat thread snapshot failed"),
+    listThreads: (input) =>
+      runtimeEffect(() => runtime.listThreads(input), "list chat threads failed"),
+    respondToApproval: (input) =>
+      runtimeEffect(() => runtime.respondToApproval(input), "respond to provider approval failed"),
+    respondToQuestion: (input) =>
+      runtimeEffect(() => runtime.respondToQuestion(input), "respond to provider question failed"),
+    sendTurn: (input) => runtimeEffect(() => runtime.sendTurn(input), "send chat turn failed"),
+    updateThreadSettings: (input) =>
+      runtimeEffect(
+        () => runtime.updateThreadSettings(input),
+        "update chat thread settings failed",
+      ),
   };
 };
+
+export const AgentChatRuntimeLive = (dependencies: AgentChatRuntimeDependencies) =>
+  Layer.succeed(AgentChatRuntime, AgentChatRuntime.of(makeAgentChatRuntimeService(dependencies)));
+
+export const makeAgentChatEventBusEffect = (
+  capacity = 256,
+): Effect.Effect<AgentChatEventBusShape> =>
+  Effect.gen(function* () {
+    const pubsub = yield* PubSub.bounded<AgentChatPublishedEvent>(capacity);
+
+    return {
+      publish: (event) => Effect.runPromise(PubSub.publish(pubsub, event).pipe(Effect.asVoid)),
+      subscribe: (listener) => {
+        const fiber = Effect.runFork(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const subscription = yield* PubSub.subscribe(pubsub);
+
+              while (true) {
+                const event = yield* PubSub.take(subscription);
+                yield* Effect.tryPromise({
+                  try: () => Promise.resolve(listener(event)),
+                  catch: (cause) =>
+                    agentChatFailureFromUnknown(cause, {
+                      code: "unknown",
+                      message: "agent chat subscriber failed",
+                    }),
+                }).pipe(Effect.catch(() => Effect.void));
+              }
+            }),
+          ),
+        );
+
+        return () => {
+          Effect.runFork(Fiber.interrupt(fiber));
+        };
+      },
+    };
+  });
+
+export const makeAgentChatEventBus = (): AgentChatEventBusShape =>
+  Effect.runSync(makeAgentChatEventBusEffect());
 
 const nowIso = (state: RuntimeState): string => state.dependencies.now().toISOString();
 
@@ -439,12 +611,14 @@ const sendTurn = async (
     timestamp,
   );
 
-  void runProviderTurn(state, {
-    origin: input.origin,
-    thread: nextThread,
-    turn,
-    userMessage,
-  });
+  forkProviderTask(state, turn.id, () =>
+    runProviderTurn(state, {
+      origin: input.origin,
+      thread: nextThread,
+      turn,
+      userMessage,
+    }),
+  );
 
   return agentChatOk({
     thread: threadForProtocol(nextThread),
@@ -1318,6 +1492,11 @@ const cancelChatTurn = async (
     liveCancellationRequested = true;
     if (!runtimeTurn.abortController.signal.aborted) runtimeTurn.abortController.abort(reason);
   }
+  const providerFiber = state.providerFibersByTurnId.get(activeTurnId);
+  if (providerFiber !== undefined) {
+    liveCancellationRequested = true;
+    Effect.runFork(Fiber.interrupt(providerFiber));
+  }
 
   const service = await Effect.runPromise(state.dependencies.agentServices.serviceFor(providerId));
   const providerAbort = await service.abortTurn(sessionId).catch(() => undefined);
@@ -2002,13 +2181,15 @@ const handleSuccessfulCommentMentions = async (
       ticketId: input.ticketId,
     });
     await persistSeededThread(state.dependencies.store, records);
-    void runMentionTurn(state, {
-      origin: input.origin,
-      profile: records.profile,
-      seedMessage: records.seedMessage,
-      thread: records.thread,
-      turn: records.turn,
-    });
+    forkProviderTask(state, records.turn.id, () =>
+      runMentionTurn(state, {
+        origin: input.origin,
+        profile: records.profile,
+        seedMessage: records.seedMessage,
+        thread: records.thread,
+        turn: records.turn,
+      }),
+    );
   }
 };
 
@@ -2150,6 +2331,8 @@ const runMentionTurn = async (
     return;
   }
 
+  state.activeTurnsByThreadId.set(input.thread.id, activeTurn.record.abortController);
+
   try {
     await state.dependencies.store.upsertTurn?.({
       ...input.turn,
@@ -2188,6 +2371,7 @@ const runMentionTurn = async (
   } catch (error) {
     await failMentionTurn(state, input, error instanceof Error ? error.message : String(error));
   } finally {
+    state.activeTurnsByThreadId.delete(input.thread.id);
     state.dependencies.activeTurns.finish(providerId, sessionId);
   }
 };

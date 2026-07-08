@@ -7,7 +7,7 @@ import {
 import { Context, Effect, Exit, FileSystem, Layer, Path, Scope } from "effect";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { makeCycleApi, makeCycleApiLayer } from "./CycleApi.ts";
-import { CycleApiError } from "@cycle/api";
+import { CycleApiError } from "./CycleApiError.ts";
 import type {
   CycleApi,
   CycleApiMcpOptions,

@@ -1,7 +1,7 @@
 import { Effect, Result } from "effect";
 import type { HttpServerResponse } from "effect/unstable/http";
-import { CycleApiError } from "@cycle/api";
 import type { AgentChatStoreShape } from "@cycle/agent-chat";
+import { CycleApiError } from "../../../../CycleApiError.ts";
 import { CycleApiRuntime } from "../../../runtime/CycleApiRuntime.ts";
 import { errorResponse } from "../../responses.ts";
 

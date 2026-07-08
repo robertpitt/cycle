@@ -9,7 +9,7 @@ import {
   HttpServerResponse,
 } from "effect/unstable/http";
 import * as McpServer from "effect/unstable/ai/McpServer";
-import { CycleApiError } from "@cycle/api";
+import { CycleApiError } from "../../CycleApiError.ts";
 import { CycleMcpApiClientLive, type CycleMcpApiClientOptions } from "../client.ts";
 import { CycleMcpToolsLive } from "../tools/layer.ts";
 import { cycleMcpTools, mcpToolFromDefinition } from "../tools/registry.ts";

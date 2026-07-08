@@ -4,30 +4,20 @@ export const RepositoryOpenInput = Schema.Struct({
   displayName: Schema.optional(Schema.String).pipe(
     Schema.annotateKey({ description: "Optional human-readable repository name." }),
   ),
-  gitDir: Schema.optional(Schema.String).pipe(
-    Schema.annotateKey({ description: "Optional path to the repository git directory." }),
-  ),
-  metadata: Schema.optional(Schema.Unknown).pipe(
+  path: Schema.optional(Schema.String).pipe(
     Schema.annotateKey({
-      description: "Adapter-owned repository metadata preserved as an explicit extension field.",
+      description: "Optional filesystem path to a repository worktree to register and open.",
     }),
   ),
-  repositoryId: Schema.String.pipe(
-    Schema.annotateKey({ description: "Stable repository id used by Cycle." }),
-  ),
-  store: Schema.Unknown.pipe(
+  repositoryId: Schema.optional(Schema.String).pipe(
     Schema.annotateKey({
-      description:
-        "Storage adapter configuration. Shape is adapter-owned and intentionally opaque.",
+      description: "Optional stable repository id for an existing configured repository.",
     }),
   ),
   syncOnOpen: Schema.optional(Schema.Boolean).pipe(
     Schema.annotateKey({
       description: "Whether Cycle should synchronize repository projections after opening.",
     }),
-  ),
-  worktreePath: Schema.optional(Schema.String).pipe(
-    Schema.annotateKey({ description: "Optional path to the repository worktree." }),
   ),
 }).pipe(
   Schema.annotate({

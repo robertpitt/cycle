@@ -1,5 +1,10 @@
 # Cycle Package Architecture Specification
 
+> Current boundary source of truth: see
+> [`specs/SYSTEM_BOUNDARY_SIMPLIFICATION_SPEC.md`](specs/SYSTEM_BOUNDARY_SIMPLIFICATION_SPEC.md).
+> That specification supersedes this document wherever package graph, backend/API ownership,
+> renderer import safety, or public contract serializability rules conflict.
+
 Status: Draft architecture migration specification
 
 Version: 0.1.0

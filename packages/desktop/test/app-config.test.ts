@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { ConfigProvider, Effect, Layer } from "effect";
 import { detectAgentProviders } from "@cycle/agents";
-import { AppConfig, AppConfigLive } from "@cycle/config/app-config";
+import { AppConfig, AppConfigLive, parseAppConfig } from "@cycle/config/app-config";
 import { GitRepositoryLive } from "@cycle/git";
 import { NodeServices } from "@effect/platform-node";
 import { afterEach, describe, it } from "vitest";
@@ -14,9 +14,8 @@ import { LocalWorkspace, LocalWorkspaceLive } from "@cycle/backend/workspace";
 import {
   DEFAULT_API_PORT,
   defaultAppConfig,
-  parseAppConfig,
   type AppConfigState,
-} from "@cycle/config/app-config-schema";
+} from "@cycle/contracts/schemas/app";
 import { Profile } from "../src/shared/Profile.ts";
 import { ProfileLive } from "../src/ProfileLive.ts";
 import { LocalSettingsLive } from "@cycle/backend/settings";

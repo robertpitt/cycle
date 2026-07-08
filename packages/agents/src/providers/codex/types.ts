@@ -1,7 +1,7 @@
 import type {
   CodexAppServerClient,
   CodexAppServerChildProcessOptions,
-} from "@cycle/codex-app-server";
+} from "./app-server/CodexAppServer.ts";
 import type { AgentSession, AgentSessionBinding, AgentSessionStore } from "../../types.ts";
 
 export type CodexAgentServiceOptions = {

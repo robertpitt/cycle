@@ -11,8 +11,7 @@
     "./migrations": "./src/migrations.ts",
     "./services": "./src/SqliteCapabilities.ts",
     "./sync": "./src/sync.ts",
-    "./testing": "./src/testing/index.ts",
-    "./vector": "./src/internals/vector.ts"
+    "./testing": "./src/testing/index.ts"
   },
   "scripts": {
     "test": "vitest run",

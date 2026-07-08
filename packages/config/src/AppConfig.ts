@@ -1,17 +1,17 @@
 import { Config, Context, Crypto, Effect, Encoding, FileSystem, Layer, Path } from "effect";
 import { AppConfigError } from "./AppConfigError.ts";
 import {
-  AppConfigState,
   DEFAULT_API_PORT,
-  InterfaceDensity,
-  ThemePreference,
   defaultAppConfig,
-  parseAppConfig,
-} from "./AppConfigSchema.ts";
+  type AppConfigState,
+  type InterfaceDensity,
+  type ThemePreference,
+} from "@cycle/contracts/schemas/app";
+import { parseAppConfig } from "./AppConfigSchema.ts";
 import { salvageAppConfig } from "./internals/appConfigRecovery.ts";
 
-export * from "./AppConfigSchema.ts";
 export { AppConfigError } from "./AppConfigError.ts";
+export { parseAppConfig } from "./AppConfigSchema.ts";
 
 const cycleAppConfigFileName = "app-config.json";
 

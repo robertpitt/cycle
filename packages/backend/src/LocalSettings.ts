@@ -1,15 +1,18 @@
-import { supportedAgentProviders, type AgentProviderId } from "@cycle/config/agent-providers";
 import {
-  AppConfig,
-  AppConfigError,
+  AgentProviderId,
+  supportedAgentProviders,
+  type AgentProviderId as AgentProviderIdType,
+} from "@cycle/contracts/schemas/agents";
+import { AppConfig, AppConfigError } from "@cycle/config/app-config";
+import {
   defaultAgentProviderPreference,
   ThemePreference,
   type AppConfigState,
   type InterfaceDensity,
   type ProfileConfig,
+  type RepositoryRecord,
   type ThemePreference as ThemePreferenceType,
-} from "@cycle/config/app-config";
-import { AgentProviderId as AgentProviderIdSchema } from "@cycle/contracts/schemas";
+} from "@cycle/contracts/schemas/app";
 import { Context, Effect, Layer, Schema } from "effect";
 import {
   jsonObject,
@@ -28,7 +31,7 @@ export type ProfileUpdateInput = typeof ProfileUpdateInput.Type;
 export const CompleteOnboardingInput = Schema.Struct({
   displayName: Schema.String,
   email: Schema.String,
-  enabledAgentProviderIds: Schema.optional(Schema.Array(AgentProviderIdSchema)),
+  enabledAgentProviderIds: Schema.optional(Schema.Array(AgentProviderId)),
   themePreference: ThemePreference,
 });
 export type CompleteOnboardingInput = typeof CompleteOnboardingInput.Type;
@@ -43,7 +46,7 @@ export type AgentProviderPreferencePatch = {
 
 export type UpdateAgentProviderPreferenceInput = {
   readonly preference: AgentProviderPreferencePatch;
-  readonly providerId: AgentProviderId;
+  readonly providerId: AgentProviderIdType;
 };
 
 export type LocalSettingsService = {
@@ -70,7 +73,7 @@ export type LocalSettingsService = {
   ) => Effect.Effect<ProfileConfig, AppConfigError>;
   readonly updateRepositoryPreferences: (
     input: UpdateRepositoryPreferencesInput,
-  ) => Effect.Effect<import("@cycle/config/app-config").RepositoryRecord | null, AppConfigError>;
+  ) => Effect.Effect<RepositoryRecord | null, AppConfigError>;
 };
 
 export class LocalSettings extends Context.Service<LocalSettings, LocalSettingsService>()(

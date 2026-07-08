@@ -2,7 +2,6 @@ import {
   startCycleApiServer,
   type CycleApiServerHandle,
   type RepositoryDirectoryEntry,
-  type RepositoryOpenRequest,
 } from "@cycle/api";
 import {
   AgentProviderDetector,
@@ -19,23 +18,17 @@ import {
   type AgentProviderProfile,
 } from "@cycle/agents";
 import { makeSqliteAgentChatStore } from "@cycle/agent-chat/store";
-import {
-  AppConfig,
-  AppConfigError,
-  defaultAgentProviderPreference,
-  type AppConfigState,
-  type RepositoryRecord,
-} from "@cycle/config/app-config";
-import type { RepositoryInput, RepositoryMetadata } from "@cycle/contracts";
+import { AppConfig } from "@cycle/config/app-config";
+import { defaultAgentProviderPreference, type AppConfigState } from "@cycle/contracts/schemas/app";
 import { DatabaseService } from "@cycle/database";
-import { GitRepository, type GitRepositoryMetadata } from "@cycle/git";
+import { GitRepository } from "@cycle/git";
 import { WorktreeService } from "@cycle/git/worktree";
-import { GitDb, Store as GitDbStore } from "@cycle/git-db";
 import { logError } from "@cycle/logging";
 import { repositoryIdFromInput } from "@cycle/usecases";
 import { Context, Effect, Layer, Path, Scope } from "effect";
 import { backendPaths, type BackendStartOptions } from "./BackendConfig.ts";
 import { BackendApiError, errorMessage } from "./BackendErrors.ts";
+import { BackendRepositoryOpenServiceLive } from "./BackendRepositoryOpen.ts";
 import { makeBackendAgentSessionStore } from "./internals/agentSessionStore.ts";
 import { LocalSettings } from "./LocalSettings.ts";
 import { LocalWorkspace } from "./LocalWorkspace.ts";
@@ -73,38 +66,6 @@ export type BackendApiService = {
 export class BackendApi extends Context.Service<BackendApi, BackendApiService>()(
   "@cycle/backend/BackendApi",
 ) {}
-
-const repositoryMetadata = (metadata: GitRepositoryMetadata): RepositoryMetadata => ({
-  ...(metadata.currentBranch === undefined ? {} : { currentBranch: metadata.currentBranch }),
-  ...(metadata.defaultRemote === undefined ? {} : { defaultRemote: metadata.defaultRemote }),
-  ...(metadata.defaultRemoteUrl === undefined
-    ? {}
-    : { defaultRemoteUrl: metadata.defaultRemoteUrl }),
-  gitDir: metadata.gitDir,
-  inspectedAt: metadata.inspectedAt,
-  remotes: metadata.remotes,
-  worktreePath: metadata.path,
-});
-
-const makeLocalStore = (
-  repositoryPath: string,
-  gitDir: string,
-): Effect.Effect<GitDbStore.StoreServiceShape, unknown> =>
-  GitDbStore.StoreService.pipe(
-    Effect.provide(
-      GitDb.GitDbFilesystem({
-        cwd: repositoryPath,
-        database: "cycle",
-        gitDir,
-      }),
-    ),
-  );
-
-const repositoryById = (
-  repositories: ReadonlyArray<RepositoryRecord>,
-  repositoryId: string,
-): RepositoryRecord | undefined =>
-  repositories.find((repository) => repository.id === repositoryId);
 
 const preferenceForProvider = (config: AppConfigState, providerId: AgentProviderId) => {
   const definition = agentProviderDefinitionById(providerId);
@@ -248,40 +209,6 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
     };
   }
 
-  const repositoryOpenInput = (request: RepositoryOpenRequest): Promise<RepositoryInput> =>
-    runPromise(
-      Effect.gen(function* () {
-        const repository =
-          request.path !== undefined
-            ? yield* localWorkspace.upsertRepositoryPath({
-                displayName: request.displayName,
-                path: request.path,
-              })
-            : repositoryById(yield* localWorkspace.listRepositories(), request.repositoryId ?? "");
-
-        if (repository === undefined) {
-          return yield* new AppConfigError({
-            message: "Repository path or registered repository id is required.",
-            operation: "BackendApi.repositoryOpenInput",
-          });
-        }
-
-        const inspected = yield* gitRepository.metadata(repository.path);
-        const metadata = repositoryMetadata(inspected);
-        const store = yield* makeLocalStore(repository.path, metadata.gitDir ?? inspected.gitDir);
-
-        return {
-          displayName: repository.displayName,
-          gitDir: metadata.gitDir,
-          metadata,
-          repositoryId: repository.id,
-          store,
-          syncOnOpen: request.syncOnOpen ?? false,
-          worktreePath: repository.path,
-        };
-      }),
-    );
-
   const listRepositories = (): Promise<readonly RepositoryDirectoryEntry[]> =>
     runPromise(
       Effect.gen(function* () {
@@ -373,6 +300,16 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
         const agentTaskLayer = AgentTaskServiceLive().pipe(
           Layer.provide(Layer.succeed(AgentTaskStore, AgentTaskStore.of(agentTaskStore))),
         );
+        const databaseLayer = Layer.succeed(DatabaseService, DatabaseService.of(database));
+        const backendRepositoryOpenLayer = BackendRepositoryOpenServiceLive.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              databaseLayer,
+              Layer.succeed(GitRepository, GitRepository.of(gitRepository)),
+              Layer.succeed(LocalWorkspace, LocalWorkspace.of(localWorkspace)),
+            ),
+          ),
+        );
 
         try {
           const handle = await startCycleApiServer({
@@ -429,7 +366,6 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
               const configuredPort = options.port ?? config.api.port;
               return configuredPort === "auto" ? undefined : configuredPort;
             })(),
-            repositoryOpenInput,
             onUseCaseSuccess: (event) => {
               const repositoryId = repositoryIdFromInput(event.input);
               if (event.sideEffect !== "write" || repositoryId === undefined) return;
@@ -437,10 +373,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
             },
             runtimeFile: paths.runtimeDiscoveryPath,
             staticToken: config.api.staticToken,
-            useCaseLayer: Layer.mergeAll(
-              Layer.succeed(DatabaseService, DatabaseService.of(database)),
-              agentTaskLayer,
-            ),
+            useCaseLayer: Layer.mergeAll(databaseLayer, agentTaskLayer, backendRepositoryOpenLayer),
             worktreeService,
             worktreeStoragePath: paths.agentWorktreesPath,
           });

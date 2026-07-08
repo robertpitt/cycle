@@ -2,11 +2,8 @@ import { strict as assert } from "node:assert";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  AgentTaskServiceLive,
-  AgentTaskStore,
-  type AgentTaskRequest,
-} from "@cycle/agents";
+import { AgentTaskServiceLive, AgentTaskStore } from "@cycle/agents";
+import type { AgentTaskRequest } from "@cycle/contracts/schemas/agents/agent-task-schemas";
 import { makeInMemoryAgentTaskStore } from "@cycle/agents/testing";
 import { DatabaseService, type DatabaseServiceShape } from "@cycle/database";
 import type { TicketDocument } from "@cycle/contracts";

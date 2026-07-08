@@ -11,7 +11,7 @@ import { Data, Effect, Layer } from "effect";
 import { afterEach, describe, it } from "vitest";
 import { ElectronRuntime } from "../src/ElectronRuntime.ts";
 import { DesktopApi, DesktopApiLive } from "../src/DesktopApi.ts";
-import { defaultAppConfig, type AppConfigState } from "@cycle/config/app-config-schema";
+import { defaultAppConfig, type AppConfigState } from "@cycle/contracts/schemas/app";
 import { RepositoryBootstrap as DesktopBootstrap } from "@cycle/backend/bootstrap";
 import { LocalWorkspace } from "@cycle/backend/workspace";
 import { DesktopLogger } from "../src/DesktopLogger.ts";

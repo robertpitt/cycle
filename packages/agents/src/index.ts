@@ -51,7 +51,6 @@ export * from "./AgentProviderDetector.ts";
 export * from "./ExecutableResolver.ts";
 export * from "./AgentTaskService.ts";
 export * from "./AgentTaskStore.ts";
-export * from "./AgentTaskSchemas.ts";
 export * from "./AgentTaskErrors.ts";
 export * from "./AgentTaskSqliteStore.ts";
 export * from "./AgentServiceRegistry.ts";

@@ -4,7 +4,7 @@ import {
   type AgentTaskAuthority,
   type AgentTaskRequest,
   type AgentTaskWorkspace,
-} from "@cycle/agents/agent-task-schemas";
+} from "@cycle/contracts/schemas/agents";
 import { Schema } from "effect";
 
 export type AgentTask = typeof AgentTaskSchema.Type;

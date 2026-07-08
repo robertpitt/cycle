@@ -6,7 +6,7 @@ import {
 import { requestOrigin } from "@cycle/agent-chat/prompt";
 import { Effect, Layer, Schema } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http";
-import { CycleApiError } from "@cycle/api";
+import { CycleApiError } from "../../../../CycleApiError.ts";
 import type { CycleApiRuntimeShape } from "../../../runtime/CycleApiRuntime.ts";
 
 type WriteMessage = (message: ServerMessage) => Promise<void>;

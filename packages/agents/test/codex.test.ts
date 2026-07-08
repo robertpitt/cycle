@@ -1,5 +1,8 @@
 import { strict as assert } from "node:assert";
-import { makeCodexAppServerClient, type CodexAppServerClient } from "@cycle/codex-app-server";
+import {
+  makeCodexAppServerClient,
+  type CodexAppServerClient,
+} from "../src/providers/codex/app-server/CodexAppServer.ts";
 import { Schema } from "effect";
 import { describe, it, vi } from "vitest";
 import { makeCodexAgentService } from "../src/providers/codex/service.ts";

@@ -3,20 +3,20 @@ import { Button, Select, StatusIndicator, Switch } from "@cycle/ui/atoms";
 import { SettingRow } from "@cycle/ui/molecules";
 import { RefreshCw, Trash2, Upload } from "lucide-react";
 import * as React from "react";
-import type { BootstrapStatus } from "@cycle/backend/bootstrap";
+import type { BootstrapStatus } from "@cycle/contracts/schemas/backend";
 import {
   isRepositoryCommitStyle,
   type AppConfigState,
   type RepositoryCommitStyle,
   type RepositoryRecord,
-} from "@cycle/config/app-config-schema";
+} from "@cycle/contracts/schemas/app";
 import {
   usePushRepositoryMutation,
   useRemoveRepositoryMutation,
   useSyncRepositoryMutation,
   useUpdateRepositoryPreferencesMutation,
 } from "../mutations/index.ts";
-import type { DetectedAgentProvider } from "@cycle/config/agent-providers";
+import type { DetectedAgentProvider } from "@cycle/contracts/schemas/agents";
 
 type RepositorySettingsPanelProps = {
   readonly agentProviders?: readonly DetectedAgentProvider[];

@@ -1,4 +1,4 @@
-import type { AgentProviderId } from "@cycle/config/agent-providers";
+import type { AgentProviderId } from "@cycle/contracts/schemas/agents";
 import { LocalSettings } from "@cycle/backend/settings";
 import { session } from "electron";
 import { Context, Effect, Layer, Scope } from "effect";
@@ -15,8 +15,8 @@ import type {
   ProfileConfig,
   RepositoryRecord,
   ThemePreference,
-} from "@cycle/config/app-config-schema";
-import type { UpdateRepositoryPreferencesInput } from "@cycle/backend/workspace";
+  UpdateRepositoryPreferencesInput,
+} from "@cycle/contracts/schemas/app";
 import { type CompleteOnboardingInput, type ProfileUpdateInput } from "./shared/Profile.ts";
 
 export type ElectronPreferencesService = {
