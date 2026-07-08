@@ -1,0 +1,42 @@
+{
+  "name": "@cycle/git-store",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./commit-writer": "./src/CommitWriter.ts",
+    "./document": "./src/Document.ts",
+    "./errors": "./src/GitStoreErrors.ts",
+    "./events": "./src/EventStore.ts",
+    "./loose-object-store": "./src/LooseObjectStore.ts",
+    "./loose-refs": "./src/LooseRefStore.ts",
+    "./object-codec": "./src/ObjectCodec.ts",
+    "./object-store": "./src/ObjectStore.ts",
+    "./pack-index-store": "./src/PackIndexStore.ts",
+    "./pack-object-store": "./src/PackObjectStore.ts",
+    "./packed-refs": "./src/PackedRefsStore.ts",
+    "./ref-reader": "./src/RefReader.ts",
+    "./ref-transaction": "./src/RefTransaction.ts",
+    "./refs": "./src/RefStore.ts",
+    "./reflog": "./src/ReflogStore.ts",
+    "./repository-identity": "./src/RepositoryIdentity.ts",
+    "./repository-paths": "./src/RepositoryPaths.ts",
+    "./schemas": "./src/GitStoreSchemas.ts",
+    "./store": "./src/GitStore.ts",
+    "./store-instances": "./src/GitStoreInstances.ts",
+    "./stores": "./src/GitStores.ts",
+    "./testing": "./src/testing/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@effect/platform-node": "4.0.0-beta.78",
+    "effect": "4.0.0-beta.78"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.8"
+  }
+}

@@ -1,0 +1,12 @@
+export const eventSegmentPattern = /^[A-Za-z0-9_][A-Za-z0-9._@+-]*$/u;
+export const gitConfigSectionPattern = /^\[([^\]]+)\]$/u;
+export const gitDirLinePattern = /^gitdir:\s*(.+)$/iu;
+export const gitObjectFormatPattern = /^objectFormat\s*=\s*(\S+)/iu;
+export const gitObjectHeaderPattern = /^(blob|tree|commit|tag) ([0-9]+)$/u;
+export const identityLinePattern = /^(.*) <([^>]*)> (\d+) ([+-]\d{4})$/u;
+export const leadingSlashesPattern = /^\/+/u;
+export const lineEndingPattern = /\r?\n/u;
+export const objectIdPattern = /^[0-9a-f]{40}$/u;
+export const safeSegmentPattern = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;
+export const trailingNewlinePattern = /\n$/u;
+export const trailingSlashesPattern = /\/+$/u;
