@@ -3,7 +3,7 @@ import {
   supportedAgentProviders,
   type AgentProviderId as AgentProviderIdType,
 } from "@cycle/contracts/schemas/agents";
-import { AppConfig, AppConfigError } from "@cycle/config/app-config";
+import { AppConfig, AppConfigError } from "@cycle/config";
 import {
   defaultAgentProviderPreference,
   ThemePreference,
@@ -12,7 +12,7 @@ import {
   type ProfileConfig,
   type RepositoryRecord,
   type ThemePreference as ThemePreferenceType,
-} from "@cycle/contracts/schemas/app";
+} from "@cycle/config";
 import { Context, Effect, Layer, Schema } from "effect";
 import {
   jsonObject,
@@ -88,15 +88,13 @@ export const LocalSettingsLive = Layer.effect(
 
     const getProfile = appConfig.read.pipe(Effect.map((config) => config.profile));
     const updateProfile = (input: ProfileUpdateInput) =>
-      Effect.gen(function* () {
-        const current = yield* appConfig.read;
-        const profile = yield* normalizeProfileUpdate(current.profile, input);
-        const next = yield* appConfig.replace({
-          ...current,
-          profile,
-        });
-        return next.profile;
-      });
+      appConfig
+        .updateEffect((current) =>
+          normalizeProfileUpdate(current.profile, input).pipe(
+            Effect.map((profile) => ({ ...current, profile })),
+          ),
+        )
+        .pipe(Effect.map((config) => config.profile));
 
     return LocalSettings.of({
       completeOnboarding: (input) =>
@@ -128,8 +126,16 @@ export const LocalSettingsLive = Layer.effect(
       read: appConfig.read,
       removeRepository: (id) =>
         localWorkspace.removeRepository(id).pipe(Effect.flatMap(() => appConfig.read)),
-      setInterfaceDensity: (density) => appConfig.setInterfaceDensity(density),
-      setThemePreference: (preference) => appConfig.setThemePreference(preference),
+      setInterfaceDensity: (density) =>
+        appConfig.update((current) => ({
+          ...current,
+          theme: { ...current.theme, density },
+        })),
+      setThemePreference: (preference) =>
+        appConfig.update((current) => ({
+          ...current,
+          theme: { ...current.theme, preference },
+        })),
       shouldAutoSyncRepository: (repositoryId) =>
         appConfig.read.pipe(
           Effect.map(

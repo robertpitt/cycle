@@ -1572,6 +1572,40 @@ describe("@cycle/api", () => {
     }
   });
 
+  it("keeps the chat WebSocket open when a command handler fails", async () => {
+    const agentChatStore: AgentChatStoreShape = {
+      ...makeInMemoryAgentChatStore(),
+      listThreads: async () => Promise.reject(new Error("chat store unavailable")),
+    };
+    const handle = await startCycleApiServer({
+      agentChatStore,
+      useCaseLayer: unexpectedDatabaseLayer,
+      staticToken: token,
+    });
+    const client = await connectChatSocket(handle.baseUrl);
+
+    try {
+      const listCommandId = client.send("thread.list");
+      const error = await client.waitFor(
+        (message) =>
+          message.commandId === listCommandId &&
+          message.type === "command.error" &&
+          isRecord(message.payload) &&
+          message.payload.code === "INTERNAL_ERROR",
+      );
+      assert.equal(isRecord(error.payload) && error.payload.retryable, true);
+
+      const providerCommandId = client.send("provider.list");
+      await client.waitFor(
+        (message) =>
+          message.commandId === providerCommandId && message.type === "provider.list.snapshot",
+      );
+    } finally {
+      client.close();
+      await handle.close();
+    }
+  });
+
   it("streams chat turns over the WebSocket endpoint and persists resumable state", async () => {
     let captured:
       | {

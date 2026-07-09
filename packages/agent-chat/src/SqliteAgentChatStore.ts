@@ -1,4 +1,4 @@
-import { makeSqliteLayer } from "@cycle/sqlite";
+import { makeSqliteLayer, migrationsFromRecord } from "@cycle/sqlite";
 import { Context, Effect, Exit, Layer, Schema, Scope } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { agentChatMigrations } from "./migrations/AgentChatMigrations.ts";
@@ -121,7 +121,10 @@ export const makeSqliteAgentChatStore = (path: string): AgentChatStoreShape => {
     Layer.buildWithScope(
       makeSqliteLayer({
         filename: path,
-        migrations: agentChatMigrations,
+        migrations: {
+          loader: migrationsFromRecord(agentChatMigrations),
+          table: "agent_chat_migrations",
+        },
       }),
       scope,
     ),

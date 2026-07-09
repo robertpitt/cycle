@@ -25,7 +25,10 @@ type CycleAppConfigFile = {
 
 const runtimeDiscoveryPath = (): string =>
   process.env.CYCLE_API_RUNTIME_FILE ??
-  resolve(tmpdir(), `cycle-api-${process.getuid?.() ?? "user"}.json`);
+  resolve(
+    tmpdir(),
+    `cycle-api-${process.env.CYCLE_USER_ID?.trim() || process.env.USER?.trim() || "user"}.json`,
+  );
 
 const appConfigPath = (): string =>
   process.env.CYCLE_APP_CONFIG_PATH ?? resolve(homedir(), ".cycle", "app-config.json");

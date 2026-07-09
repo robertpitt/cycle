@@ -7,10 +7,10 @@ import * as React from "react";
 import {
   isThemePreference,
   isInterfaceDensity,
-  type AppConfigState,
+  type AppConfigEncoded as AppConfigState,
   type InterfaceDensity,
   type ThemePreference,
-} from "@cycle/contracts/schemas/app";
+} from "@cycle/config";
 import {
   useClearCacheMutation,
   useSetInterfaceDensityMutation,

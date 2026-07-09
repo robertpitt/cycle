@@ -20,7 +20,7 @@ import type {
 } from "@cycle/ui/molecules";
 import { AgentChatShell, type AgentChatTurnSettings } from "@cycle/ui/organisms";
 import * as React from "react";
-import type { ProfileConfig, RepositoryRecord } from "@cycle/contracts/schemas/app";
+import type { ProfileConfig, RepositoryRecord } from "@cycle/config";
 import type { AgentProviderId, DetectedAgentProvider } from "@cycle/contracts/schemas/agents";
 import {
   chatWebSocketUrlForConnection,

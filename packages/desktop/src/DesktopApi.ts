@@ -1,9 +1,10 @@
-import { BackendRuntime, BackendServicesLive, backendRuntimeDiscoveryPath } from "@cycle/backend";
+import { BackendRuntime, BackendServicesLive } from "@cycle/backend";
+import { defaultRuntimeDiscoveryPath } from "@cycle/config";
 import { defaultLayer as CycleLoggingLive } from "@cycle/logging";
 import { NodeServices } from "@effect/platform-node";
 import { Context, Effect, Layer } from "effect";
 
-export const desktopApiRuntimeDiscoveryPath = backendRuntimeDiscoveryPath;
+export const desktopApiRuntimeDiscoveryPath = defaultRuntimeDiscoveryPath;
 
 export type DesktopApiService = {
   readonly start: () => Effect.Effect<void, unknown>;

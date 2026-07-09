@@ -21,19 +21,19 @@ import type {
 } from "@cycle/usecases/contracts";
 import { Schema } from "effect";
 import {
-  AppConfigState as AppConfigStateSchema,
+  AppConfigEncoded as AppConfigStateSchema,
   DEFAULT_API_PORT,
   ProfileConfig as ProfileConfigSchema,
   RepositoryRecord as AppRepositoryRecordSchema,
-  type AppConfigState,
+  type AppConfigEncoded as AppConfigState,
   type AgentProviderPreference,
   type InterfaceDensity,
   type ProfileConfig,
   type RepositoryRecord as AppRepositoryRecord,
   type ThemePreference,
-} from "@cycle/contracts/schemas/app";
+} from "@cycle/config";
 import type { AgentProviderId, DetectedAgentProvider } from "@cycle/contracts/schemas/agents";
-import type { UpdateRepositoryPreferencesInput } from "@cycle/contracts/schemas/app";
+import type { UpdateRepositoryPreferencesInput } from "@cycle/config";
 import type { CompleteOnboardingInput, ProfileUpdateInput } from "../../shared/Profile.ts";
 import { getDesktopBridge } from "./desktopBridge.ts";
 import {

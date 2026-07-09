@@ -189,30 +189,58 @@ export const makeChatWebSocketLayer = (
           await Effect.runPromiseWith(context)(write(JSON.stringify(message)));
         };
 
-        const readLoop = socket
-          .runString((raw) =>
-            Effect.tryPromise({
-              try: async () => {
-                connection ??= gateway.connect(send, origin, authorizationToken);
-                await gateway.handleRawMessage(connection, raw);
-              },
-              catch: (cause) =>
-                new CycleApiError({
-                  cause,
-                  message:
-                    cause instanceof Error ? cause.message : "handle chat websocket message failed",
-                  operation: "handle chat websocket message",
-                }),
-            }),
-          )
-          .pipe(
-            Effect.ensuring(
-              Effect.sync(() => {
-                connection?.close();
+        const handleMessage = Effect.fn("handleMessage")(function* (raw: string) {
+          yield* Effect.tryPromise({
+            try: async () => {
+              connection ??= gateway.connect(send, origin, authorizationToken);
+              await gateway.handleRawMessage(connection, raw);
+            },
+            catch: (cause) =>
+              new CycleApiError({
+                cause,
+                message:
+                  cause instanceof Error ? cause.message : "handle chat websocket message failed",
+                operation: "handle chat websocket message",
+              }),
+          }).pipe(
+            Effect.catch((error) =>
+              Effect.gen(function* () {
+                yield* Effect.logError("chat websocket command failed").pipe(
+                  Effect.annotateLogs({
+                    cause: error.message,
+                    operation: error.operation,
+                  }),
+                );
+
+                const activeConnection = connection;
+                if (activeConnection === undefined) return;
+
+                const commandId = parseClientMessage(raw)?.commandId;
+                yield* Effect.promise(() =>
+                  safeSend(activeConnection, {
+                    ...(commandId === undefined ? {} : { commandId }),
+                    payload: {
+                      code: "INTERNAL_ERROR",
+                      message: "Chat socket command failed.",
+                      retryable: true,
+                    },
+                    type: "command.error",
+                    version: 1,
+                  }),
+                );
               }),
             ),
-            Effect.catch(() => Effect.void),
           );
+        });
+
+        const readLoop = socket.runString(handleMessage).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              connection?.close();
+            }),
+          ),
+          Effect.catch(() => Effect.void),
+        );
         yield* readLoop;
 
         return HttpServerResponse.empty();

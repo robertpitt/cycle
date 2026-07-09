@@ -1,5 +1,5 @@
-import { AppConfigError } from "@cycle/config/app-config";
-import type { RepositoryRecord } from "@cycle/contracts/schemas/app";
+import { AppConfigError } from "@cycle/config";
+import type { RepositoryRecord } from "@cycle/config";
 import type { RepositoryOpenInput } from "@cycle/contracts/schemas";
 import {
   DatabaseService,

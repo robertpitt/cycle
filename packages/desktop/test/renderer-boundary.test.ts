@@ -6,7 +6,7 @@ import { describe, it } from "vitest";
 const rendererRoot = join(process.cwd(), "src", "renderer");
 const sourceExtensions = new Set([".ts", ".tsx"]);
 const forbiddenPackagePattern =
-  /from\s+["'](@cycle\/(?:backend|config|agents|git|database|sqlite)(?:\/[^"']*)?|@effect\/platform-node|node:[^"']+|electron)["']/u;
+  /from\s+["'](@cycle\/(?:backend|agents|git|database|sqlite)(?:\/[^"']*)?|@effect\/platform-node|node:[^"']+|electron)["']/u;
 
 const walk = async (directory: string): Promise<readonly string[]> => {
   const entries = await readdir(directory, { withFileTypes: true });

@@ -1351,6 +1351,7 @@ export const makeWorktreeStoreSqliteLayer = (filename: string) =>
         filename,
         migrations: {
           loader: SqliteMigrator.fromRecord(worktreeStoreMigrations),
+          table: "worktree_store_migrations",
         },
         pragmas: ["PRAGMA journal_mode = WAL"],
       }),

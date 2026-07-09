@@ -1,9 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   defaultAppConfig,
-  type AppConfigState,
+  type AppConfigEncoded as AppConfigState,
   type RepositoryRecord,
-} from "@cycle/contracts/schemas/app";
+} from "@cycle/config";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
 import { makeFallbackRepository } from "../lib/repositories.ts";

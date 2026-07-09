@@ -4,11 +4,11 @@ import {
   isInterfaceDensity,
   isThemePreference,
   type AgentProviderPreference,
-  type AppConfigState,
+  type AppConfigEncoded as AppConfigState,
   type InterfaceDensity,
   type ProfileConfig,
   type ThemePreference,
-} from "@cycle/contracts/schemas/app";
+} from "@cycle/config";
 import type { ProfileUpdateInput } from "../../shared/Profile.ts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";

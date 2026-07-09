@@ -1,10 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   defaultAppConfig,
-  type AppConfigState,
+  type AppConfigEncoded as AppConfigState,
   type RepositoryRecord,
-} from "@cycle/contracts/schemas/app";
-import type { InitializeRepositoryPathInput } from "@cycle/contracts/schemas/app";
+} from "@cycle/config";
+import type { InitializeRepositoryPathInput } from "@cycle/config";
 import { appConfigQueryKey } from "../queries/appConfig.ts";
 
 type UseInitialiseRepositoryMutationOptions = {

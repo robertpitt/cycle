@@ -1,50 +1,37 @@
-import { Effect, Layer } from "effect";
-import { AppConfig } from "../AppConfig.ts";
-import { defaultAppConfig, type AppConfigState } from "@cycle/contracts/schemas/app";
+import { Crypto, Effect, Layer, Option, Ref } from "effect";
+import { AppConfig, AppConfigLayer } from "../AppConfig.ts";
+import { AppConfigFile } from "../AppConfigFile.ts";
+import {
+  defaultAppConfigState,
+  encodeAppConfigJson,
+  type AppConfigState,
+} from "../AppConfigSchemas.ts";
 
-export const AppConfigTest = (
-  initial: AppConfigState = defaultAppConfig(),
-): Layer.Layer<AppConfig> => {
-  let state = initial;
+const CryptoTest = Layer.succeed(
+  Crypto.Crypto,
+  Crypto.make({
+    digest: (_algorithm, data) => Effect.succeed(data),
+    randomBytes: (size) => new Uint8Array(size),
+  }),
+);
 
-  return Layer.succeed(
-    AppConfig,
-    AppConfig.of({
-      configPath: Effect.succeed("test-app-config.json"),
-      getThemePreference: Effect.sync(() => state.theme.preference),
-      read: Effect.sync(() => state),
-      replace: (next) =>
-        Effect.sync(() => {
-          state = next;
-          return state;
-        }),
-      setInterfaceDensity: (density) =>
-        Effect.sync(() => {
-          state = {
-            ...state,
-            theme: {
-              ...state.theme,
-              density,
-            },
-          };
-          return state;
-        }),
-      setThemePreference: (preference) =>
-        Effect.sync(() => {
-          state = {
-            ...state,
-            theme: {
-              ...state.theme,
-              preference,
-            },
-          };
-          return state;
-        }),
-      update: (mutator) =>
-        Effect.sync(() => {
-          state = mutator(state);
-          return state;
-        }),
+const AppConfigFileTest = (
+  initial: AppConfigState = defaultAppConfigState(),
+): Layer.Layer<AppConfigFile> =>
+  Layer.effect(
+    AppConfigFile,
+    Effect.gen(function* () {
+      const initialContents = yield* encodeAppConfigJson(initial).pipe(Effect.orDie);
+      const contents = yield* Ref.make(initialContents);
+      return AppConfigFile.of({
+        path: Effect.succeed("test-app-config.json"),
+        read: Ref.get(contents).pipe(Effect.map(Option.some)),
+        write: (text) => Ref.set(contents, text),
+      });
     }),
   );
-};
+
+export const AppConfigTest = (
+  initial: AppConfigState = defaultAppConfigState(),
+): Layer.Layer<AppConfig> =>
+  AppConfigLayer.pipe(Layer.provide(AppConfigFileTest(initial)), Layer.provide(CryptoTest));

@@ -6,10 +6,10 @@ import * as React from "react";
 import type { BootstrapStatus } from "@cycle/contracts/schemas/backend";
 import {
   isRepositoryCommitStyle,
-  type AppConfigState,
+  type AppConfigEncoded as AppConfigState,
   type RepositoryCommitStyle,
   type RepositoryRecord,
-} from "@cycle/contracts/schemas/app";
+} from "@cycle/config";
 import {
   usePushRepositoryMutation,
   useRemoveRepositoryMutation,

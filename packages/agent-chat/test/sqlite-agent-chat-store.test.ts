@@ -9,11 +9,22 @@ import { makeSqliteAgentChatStore } from "../src/SqliteAgentChatStore.ts";
 import { describe, it } from "vitest";
 
 describe("SqliteAgentChatStore", () => {
-  it("schema-decodes persisted chat JSON when rehydrating rows", async () => {
+  it("isolates its migrations and schema-decodes persisted chat JSON", async () => {
     const directory = await mkdtemp(join(tmpdir(), "cycle-agent-chat-store-"));
     const databasePath = join(directory, "cycle.db");
 
     try {
+      await Effect.runPromise(
+        Effect.void.pipe(
+          Effect.provide(
+            makeSqliteLayer({
+              filename: databasePath,
+              migrations: { "0001_unrelated_schema": Effect.void },
+            }),
+          ),
+        ),
+      );
+
       const store = makeSqliteAgentChatStore(databasePath);
       const now = "2026-06-20T00:00:00.000Z";
 

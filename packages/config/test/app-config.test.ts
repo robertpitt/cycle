@@ -1,16 +1,20 @@
 import { strict as assert } from "node:assert";
-import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { NodeServices } from "@effect/platform-node";
 import { ConfigProvider, Effect, Layer } from "effect";
 import { afterEach, describe, it } from "vitest";
-import { AppConfig, AppConfigLive, parseAppConfig } from "../src/AppConfig.ts";
+import { AppConfig, AppConfigLive } from "../src/AppConfig.ts";
 import {
+  appConfigStaticToken,
   DEFAULT_API_PORT,
   defaultAppConfig,
+  defaultAppConfigState,
+  parseAppConfig,
+  type AppConfigEncoded,
   type AppConfigState,
-} from "@cycle/contracts/schemas/app";
+} from "@cycle/config";
 import { AppConfigTest } from "../src/testing/index.ts";
 
 const temporaryDirectories: Array<string> = [];
@@ -43,27 +47,32 @@ const configPath = (homeDirectory: string): string =>
 
 const configDirectory = (homeDirectory: string): string => dirname(configPath(homeDirectory));
 
-const readPersistedConfig = async (homeDirectory: string): Promise<AppConfigState> =>
-  JSON.parse(await readFile(configPath(homeDirectory), "utf8")) as AppConfigState;
+const readPersistedConfig = async (homeDirectory: string): Promise<AppConfigEncoded> =>
+  JSON.parse(await readFile(configPath(homeDirectory), "utf8")) as AppConfigEncoded;
 
 const assertGeneratedToken = (token: string): void => {
   assert.match(token, /^[A-Za-z0-9_-]{43}$/u);
 };
 
 const assertDefaultConfigWithGeneratedToken = (config: AppConfigState): void => {
-  assertGeneratedToken(config.api.staticToken);
-  assert.deepEqual(config, {
-    ...defaultAppConfig(),
-    api: {
-      ...defaultAppConfig().api,
-      staticToken: config.api.staticToken,
-    },
-  });
+  const staticToken = appConfigStaticToken(config);
+  assertGeneratedToken(staticToken);
+  assert.deepEqual(toEncodedConfig(config), defaultAppConfig(staticToken));
 };
+
+const toEncodedConfig = (config: AppConfigState): AppConfigEncoded => ({
+  ...config,
+  api: {
+    ...config.api,
+    staticToken: appConfigStaticToken(config),
+  },
+});
 
 describe("@cycle/config AppConfig", () => {
   it("validates app config through Effect Config and ConfigProvider", async () => {
-    const valid = await Effect.runPromise(parseAppConfig(defaultAppConfig()));
+    const valid = await Effect.runPromise(
+      parseAppConfig(defaultAppConfig()).pipe(Effect.provide(NodeServices.layer)),
+    );
     assert.equal(valid.schemaVersion, defaultAppConfig().schemaVersion);
     assert.equal(valid.api.port, DEFAULT_API_PORT);
 
@@ -75,7 +84,7 @@ describe("@cycle/config AppConfig", () => {
             density: "compact",
             preference: "sepia",
           },
-        }),
+        }).pipe(Effect.provide(NodeServices.layer)),
       ),
     );
   });
@@ -91,10 +100,30 @@ describe("@cycle/config AppConfig", () => {
     );
 
     assertDefaultConfigWithGeneratedToken(config);
-    assert.deepEqual(await readPersistedConfig(homeDirectory), config);
+    assert.deepEqual(await readPersistedConfig(homeDirectory), toEncodedConfig(config));
+    assert.deepEqual(await readdir(configDirectory(homeDirectory)), ["app-config.json"]);
   });
 
-  it("migrates auto API ports to the static desktop API port", async () => {
+  it("persists effectful defaults for existing partial config", async () => {
+    const homeDirectory = await makeTempDir();
+    await mkdir(configDirectory(homeDirectory), { recursive: true });
+    await writeFile(configPath(homeDirectory), "{}", "utf8");
+
+    const [first, second] = await runConfig(
+      homeDirectory,
+      Effect.gen(function* () {
+        const appConfig = yield* AppConfig;
+        return [yield* appConfig.read, yield* appConfig.read] as const;
+      }),
+    );
+
+    const token = appConfigStaticToken(first);
+    assertGeneratedToken(token);
+    assert.equal(appConfigStaticToken(second), token);
+    assert.equal((await readPersistedConfig(homeDirectory)).api.staticToken, token);
+  });
+
+  it("preserves explicitly configured auto API ports", async () => {
     const homeDirectory = await makeTempDir();
     const persisted = {
       ...defaultAppConfig(),
@@ -103,7 +132,7 @@ describe("@cycle/config AppConfig", () => {
         port: "auto",
         staticToken: "existing-token",
       },
-    } satisfies AppConfigState;
+    } satisfies AppConfigEncoded;
 
     await mkdir(configDirectory(homeDirectory), { recursive: true });
     await writeFile(configPath(homeDirectory), `${JSON.stringify(persisted, null, 2)}\n`, "utf8");
@@ -116,33 +145,28 @@ describe("@cycle/config AppConfig", () => {
       }),
     );
 
-    assert.equal(config.api.port, DEFAULT_API_PORT);
-    assert.equal((await readPersistedConfig(homeDirectory)).api.port, DEFAULT_API_PORT);
+    assert.equal(config.api.port, "auto");
+    assert.equal((await readPersistedConfig(homeDirectory)).api.port, "auto");
   });
 
-  it("backs up invalid JSON and writes defaults", async () => {
+  it("fails invalid JSON without replacing the file", async () => {
     const homeDirectory = await makeTempDir();
     await mkdir(configDirectory(homeDirectory), { recursive: true });
     await writeFile(configPath(homeDirectory), "{ nope", "utf8");
 
-    const recovered = await runConfig(
-      homeDirectory,
-      Effect.gen(function* () {
-        const appConfig = yield* AppConfig;
-        return yield* appConfig.read;
-      }),
+    await assert.rejects(() =>
+      runConfig(
+        homeDirectory,
+        Effect.gen(function* () {
+          const appConfig = yield* AppConfig;
+          return yield* appConfig.read;
+        }),
+      ),
     );
-
-    const files = await readdir(configDirectory(homeDirectory));
-    assertDefaultConfigWithGeneratedToken(recovered);
-    assert.equal(
-      files.some((file) => file.startsWith("app-config.invalid-")),
-      true,
-    );
-    assert.deepEqual(await readPersistedConfig(homeDirectory), recovered);
+    assert.equal(await readFile(configPath(homeDirectory), "utf8"), "{ nope");
   });
 
-  it("salvages valid sections from partially invalid config", async () => {
+  it("fails partially invalid config without salvaging sections", async () => {
     const homeDirectory = await makeTempDir();
     await mkdir(configDirectory(homeDirectory), { recursive: true });
     await writeFile(
@@ -195,42 +219,26 @@ describe("@cycle/config AppConfig", () => {
       "utf8",
     );
 
-    const recovered = await runConfig(
-      homeDirectory,
-      Effect.gen(function* () {
-        const appConfig = yield* AppConfig;
-        return yield* appConfig.read;
-      }),
+    await assert.rejects(() =>
+      runConfig(
+        homeDirectory,
+        Effect.gen(function* () {
+          const appConfig = yield* AppConfig;
+          return yield* appConfig.read;
+        }),
+      ),
     );
-
-    assert.equal(recovered.profile.displayName, "Robert");
-    assert.equal(recovered.onboarding.completed, true);
-    assert.equal(recovered.theme.preference, "system");
-    assert.equal(recovered.theme.density, "compact");
-    assert.equal(recovered.localWorkspace.repositories.length, 1);
-    assert.equal(recovered.localWorkspace.repositories[0]?.id, "repo_1");
-    assert.equal(recovered.localWorkspace.repositories[0]?.preferences.autoSync, true);
-    assert.deepEqual(recovered.agentProviders.preferences, [
-      {
-        config: {
-          sandbox: "true",
-        },
-        defaultModel: "gpt-test",
-        enabled: true,
-        executablePath: "/usr/local/bin/codex",
-        id: "codex",
-        maxConcurrentRuns: 2,
-      },
-    ]);
   });
 
   it("provides deterministic in-memory test behavior", async () => {
-    const initial = defaultAppConfig();
+    const initial = defaultAppConfigState();
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const appConfig = yield* AppConfig;
-        yield* appConfig.setThemePreference("dark");
-        yield* appConfig.setInterfaceDensity("spacious");
+        yield* appConfig.update((current) => ({
+          ...current,
+          theme: { density: "spacious", preference: "dark" },
+        }));
         return yield* appConfig.read;
       }).pipe(Effect.provide(AppConfigTest(initial))),
     );
@@ -241,5 +249,29 @@ describe("@cycle/config AppConfig", () => {
       density: "compact",
       preference: "system",
     });
+  });
+
+  it("serializes concurrent updates", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const appConfig = yield* AppConfig;
+        yield* Effect.all(
+          [
+            appConfig.update((current) => ({
+              ...current,
+              theme: { ...current.theme, preference: "dark" },
+            })),
+            appConfig.update((current) => ({
+              ...current,
+              theme: { ...current.theme, density: "spacious" },
+            })),
+          ],
+          { concurrency: "unbounded" },
+        );
+        return yield* appConfig.read;
+      }).pipe(Effect.provide(AppConfigTest())),
+    );
+
+    assert.deepEqual(result.theme, { density: "spacious", preference: "dark" });
   });
 });

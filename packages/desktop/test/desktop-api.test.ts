@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentProviderDetector } from "@cycle/agents";
-import { AppConfig } from "@cycle/config/app-config";
+import { AppConfig } from "@cycle/config";
 import { DatabaseService, type DatabaseServiceShape } from "@cycle/database";
 import { GitRepository } from "@cycle/git";
 import { NodeServices } from "@effect/platform-node";
@@ -11,7 +11,7 @@ import { Data, Effect, Layer } from "effect";
 import { afterEach, describe, it } from "vitest";
 import { ElectronRuntime } from "../src/ElectronRuntime.ts";
 import { DesktopApi, DesktopApiLive } from "../src/DesktopApi.ts";
-import { defaultAppConfig, type AppConfigState } from "@cycle/contracts/schemas/app";
+import { defaultAppConfigState, type AppConfigState } from "@cycle/config";
 import { RepositoryBootstrap as DesktopBootstrap } from "@cycle/backend/bootstrap";
 import { LocalWorkspace } from "@cycle/backend/workspace";
 import { DesktopLogger } from "../src/DesktopLogger.ts";
@@ -61,15 +61,16 @@ const withEnv = async <A>(
   }
 };
 
-const makeConfig = (): AppConfigState => ({
-  ...defaultAppConfig(),
-  api: {
-    enabled: true,
-    host: "127.0.0.1",
-    port: 0,
-    staticToken: "desktop-api-test-token",
-  },
-});
+const makeConfig = (): AppConfigState => {
+  const config = defaultAppConfigState("desktop-api-test-token");
+  return {
+    ...config,
+    api: {
+      ...config.api,
+      port: 0,
+    },
+  };
+};
 
 const databaseStub = (overrides: Partial<DatabaseServiceShape>): DatabaseServiceShape =>
   new Proxy(overrides, {
@@ -93,26 +94,9 @@ const makeLayer = (config: AppConfigState) =>
       AppConfig,
       AppConfig.of({
         configPath: Effect.succeed("test-app-config.json"),
-        getThemePreference: Effect.succeed(config.theme.preference),
         read: Effect.succeed(config),
-        replace: (next) => Effect.succeed(next),
-        setInterfaceDensity: (density) =>
-          Effect.succeed({
-            ...config,
-            theme: {
-              ...config.theme,
-              density,
-            },
-          }),
-        setThemePreference: (preference) =>
-          Effect.succeed({
-            ...config,
-            theme: {
-              ...config.theme,
-              preference,
-            },
-          }),
         update: (mutator) => Effect.succeed(mutator(config)),
+        updateEffect: (mutator) => mutator(config),
       }),
     ),
     Layer.succeed(

@@ -149,14 +149,14 @@ Requirements:
 
 Suggested package ownership:
 
-| Package Area                               | Required Error Owner                                                                                               |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| API server and MCP server startup/disposal | `@cycle/api` API/MCP server error types                                                                            |
-| HTTP handlers and WebSocket handlers       | `@cycle/api` route or protocol error types                                                                         |
-| Desktop API startup/disposal               | `@cycle/desktop` platform or desktop API error types                                                               |
-| Desktop bootstrap repository workflow      | `@cycle/desktop` bootstrap/repository operation errors                                                             |
-| Git and GitDB tests                        | existing `@cycle/git` and `@cycle/git-db` error types or small test-local tagged errors                            |
-| Database materialization warnings          | existing `ValidationError`, `StorageError`, `MaterializationError`, or a more specific database warning cause type |
+| Package Area                               | Required Error Owner                                                                                                                       |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| API server and MCP server startup/disposal | `@cycle/api` API/MCP server error types                                                                                                    |
+| HTTP handlers and WebSocket handlers       | `@cycle/api` route or protocol error types                                                                                                 |
+| Desktop API startup/disposal               | `@cycle/desktop` platform or desktop API error types                                                                                       |
+| Desktop bootstrap repository workflow      | `@cycle/desktop` bootstrap/repository operation errors                                                                                     |
+| Git and GitDB tests                        | existing `@cycle/git` and `@cycle/git-db` error types or small test-local tagged errors                                                    |
+| Database materialization warnings          | existing `DatabaseValidationError`, `DatabaseStorageError`, `DatabaseMaterializationError`, or a more specific database warning cause type |
 
 ### 8.2 Layer Composition
 

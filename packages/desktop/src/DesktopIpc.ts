@@ -24,7 +24,7 @@ import {
   type ElectronThemeState,
 } from "./ElectronTheme.ts";
 import { RepositoryBootstrap as DesktopBootstrap } from "@cycle/backend/bootstrap";
-import { DEFAULT_API_PORT, type ApiConfig } from "@cycle/contracts/schemas/app";
+import { appConfigStaticToken, DEFAULT_API_PORT, type ApiConfig } from "@cycle/config";
 import { BootstrapStatus } from "@cycle/contracts/schemas/backend";
 import { parseRuntimeBaseUrlFromDiscoveryText } from "@cycle/backend/config";
 import { desktopApiRuntimeDiscoveryPath } from "./DesktopApi.ts";
@@ -351,6 +351,7 @@ export const registerDesktopIpc = Effect.gen(function* () {
     () =>
       Effect.gen(function* () {
         const config = yield* preferences.read;
+        const staticToken = appConfigStaticToken(config);
         const runtimeBaseUrl = yield* readDesktopApiRuntimeBaseUrl(diagnosticsRuntimePath).pipe(
           Effect.provideService(FileSystem.FileSystem, fs),
         );
@@ -366,7 +367,7 @@ export const registerDesktopIpc = Effect.gen(function* () {
         return {
           baseUrl: runtimeBaseUrl ?? apiBaseUrlFromConfig(config.api),
           profile: config.profile,
-          token: config.api.staticToken,
+          token: staticToken,
         } satisfies ApiConnectionValue;
       }),
     ApiConnection,
@@ -392,6 +393,7 @@ export const registerDesktopIpc = Effect.gen(function* () {
     () =>
       Effect.gen(function* () {
         const config = yield* preferences.read;
+        const staticToken = appConfigStaticToken(config);
         const runtimeFile = yield* readRuntimeDiscoveryFile(fs, diagnosticsRuntimePath);
         const runtimeValue = runtimeFile.status === "present" ? runtimeFile.value : undefined;
         const runtimeBaseUrl = stringField(runtimeValue, "baseUrl")?.replace(/\/+$/u, "");
@@ -401,7 +403,7 @@ export const registerDesktopIpc = Effect.gen(function* () {
 
         return {
           api: {
-            auth: config.api.staticToken.length > 0 ? "configured" : "missing",
+            auth: staticToken.length > 0 ? "configured" : "missing",
             baseUrl: apiBaseUrl,
             enabled: config.api.enabled,
             status: !config.api.enabled

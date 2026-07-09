@@ -1,9 +1,9 @@
-import { RepositoryCommitStyle, RepositoryRecord } from "@cycle/contracts/schemas/app";
-import { AppConfig, AppConfigError } from "@cycle/config/app-config";
+import { RepositoryCommitStyle, RepositoryRecord } from "@cycle/config";
+import { AppConfig, AppConfigError } from "@cycle/config";
 import {
   defaultRepositoryPreferences,
   type RepositoryRecord as RepositoryRecordType,
-} from "@cycle/contracts/schemas/app";
+} from "@cycle/config";
 import { makeGitRepositoryStoreEffect } from "@cycle/database";
 import { GitRepository, type GitRepositoryServiceShape } from "@cycle/git";
 import { GitStores } from "@cycle/git-store";

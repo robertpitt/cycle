@@ -1,22 +1,24 @@
 import { strict as assert } from "node:assert";
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { ConfigProvider, Effect, Layer } from "effect";
 import { detectAgentProviders } from "@cycle/agents";
-import { AppConfig, AppConfigLive, parseAppConfig } from "@cycle/config/app-config";
+import { AppConfig, AppConfigLive, parseAppConfig } from "@cycle/config";
 import { GitRepositoryLive } from "@cycle/git";
 import { GitStoresTestLive } from "@cycle/git-store/testing";
 import { NodeServices } from "@effect/platform-node";
 import { afterEach, describe, it } from "vitest";
 import { LocalWorkspace, LocalWorkspaceLive } from "@cycle/backend/workspace";
 import {
+  appConfigStaticToken,
   DEFAULT_API_PORT,
   defaultAppConfig,
+  type AppConfigEncoded,
   type AppConfigState,
-} from "@cycle/contracts/schemas/app";
+} from "@cycle/config";
 import { Profile } from "../src/shared/Profile.ts";
 import { ProfileLive } from "../src/ProfileLive.ts";
 import { LocalSettingsLive } from "@cycle/backend/settings";
@@ -75,8 +77,8 @@ const configPath = (userData: string): string => join(userData, ".cycle", "app-c
 
 const configDirectory = (userData: string): string => dirname(configPath(userData));
 
-const readPersistedConfig = async (userData: string): Promise<AppConfigState> =>
-  JSON.parse(await readFile(configPath(userData), "utf8")) as AppConfigState;
+const readPersistedConfig = async (userData: string): Promise<AppConfigEncoded> =>
+  JSON.parse(await readFile(configPath(userData), "utf8")) as AppConfigEncoded;
 
 const readCycleRootCommit = async (repositoryPath: string): Promise<string> => {
   const { stdout } = await execFileAsync(
@@ -98,19 +100,24 @@ const assertGeneratedToken = (token: string): void => {
 };
 
 const assertDefaultConfigWithGeneratedToken = (config: AppConfigState): void => {
-  assertGeneratedToken(config.api.staticToken);
-  assert.deepEqual(config, {
-    ...defaultAppConfig(),
-    api: {
-      ...defaultAppConfig().api,
-      staticToken: config.api.staticToken,
-    },
-  });
+  const staticToken = appConfigStaticToken(config);
+  assertGeneratedToken(staticToken);
+  assert.deepEqual(toEncodedConfig(config), defaultAppConfig(staticToken));
 };
+
+const toEncodedConfig = (config: AppConfigState): AppConfigEncoded => ({
+  ...config,
+  api: {
+    ...config.api,
+    staticToken: appConfigStaticToken(config),
+  },
+});
 
 describe("desktop app config", () => {
   it("validates app config through Effect Config and ConfigProvider", async () => {
-    const valid = await Effect.runPromise(parseAppConfig(defaultAppConfig()));
+    const valid = await Effect.runPromise(
+      parseAppConfig(defaultAppConfig()).pipe(Effect.provide(NodeServices.layer)),
+    );
     assert.equal(valid.schemaVersion, defaultAppConfig().schemaVersion);
     assert.equal(valid.api.port, DEFAULT_API_PORT);
 
@@ -121,7 +128,7 @@ describe("desktop app config", () => {
           theme: {
             preference: "sepia",
           },
-        }),
+        }).pipe(Effect.provide(NodeServices.layer)),
       ),
     );
   });
@@ -137,10 +144,10 @@ describe("desktop app config", () => {
     );
 
     assertDefaultConfigWithGeneratedToken(config);
-    assert.deepEqual(await readPersistedConfig(userData), config);
+    assert.deepEqual(await readPersistedConfig(userData), toEncodedConfig(config));
   });
 
-  it("migrates auto API ports to the static desktop API port", async () => {
+  it("preserves explicitly configured auto API ports", async () => {
     const userData = await makeTempDir();
     const persisted = {
       ...defaultAppConfig(),
@@ -149,7 +156,7 @@ describe("desktop app config", () => {
         port: "auto",
         staticToken: "existing-token",
       },
-    } satisfies AppConfigState;
+    } satisfies AppConfigEncoded;
 
     await mkdir(configDirectory(userData), { recursive: true });
     await writeFile(configPath(userData), `${JSON.stringify(persisted, null, 2)}\n`, "utf8");
@@ -162,8 +169,8 @@ describe("desktop app config", () => {
       }),
     );
 
-    assert.equal(config.api.port, DEFAULT_API_PORT);
-    assert.equal((await readPersistedConfig(userData)).api.port, DEFAULT_API_PORT);
+    assert.equal(config.api.port, "auto");
+    assert.equal((await readPersistedConfig(userData)).api.port, "auto");
   });
 
   it("persists profile updates and onboarding completion", async () => {
@@ -197,13 +204,17 @@ describe("desktop app config", () => {
     assert.deepEqual(result.completed.agentProviders.preferences, [
       {
         config: {},
+        defaultModel: null,
         enabled: true,
+        executablePath: null,
         id: "codex",
         maxConcurrentRuns: null,
       },
       {
         config: {},
+        defaultModel: null,
         enabled: false,
+        executablePath: null,
         id: "claude-code",
         maxConcurrentRuns: null,
       },
@@ -222,8 +233,10 @@ describe("desktop app config", () => {
       userData,
       Effect.gen(function* () {
         const appConfig = yield* AppConfig;
-        yield* appConfig.setThemePreference("light");
-        yield* appConfig.setInterfaceDensity("spacious");
+        yield* appConfig.update((current) => ({
+          ...current,
+          theme: { density: "spacious", preference: "light" },
+        }));
       }),
     );
 
@@ -241,16 +254,17 @@ describe("desktop app config", () => {
       "utf8",
     );
 
-    const recovered = await runConfig(
-      userData,
-      Effect.gen(function* () {
-        const appConfig = yield* AppConfig;
-        return yield* appConfig.read;
-      }),
+    await assert.rejects(() =>
+      runConfig(
+        userData,
+        Effect.gen(function* () {
+          const appConfig = yield* AppConfig;
+          return yield* appConfig.read;
+        }),
+      ),
     );
 
-    assert.equal(recovered.theme.preference, "system");
-    assert.equal(recovered.theme.density, "compact");
+    assert.equal((await readPersistedConfig(userData)).theme.preference, "sepia");
   });
 
   it("migrates theme density to compact when missing", async () => {
@@ -418,29 +432,25 @@ describe("desktop app config", () => {
     assert.equal(config.localWorkspace.repositories[0]?.id, repository.id);
   });
 
-  it("backs up invalid JSON and writes defaults", async () => {
+  it("fails invalid JSON without replacing the file", async () => {
     const userData = await makeTempDir();
     await mkdir(configDirectory(userData), { recursive: true });
     await writeFile(configPath(userData), "{ nope", "utf8");
 
-    const recovered = await runConfig(
-      userData,
-      Effect.gen(function* () {
-        const appConfig = yield* AppConfig;
-        return yield* appConfig.read;
-      }),
+    await assert.rejects(() =>
+      runConfig(
+        userData,
+        Effect.gen(function* () {
+          const appConfig = yield* AppConfig;
+          return yield* appConfig.read;
+        }),
+      ),
     );
 
-    const files = await readdir(configDirectory(userData));
-    assertDefaultConfigWithGeneratedToken(recovered);
-    assert.equal(
-      files.some((file) => file.startsWith("app-config.invalid-")),
-      true,
-    );
-    assert.deepEqual(await readPersistedConfig(userData), recovered);
+    assert.equal(await readFile(configPath(userData), "utf8"), "{ nope");
   });
 
-  it("salvages valid sections from partially invalid config", async () => {
+  it("fails partially invalid config without salvaging sections", async () => {
     const userData = await makeTempDir();
     await mkdir(configDirectory(userData), { recursive: true });
     await writeFile(
@@ -475,22 +485,15 @@ describe("desktop app config", () => {
       "utf8",
     );
 
-    const recovered = await runConfig(
-      userData,
-      Effect.gen(function* () {
-        const appConfig = yield* AppConfig;
-        return yield* appConfig.read;
-      }),
+    await assert.rejects(() =>
+      runConfig(
+        userData,
+        Effect.gen(function* () {
+          const appConfig = yield* AppConfig;
+          return yield* appConfig.read;
+        }),
+      ),
     );
-
-    assert.equal(recovered.profile.displayName, "Robert");
-    assert.equal(recovered.onboarding.completed, true);
-    assert.equal(recovered.theme.preference, "system");
-    assert.equal(recovered.localWorkspace.repositories.length, 1);
-    assert.equal(recovered.localWorkspace.repositories[0]?.id, "repo_1");
-    assert.equal(recovered.localWorkspace.repositories[0]?.preferences.autoSync, true);
-    assert.equal(recovered.localWorkspace.repositories[0]?.preferences.commitStyle, "descriptive");
-    assert.equal(recovered.localWorkspace.repositories[0]?.preferences.sidebarExpanded, true);
   });
 
   it("detects providers from PATH without enabling app config preferences", async () => {

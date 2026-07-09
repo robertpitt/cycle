@@ -11,7 +11,7 @@ import { GitStores, type GitStoresShape } from "@cycle/git-store";
 import { logDebug, logError, logInfo } from "@cycle/logging";
 import type * as BackendContractSchemas from "@cycle/contracts/schemas/backend";
 import { Context, Effect, Layer, Queue, Scope } from "effect";
-import type { RepositoryRecord } from "@cycle/contracts/schemas/app";
+import type { RepositoryRecord } from "@cycle/config";
 import { LocalSettings } from "./LocalSettings.ts";
 import { LocalWorkspace } from "./LocalWorkspace.ts";
 import { BackendBootstrapError, errorMessage } from "./BackendErrors.ts";

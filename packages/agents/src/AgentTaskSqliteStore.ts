@@ -1,4 +1,4 @@
-import { makeSqliteLayer, type SqliteLayerError } from "@cycle/sqlite";
+import { makeSqliteLayer, migrationsFromRecord, type SqliteLayerError } from "@cycle/sqlite";
 import { Context, Effect, Exit, Layer, Scope } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import type {
@@ -18,13 +18,18 @@ const activeStatuses = new Set<AgentTaskStatus>([
   "waiting_for_input",
 ]);
 
+const agentTaskMigrationOptions = {
+  loader: migrationsFromRecord(agentTaskMigrations),
+  table: "agent_task_migrations",
+};
+
 export const makeNodeSqliteAgentTaskStore = (path: string): AgentTaskStoreShape => {
   const scope = Effect.runSync(Scope.make("sequential"));
   const context = Effect.runSync(
     Layer.buildWithScope(
       makeSqliteLayer({
         filename: path,
-        migrations: agentTaskMigrations,
+        migrations: agentTaskMigrationOptions,
       }),
       scope,
     ),
@@ -47,7 +52,7 @@ export const AgentTaskStoreSqlite = (path: string): Layer.Layer<AgentTaskStore, 
     Layer.provide(
       makeSqliteLayer({
         filename: path,
-        migrations: agentTaskMigrations,
+        migrations: agentTaskMigrationOptions,
       }),
     ),
   );

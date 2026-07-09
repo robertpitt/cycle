@@ -86,16 +86,6 @@ export type LocalSettingsProviderShape = {
   ) => Promise<unknown>;
 };
 
-export type RuntimeDiscoveryFile = {
-  readonly apiVersion: string;
-  readonly baseUrl: string;
-  readonly mcpPath?: string;
-  readonly mcpUrl?: string;
-  readonly pid: number;
-  readonly specUrl?: string;
-  readonly startedAt: string;
-};
-
 export type ApiRequestContext = {
   readonly requestId: string;
 };

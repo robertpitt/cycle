@@ -3,11 +3,19 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { NodeServices } from "@effect/platform-node";
-import { Crypto, Effect, FileSystem, Path } from "effect";
+import { ConfigProvider, Crypto, Effect, FileSystem, Layer, Path } from "effect";
 import { afterEach, describe, it } from "vitest";
-import { defaultAppConfig } from "@cycle/contracts/schemas/app";
-import { discoverCycleApiEffect } from "../src/CycleApiDiscovery.ts";
-import type { CycleApiDiscoveryError } from "../src/CycleApiDiscovery.ts";
+import {
+  AppConfigLive,
+  cycleApiConnectionToken,
+  defaultAppConfig,
+  envProvider,
+  resolveCycleApiConnection,
+  RuntimeDiscoveryLive,
+  type ConfigSourceEnv,
+  type CycleApiConnectionError,
+  type CycleApiConnectionInput,
+} from "@cycle/config";
 
 const temporaryDirectories: Array<string> = [];
 
@@ -29,13 +37,26 @@ const runPlatform = <A, E>(
   effect: Effect.Effect<A, E, Crypto.Crypto | FileSystem.FileSystem | Path.Path>,
 ) => Effect.runPromise(effect.pipe(Effect.provide(NodeServices.layer)));
 
-const runtimePath = (directory: string): string =>
-  join(directory, `cycle-api-${globalThis.process?.getuid?.() ?? "user"}.json`);
+const runtimePath = (directory: string): string => join(directory, "cycle-api-test-user.json");
 
-describe("@cycle/config CycleApiDiscovery", () => {
+const connectionLayer = Layer.merge(AppConfigLive, RuntimeDiscoveryLive);
+
+const resolveConnection = (
+  input: CycleApiConnectionInput & { readonly env?: ConfigSourceEnv } = {},
+) => {
+  const effect = resolveCycleApiConnection({
+    apiToken: input.apiToken,
+    apiUrl: input.apiUrl,
+  }).pipe(Effect.provide(connectionLayer));
+  return input.env === undefined
+    ? effect
+    : effect.pipe(Effect.provideService(ConfigProvider.ConfigProvider, envProvider(input.env)));
+};
+
+describe("@cycle/config CycleApiConnection", () => {
   it("prefers explicit URL and token and normalizes trailing slashes", async () => {
     const result = await runPlatform(
-      discoverCycleApiEffect({
+      resolveConnection({
         apiToken: "explicit-token",
         apiUrl: "http://127.0.0.1:9999///",
         env: {
@@ -45,15 +66,17 @@ describe("@cycle/config CycleApiDiscovery", () => {
       }),
     );
 
-    assert.deepEqual(result, {
-      baseUrl: "http://127.0.0.1:9999",
-      token: "explicit-token",
+    assert.equal(result.baseUrl, "http://127.0.0.1:9999");
+    assert.equal(cycleApiConnectionToken(result), "explicit-token");
+    assert.deepEqual(result.source, {
+      baseUrl: "explicit",
+      token: "explicit",
     });
   });
 
   it("uses environment URL and token when explicit values are absent", async () => {
     const result = await runPlatform(
-      discoverCycleApiEffect({
+      resolveConnection({
         env: {
           CYCLE_API_TOKEN: "env-token",
           CYCLE_API_URL: "http://127.0.0.1:2222/",
@@ -61,9 +84,11 @@ describe("@cycle/config CycleApiDiscovery", () => {
       }),
     );
 
-    assert.deepEqual(result, {
-      baseUrl: "http://127.0.0.1:2222",
-      token: "env-token",
+    assert.equal(result.baseUrl, "http://127.0.0.1:2222");
+    assert.equal(cycleApiConnectionToken(result), "env-token");
+    assert.deepEqual(result.source, {
+      baseUrl: "env",
+      token: "env",
     });
   });
 
@@ -72,6 +97,7 @@ describe("@cycle/config CycleApiDiscovery", () => {
     const env = {
       HOME: directory,
       TMPDIR: directory,
+      USER: "test-user",
     };
     const discoveryPath = runtimePath(directory);
 
@@ -103,20 +129,22 @@ describe("@cycle/config CycleApiDiscovery", () => {
     );
 
     const result = await runPlatform(
-      discoverCycleApiEffect({
+      resolveConnection({
         env,
       }),
     );
 
-    assert.deepEqual(result, {
-      baseUrl: "http://127.0.0.1:3333",
-      token: "app-config-token",
+    assert.equal(result.baseUrl, "http://127.0.0.1:3333");
+    assert.equal(cycleApiConnectionToken(result), "app-config-token");
+    assert.deepEqual(result.source, {
+      baseUrl: "runtimeDiscovery",
+      token: "appConfig",
     });
   });
 
   it("falls back to default URL when only a token is available", async () => {
     const result = await runPlatform(
-      discoverCycleApiEffect({
+      resolveConnection({
         env: {
           CYCLE_API_TOKEN: "token-only",
           CYCLE_API_URL_DEFAULT: "http://localhost:4444/",
@@ -124,35 +152,62 @@ describe("@cycle/config CycleApiDiscovery", () => {
       }),
     );
 
-    assert.deepEqual(result, {
-      baseUrl: "http://localhost:4444",
-      token: "token-only",
+    assert.equal(result.baseUrl, "http://localhost:4444");
+    assert.equal(cycleApiConnectionToken(result), "token-only");
+    assert.deepEqual(result.source, {
+      baseUrl: "env",
+      token: "env",
     });
   });
 
-  it("ignores invalid runtime discovery files for tolerant reads", async () => {
+  it("fails visibly for invalid runtime discovery files", async () => {
     const directory = await makeTempDir();
     const env = {
       CYCLE_API_TOKEN: "token",
       HOME: directory,
       TMPDIR: directory,
+      USER: "test-user",
     };
     const discoveryPath = runtimePath(directory);
 
     await writeFile(discoveryPath, "{ nope", "utf8");
 
-    const discovered = await runPlatform(discoverCycleApiEffect({ env }));
+    const error = await runPlatform(resolveConnection({ env }).pipe(Effect.flip));
 
-    assert.deepEqual(discovered, {
-      baseUrl: "http://127.0.0.1:4738",
-      token: "token",
-    });
+    assert.equal(error.code, "DISCOVERY_INVALID");
+  });
+
+  it("honors an explicit runtime discovery path", async () => {
+    const directory = await makeTempDir();
+    const discoveryPath = join(directory, "custom-runtime.json");
+    await writeFile(discoveryPath, JSON.stringify({ baseUrl: "http://127.0.0.1:5555" }), "utf8");
+
+    const result = await runPlatform(
+      resolveConnection({
+        env: {
+          CYCLE_API_RUNTIME_FILE: discoveryPath,
+          CYCLE_API_TOKEN: "token",
+          HOME: directory,
+        },
+      }),
+    );
+
+    assert.equal(result.baseUrl, "http://127.0.0.1:5555");
+    assert.equal(result.source.baseUrl, "runtimeDiscovery");
+  });
+
+  it("rejects invalid explicit URLs", async () => {
+    const error = await runPlatform(
+      resolveConnection({ apiToken: "token", apiUrl: "not-a-url" }).pipe(Effect.flip),
+    );
+
+    assert.equal(error.code, "INVALID_API_URL");
   });
 
   it("creates a canonical app config token when no token override exists", async () => {
     const directory = await makeTempDir();
     const result = await runPlatform(
-      discoverCycleApiEffect({
+      resolveConnection({
         env: {
           HOME: directory,
         },
@@ -160,7 +215,7 @@ describe("@cycle/config CycleApiDiscovery", () => {
     );
 
     assert.equal(result.baseUrl, "http://127.0.0.1:4738");
-    assert.match(result.token, /^[A-Za-z0-9_-]{43}$/u);
+    assert.match(cycleApiConnectionToken(result), /^[A-Za-z0-9_-]{43}$/u);
   });
 
   it("returns typed unavailable errors when canonical app config cannot be read", async () => {
@@ -169,17 +224,19 @@ describe("@cycle/config CycleApiDiscovery", () => {
     await writeFile(notDirectory, "blocking file", "utf8");
 
     const error = await runPlatform(
-      discoverCycleApiEffect({
+      resolveConnection({
         env: {
           HOME: notDirectory,
         },
       }).pipe(Effect.flip),
     );
 
-    assert.deepEqual(error satisfies CycleApiDiscoveryError, {
-      _tag: "CycleApiDiscoveryError",
-      code: "API_UNAVAILABLE",
-      message: "No Cycle API URL/token was supplied and no local app config token was found.",
-    });
+    assert.equal(error._tag, "CycleApiConnectionError");
+    const connectionError = error as CycleApiConnectionError;
+    assert.equal(connectionError.code, "API_UNAVAILABLE");
+    assert.equal(
+      connectionError.message,
+      "No Cycle API URL/token was supplied and no local app config token was found.",
+    );
   });
 });

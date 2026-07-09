@@ -11,7 +11,7 @@ import type {
   UserProfileDocument,
 } from "@cycle/contracts/schemas";
 import { Box, CalendarPlus, CircleDashed, FileText, Link2, Repeat2 } from "lucide-react";
-import type { ProfileConfig, RepositoryRecord } from "@cycle/contracts/schemas/app";
+import type { ProfileConfig, RepositoryRecord } from "@cycle/config";
 
 export type CreateIssueDialogOptionSections = {
   readonly assigneeSections: readonly PropertyPickerSection[];

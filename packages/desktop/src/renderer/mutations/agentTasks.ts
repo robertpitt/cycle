@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { TicketDocument } from "@cycle/contracts/schemas";
-import type { RepositoryRecord } from "@cycle/contracts/schemas/app";
+import type { RepositoryRecord } from "@cycle/config";
 import type { StartIssueAgentTaskInput } from "../lib/agentTasks.ts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { agentTaskEventsQueryKey, agentTasksQueryKey } from "../queries/agentTasks.ts";

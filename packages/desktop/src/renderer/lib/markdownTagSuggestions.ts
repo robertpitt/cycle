@@ -1,6 +1,6 @@
 import type { TicketDocument, UserProfileDocument } from "@cycle/contracts/schemas";
 import type { MarkdownEditorTagSuggestion } from "@cycle/ui/molecules";
-import type { ProfileConfig, RepositoryRecord } from "@cycle/contracts/schemas/app";
+import type { ProfileConfig, RepositoryRecord } from "@cycle/config";
 import type { DetectedAgentProvider } from "@cycle/contracts/schemas/agents";
 
 type CreateMarkdownTagSuggestionsInput = {

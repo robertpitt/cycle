@@ -1,5 +1,5 @@
 import { AgentProviderDetectorLive } from "@cycle/agents";
-import { AppConfigLive } from "@cycle/config/app-config";
+import { AppConfigLive } from "@cycle/config";
 import { GitRepositoryLive } from "@cycle/git";
 import { GitStoresLive, RepositoryPathsLive } from "@cycle/git-store";
 import { WorktreeConfigLive, WorktreesLive } from "@cycle/git-worktrees";

@@ -15,7 +15,7 @@ import { Data, Effect, Layer } from "effect";
 import { GitStoresTestLive } from "@cycle/git-store/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { ElectronRuntimeLive } from "../src/ElectronRuntime.ts";
-import { defaultAppConfig, type RepositoryRecord } from "@cycle/contracts/schemas/app";
+import { defaultAppConfigState, type RepositoryRecord } from "@cycle/config";
 import { RepositoryBootstrap as DesktopBootstrap } from "@cycle/backend/bootstrap";
 import { LocalWorkspace } from "@cycle/backend/workspace";
 import { DesktopBootstrapLive } from "../src/DesktopBootstrapLive.ts";
@@ -243,7 +243,7 @@ const makeLayer = (
     ? repositoryOrRepositories
     : [repositoryOrRepositories];
   const config = {
-    ...defaultAppConfig(),
+    ...defaultAppConfigState(),
     localWorkspace: {
       repositories,
     },

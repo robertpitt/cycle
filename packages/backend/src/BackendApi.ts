@@ -18,8 +18,13 @@ import {
   type AgentProviderProfile,
 } from "@cycle/agents";
 import { makeSqliteAgentChatStore } from "@cycle/agent-chat/store";
-import { AppConfig } from "@cycle/config/app-config";
-import { defaultAgentProviderPreference, type AppConfigState } from "@cycle/contracts/schemas/app";
+import {
+  AppConfig,
+  appConfigStaticToken,
+  defaultAgentProviderPreference,
+  encodeAppConfig,
+  type AppConfigState,
+} from "@cycle/config";
 import { DatabaseService } from "@cycle/database";
 import { GitRepository } from "@cycle/git";
 import { GitStores } from "@cycle/git-store";
@@ -195,6 +200,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
   const worktrees = yield* Worktrees;
   const localWorkspace = yield* LocalWorkspace;
   const config = yield* appConfig.read;
+  const staticToken = appConfigStaticToken(config);
   const paths = yield* backendPaths(options);
   const services = yield* Effect.context<BackendApiStartRequirements>();
   const environment = yield* Effect.sync(() => ({
@@ -203,6 +209,8 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
   }));
   const runPromise = <A>(effect: Effect.Effect<A, unknown, BackendApiStartRequirements>) =>
     Effect.runPromiseWith(services)(effect);
+  const runAppConfigPromise = (effect: Effect.Effect<AppConfigState, unknown>) =>
+    runPromise(effect.pipe(Effect.flatMap(encodeAppConfig)));
 
   if (!config.api.enabled) {
     return {
@@ -235,7 +243,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
         const agentServices = makeDefaultAgentServiceRegistry({
           env: {
             ...environment,
-            [mcpBearerTokenEnvVar]: config.api.staticToken,
+            [mcpBearerTokenEnvVar]: staticToken,
           },
           ...(codexPreference.executablePath === null ||
           codexPreference.executablePath === undefined
@@ -324,7 +332,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
             host: options.host ?? config.api.host,
             localSettings: {
               completeOnboarding: (input) =>
-                runPromise(
+                runAppConfigPromise(
                   settings.completeOnboarding({
                     displayName: input.displayName,
                     email: input.email,
@@ -332,12 +340,13 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
                     themePreference: input.themePreference,
                   }),
                 ),
-              read: () => runPromise(settings.read),
+              read: () => runAppConfigPromise(settings.read),
               removeRepository: (repositoryId) =>
-                runPromise(settings.removeRepository(repositoryId)),
-              setInterfaceDensity: (density) => runPromise(settings.setInterfaceDensity(density)),
+                runAppConfigPromise(settings.removeRepository(repositoryId)),
+              setInterfaceDensity: (density) =>
+                runAppConfigPromise(settings.setInterfaceDensity(density)),
               setThemePreference: (preference) =>
-                runPromise(settings.setThemePreference(preference)),
+                runAppConfigPromise(settings.setThemePreference(preference)),
               updateProfile: (input) => runPromise(settings.updateProfile(input)),
               updateRepositoryPreferences: (input) =>
                 runPromise(
@@ -347,7 +356,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
                   }),
                 ),
               updateAgentProviderPreference: (input) =>
-                runPromise(
+                runAppConfigPromise(
                   settings.updateAgentProviderPreference({
                     preference: input.preference,
                     providerId: input.providerId,
@@ -356,8 +365,8 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
             },
             logging: { console: false, packageName: "backend" },
             mcp: {
-              apiToken: config.api.staticToken,
-              auth: { token: config.api.staticToken },
+              apiToken: staticToken,
+              auth: { token: staticToken },
               enabled: true,
               env: {
                 ...environment,
@@ -376,7 +385,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
               return runPromise(bootstrap.notifyRepositoryChanged(repositoryId)) as Promise<void>;
             },
             runtimeFile: paths.runtimeDiscoveryPath,
-            staticToken: config.api.staticToken,
+            staticToken,
             useCaseLayer: Layer.mergeAll(databaseLayer, agentTaskLayer, backendRepositoryOpenLayer),
             worktrees,
             worktreeStoragePath: paths.agentWorktreesPath,

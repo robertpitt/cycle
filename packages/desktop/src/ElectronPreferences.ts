@@ -8,7 +8,7 @@ import {
   type ElectronThemeLifecycleHandlers,
   type ElectronThemeState,
 } from "./ElectronTheme.ts";
-import type { AppConfigError } from "@cycle/config/errors";
+import type { AppConfigError } from "@cycle/config";
 import type {
   AppConfigState,
   InterfaceDensity,
@@ -16,7 +16,7 @@ import type {
   RepositoryRecord,
   ThemePreference,
   UpdateRepositoryPreferencesInput,
-} from "@cycle/contracts/schemas/app";
+} from "@cycle/config";
 import { type CompleteOnboardingInput, type ProfileUpdateInput } from "./shared/Profile.ts";
 
 export type ElectronPreferencesService = {

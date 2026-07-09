@@ -1,3 +1,4 @@
+import { AppConfigEncoded } from "@cycle/config";
 import { Schema } from "effect";
 import { AgentProviderId } from "./AgentProvidersResourceEnvelope.ts";
 import {
@@ -111,15 +112,7 @@ export const RepositoryRecordNullableOutput = Schema.NullOr(RepositoryRecordOutp
 export const LocalWorkspaceConfigOutput = Schema.Struct({
   repositories: Schema.Array(RepositoryRecordOutput),
 });
-export const AppConfigOutput = Schema.Struct({
-  agentProviders: AgentProvidersConfigOutput,
-  api: LocalApiConfigOutput,
-  localWorkspace: LocalWorkspaceConfigOutput,
-  onboarding: OnboardingConfigOutput,
-  profile: ProfileOutput,
-  schemaVersion: Schema.Finite,
-  theme: ThemeConfigOutput,
-});
+export const AppConfigOutput = AppConfigEncoded;
 export const AppConfigResourceEnvelope = ResourceEnvelopeOf(AppConfigOutput);
 export const RepositoryRecordNullableResourceEnvelope = ResourceEnvelopeOf(
   RepositoryRecordNullableOutput,

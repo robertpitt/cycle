@@ -1,289 +1,117 @@
-import { Config, Context, Crypto, Effect, Encoding, FileSystem, Layer, Path } from "effect";
-import { AppConfigError } from "./AppConfigError.ts";
+import { Context, Crypto, Effect, Layer, Option, Semaphore } from "effect";
+import { AppConfigFile, AppConfigFileLive } from "./AppConfigFile.ts";
+import { AppConfigError } from "./ConfigErrors.ts";
 import {
-  DEFAULT_API_PORT,
-  defaultAppConfig,
-  type AppConfigState,
-  type InterfaceDensity,
-  type ThemePreference,
-} from "@cycle/contracts/schemas/app";
-import { parseAppConfig } from "./AppConfigSchema.ts";
-import { salvageAppConfig } from "./internals/appConfigRecovery.ts";
-
-export { AppConfigError } from "./AppConfigError.ts";
-export { parseAppConfig } from "./AppConfigSchema.ts";
-
-const cycleAppConfigFileName = "app-config.json";
+  AppConfigState,
+  decodeAppConfigJson,
+  encodeAppConfigJson,
+  parseAppConfig,
+} from "./AppConfigSchemas.ts";
 
 export type AppConfigService = {
   readonly configPath: Effect.Effect<string, AppConfigError>;
-  readonly getThemePreference: Effect.Effect<ThemePreference, AppConfigError>;
   readonly read: Effect.Effect<AppConfigState, AppConfigError>;
-  readonly replace: (next: AppConfigState) => Effect.Effect<AppConfigState, AppConfigError>;
-  readonly setThemePreference: (
-    preference: ThemePreference,
-  ) => Effect.Effect<AppConfigState, AppConfigError>;
-  readonly setInterfaceDensity: (
-    density: InterfaceDensity,
-  ) => Effect.Effect<AppConfigState, AppConfigError>;
   readonly update: (
     mutator: (current: AppConfigState) => AppConfigState,
   ) => Effect.Effect<AppConfigState, AppConfigError>;
+  readonly updateEffect: <E, R>(
+    mutator: (current: AppConfigState) => Effect.Effect<AppConfigState, E, R>,
+  ) => Effect.Effect<AppConfigState, AppConfigError | E, R>;
 };
 
 export class AppConfig extends Context.Service<AppConfig, AppConfigService>()(
   "@cycle/config/AppConfig",
-) {}
+) {
+  static get layer() {
+    return AppConfigLayer;
+  }
 
-const generateStaticToken: Effect.Effect<string, AppConfigError, Crypto.Crypto> = Effect.gen(
-  function* () {
-    const crypto = yield* Crypto.Crypto;
-    const bytes = yield* crypto.randomBytes(32).pipe(
-      Effect.mapError(
-        (cause) =>
-          new AppConfigError({
-            cause,
-            message: "Unable to generate API token.",
-            operation: "AppConfig.generateToken",
-          }),
-      ),
-    );
-    return Encoding.encodeBase64Url(bytes);
-  },
-);
+  static get layerLive() {
+    return AppConfigLive;
+  }
+}
 
-const ensureApiDefaults = (
-  config: AppConfigState,
-): Effect.Effect<
-  { readonly shouldWrite: boolean; readonly value: AppConfigState },
-  AppConfigError,
-  Crypto.Crypto
-> =>
-  Effect.gen(function* () {
-    let shouldWrite = false;
-    let value = config;
+const toAppConfigError = (operation: string, message: string) => (cause: unknown) =>
+  new AppConfigError({ cause, message, operation });
 
-    if (value.api.staticToken.trim().length === 0) {
-      shouldWrite = true;
-      const staticToken = yield* generateStaticToken;
-      value = {
-        ...value,
-        api: {
-          ...value.api,
-          staticToken,
-        },
-      };
-    }
-
-    if (value.api.port === "auto") {
-      shouldWrite = true;
-      value = {
-        ...value,
-        api: {
-          ...value.api,
-          port: DEFAULT_API_PORT,
-        },
-      };
-    }
-
-    return { shouldWrite, value };
-  });
-
-const backupConfigFile = (
-  configPath: string,
-  kind: "invalid",
-): Effect.Effect<void, AppConfigError, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const stamp = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
-    const backupName = `app-config.${kind}-${stamp}.json`;
-
-    yield* fs.rename(configPath, path.join(path.dirname(configPath), backupName)).pipe(
-      Effect.mapError(
-        (cause) =>
-          new AppConfigError({
-            cause,
-            message: "Unable to back up app config.",
-            operation: "AppConfig.backup",
-          }),
-      ),
-    );
-  });
-
-const writeValidatedConfig = (
-  configPath: string,
-  next: AppConfigState,
-): Effect.Effect<AppConfigState, AppConfigError, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const validated = yield* parseAppConfig(next);
-    const directory = path.dirname(configPath);
-    const temporaryPath = path.join(
-      directory,
-      `${cycleAppConfigFileName}.${globalThis.process?.pid ?? "runtime"}.${Date.now()}.${Math.random()
-        .toString(16)
-        .slice(2)}.tmp`,
-    );
-    const serialized = `${JSON.stringify(validated, null, 2)}\n`;
-
-    yield* fs.makeDirectory(directory, { recursive: true }).pipe(
-      Effect.andThen(fs.writeFileString(temporaryPath, serialized)),
-      Effect.andThen(fs.rename(temporaryPath, configPath)),
-      Effect.mapError(
-        (cause) =>
-          new AppConfigError({
-            cause,
-            message: "Unable to write app config.",
-            operation: "AppConfig.writeFile",
-          }),
-      ),
-    );
-
-    return validated;
-  });
-
-const readOrRecoverConfig = (
-  configPath: string,
-): Effect.Effect<
-  AppConfigState,
-  AppConfigError,
-  Crypto.Crypto | FileSystem.FileSystem | Path.Path
-> =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const exists = yield* fs.exists(configPath).pipe(Effect.catch(() => Effect.succeed(false)));
-
-    if (!exists) {
-      const defaults = yield* ensureApiDefaults(defaultAppConfig());
-      return yield* writeValidatedConfig(configPath, defaults.value);
-    }
-
-    const text = yield* fs.readFileString(configPath, "utf8").pipe(
-      Effect.mapError(
-        (cause) =>
-          new AppConfigError({
-            cause,
-            message: "Unable to read app config.",
-            operation: "AppConfig.readFile",
-          }),
-      ),
-    );
-    const raw = yield* Effect.try({
-      try: () => JSON.parse(text) as unknown,
-      catch: (cause) =>
-        new AppConfigError({
-          cause,
-          message: "App config is not valid JSON.",
-          operation: "AppConfig.parseJson",
-        }),
-    }).pipe(
-      Effect.catch(() =>
-        Effect.gen(function* () {
-          yield* backupConfigFile(configPath, "invalid");
-          const defaults = yield* ensureApiDefaults(defaultAppConfig());
-          return yield* writeValidatedConfig(configPath, defaults.value);
-        }),
-      ),
-    );
-
-    const parsed = yield* parseAppConfig(raw).pipe(
-      Effect.catch(() =>
-        salvageAppConfig(raw).pipe(
-          Effect.flatMap((salvaged) => writeValidatedConfig(configPath, salvaged)),
-        ),
-      ),
-    );
-
-    const withApiDefaults = yield* ensureApiDefaults(parsed);
-    if (withApiDefaults.shouldWrite) {
-      return yield* writeValidatedConfig(configPath, withApiDefaults.value);
-    }
-    return withApiDefaults.value;
-  });
-
-const appConfigPath = Effect.gen(function* () {
-  const path = yield* Path.Path;
-  const homeDirectory = yield* Config.string("HOME").pipe(
-    Config.withDefault("."),
-    Config.map((value) => value.trim() || "."),
-  );
-
-  return path.join(homeDirectory, ".cycle", cycleAppConfigFileName);
-}).pipe(
-  Effect.mapError(
-    (cause) =>
-      new AppConfigError({
-        cause,
-        message: "Unable to resolve app config path.",
-        operation: "AppConfig.path",
-      }),
-  ),
-);
-
-export const AppConfigLive = Layer.effect(
+export const AppConfigLayer = Layer.effect(
   AppConfig,
   Effect.gen(function* () {
+    const file = yield* AppConfigFile;
     const crypto = yield* Crypto.Crypto;
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const resolvedConfigPath = yield* appConfigPath;
-    const providePlatform = <A, E>(
-      effect: Effect.Effect<A, E, Crypto.Crypto | FileSystem.FileSystem | Path.Path>,
-    ): Effect.Effect<A, E> =>
-      effect.pipe(
-        Effect.provideService(Crypto.Crypto, crypto),
-        Effect.provideService(FileSystem.FileSystem, fs),
-        Effect.provideService(Path.Path, path),
+    const semaphore = yield* Semaphore.make(1);
+    const provideCrypto = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>): Effect.Effect<A, E> =>
+      effect.pipe(Effect.provideService(Crypto.Crypto, crypto));
+
+    const readUnlocked = Effect.gen(function* () {
+      const persisted = yield* file.read.pipe(
+        Effect.mapError(toAppConfigError("AppConfig.readFile", "Unable to read app config.")),
       );
+      const config = yield* provideCrypto(
+        Option.match(persisted, {
+          onNone: () => parseAppConfig({}),
+          onSome: decodeAppConfigJson,
+        }),
+      );
+      const canonical = yield* encodeAppConfigJson(config);
 
-    const read: Effect.Effect<AppConfigState, AppConfigError> = providePlatform(
-      readOrRecoverConfig(resolvedConfigPath),
-    );
+      if (Option.isNone(persisted) || persisted.value !== canonical) {
+        yield* file
+          .write(canonical)
+          .pipe(
+            Effect.mapError(
+              toAppConfigError("AppConfig.writeCanonical", "Unable to write app config."),
+            ),
+          );
+      }
 
-    const replace = (next: AppConfigState): Effect.Effect<AppConfigState, AppConfigError> =>
-      providePlatform(writeValidatedConfig(resolvedConfigPath, next));
+      return config;
+    });
 
-    const update = (
+    const replaceUnlocked = Effect.fn("AppConfig.replaceUnlocked")(function* (
+      next: AppConfigState,
+    ) {
+      const canonical = yield* encodeAppConfigJson(next);
+      yield* file
+        .write(canonical)
+        .pipe(Effect.mapError(toAppConfigError("AppConfig.write", "Unable to write app config.")));
+      return next;
+    });
+
+    const read = semaphore.withPermit(readUnlocked);
+
+    const updateEffect = Effect.fn("AppConfig.updateEffect")(function* <E, R>(
+      mutator: (current: AppConfigState) => Effect.Effect<AppConfigState, E, R>,
+    ) {
+      return yield* semaphore.withPermit(
+        Effect.gen(function* () {
+          const current = yield* readUnlocked;
+          const next = yield* mutator(current);
+          return yield* replaceUnlocked(next);
+        }),
+      );
+    });
+
+    const update = Effect.fn("AppConfig.update")(function* (
       mutator: (current: AppConfigState) => AppConfigState,
-    ): Effect.Effect<AppConfigState, AppConfigError> =>
-      Effect.gen(function* () {
-        const current = yield* read;
-        const next = yield* Effect.try({
+    ) {
+      return yield* updateEffect((current) =>
+        Effect.try({
+          catch: toAppConfigError("AppConfig.update", "Unable to update app config."),
           try: () => mutator(current),
-          catch: (cause) =>
-            new AppConfigError({
-              cause,
-              message: "Unable to update app config.",
-              operation: "AppConfig.update",
-            }),
-        });
-        return yield* replace(next);
-      });
+        }),
+      );
+    });
 
-    return {
-      configPath: Effect.succeed(resolvedConfigPath),
-      getThemePreference: read.pipe(Effect.map((config) => config.theme.preference)),
+    return AppConfig.of({
+      configPath: file.path.pipe(
+        Effect.mapError(toAppConfigError("AppConfig.path", "Unable to resolve app config path.")),
+      ),
       read,
-      replace,
-      setThemePreference: (preference) =>
-        update((current) => ({
-          ...current,
-          theme: {
-            ...current.theme,
-            preference,
-          },
-        })),
-      setInterfaceDensity: (density) =>
-        update((current) => ({
-          ...current,
-          theme: {
-            ...current.theme,
-            density,
-          },
-        })),
       update,
-    };
+      updateEffect,
+    });
   }),
 );
+
+export const AppConfigLive = AppConfigLayer.pipe(Layer.provide(AppConfigFileLive));

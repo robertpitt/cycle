@@ -2,7 +2,7 @@ import { LocalSettings } from "@cycle/backend/settings";
 import { RepositoryBootstrapLive } from "@cycle/backend/bootstrap";
 import { Effect, Layer } from "effect";
 import { ElectronPreferences } from "./ElectronPreferences.ts";
-import type { AppConfigError } from "@cycle/config/errors";
+import type { AppConfigError } from "@cycle/config";
 
 const LocalSettingsFromElectronPreferences = Layer.effect(
   LocalSettings,

@@ -1,5 +1,5 @@
 import type { AgentSessionBinding, AgentSessionStore, JsonObject } from "@cycle/agents";
-import { makeSqliteLayer } from "@cycle/sqlite";
+import { makeSqliteLayer, migrationsFromRecord } from "@cycle/sqlite";
 import { Context, Effect, Exit, Layer, Schema, Scope } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { agentSessionBindingMigrations } from "../migrations/AgentSessionMigrations.ts";
@@ -26,7 +26,10 @@ export const makeBackendAgentSessionStore = (path: string): AgentSessionStore =>
     Layer.buildWithScope(
       makeSqliteLayer({
         filename: path,
-        migrations: agentSessionBindingMigrations,
+        migrations: {
+          loader: migrationsFromRecord(agentSessionBindingMigrations),
+          table: "agent_session_migrations",
+        },
       }),
       scope,
     ),

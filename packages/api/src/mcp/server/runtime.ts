@@ -1,6 +1,6 @@
 import { NodeHttpServer, NodeRuntime, NodeServices } from "@effect/platform-node";
 import { defaultLayer as CycleLoggingLive, logInfo, logWarning } from "@cycle/logging";
-import { Context, Effect, Exit, Layer, Scope } from "effect";
+import { Context, Effect, Exit, Layer, Redacted, Scope } from "effect";
 import {
   HttpMiddleware,
   HttpRouter,
@@ -311,8 +311,14 @@ const requestPathname = (request: HttpServerRequest.HttpServerRequest): string =
 
 const mcpHttpToken = (options: CycleMcpHttpOptions): string | undefined => {
   if (options.auth !== undefined && options.auth !== false) return options.auth.token;
+  const apiToken =
+    options.apiToken === undefined
+      ? undefined
+      : Redacted.isRedacted(options.apiToken)
+        ? Redacted.value(options.apiToken)
+        : options.apiToken;
 
-  return options.env.CYCLE_MCP_TOKEN ?? options.apiToken ?? options.env.CYCLE_API_TOKEN;
+  return options.env?.CYCLE_MCP_TOKEN ?? apiToken ?? options.env?.CYCLE_API_TOKEN;
 };
 
 const assertLoopback = (host: string): void => {

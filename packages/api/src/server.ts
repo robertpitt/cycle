@@ -4,7 +4,8 @@ import {
   logInfo,
   type CycleLogConfigInput,
 } from "@cycle/logging";
-import { Context, Effect, Exit, FileSystem, Layer, Path, Scope } from "effect";
+import { RuntimeDiscovery, RuntimeDiscoveryLive, type RuntimeDiscoveryFile } from "@cycle/config";
+import { ConfigProvider, Context, Effect, Exit, Layer, Scope } from "effect";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { makeCycleApi, makeCycleApiLayer } from "./CycleApi.ts";
 import { CycleApiError } from "./CycleApiError.ts";
@@ -12,7 +13,6 @@ import type {
   CycleApi,
   CycleApiMcpOptions,
   CycleApiOptions,
-  RuntimeDiscoveryFile,
 } from "./http/runtime/CycleApiRuntime.ts";
 
 export type CycleApiServerOptions = CycleApiOptions & {
@@ -131,8 +131,7 @@ export const startCycleApiServerEffect = (
             yield* Scope.close(scope, Exit.void);
             yield* disposeApi(api);
             if (options.runtimeFile !== undefined) {
-              const fs = yield* FileSystem.FileSystem;
-              yield* fs.remove(options.runtimeFile, { force: true });
+              yield* removeRuntimeDiscoveryFile(options.runtimeFile);
             }
             yield* logInfo("api", "api server stopped", { baseUrl });
           }),
@@ -181,16 +180,37 @@ const hostedMcpPath = (mcp: false | CycleApiMcpOptions | undefined): string | un
 const writeRuntimeDiscoveryFile = (
   filePath: string,
   contents: RuntimeDiscoveryFile,
-): Effect.Effect<void, unknown, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
+): Effect.Effect<void, unknown, NodeServices.NodeServices> =>
+  withRuntimeDiscovery(
+    filePath,
+    Effect.gen(function* () {
+      const discovery = yield* RuntimeDiscovery;
+      yield* discovery.write(contents);
+    }),
+  );
 
-    yield* fs.makeDirectory(path.dirname(filePath), { recursive: true, mode: 0o700 });
-    yield* fs.writeFileString(filePath, `${JSON.stringify(contents, null, 2)}\n`, {
-      mode: 0o600,
-    });
-  });
+const removeRuntimeDiscoveryFile = (
+  filePath: string,
+): Effect.Effect<void, unknown, NodeServices.NodeServices> =>
+  withRuntimeDiscovery(
+    filePath,
+    Effect.gen(function* () {
+      const discovery = yield* RuntimeDiscovery;
+      yield* discovery.remove;
+    }),
+  );
+
+const withRuntimeDiscovery = <A, E>(
+  filePath: string,
+  effect: Effect.Effect<A, E, RuntimeDiscovery>,
+) =>
+  effect.pipe(
+    Effect.provide(RuntimeDiscoveryLive),
+    Effect.provideService(
+      ConfigProvider.ConfigProvider,
+      ConfigProvider.fromEnv({ env: { CYCLE_API_RUNTIME_FILE: filePath } }),
+    ),
+  );
 
 const assertLoopback = (host: string): void => {
   if (host !== "127.0.0.1" && host !== "localhost") {

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { AppConfigState } from "@cycle/contracts/schemas/app";
+import type { AppConfigEncoded as AppConfigState } from "@cycle/config";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 
 export const appConfigQueryKey = ["desktop", "appConfig"] as const;

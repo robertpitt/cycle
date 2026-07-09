@@ -1,6 +1,13 @@
-import { discoverCycleApiEffect, type CycleApiDiscoveryResult } from "@cycle/config/discovery";
+import {
+  AppConfigLive,
+  cycleApiConnectionToken,
+  envProvider,
+  resolveCycleApiConnection,
+  RuntimeDiscoveryLive,
+  type CycleApiConnectionInput,
+} from "@cycle/config";
 import { NodeServices } from "@effect/platform-node";
-import { Crypto, Effect, FileSystem, Path } from "effect";
+import { ConfigProvider, Crypto, Effect, FileSystem, Layer, Path } from "effect";
 
 export type CliDiscoveryInput = {
   readonly apiUrlFlag?: string;
@@ -8,7 +15,10 @@ export type CliDiscoveryInput = {
   readonly tokenFlag?: string;
 };
 
-export type CliDiscoveryResult = CycleApiDiscoveryResult;
+export type CliDiscoveryResult = {
+  readonly baseUrl: string;
+  readonly token: string;
+};
 
 export const discoverApi = async (input: CliDiscoveryInput): Promise<CliDiscoveryResult> =>
   Effect.runPromise(discoverApiEffect(input).pipe(Effect.provide(NodeServices.layer)));
@@ -20,15 +30,22 @@ export const discoverApiEffect = (
   CliDiscoveryError,
   Crypto.Crypto | FileSystem.FileSystem | Path.Path
 > =>
-  discoverCycleApiEffect({
+  resolveCycleApiConnection({
     apiToken: input.tokenFlag,
     apiUrl: input.apiUrlFlag,
-    env: input.env,
-  }).pipe(
+  } satisfies CycleApiConnectionInput).pipe(
+    Effect.provide(Layer.merge(AppConfigLive, RuntimeDiscoveryLive)),
+    Effect.provideService(ConfigProvider.ConfigProvider, envProvider(input.env)),
+    Effect.map(
+      (connection): CliDiscoveryResult => ({
+        baseUrl: connection.baseUrl,
+        token: cycleApiConnectionToken(connection),
+      }),
+    ),
     Effect.mapError(
       (error): CliDiscoveryError => ({
         _tag: "CliDiscoveryError",
-        code: error.code,
+        code: "API_UNAVAILABLE",
         message: error.message,
       }),
     ),

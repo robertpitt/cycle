@@ -3,8 +3,8 @@ import {
   ThemePreference,
   type AppConfigState,
   type ProfileConfig,
-} from "@cycle/contracts/schemas/app";
-import type { AppConfigError } from "@cycle/config/errors";
+} from "@cycle/config";
+import type { AppConfigError } from "@cycle/config";
 import { Context, Effect, Schema } from "effect";
 
 export const ProfileUpdateInput = Schema.Struct({
