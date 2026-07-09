@@ -13,11 +13,70 @@ export class GitAdapterError extends Schema.TaggedErrorClass<GitAdapterError>(
 export class GitRepositoryError extends Schema.TaggedErrorClass<GitRepositoryError>(
   "@cycle/git/GitRepositoryError",
 )("GitRepositoryError", {
+  args: Schema.optional(Schema.Array(Schema.String)),
   cause: Schema.optional(Schema.Defect()),
   message: Schema.String,
   operation: Schema.String,
   path: Schema.String,
+  status: Schema.optional(Schema.Number),
+  stderr: Schema.optional(Schema.String),
 }) {}
+
+const GitCliErrorFields = {
+  args: Schema.optional(Schema.Array(Schema.String)),
+  branchName: Schema.optional(Schema.String),
+  cause: Schema.optional(Schema.Defect()),
+  cwd: Schema.optional(Schema.String),
+  gitDir: Schema.optional(Schema.String),
+  message: Schema.String,
+  operation: Schema.String,
+  path: Schema.optional(Schema.String),
+  ref: Schema.optional(Schema.String),
+  remote: Schema.optional(Schema.String),
+  status: Schema.optional(Schema.Number),
+  stderr: Schema.optional(Schema.String),
+  stdout: Schema.optional(Schema.String),
+} as const;
+
+export class GitCommandError extends Schema.TaggedErrorClass<GitCommandError>(
+  "@cycle/git/GitCommandError",
+)("GitCommandError", GitCliErrorFields) {}
+
+export class GitRevisionError extends Schema.TaggedErrorClass<GitRevisionError>(
+  "@cycle/git/GitRevisionError",
+)("GitRevisionError", GitCliErrorFields) {}
+
+export class GitStatusError extends Schema.TaggedErrorClass<GitStatusError>(
+  "@cycle/git/GitStatusError",
+)("GitStatusError", GitCliErrorFields) {}
+
+export class GitBranchError extends Schema.TaggedErrorClass<GitBranchError>(
+  "@cycle/git/GitBranchError",
+)("GitBranchError", GitCliErrorFields) {}
+
+export class GitBranchNameError extends Schema.TaggedErrorClass<GitBranchNameError>(
+  "@cycle/git/GitBranchNameError",
+)("GitBranchNameError", GitCliErrorFields) {}
+
+export class GitRefError extends Schema.TaggedErrorClass<GitRefError>(
+  "@cycle/git/GitRefError",
+)("GitRefError", GitCliErrorFields) {}
+
+export class GitIndexError extends Schema.TaggedErrorClass<GitIndexError>(
+  "@cycle/git/GitIndexError",
+)("GitIndexError", GitCliErrorFields) {}
+
+export class GitCommitError extends Schema.TaggedErrorClass<GitCommitError>(
+  "@cycle/git/GitCommitError",
+)("GitCommitError", GitCliErrorFields) {}
+
+export class GitWorktreeError extends Schema.TaggedErrorClass<GitWorktreeError>(
+  "@cycle/git/GitWorktreeError",
+)("GitWorktreeError", GitCliErrorFields) {}
+
+export class GitRemoteLookupError extends Schema.TaggedErrorClass<GitRemoteLookupError>(
+  "@cycle/git/GitRemoteLookupError",
+)("GitRemoteLookupError", GitCliErrorFields) {}
 
 export class RemoteFetchError extends Schema.TaggedErrorClass<RemoteFetchError>(
   "@cycle/git/RemoteFetchError",
@@ -41,5 +100,19 @@ export class RemotePushError extends Schema.TaggedErrorClass<RemotePushError>(
   stderr: Schema.optional(Schema.String),
 }) {}
 
-export type GitError = GitAdapterError | GitRepositoryError | RemoteFetchError | RemotePushError;
+export type GitError =
+  | GitAdapterError
+  | GitBranchError
+  | GitBranchNameError
+  | GitCommandError
+  | GitCommitError
+  | GitIndexError
+  | GitRefError
+  | GitRemoteLookupError
+  | GitRepositoryError
+  | GitRevisionError
+  | GitStatusError
+  | GitWorktreeError
+  | RemoteFetchError
+  | RemotePushError;
 export type GitTransportError = RemoteFetchError | RemotePushError;

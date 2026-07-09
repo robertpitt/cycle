@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./command/GitCommand": "./src/GitCommand.ts",
+    "./commands/GitCommands": "./src/GitCommands.ts",
     "./errors": "./src/GitErrors.ts",
     "./object-store/Git": "./src/Git.ts",
     "./object-store/GitCli": "./src/GitCli.ts",

@@ -1,6 +1,6 @@
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { Context, Effect, Stream } from "effect";
-import { GitAdapterError, type GitTransportError } from "./GitErrors.ts";
+import { GitAdapterError, type GitError } from "./GitErrors.ts";
 import { bytesToString, concatBytes, inputToStream } from "./internals/bytes.ts";
 
 export type ChildProcessSpawnerService = Context.Service.Shape<
@@ -20,7 +20,7 @@ export type GitRunResult = {
   readonly stdout: Uint8Array;
 };
 
-type GitRunError = GitAdapterError | GitTransportError;
+type GitRunError = GitError;
 
 type GitCommandContext = {
   readonly gitDir?: string;

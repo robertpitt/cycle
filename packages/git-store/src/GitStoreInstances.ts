@@ -1,3 +1,5 @@
+import { NodeServices } from "@effect/platform-node";
+import * as GitCommands from "@cycle/git/commands/GitCommands";
 import { Layer, LayerMap } from "effect";
 import { CommitWriterLive } from "./CommitWriter.ts";
 import { EventStoreLive } from "./EventStore.ts";
@@ -54,7 +56,10 @@ export const makeGitStoreLayer = (descriptor: GitStoreInstanceDescriptor) => {
   const refs = RefStoreLive.pipe(Layer.provideMerge(refTransactions));
   const changes = GitStoreChangesLive.pipe(Layer.provideMerge(refs));
   const commitWriter = CommitWriterLive.pipe(Layer.provideMerge(refTransactions));
-  const remoteTransport = GitRemoteTransportLive.pipe(Layer.provideMerge(changes));
+  const gitCommands = GitCommands.Live.pipe(Layer.provide(NodeServices.layer));
+  const remoteTransport = GitRemoteTransportLive.pipe(
+    Layer.provideMerge(Layer.mergeAll(changes, gitCommands)),
+  );
   const sync = GitStoreSyncLive.pipe(Layer.provideMerge(Layer.mergeAll(remoteTransport, commitWriter)));
   const reflog = ReflogStoreLive.pipe(Layer.provideMerge(sync));
   const store = GitStoreLive.pipe(Layer.provideMerge(Layer.mergeAll(commitWriter, changes)));
