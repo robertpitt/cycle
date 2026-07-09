@@ -1,12 +1,9 @@
 import { GitStoresTestLive } from "@cycle/git-store/testing";
 import { Effect, Layer } from "effect";
+import { DatabaseIdGenerator, type DatabaseIdGeneratorShape } from "../DatabaseIdGenerator.ts";
+import { DatabaseIdentity } from "../DatabaseIdentity.ts";
+import { DatabaseLiveWithOptions } from "../DatabaseServiceLive.ts";
 import type { Actor } from "../domain/index.ts";
-import {
-  DatabaseIdGenerator,
-  type DatabaseIdGeneratorShape,
-} from "../services/DatabaseIdGenerator.ts";
-import { DatabaseIdentity } from "../services/DatabaseIdentity.ts";
-import { DatabaseLiveWithOptions } from "../services/DatabaseService.ts";
 
 export const DatabaseIdentityTest = (
   actor: Actor = {

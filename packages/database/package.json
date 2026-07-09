@@ -5,7 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./errors": "./src/errors/index.ts",
+    "./errors": "./src/DatabaseErrors.ts",
     "./testing": "./src/testing/index.ts"
   },
   "scripts": {

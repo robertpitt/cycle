@@ -5,11 +5,6 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./errors": "./src/errors.ts",
-    "./layer": "./src/layer.ts",
-    "./live": "./src/SqliteLive.ts",
-    "./migrations": "./src/migrations.ts",
-    "./services": "./src/SqliteCapabilities.ts",
     "./sync": "./src/sync.ts",
     "./testing": "./src/testing/index.ts"
   },

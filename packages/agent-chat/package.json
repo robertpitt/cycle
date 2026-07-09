@@ -10,7 +10,7 @@
     "./prompt": "./src/prompt.ts",
     "./records": "./src/records.ts",
     "./runtime": "./src/runtime/AgentChatRuntime.ts",
-    "./store": "./src/store/SqliteAgentChatStore.ts"
+    "./store": "./src/SqliteAgentChatStore.ts"
   },
   "scripts": {
     "test": "vitest run",

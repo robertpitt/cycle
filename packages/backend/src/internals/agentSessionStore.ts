@@ -1,6 +1,8 @@
 import type { AgentSessionBinding, AgentSessionStore, JsonObject } from "@cycle/agents";
-import { openSqliteSync } from "@cycle/sqlite/sync";
-import { Schema } from "effect";
+import { makeSqliteLayer } from "@cycle/sqlite";
+import { Context, Effect, Exit, Layer, Schema, Scope } from "effect";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { agentSessionBindingMigrations } from "../migrations/AgentSessionMigrations.ts";
 
 type SessionBindingRow = {
   readonly active_turn_id: string | null;
@@ -18,91 +20,79 @@ type SessionBindingRow = {
   readonly updated_at: string;
 };
 
-const agentSessionBindingSchemaSql = `
-CREATE TABLE IF NOT EXISTS agent_session_bindings (
-  session_id TEXT PRIMARY KEY,
-  provider TEXT NOT NULL,
-  status TEXT NOT NULL,
-  thread_id TEXT,
-  title TEXT,
-  cwd TEXT,
-  model TEXT,
-  active_turn_id TEXT,
-  native_json TEXT,
-  last_error TEXT,
-  metadata_json TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS agent_session_bindings_provider_status ON agent_session_bindings(provider, status);
-CREATE INDEX IF NOT EXISTS agent_session_bindings_updated ON agent_session_bindings(updated_at DESC, session_id);
-`;
-
 export const makeBackendAgentSessionStore = (path: string): AgentSessionStore => {
-  const db = openSqliteSync(path);
-  db.exec(agentSessionBindingSchemaSql);
+  const scope = Effect.runSync(Scope.make("sequential"));
+  const context = Effect.runSync(
+    Layer.buildWithScope(
+      makeSqliteLayer({
+        filename: path,
+        migrations: agentSessionBindingMigrations,
+      }),
+      scope,
+    ),
+  );
+  const sql = Context.get(context, SqlClient.SqlClient);
 
-  return {
-    close: () => {
-      db.close();
-    },
-    delete: async (sessionId: string): Promise<void> => {
-      db.prepare("DELETE FROM agent_session_bindings WHERE session_id = ?").run(sessionId);
-    },
-    get: async (sessionId: string): Promise<AgentSessionBinding | undefined> => {
-      const row = db
-        .prepare("SELECT * FROM agent_session_bindings WHERE session_id = ?")
-        .get(sessionId) as SessionBindingRow | undefined;
-
-      return row === undefined ? undefined : bindingFromRow(row);
-    },
-    list: async (): Promise<readonly AgentSessionBinding[]> => {
-      const rows = db
-        .prepare(
-          `SELECT *
-           FROM agent_session_bindings
-           ORDER BY updated_at DESC, session_id ASC`,
-        )
-        .all() as unknown as ReadonlyArray<SessionBindingRow>;
-
-      return rows.map(bindingFromRow);
-    },
-    upsert: async (binding: AgentSessionBinding): Promise<void> => {
-      db.prepare(
-        `INSERT INTO agent_session_bindings (
-          session_id, provider, status, thread_id, title, cwd, model, active_turn_id,
-          native_json, last_error, metadata_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(session_id) DO UPDATE SET
-          provider = excluded.provider,
-          status = excluded.status,
-          thread_id = excluded.thread_id,
-          title = excluded.title,
-          cwd = excluded.cwd,
-          model = excluded.model,
-          active_turn_id = excluded.active_turn_id,
-          native_json = excluded.native_json,
-          last_error = excluded.last_error,
-          metadata_json = excluded.metadata_json,
-          updated_at = excluded.updated_at`,
-      ).run(
-        binding.sessionId,
-        binding.provider,
-        binding.status,
-        binding.threadId ?? null,
-        binding.title ?? null,
-        binding.cwd ?? null,
-        binding.model ?? null,
-        binding.activeTurnId ?? null,
-        stringifyJson(binding.native),
-        binding.lastError ?? null,
-        stringifyJson(binding.metadata),
-        binding.createdAt,
-        binding.updatedAt,
-      );
-    },
-  };
+  return makeBackendAgentSessionStoreFromSql(sql, () =>
+    Effect.runPromise(Scope.close(scope, Exit.void)),
+  );
 };
+
+export const makeBackendAgentSessionStoreFromSql = (
+  sql: SqlClient.SqlClient,
+  close: () => Promise<void> = () => Promise.resolve(),
+): AgentSessionStore => ({
+  close,
+  delete: (sessionId: string): Promise<void> =>
+    Effect.runPromise(
+      sql`
+      DELETE FROM agent_session_bindings WHERE session_id = ${sessionId}
+    `.pipe(Effect.asVoid),
+    ),
+  get: async (sessionId: string): Promise<AgentSessionBinding | undefined> => {
+    const rows = await Effect.runPromise(sql<SessionBindingRow>`
+      SELECT * FROM agent_session_bindings WHERE session_id = ${sessionId}
+    `);
+
+    return rows[0] === undefined ? undefined : bindingFromRow(rows[0]);
+  },
+  list: async (): Promise<readonly AgentSessionBinding[]> => {
+    const rows = await Effect.runPromise(sql<SessionBindingRow>`
+      SELECT *
+      FROM agent_session_bindings
+      ORDER BY updated_at DESC, session_id ASC
+    `);
+
+    return rows.map(bindingFromRow);
+  },
+  upsert: (binding: AgentSessionBinding): Promise<void> =>
+    Effect.runPromise(
+      sql`
+      INSERT INTO agent_session_bindings (
+        session_id, provider, status, thread_id, title, cwd, model, active_turn_id,
+        native_json, last_error, metadata_json, created_at, updated_at
+      ) VALUES (
+        ${binding.sessionId}, ${binding.provider}, ${binding.status}, ${binding.threadId ?? null},
+        ${binding.title ?? null}, ${binding.cwd ?? null}, ${binding.model ?? null},
+        ${binding.activeTurnId ?? null}, ${stringifyJson(binding.native)},
+        ${binding.lastError ?? null}, ${stringifyJson(binding.metadata)}, ${binding.createdAt},
+        ${binding.updatedAt}
+      )
+      ON CONFLICT(session_id) DO UPDATE SET
+        provider = excluded.provider,
+        status = excluded.status,
+        thread_id = excluded.thread_id,
+        title = excluded.title,
+        cwd = excluded.cwd,
+        model = excluded.model,
+        active_turn_id = excluded.active_turn_id,
+        native_json = excluded.native_json,
+        last_error = excluded.last_error,
+        metadata_json = excluded.metadata_json,
+        updated_at = excluded.updated_at
+    `.pipe(Effect.asVoid),
+    ),
+});
 
 const JsonRecord = Schema.Record(Schema.String, Schema.Unknown);
 const JsonObjectSchema = Schema.Record(Schema.String, Schema.Json);

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import {
   DatabaseService,
-  ValidationError,
+  DatabaseValidationError,
   type DatabaseFailure,
   type DatabaseServiceShape,
 } from "@cycle/database";
@@ -536,7 +536,7 @@ describe("DesktopBootstrapLive", () => {
                   );
                 },
                 catch: (cause) =>
-                  new ValidationError({
+                  new DatabaseValidationError({
                     field: "syncRepository",
                     message: "sync repository failed",
                     cause: cause,

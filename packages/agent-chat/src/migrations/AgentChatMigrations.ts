@@ -1,3 +1,6 @@
+import { Effect } from "effect";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+
 export const agentChatSchemaSql = `
 CREATE TABLE IF NOT EXISTS agent_chat_threads (
   thread_id TEXT PRIMARY KEY,
@@ -113,3 +116,16 @@ CREATE TABLE IF NOT EXISTS agent_chat_message_mentions (
 CREATE INDEX IF NOT EXISTS agent_chat_message_mentions_entity ON agent_chat_message_mentions(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS agent_chat_message_mentions_repository ON agent_chat_message_mentions(repository_id, entity_type, entity_id);
 `;
+
+export const agentChatMigrations = {
+  "0001_create_agent_chat_tables": Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+
+    for (const statement of agentChatSchemaSql
+      .split(";")
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0)) {
+      yield* sql.unsafe(statement);
+    }
+  }),
+} satisfies Record<string, Effect.Effect<void, unknown, SqlClient.SqlClient>>;

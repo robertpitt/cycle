@@ -1,5 +1,6 @@
-import { openSqliteSync, type SqliteDatabaseLike } from "@cycle/sqlite/sync";
-import { Effect, Layer } from "effect";
+import { makeSqliteLayer, type SqliteLayerError } from "@cycle/sqlite";
+import { Context, Effect, Exit, Layer, Scope } from "effect";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 import type {
   AgentTask,
   AgentTaskEvent,
@@ -7,35 +8,7 @@ import type {
 } from "@cycle/contracts/schemas/agents/agent-task-schemas";
 import { agentTaskStorageFailure, type AgentTaskServiceError } from "./AgentTaskErrors.ts";
 import { AgentTaskStore, type AgentTaskStoreShape } from "./AgentTaskStore.ts";
-
-export const agentTaskSchemaSql = `
-CREATE TABLE IF NOT EXISTS agent_tasks (
-  task_id TEXT PRIMARY KEY,
-  idempotency_key TEXT,
-  origin_kind TEXT,
-  status TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  record_json TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_agent_tasks_status
-  ON agent_tasks(status, updated_at);
-CREATE INDEX IF NOT EXISTS idx_agent_tasks_idempotency
-  ON agent_tasks(idempotency_key, status);
-CREATE INDEX IF NOT EXISTS idx_agent_tasks_origin_kind
-  ON agent_tasks(origin_kind, updated_at);
-
-CREATE TABLE IF NOT EXISTS agent_task_events (
-  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id TEXT NOT NULL UNIQUE,
-  task_id TEXT NOT NULL,
-  event_type TEXT NOT NULL,
-  occurred_at TEXT NOT NULL,
-  record_json TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_agent_task_events_task
-  ON agent_task_events(task_id, sequence);
-`;
+import { agentTaskMigrations } from "./migrations/AgentTaskMigrations.ts";
 
 const activeStatuses = new Set<AgentTaskStatus>([
   "cancelling",
@@ -46,138 +19,169 @@ const activeStatuses = new Set<AgentTaskStatus>([
 ]);
 
 export const makeNodeSqliteAgentTaskStore = (path: string): AgentTaskStoreShape => {
-  return makeSqliteAgentTaskStore(openSqliteSync(path));
+  const scope = Effect.runSync(Scope.make("sequential"));
+  const context = Effect.runSync(
+    Layer.buildWithScope(
+      makeSqliteLayer({
+        filename: path,
+        migrations: agentTaskMigrations,
+      }),
+      scope,
+    ),
+  );
+  const sql = Context.get(context, SqlClient.SqlClient);
+
+  return makeSqliteAgentTaskStore(
+    sql,
+    Scope.close(scope, Exit.void).pipe(Effect.mapError(agentTaskStorageFailure)),
+  );
 };
 
-export const AgentTaskStoreSqlite = (path: string): Layer.Layer<AgentTaskStore> =>
-  Layer.succeed(AgentTaskStore, AgentTaskStore.of(makeNodeSqliteAgentTaskStore(path)));
+export const AgentTaskStoreSqliteLive = Layer.effect(
+  AgentTaskStore,
+  Effect.map(SqlClient.SqlClient, (sql) => AgentTaskStore.of(makeSqliteAgentTaskStore(sql))),
+);
 
-export const makeSqliteAgentTaskStore = (db: SqliteDatabaseLike): AgentTaskStoreShape => {
-  db.exec(agentTaskSchemaSql);
+export const AgentTaskStoreSqlite = (path: string): Layer.Layer<AgentTaskStore, SqliteLayerError> =>
+  AgentTaskStoreSqliteLive.pipe(
+    Layer.provide(
+      makeSqliteLayer({
+        filename: path,
+        migrations: agentTaskMigrations,
+      }),
+    ),
+  );
 
-  const effect = <A>(body: () => A): Effect.Effect<A, AgentTaskServiceError> =>
-    Effect.try({
-      try: body,
-      catch: agentTaskStorageFailure,
-    });
+export const makeSqliteAgentTaskStore = (
+  sql: SqlClient.SqlClient,
+  closeEffect: Effect.Effect<void, AgentTaskServiceError> = Effect.void,
+): AgentTaskStoreShape => {
+  const effect = <A>(body: Effect.Effect<A, unknown>): Effect.Effect<A, AgentTaskServiceError> =>
+    body.pipe(Effect.mapError(agentTaskStorageFailure));
 
   return {
     appendEvent: (input) =>
-      effect(() => {
-        const existing = db
-          .prepare("SELECT record_json FROM agent_task_events WHERE event_id = ?")
-          .get(input.eventId) as RecordRow | undefined;
-        if (existing !== undefined) return parseJson<AgentTaskEvent>(existing.record_json);
+      effect(
+        Effect.gen(function* () {
+          const existing = yield* sql<RecordRow>`
+            SELECT record_json FROM agent_task_events WHERE event_id = ${input.eventId}
+          `;
+          if (existing[0] !== undefined) {
+            return parseJson<AgentTaskEvent>(existing[0].record_json);
+          }
 
-        const result = db
-          .prepare(
-            `INSERT INTO agent_task_events(
-               event_id, task_id, event_type, occurred_at, record_json
-             ) VALUES (?, ?, ?, ?, ?)`,
-          )
-          .run(
-            input.eventId,
-            input.taskId,
-            input.type,
-            input.occurredAt,
-            JSON.stringify({ ...input, sequence: 0 }),
-          ) as { readonly lastInsertRowid?: bigint | number };
-        const sequence = Number(result.lastInsertRowid ?? 0);
-        const event: AgentTaskEvent = { ...input, sequence };
-        db.prepare("UPDATE agent_task_events SET record_json = ? WHERE sequence = ?").run(
-          JSON.stringify(event),
-          sequence,
-        );
-        return clone(event);
-      }),
-    close: effect(() => {
-      db.close?.();
-    }),
+          const result = yield* sql`
+            INSERT INTO agent_task_events(
+              event_id, task_id, event_type, occurred_at, record_json
+            ) VALUES (
+              ${input.eventId}, ${input.taskId}, ${input.type}, ${input.occurredAt},
+              ${JSON.stringify({ ...input, sequence: 0 })}
+            )
+          `.raw;
+          const sequence = Number((result as SqliteRunResult).lastInsertRowid ?? 0);
+          const event: AgentTaskEvent = { ...input, sequence };
+          yield* sql`
+            UPDATE agent_task_events
+            SET record_json = ${JSON.stringify(event)}
+            WHERE sequence = ${sequence}
+          `;
+          return clone(event);
+        }),
+      ),
+    close: closeEffect,
     findActiveTaskByIdempotencyKey: (idempotencyKey) =>
-      effect(() => {
-        const rows = db
-          .prepare("SELECT record_json FROM agent_tasks WHERE idempotency_key = ?")
-          .all(idempotencyKey) as readonly RecordRow[];
-        return clone(
-          rows
-            .map((row) => parseJson<AgentTask>(row.record_json))
-            .find((task) => activeStatuses.has(task.status)),
-        );
-      }),
+      effect(
+        Effect.gen(function* () {
+          const rows = yield* sql<RecordRow>`
+            SELECT record_json FROM agent_tasks WHERE idempotency_key = ${idempotencyKey}
+          `;
+          return clone(
+            rows
+              .map((row) => parseJson<AgentTask>(row.record_json))
+              .find((task) => activeStatuses.has(task.status)),
+          );
+        }),
+      ),
     getTask: (taskId) =>
-      effect(() => {
-        const row = db
-          .prepare("SELECT record_json FROM agent_tasks WHERE task_id = ?")
-          .get(taskId) as RecordRow | undefined;
-        return row === undefined ? undefined : clone(parseJson<AgentTask>(row.record_json));
-      }),
+      effect(
+        Effect.gen(function* () {
+          const rows = yield* sql<RecordRow>`
+            SELECT record_json FROM agent_tasks WHERE task_id = ${taskId}
+          `;
+          return rows[0] === undefined
+            ? undefined
+            : clone(parseJson<AgentTask>(rows[0].record_json));
+        }),
+      ),
     listEvents: (query) =>
-      effect(() => {
-        const rows = db
-          .prepare(
-            `SELECT record_json
-             FROM agent_task_events
-             WHERE task_id = ? AND sequence > ?
-             ORDER BY sequence ASC`,
-          )
-          .all(query.taskId, query.afterSequence ?? 0) as readonly RecordRow[];
-        return rows
-          .map((row) => parseJson<AgentTaskEvent>(row.record_json))
-          .slice(0, query.limit)
-          .map((event) => clone(event));
-      }),
+      effect(
+        Effect.gen(function* () {
+          const rows = yield* sql<RecordRow>`
+            SELECT record_json
+            FROM agent_task_events
+            WHERE task_id = ${query.taskId} AND sequence > ${query.afterSequence ?? 0}
+            ORDER BY sequence ASC
+          `;
+          return rows
+            .map((row) => parseJson<AgentTaskEvent>(row.record_json))
+            .slice(0, query.limit)
+            .map((event) => clone(event));
+        }),
+      ),
     listTasks: (query = {}) =>
-      effect(() => {
-        const rows = db
-          .prepare("SELECT record_json FROM agent_tasks ORDER BY created_at DESC")
-          .all() as readonly RecordRow[];
-        return rows
-          .map((row) => parseJson<AgentTask>(row.record_json))
-          .filter((task) => query.status === undefined || task.status === query.status)
-          .filter((task) => {
-            if (query.originKind === undefined) return true;
-            return originKind(task) === query.originKind;
-          })
-          .filter(
-            (task) =>
-              originField(task, "repositoryId") ===
-              (query.repositoryId ?? originField(task, "repositoryId")),
-          )
-          .filter(
-            (task) =>
-              originField(task, "ticketId") === (query.ticketId ?? originField(task, "ticketId")),
-          )
-          .slice(0, query.limit)
-          .map((task) => clone(task));
-      }),
+      effect(
+        Effect.gen(function* () {
+          const rows = yield* sql<RecordRow>`
+            SELECT record_json FROM agent_tasks ORDER BY created_at DESC
+          `;
+          return rows
+            .map((row) => parseJson<AgentTask>(row.record_json))
+            .filter((task) => query.status === undefined || task.status === query.status)
+            .filter((task) => {
+              if (query.originKind === undefined) return true;
+              return originKind(task) === query.originKind;
+            })
+            .filter(
+              (task) =>
+                originField(task, "repositoryId") ===
+                (query.repositoryId ?? originField(task, "repositoryId")),
+            )
+            .filter(
+              (task) =>
+                originField(task, "ticketId") === (query.ticketId ?? originField(task, "ticketId")),
+            )
+            .slice(0, query.limit)
+            .map((task) => clone(task));
+        }),
+      ),
     upsertTask: (task) =>
-      effect(() => {
-        db.prepare(
-          `INSERT INTO agent_tasks(
-             task_id, idempotency_key, origin_kind, status, created_at, updated_at, record_json
-           ) VALUES (?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(task_id) DO UPDATE SET
-             idempotency_key = excluded.idempotency_key,
-             origin_kind = excluded.origin_kind,
-             status = excluded.status,
-             created_at = excluded.created_at,
-             updated_at = excluded.updated_at,
-             record_json = excluded.record_json`,
-        ).run(
-          task.taskId,
-          task.idempotencyKey ?? null,
-          originKind(task) ?? null,
-          task.status,
-          task.createdAt,
-          task.updatedAt,
-          JSON.stringify(task),
-        );
-      }),
+      effect(
+        sql`
+        INSERT INTO agent_tasks(
+          task_id, idempotency_key, origin_kind, status, created_at, updated_at, record_json
+        ) VALUES (
+          ${task.taskId}, ${task.idempotencyKey ?? null}, ${originKind(task) ?? null},
+          ${task.status}, ${task.createdAt}, ${task.updatedAt}, ${JSON.stringify(task)}
+        )
+        ON CONFLICT(task_id) DO UPDATE SET
+          idempotency_key = excluded.idempotency_key,
+          origin_kind = excluded.origin_kind,
+          status = excluded.status,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at,
+          record_json = excluded.record_json
+      `.pipe(Effect.asVoid),
+      ),
   };
 };
 
 type RecordRow = {
   readonly record_json: string;
+};
+
+type SqliteRunResult = {
+  readonly changes?: bigint | number;
+  readonly lastInsertRowid?: bigint | number;
 };
 
 const originKind = (task: AgentTask): string | undefined => {

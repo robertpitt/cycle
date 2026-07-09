@@ -2,7 +2,7 @@ import {
   DatabaseIdGenerator,
   DatabaseIdentity,
   DatabaseLiveWithOptions,
-  ValidationError,
+  DatabaseValidationError,
 } from "@cycle/database";
 import { Crypto, Effect, FileSystem, Layer, Path } from "effect";
 import { LocalSettings } from "./LocalSettings.ts";
@@ -22,7 +22,7 @@ export const BackendDatabaseIdentityLive = Layer.effect(
         })),
         Effect.mapError(
           (error) =>
-            new ValidationError({
+            new DatabaseValidationError({
               field: "profile",
               message: "failed to read profile for database identity",
               cause: error,
@@ -40,7 +40,7 @@ export const BackendDatabaseIdGeneratorLive = Layer.effect(
     const randomUuid = crypto.randomUUIDv4.pipe(
       Effect.mapError(
         (cause) =>
-          new ValidationError({
+          new DatabaseValidationError({
             field: "id",
             message: "failed to generate database id",
             cause,
@@ -79,7 +79,7 @@ export const BackendDatabaseLive = (options: BackendStartOptions = {}) =>
       yield* fs.makeDirectory(path.dirname(paths.databasePath), { recursive: true }).pipe(
         Effect.mapError(
           (cause) =>
-            new ValidationError({
+            new DatabaseValidationError({
               field: "database",
               message: "failed to create Cycle directory",
               cause,

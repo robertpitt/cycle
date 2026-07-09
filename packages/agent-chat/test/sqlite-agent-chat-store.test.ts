@@ -2,8 +2,10 @@ import { strict as assert } from "node:assert";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openSqliteSync } from "@cycle/sqlite/sync";
-import { makeSqliteAgentChatStore } from "../src/store/SqliteAgentChatStore.ts";
+import { makeSqliteLayer } from "@cycle/sqlite";
+import { Effect } from "effect";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { makeSqliteAgentChatStore } from "../src/SqliteAgentChatStore.ts";
 import { describe, it } from "vitest";
 
 describe("SqliteAgentChatStore", () => {
@@ -116,17 +118,17 @@ describe("SqliteAgentChatStore", () => {
       });
       await store.close?.();
 
-      const db = openSqliteSync(databasePath);
-      try {
-        db.exec("UPDATE agent_chat_messages SET metadata_json = '[]'");
-        db.exec("UPDATE agent_chat_turns SET metadata_json = 'null'");
-        db.exec("UPDATE agent_chat_activities SET payload_json = '42'");
-        db.exec('UPDATE agent_chat_questions SET questions_json = \'[{"id":"missing-fields"}]\'');
-        db.exec("UPDATE agent_chat_questions SET answer_json = '[]'");
-        db.exec("UPDATE agent_chat_events SET payload_json = '[]'");
-      } finally {
-        db.close();
-      }
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`UPDATE agent_chat_messages SET metadata_json = '[]'`;
+          yield* sql`UPDATE agent_chat_turns SET metadata_json = 'null'`;
+          yield* sql`UPDATE agent_chat_activities SET payload_json = '42'`;
+          yield* sql`UPDATE agent_chat_questions SET questions_json = '[{"id":"missing-fields"}]'`;
+          yield* sql`UPDATE agent_chat_questions SET answer_json = '[]'`;
+          yield* sql`UPDATE agent_chat_events SET payload_json = '[]'`;
+        }).pipe(Effect.provide(makeSqliteLayer({ filename: databasePath }))),
+      );
 
       const reopened = makeSqliteAgentChatStore(databasePath);
       try {

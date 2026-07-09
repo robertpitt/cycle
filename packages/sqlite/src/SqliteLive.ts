@@ -1,5 +1,6 @@
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
 import * as SqliteMigrator from "@effect/sql-sqlite-node/SqliteMigrator";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -11,12 +12,13 @@ import { SqliteOpenError } from "./SqliteOpenError.ts";
 import { SqlitePathError } from "./SqlitePathError.ts";
 import { SqlitePragmaError } from "./SqlitePragmaError.ts";
 import { SqliteVectorUnavailableError } from "./SqliteVectorUnavailableError.ts";
-import type { SqliteMigrationOptions, SqliteMigrationRecord } from "./migrations.ts";
+import { normalizeMigrationOptions } from "./internals/migrations.ts";
 import { ensureSqliteParentDirectory } from "./internals/paths.ts";
 import {
   resolveSqliteVectorExtensionPath,
   type SqliteVectorCapability,
 } from "./internals/vector.ts";
+import type { SqliteMigrationOptions, SqliteMigrationRecord } from "./migrations/index.ts";
 
 export type SqliteVectorMode = "disabled" | "required";
 
@@ -37,24 +39,10 @@ export type SqliteLayerError =
   | SqlitePragmaError
   | SqliteVectorUnavailableError;
 
-const normalizeMigrationOptions = <R>(
-  migrations: SqliteLayerOptions<R>["migrations"],
-): SqliteMigrationOptions<R> | undefined => {
-  if (migrations === undefined) return undefined;
-  if (isMigrationOptions<R>(migrations)) return migrations;
-
-  return {
-    loader: SqliteMigrator.fromRecord(migrations),
-  } as SqliteMigrationOptions<R>;
+const causeMessage = (cause: Cause.Cause<unknown>): string => {
+  const squashed = Cause.squash(cause);
+  return squashed instanceof Error ? squashed.message : String(squashed);
 };
-
-const isMigrationOptions = <R>(
-  migrations: SqliteMigrationOptions<R> | SqliteMigrationRecord,
-): migrations is SqliteMigrationOptions<R> =>
-  typeof migrations === "object" &&
-  migrations !== null &&
-  "loader" in migrations &&
-  typeof migrations.loader !== "undefined";
 
 const applyPragmas = (
   pragmas: ReadonlyArray<string>,
@@ -153,8 +141,8 @@ export const makeSqliteLayer = <R = never>(
         Effect.catchCause((cause) =>
           Effect.fail(
             new SqliteOpenError({
-              cause,
-              message: `Failed to open SQLite database: ${options.filename}`,
+              cause: Cause.squash(cause),
+              message: `Failed to open SQLite database: ${options.filename}: ${causeMessage(cause)}`,
               operation: "open",
               path: options.filename,
             }),
@@ -177,8 +165,8 @@ export const makeSqliteLayer = <R = never>(
           Effect.catchCause((cause) =>
             Effect.fail(
               new SqliteMigrationError({
-                cause,
-                message: "Failed to run SQLite migrations",
+                cause: Cause.squash(cause),
+                message: `Failed to run SQLite migrations: ${causeMessage(cause)}`,
                 operation: "runMigrations",
               }),
             ),

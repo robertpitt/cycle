@@ -1,17 +1,16 @@
-import { existsSync } from "node:fs";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { Effect } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   makeSqliteLayer,
-  openSqliteSync,
   SqliteCapabilities,
   SqliteMigrationError,
   SqliteVectorUnavailableError,
 } from "../src/index.ts";
+import { openSqliteSync } from "../src/sync.ts";
 import { makeInMemorySqliteLayer } from "../src/testing/index.ts";
 
 describe("@cycle/sqlite", () => {
@@ -41,6 +40,35 @@ describe("@cycle/sqlite", () => {
       );
 
       expect(existsSync(databasePath)).toBe(true);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  it("surfaces the native SQLite open failure message", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cycle-sqlite-open-failure-"));
+    const databasePath = join(root, "missing", "test.db");
+
+    try {
+      const result = await Effect.runPromiseExit(
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`SELECT 1`;
+        }).pipe(
+          Effect.provide(
+            makeSqliteLayer({
+              createParentDirectory: false,
+              filename: databasePath,
+            }),
+          ),
+        ),
+      );
+
+      expect(result._tag).toBe("Failure");
+      if (result._tag === "Failure") {
+        expect(String(result.cause)).toContain("SqliteOpenError");
+        expect(String(result.cause)).toContain("directory does not exist");
+      }
     } finally {
       rmSync(root, { force: true, recursive: true });
     }

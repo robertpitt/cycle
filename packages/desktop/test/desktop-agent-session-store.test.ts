@@ -2,8 +2,10 @@ import { strict as assert } from "node:assert";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openSqliteSync } from "@cycle/sqlite/sync";
+import { makeSqliteLayer } from "@cycle/sqlite";
 import { makeBackendAgentSessionStore as makeDesktopAgentSessionStore } from "@cycle/backend/agent-session-store";
+import { Effect } from "effect";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { describe, it } from "vitest";
 
 describe("DesktopAgentSessionStore", () => {
@@ -39,12 +41,12 @@ describe("DesktopAgentSessionStore", () => {
       });
       await store.close?.();
 
-      const db = openSqliteSync(databasePath);
-      try {
-        db.exec("UPDATE agent_session_bindings SET metadata_json = '[]', native_json = '42'");
-      } finally {
-        db.close();
-      }
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`UPDATE agent_session_bindings SET metadata_json = '[]', native_json = '42'`;
+        }).pipe(Effect.provide(makeSqliteLayer({ filename: databasePath }))),
+      );
 
       const reopened = makeDesktopAgentSessionStore(databasePath);
       try {

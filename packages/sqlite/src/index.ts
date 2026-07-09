@@ -5,6 +5,4 @@ export * from "./SqlitePragmaError.ts";
 export * from "./SqliteVectorUnavailableError.ts";
 export * from "./SqliteCapabilities.ts";
 export * from "./SqliteLive.ts";
-export * from "./internals/paths.ts";
-export * from "./sync.ts";
-export * from "./internals/vector.ts";
+export * from "./migrations/index.ts";

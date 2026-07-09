@@ -1,5 +1,5 @@
 import { Context, Crypto, Effect, Layer } from "effect";
-import { ValidationError, type DatabaseFailure } from "../errors/index.ts";
+import { DatabaseValidationError, type DatabaseFailure } from "./DatabaseErrors.ts";
 
 export type DatabaseIdGeneratorShape = {
   readonly draftId: Effect.Effect<string, DatabaseFailure>;
@@ -25,7 +25,7 @@ export const DatabaseIdGeneratorLive = Layer.effect(
         Effect.map((uuid) => `${prefix}_${uuid.replaceAll("-", "")}`),
         Effect.mapError(
           (error): DatabaseFailure =>
-            new ValidationError({
+            new DatabaseValidationError({
               field: "id",
               message: "failed to generate database id",
               cause: error,
@@ -41,7 +41,7 @@ export const DatabaseIdGeneratorLive = Layer.effect(
       ),
       Effect.mapError(
         (error): DatabaseFailure =>
-          new ValidationError({
+          new DatabaseValidationError({
             field: "id",
             message: "failed to generate database id",
             cause: error,

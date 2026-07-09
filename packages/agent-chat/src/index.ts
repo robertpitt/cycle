@@ -5,5 +5,5 @@ export * from "./prompt.ts";
 export * from "./records.ts";
 export * from "./runtime/ActiveTurnDirectory.ts";
 export * from "./runtime/AgentChatRuntime.ts";
-export * from "./store/SqliteAgentChatStore.ts";
+export * from "./SqliteAgentChatStore.ts";
 export * from "./stream.ts";

@@ -1,22 +1,22 @@
-import { EVENT_ROOT } from "@cycle/git-store/events";
 import { Document } from "@cycle/git-store/document";
+import { EVENT_ROOT } from "@cycle/git-store/events";
 import { withTestIdentity } from "@cycle/git-store/testing";
+import { Crypto, Effect, Layer } from "effect";
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { Crypto, Effect, Layer } from "effect";
 import {
   CURRENT_SCHEMA_VERSION,
   DatabaseIdGenerator,
   DatabaseIdGeneratorLive,
   DatabaseService,
-  ValidationError,
+  DatabaseValidationError,
   extractMentionTags,
   makeFrontmatter,
-  makeTicketDocument,
   makeGitRepositoryStoreEffect,
+  makeTicketDocument,
   updatedDateKey,
   type Actor,
   type CreateTicketInput,
@@ -24,8 +24,8 @@ import {
   type RepositoryStoreShape,
   type TicketDocument,
 } from "../src/index.ts";
+import { Projection } from "../src/Projection.ts";
 import { DatabaseTest } from "../src/testing/index.ts";
-import { Projection } from "../src/store/Projection.ts";
 import { assert, describe, it } from "./effect-vitest.ts";
 
 const storeGitDirs = new WeakMap<RepositoryStoreShape, string>();
@@ -287,14 +287,12 @@ describe("@cycle/database", () => {
     const now = "2026-06-20T00:00:00.000Z";
 
     try {
-      projection.db
-        .prepare(
-          `INSERT INTO users (
+      projection.db.run(
+        `INSERT INTO users (
             repository_id, user_id, snapshot_id, email, display_name, source,
             created_at, updated_at, profile_json, schema_version
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
+        [
           "projection-schema-repo",
           "user-1",
           "snapshot-1",
@@ -312,7 +310,8 @@ describe("@cycle/database", () => {
             updatedAt: now,
           }),
           1,
-        );
+        ],
+      );
 
       assert.throws(() => projection.getUser("projection-schema-repo", "user-1"), /email/u);
     } finally {
@@ -687,7 +686,7 @@ describe("@cycle/database", () => {
         }),
       );
 
-      assert.ok(emptyComment instanceof ValidationError);
+      assert.ok(emptyComment instanceof DatabaseValidationError);
       assert.match(emptyComment.message, /comment body must not be empty/u);
     }).pipe(Effect.provide(DatabaseTest())),
   );
@@ -1632,7 +1631,7 @@ describe("@cycle/database", () => {
         }),
       );
 
-      assert.ok(failure instanceof ValidationError);
+      assert.ok(failure instanceof DatabaseValidationError);
       assert.match(failure.message, /unsafe secret-bearing field/u);
     }).pipe(Effect.provide(DatabaseTest())),
   );

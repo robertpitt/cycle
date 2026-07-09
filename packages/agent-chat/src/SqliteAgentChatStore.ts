@@ -1,4 +1,7 @@
-import { openSqliteSync, type SqliteDatabaseLike } from "@cycle/sqlite/sync";
+import { makeSqliteLayer } from "@cycle/sqlite";
+import { Context, Effect, Exit, Layer, Schema, Scope } from "effect";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { agentChatMigrations } from "./migrations/AgentChatMigrations.ts";
 import type {
   AgentChatActivityRecord,
   AgentChatEventRecord,
@@ -9,9 +12,7 @@ import type {
   AgentChatThreadRecord,
   AgentChatThreadWithMessages,
   AgentChatTurnRecord,
-} from "../records.ts";
-import { Schema } from "effect";
-import { agentChatSchemaSql } from "./schema.ts";
+} from "./records.ts";
 
 type ThreadRow = {
   readonly active_turn_id: string | null;
@@ -115,59 +116,85 @@ const AgentChatQuestionItem = Schema.Struct({
 const AgentChatQuestionItems = Schema.Array(AgentChatQuestionItem);
 
 export const makeSqliteAgentChatStore = (path: string): AgentChatStoreShape => {
-  const db = openSqliteSync(path);
-  db.exec("PRAGMA foreign_keys = ON");
-  db.exec(agentChatSchemaSql);
-  ensureChatSchemaCompatibility(db);
+  const scope = Effect.runSync(Scope.make("sequential"));
+  const context = Effect.runSync(
+    Layer.buildWithScope(
+      makeSqliteLayer({
+        filename: path,
+        migrations: agentChatMigrations,
+      }),
+      scope,
+    ),
+  );
+  const sql = Context.get(context, SqlClient.SqlClient);
+  Effect.runSync(ensureChatSchemaCompatibility(sql));
+
+  return makeSqliteAgentChatStoreFromSql(sql, () =>
+    Effect.runPromise(Scope.close(scope, Exit.void)),
+  );
+};
+
+export const makeSqliteAgentChatStoreFromSql = (
+  sql: SqlClient.SqlClient,
+  close: () => Promise<void> = () => Promise.resolve(),
+): AgentChatStoreShape => {
+  const all = <A extends object>(
+    source: string,
+    params: ReadonlyArray<unknown> = [],
+  ): Promise<ReadonlyArray<A>> => Effect.runPromise(sql.unsafe<A>(source, params));
+
+  const get = async <A extends object>(
+    source: string,
+    params: ReadonlyArray<unknown> = [],
+  ): Promise<A | undefined> => (await all<A>(source, params))[0];
+
+  const run = (source: string, params: ReadonlyArray<unknown> = []): Promise<void> =>
+    Effect.runPromise(sql.unsafe(source, params).pipe(Effect.asVoid));
 
   const listMessages = async (threadId: string): Promise<readonly AgentChatMessageRecord[]> => {
-    const rows = db
-      .prepare(
-        `SELECT *
-         FROM agent_chat_messages
-         WHERE thread_id = ?
-         ORDER BY COALESCE(sequence, 9223372036854775807), created_at ASC, message_id ASC`,
-      )
-      .all(threadId) as unknown as ReadonlyArray<MessageRow>;
+    const rows = await all<MessageRow>(
+      `SELECT *
+       FROM agent_chat_messages
+       WHERE thread_id = ?
+       ORDER BY COALESCE(sequence, 9223372036854775807), created_at ASC, message_id ASC`,
+      [threadId],
+    );
 
     return rows.map(messageFromRow);
   };
 
   const listActivities = async (threadId: string): Promise<readonly AgentChatActivityRecord[]> => {
-    const rows = db
-      .prepare(
-        `SELECT *
-         FROM agent_chat_activities
-         WHERE thread_id = ?
-         ORDER BY created_at ASC, activity_id ASC`,
-      )
-      .all(threadId) as unknown as ReadonlyArray<ActivityRow>;
+    const rows = await all<ActivityRow>(
+      `SELECT *
+       FROM agent_chat_activities
+       WHERE thread_id = ?
+       ORDER BY created_at ASC, activity_id ASC`,
+      [threadId],
+    );
 
     return rows.map(activityFromRow);
   };
 
   const listQuestions = async (threadId: string): Promise<readonly AgentChatQuestionRecord[]> => {
-    const rows = db
-      .prepare(
-        `SELECT *
-         FROM agent_chat_questions
-         WHERE thread_id = ?
-         ORDER BY created_at ASC, question_id ASC`,
-      )
-      .all(threadId) as unknown as ReadonlyArray<QuestionRow>;
+    const rows = await all<QuestionRow>(
+      `SELECT *
+       FROM agent_chat_questions
+       WHERE thread_id = ?
+       ORDER BY created_at ASC, question_id ASC`,
+      [threadId],
+    );
 
     return rows.map(questionFromRow);
   };
 
   const listTurns = async (threadId: string): Promise<readonly AgentChatTurnRecord[]> => {
-    const rows = db
-      .prepare(
-        `SELECT *
-         FROM agent_chat_turns
-         WHERE thread_id = ?
-         ORDER BY created_at ASC, turn_id ASC`,
-      )
-      .all(threadId) as unknown as ReadonlyArray<TurnRow>;
+    const rows = await all<TurnRow>(
+      `SELECT *
+       FROM agent_chat_turns
+       WHERE thread_id = ?
+       ORDER BY created_at ASC, turn_id ASC`,
+      [threadId],
+    );
 
     return rows.map(turnFromRow);
   };
@@ -176,22 +203,21 @@ export const makeSqliteAgentChatStore = (path: string): AgentChatStoreShape => {
     threadId: string,
     sequence: number,
   ): Promise<readonly AgentChatEventRecord[]> => {
-    const rows = db
-      .prepare(
-        `SELECT *
-         FROM agent_chat_events
-         WHERE thread_id = ? AND sequence > ?
-         ORDER BY sequence ASC`,
-      )
-      .all(threadId, sequence) as unknown as ReadonlyArray<EventRow>;
+    const rows = await all<EventRow>(
+      `SELECT *
+       FROM agent_chat_events
+       WHERE thread_id = ? AND sequence > ?
+       ORDER BY sequence ASC`,
+      [threadId, sequence],
+    );
 
     return rows.map(eventFromRow);
   };
 
   const getThread = async (threadId: string): Promise<AgentChatThreadWithMessages | undefined> => {
-    const row = db.prepare("SELECT * FROM agent_chat_threads WHERE thread_id = ?").get(threadId) as
-      | ThreadRow
-      | undefined;
+    const row = await get<ThreadRow>("SELECT * FROM agent_chat_threads WHERE thread_id = ?", [
+      threadId,
+    ]);
 
     if (row === undefined) return undefined;
 
@@ -201,39 +227,41 @@ export const makeSqliteAgentChatStore = (path: string): AgentChatStoreShape => {
     };
   };
 
-  const nextMessageSequence = (threadId: string): number => {
-    const row = db
-      .prepare(
-        "SELECT COALESCE(MAX(sequence), -1) + 1 AS sequence FROM agent_chat_messages WHERE thread_id = ?",
-      )
-      .get(threadId) as { readonly sequence: number } | undefined;
+  const nextMessageSequence = async (threadId: string): Promise<number> => {
+    const row = await get<{ readonly sequence: number }>(
+      "SELECT COALESCE(MAX(sequence), -1) + 1 AS sequence FROM agent_chat_messages WHERE thread_id = ?",
+      [threadId],
+    );
 
     return row?.sequence ?? 0;
   };
 
-  const existingMessageSequence = (threadId: string, messageId: string): number | undefined => {
-    const row = db
-      .prepare("SELECT sequence FROM agent_chat_messages WHERE thread_id = ? AND message_id = ?")
-      .get(threadId, messageId) as { readonly sequence: number | null } | undefined;
+  const existingMessageSequence = async (
+    threadId: string,
+    messageId: string,
+  ): Promise<number | undefined> => {
+    const row = await get<{ readonly sequence: number | null }>(
+      "SELECT sequence FROM agent_chat_messages WHERE thread_id = ? AND message_id = ?",
+      [threadId, messageId],
+    );
 
     return row?.sequence ?? undefined;
   };
 
-  const nextEventSequence = (threadId: string): number => {
-    const row = db
-      .prepare(
-        "SELECT COALESCE(MAX(sequence), 0) + 1 AS sequence FROM agent_chat_events WHERE thread_id = ?",
-      )
-      .get(threadId) as { readonly sequence: number } | undefined;
+  const nextEventSequence = async (threadId: string): Promise<number> => {
+    const row = await get<{ readonly sequence: number }>(
+      "SELECT COALESCE(MAX(sequence), 0) + 1 AS sequence FROM agent_chat_events WHERE thread_id = ?",
+      [threadId],
+    );
 
     return row?.sequence ?? 1;
   };
 
   return {
     appendEvent: async (input): Promise<AgentChatEventRecord> => {
-      const sequence = nextEventSequence(input.threadId);
+      const sequence = await nextEventSequence(input.threadId);
 
-      db.prepare(
+      await run(
         `INSERT INTO agent_chat_events (
           thread_id, event_id, sequence, type, payload_json, created_at
         ) VALUES (?, ?, ?, ?, ?, ?)
@@ -241,13 +269,14 @@ export const makeSqliteAgentChatStore = (path: string): AgentChatStoreShape => {
           type = excluded.type,
           payload_json = excluded.payload_json,
           created_at = excluded.created_at`,
-      ).run(
-        input.threadId,
-        input.eventId,
-        sequence,
-        input.type,
-        jsonString(input.payload),
-        input.createdAt,
+        [
+          input.threadId,
+          input.eventId,
+          sequence,
+          input.type,
+          jsonString(input.payload),
+          input.createdAt,
+        ],
       );
 
       return {
@@ -255,17 +284,15 @@ export const makeSqliteAgentChatStore = (path: string): AgentChatStoreShape => {
         sequence,
       };
     },
-    close: () => {
-      db.close();
-    },
+    close: () => close(),
     deleteThread: async (threadId): Promise<boolean> => {
-      const existing = db
-        .prepare("SELECT 1 FROM agent_chat_threads WHERE thread_id = ?")
-        .get(threadId);
+      const existing = await get("SELECT 1 FROM agent_chat_threads WHERE thread_id = ?", [
+        threadId,
+      ]);
 
       if (existing === undefined) return false;
 
-      db.prepare("DELETE FROM agent_chat_threads WHERE thread_id = ?").run(threadId);
+      await run("DELETE FROM agent_chat_threads WHERE thread_id = ?", [threadId]);
       return true;
     },
     getThread,
@@ -274,13 +301,11 @@ export const makeSqliteAgentChatStore = (path: string): AgentChatStoreShape => {
     listMessages,
     listQuestions,
     listThreads: async (): Promise<readonly AgentChatThreadWithMessages[]> => {
-      const rows = db
-        .prepare(
-          `SELECT *
-           FROM agent_chat_threads
-           ORDER BY updated_at DESC, thread_id ASC`,
-        )
-        .all() as unknown as ReadonlyArray<ThreadRow>;
+      const rows = await all<ThreadRow>(
+        `SELECT *
+         FROM agent_chat_threads
+         ORDER BY updated_at DESC, thread_id ASC`,
+      );
 
       return Promise.all(
         rows.map(async (row) => ({
@@ -291,7 +316,7 @@ export const makeSqliteAgentChatStore = (path: string): AgentChatStoreShape => {
     },
     listTurns,
     upsertActivity: async (input): Promise<AgentChatActivityRecord> => {
-      db.prepare(
+      await run(
         `INSERT INTO agent_chat_activities (
           thread_id, activity_id, turn_id, kind, status, title, detail, payload_json, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -303,17 +328,18 @@ export const makeSqliteAgentChatStore = (path: string): AgentChatStoreShape => {
           detail = excluded.detail,
           payload_json = excluded.payload_json,
           updated_at = excluded.updated_at`,
-      ).run(
-        input.threadId,
-        input.id,
-        input.turnId ?? null,
-        input.kind,
-        input.status ?? null,
-        input.title,
-        input.detail ?? null,
-        input.payload === undefined || input.payload === null ? null : jsonString(input.payload),
-        input.createdAt,
-        input.updatedAt ?? null,
+        [
+          input.threadId,
+          input.id,
+          input.turnId ?? null,
+          input.kind,
+          input.status ?? null,
+          input.title,
+          input.detail ?? null,
+          input.payload === undefined || input.payload === null ? null : jsonString(input.payload),
+          input.createdAt,
+          input.updatedAt ?? null,
+        ],
       );
 
       return input;
@@ -321,10 +347,10 @@ export const makeSqliteAgentChatStore = (path: string): AgentChatStoreShape => {
     upsertMessage: async (input: AgentChatMessageRecord): Promise<AgentChatMessageRecord> => {
       const sequence =
         input.sequence ??
-        existingMessageSequence(input.threadId, input.id) ??
-        nextMessageSequence(input.threadId);
+        (await existingMessageSequence(input.threadId, input.id)) ??
+        (await nextMessageSequence(input.threadId));
 
-      db.prepare(
+      await run(
         `INSERT INTO agent_chat_messages (
           thread_id, message_id, sequence, actor, body, turn_id, streaming, metadata_json, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -337,17 +363,18 @@ export const makeSqliteAgentChatStore = (path: string): AgentChatStoreShape => {
           metadata_json = excluded.metadata_json,
           created_at = excluded.created_at,
           updated_at = excluded.updated_at`,
-      ).run(
-        input.threadId,
-        input.id,
-        sequence,
-        input.actor,
-        input.body,
-        input.turnId ?? null,
-        input.streaming ? 1 : 0,
-        input.metadata === undefined ? null : jsonString(input.metadata),
-        input.createdAt,
-        input.updatedAt ?? null,
+        [
+          input.threadId,
+          input.id,
+          sequence,
+          input.actor,
+          input.body,
+          input.turnId ?? null,
+          input.streaming ? 1 : 0,
+          input.metadata === undefined ? null : jsonString(input.metadata),
+          input.createdAt,
+          input.updatedAt ?? null,
+        ],
       );
 
       return {
@@ -356,7 +383,7 @@ export const makeSqliteAgentChatStore = (path: string): AgentChatStoreShape => {
       };
     },
     upsertQuestion: async (input): Promise<AgentChatQuestionRecord> => {
-      db.prepare(
+      await run(
         `INSERT INTO agent_chat_questions (
           thread_id, question_id, turn_id, status, prompt, questions_json, answer_json, answered_at, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -368,23 +395,24 @@ export const makeSqliteAgentChatStore = (path: string): AgentChatStoreShape => {
           answer_json = excluded.answer_json,
           answered_at = excluded.answered_at,
           updated_at = excluded.updated_at`,
-      ).run(
-        input.threadId,
-        input.id,
-        input.turnId,
-        input.status,
-        input.prompt,
-        jsonString(input.questions),
-        input.answer === undefined || input.answer === null ? null : jsonString(input.answer),
-        input.answeredAt ?? null,
-        input.createdAt,
-        input.updatedAt ?? null,
+        [
+          input.threadId,
+          input.id,
+          input.turnId,
+          input.status,
+          input.prompt,
+          jsonString(input.questions),
+          input.answer === undefined || input.answer === null ? null : jsonString(input.answer),
+          input.answeredAt ?? null,
+          input.createdAt,
+          input.updatedAt ?? null,
+        ],
       );
 
       return input;
     },
     upsertThread: async (input: AgentChatThreadRecord): Promise<AgentChatThreadRecord> => {
-      db.prepare(
+      await run(
         `INSERT INTO agent_chat_threads (
 	          thread_id, title, summary, status, agent_id, session_id, model, runtime_mode, thinking_level,
 	          active_turn_id, last_error, origin_json, archived_at, created_at, updated_at
@@ -403,28 +431,29 @@ export const makeSqliteAgentChatStore = (path: string): AgentChatStoreShape => {
 	          origin_json = excluded.origin_json,
 	          archived_at = excluded.archived_at,
 	          updated_at = excluded.updated_at`,
-      ).run(
-        input.id,
-        input.title,
-        input.summary,
-        input.status,
-        input.agentId ?? null,
-        input.sessionId ?? null,
-        input.model ?? null,
-        input.runtimeMode ?? null,
-        input.thinkingLevel ?? null,
-        input.activeTurnId ?? null,
-        input.lastError ?? null,
-        input.origin === undefined ? null : jsonString(input.origin),
-        input.archivedAt ?? null,
-        input.createdAt,
-        input.updatedAt,
+        [
+          input.id,
+          input.title,
+          input.summary,
+          input.status,
+          input.agentId ?? null,
+          input.sessionId ?? null,
+          input.model ?? null,
+          input.runtimeMode ?? null,
+          input.thinkingLevel ?? null,
+          input.activeTurnId ?? null,
+          input.lastError ?? null,
+          input.origin === undefined ? null : jsonString(input.origin),
+          input.archivedAt ?? null,
+          input.createdAt,
+          input.updatedAt,
+        ],
       );
 
       return input;
     },
     upsertTurn: async (input): Promise<AgentChatTurnRecord> => {
-      db.prepare(
+      await run(
         `INSERT INTO agent_chat_turns (
 	          thread_id, turn_id, input_message_id, assistant_message_id, provider_id, model,
 	          runtime_mode, thinking_level, status, last_error, metadata_json, completed_at, created_at, updated_at
@@ -441,21 +470,22 @@ export const makeSqliteAgentChatStore = (path: string): AgentChatStoreShape => {
 	          metadata_json = excluded.metadata_json,
           completed_at = excluded.completed_at,
           updated_at = excluded.updated_at`,
-      ).run(
-        input.threadId,
-        input.id,
-        input.inputMessageId,
-        input.assistantMessageId ?? null,
-        input.providerId,
-        input.model ?? null,
-        input.runtimeMode ?? null,
-        input.thinkingLevel ?? null,
-        input.status,
-        input.lastError ?? null,
-        input.metadata === undefined ? null : jsonString(input.metadata),
-        input.completedAt ?? null,
-        input.createdAt,
-        input.updatedAt,
+        [
+          input.threadId,
+          input.id,
+          input.inputMessageId,
+          input.assistantMessageId ?? null,
+          input.providerId,
+          input.model ?? null,
+          input.runtimeMode ?? null,
+          input.thinkingLevel ?? null,
+          input.status,
+          input.lastError ?? null,
+          input.metadata === undefined ? null : jsonString(input.metadata),
+          input.completedAt ?? null,
+          input.createdAt,
+          input.updatedAt,
+        ],
       );
 
       return input;
@@ -465,7 +495,7 @@ export const makeSqliteAgentChatStore = (path: string): AgentChatStoreShape => {
 
 export const makeDesktopAgentChatStore = makeSqliteAgentChatStore;
 
-const ensureChatSchemaCompatibility = (db: SqliteDatabaseLike): void => {
+const ensureChatSchemaCompatibility = (sql: SqlClient.SqlClient): Effect.Effect<void> => {
   const columns: ReadonlyArray<readonly [string, string]> = [
     ["agent_chat_threads", "model TEXT"],
     ["agent_chat_threads", "runtime_mode TEXT"],
@@ -481,13 +511,12 @@ const ensureChatSchemaCompatibility = (db: SqliteDatabaseLike): void => {
     ["agent_chat_turns", "runtime_mode TEXT"],
   ];
 
-  for (const [table, column] of columns) {
-    try {
-      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column}`);
-    } catch {
-      // SQLite reports duplicate column names for already-migrated databases.
-    }
-  }
+  return Effect.forEach(
+    columns,
+    ([table, column]) =>
+      sql.unsafe(`ALTER TABLE ${table} ADD COLUMN ${column}`).pipe(Effect.catch(() => Effect.void)),
+    { discard: true },
+  );
 };
 
 const jsonString = (value: unknown): string => JSON.stringify(value);

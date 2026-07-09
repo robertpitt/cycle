@@ -130,7 +130,9 @@ describe("@cycle/git", () => {
 
         yield* attemptPromise(() => writeFile(path.join(repo, "source.txt"), "changed\n"));
         assert.match(yield* service.statusPorcelain(repo), /source\.txt/u);
-        assert.match(yield* service.statusPorcelain(repo, { z: true }), /\0/u);
+        assert.ok(
+          (yield* service.statusPorcelain(repo, { z: true })).includes(String.fromCharCode(0)),
+        );
 
         yield* service.addAll(repo);
         const commit = yield* service.commit(repo, {

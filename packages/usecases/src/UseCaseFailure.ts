@@ -88,7 +88,7 @@ export const mapDatabaseFailure = (
   const details = detailsFrom(error);
 
   switch (sourceTag) {
-    case "RepositoryNotFoundError":
+    case "DatabaseRepositoryNotFoundError":
       return useCaseFailure({
         code: "REPOSITORY_NOT_OPEN",
         details,
@@ -100,7 +100,7 @@ export const mapDatabaseFailure = (
         ticketId,
         useCase: context.useCase,
       });
-    case "ValidationError":
+    case "DatabaseValidationError":
       return useCaseFailure({
         code: "INVALID_INPUT",
         details,
@@ -112,7 +112,7 @@ export const mapDatabaseFailure = (
         ticketId,
         useCase: context.useCase,
       });
-    case "WorkflowError":
+    case "DatabaseWorkflowError":
       return useCaseFailure({
         code: "POLICY_VIOLATION",
         details,
@@ -123,7 +123,7 @@ export const mapDatabaseFailure = (
         ticketId,
         useCase: context.useCase,
       });
-    case "ConsistencyError":
+    case "DatabaseConsistencyError":
       return useCaseFailure({
         code: "CONSISTENCY_FAILURE",
         details,
@@ -135,7 +135,7 @@ export const mapDatabaseFailure = (
         ticketId,
         useCase: context.useCase,
       });
-    case "MaterializationError":
+    case "DatabaseMaterializationError":
       return useCaseFailure({
         code: "SYNC_FAILURE",
         details,
@@ -154,7 +154,7 @@ export const mapDatabaseFailure = (
         message,
         repositoryId,
         requestId: context.requestId,
-        retryable: sourceTag === "StorageError" || sourceTag === "SqliteError",
+        retryable: sourceTag === "DatabaseStorageError" || sourceTag === "DatabaseSqliteError",
         tag: "StorageFailure",
         ticketId,
         useCase: context.useCase,

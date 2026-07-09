@@ -1,6 +1,6 @@
-import { openSqliteSync, type SqliteDatabaseLike } from "@cycle/sqlite/sync";
-import { Schema } from "effect";
-import { cycleDatabasePath } from "../paths.ts";
+import { makeSqliteLayer } from "@cycle/sqlite";
+import { Context, Effect, Exit, Layer, Schema, Scope } from "effect";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 import type {
   CycleRepositoryMetadata,
   HistoryCommit,
@@ -41,10 +41,31 @@ import type {
   UserProfileDocument,
   UserProfilePage,
   UserProfileQuery,
-} from "../domain/index.ts";
-import { makeIssueFrontmatter, normalizeKey, ticketReferenceKey } from "../domain/index.ts";
+} from "./domain/index.ts";
+import { makeIssueFrontmatter, normalizeKey, ticketReferenceKey } from "./domain/index.ts";
+import { DatabaseSqliteError } from "./DatabaseErrors.ts";
 
 type SqlValue = null | number | string;
+
+type SqliteRunResult = {
+  readonly changes?: bigint | number;
+  readonly lastInsertRowid?: bigint | number;
+};
+
+type SqliteDatabaseLike = {
+  readonly all: <A extends object = Record<string, unknown>>(
+    source: string,
+    params?: ReadonlyArray<unknown>,
+  ) => ReadonlyArray<A>;
+  readonly close: () => void;
+  readonly exec: (source: string) => void;
+  readonly get: <A extends object = Record<string, unknown>>(
+    source: string,
+    params?: ReadonlyArray<unknown>,
+  ) => A | undefined;
+  readonly run: (source: string, params?: ReadonlyArray<unknown>) => SqliteRunResult;
+  readonly transaction: <A>(f: () => A) => A;
+};
 
 type TicketRow = {
   readonly archived_at: string | null;
@@ -214,7 +235,7 @@ type InboxListRow = InboxItemRow & {
 };
 
 const WATCHED_REF = "refs/gitdb/cycle/main";
-const CURRENT_PROJECTION_SCHEMA_VERSION = 5;
+export const CURRENT_PROJECTION_SCHEMA_VERSION = 5;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 250;
 const StrictDecodeOptions = { onExcessProperty: "error" } as const;
@@ -440,13 +461,278 @@ const ProjectionCursorJson = Schema.Struct({
   offset: NonNegativeInteger,
 });
 
+const NullOrString = Schema.NullOr(Schema.String);
+const SqlInteger = Schema.Int;
+const RepositoryStatusValueSql = Schema.Literals([
+  "degraded",
+  "empty",
+  "failed",
+  "ready",
+  "syncing",
+]);
+const InboxReasonSql = Schema.Literals([
+  "assigned",
+  "comment_assigned",
+  "comment_created",
+  "mention",
+]);
+const InboxStatusSql = Schema.Literals(["archived", "read", "snoozed", "unread"]);
+
+const TicketRowSql = Schema.Struct({
+  archived_at: NullOrString,
+  assignee: NullOrString,
+  body: Schema.String,
+  body_format: Schema.Literal("markdown"),
+  created_at: Schema.String,
+  created_by_email: NullOrString,
+  created_by_name: Schema.String,
+  created_by_type: Schema.String,
+  deleted_at: NullOrString,
+  document_path: Schema.String,
+  due_date: NullOrString,
+  estimate: NullOrString,
+  frontmatter_json: Schema.String,
+  labels_json: NullOrString,
+  parent_id: Schema.String,
+  priority: Schema.String,
+  relation_summary_json: NullOrString,
+  repository_id: Schema.String,
+  repository_key: NullOrString,
+  schema_version: SqlInteger,
+  snapshot_id: Schema.String,
+  status: Schema.String,
+  ticket_id: Schema.String,
+  title: Schema.String,
+  type: Schema.String,
+  updated_at: Schema.String,
+});
+
+const RecordRowSql = Schema.Struct({
+  created_at: Schema.String,
+  created_by_email: NullOrString,
+  created_by_name: Schema.String,
+  created_by_type: Schema.String,
+  created_date: Schema.String,
+  payload_json: Schema.String,
+  record_id: Schema.String,
+  record_type: Schema.String,
+  repository_id: Schema.String,
+  schema_version: SqlInteger,
+  ticket_id: Schema.String,
+});
+
+const UserRowSql = Schema.Struct({
+  aliases_json: NullOrString,
+  avatar_url: NullOrString,
+  created_at: Schema.String,
+  disabled_at: NullOrString,
+  display_name: Schema.String,
+  email: Schema.String,
+  profile_json: Schema.String,
+  repository_id: Schema.String,
+  schema_version: SqlInteger,
+  source: Schema.String,
+  timezone: NullOrString,
+  updated_at: Schema.String,
+  user_id: Schema.String,
+});
+
+const LabelRowSql = Schema.Struct({
+  archived_at: NullOrString,
+  color: Schema.String,
+  created_at: Schema.String,
+  created_by_email: NullOrString,
+  created_by_name: Schema.String,
+  created_by_type: Schema.String,
+  description: NullOrString,
+  label_id: Schema.String,
+  label_json: Schema.String,
+  name: Schema.String,
+  repository_id: Schema.String,
+  schema_version: SqlInteger,
+  updated_at: Schema.String,
+});
+
+const SavedViewRowSql = Schema.Struct({
+  built_in: SqlInteger,
+  created_at: Schema.String,
+  created_by_email: NullOrString,
+  created_by_name: Schema.String,
+  created_by_type: Schema.String,
+  group_by: Schema.String,
+  kind: Schema.String,
+  name: Schema.String,
+  owner_user_id: NullOrString,
+  pinned: SqlInteger,
+  repository_id: Schema.String,
+  schema_version: SqlInteger,
+  updated_at: Schema.String,
+  view_id: Schema.String,
+  view_json: Schema.String,
+});
+
+const IssueTemplateRowSql = Schema.Struct({
+  active: SqlInteger,
+  created_at: Schema.String,
+  created_by_email: NullOrString,
+  created_by_name: Schema.String,
+  created_by_type: Schema.String,
+  kind: Schema.String,
+  name: Schema.String,
+  repository_id: Schema.String,
+  schema_version: SqlInteger,
+  template_id: Schema.String,
+  template_json: Schema.String,
+  updated_at: Schema.String,
+});
+
+const RepositoryRowSql = Schema.Struct({
+  active_generation: SqlInteger,
+  active_snapshot_id: NullOrString,
+  current_branch: NullOrString,
+  cycle_metadata_json: NullOrString,
+  default_remote: NullOrString,
+  default_remote_url: NullOrString,
+  git_dir: NullOrString,
+  last_sync_completed_at: NullOrString,
+  last_sync_error: NullOrString,
+  last_sync_started_at: NullOrString,
+  metadata_updated_at: NullOrString,
+  remotes_json: NullOrString,
+  repository_id: Schema.String,
+  sync_status: RepositoryStatusValueSql,
+  warning_count: SqlInteger,
+  worktree_path: NullOrString,
+});
+
+const HistoryRowSql = Schema.Struct({
+  author_email: NullOrString,
+  author_name: NullOrString,
+  changed_ticket_ids: NullOrString,
+  committed_at: NullOrString,
+  message: NullOrString,
+  parent_ids: NullOrString,
+  sequence: SqlInteger,
+  snapshot_id: Schema.String,
+  warning_count: SqlInteger,
+});
+
+const InboxListRowSql = Schema.Struct({
+  actor_email: NullOrString,
+  actor_name: NullOrString,
+  archived_at: NullOrString,
+  body_excerpt: NullOrString,
+  created_at: Schema.String,
+  deleted_at: NullOrString,
+  event_path: Schema.String,
+  item_id: Schema.String,
+  local_archived_at: NullOrString,
+  local_read_at: NullOrString,
+  local_snoozed_until: NullOrString,
+  local_updated_at: NullOrString,
+  metadata_json: NullOrString,
+  reason: InboxReasonSql,
+  record_id: NullOrString,
+  repository_id: Schema.String,
+  sequence: SqlInteger,
+  snapshot_id: Schema.String,
+  status: InboxStatusSql,
+  ticket_id: Schema.String,
+  title: Schema.String,
+  user_id: Schema.String,
+});
+
+const MaterializationWarningRowSql = Schema.Struct({
+  created_at: Schema.String,
+  message: Schema.String,
+  object_id: NullOrString,
+  object_type: Schema.String,
+  path: Schema.String,
+  reason: Schema.String,
+  repository_id: Schema.String,
+  snapshot_id: Schema.String,
+});
+
+const sqlStatements = (source: string): ReadonlyArray<string> =>
+  source
+    .split(";")
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.length > 0);
+
+const makeSqlClientDatabase = (
+  sql: SqlClient.SqlClient,
+  closeEffect: Effect.Effect<void> = Effect.void,
+): SqliteDatabaseLike => {
+  let transactionContext: Context.Context<never> | undefined;
+  const runSync = <A>(effect: Effect.Effect<A, unknown>): A =>
+    Effect.runSync(
+      transactionContext === undefined ? effect : Effect.provideContext(effect, transactionContext),
+    );
+
+  return {
+    all: <A extends object = Record<string, unknown>>(
+      source: string,
+      params: readonly unknown[] = [],
+    ) => runSync(sql.unsafe<A>(source, params)),
+    close: () => {
+      runSync(closeEffect);
+    },
+    exec: (source) => {
+      for (const statement of sqlStatements(source)) {
+        runSync(sql.unsafe(statement).pipe(Effect.asVoid));
+      }
+    },
+    get: <A extends object = Record<string, unknown>>(
+      source: string,
+      params: readonly unknown[] = [],
+    ) => runSync(sql.unsafe<A>(source, params)).at(0),
+    run: (source, params: readonly unknown[] = []) =>
+      runSync(sql.unsafe(source, params).raw) as SqliteRunResult,
+    transaction: (f) =>
+      Effect.runSync(
+        sql.withTransaction(
+          Effect.gen(function* () {
+            const previousContext = transactionContext;
+            transactionContext = yield* Effect.context<never>();
+            try {
+              return f();
+            } finally {
+              transactionContext = previousContext;
+            }
+          }),
+        ),
+      ),
+  };
+};
+
+const makeEffectSqliteDatabase = (filename: string): SqliteDatabaseLike => {
+  const scope = Effect.runSync(Scope.make("sequential"));
+  const context = Effect.runSync(
+    Layer.buildWithScope(
+      makeSqliteLayer({
+        filename,
+      }),
+      scope,
+    ),
+  );
+  const sql = Context.get(context, SqlClient.SqlClient);
+
+  return makeSqlClientDatabase(sql, Scope.close(scope, Exit.void));
+};
+
 export class Projection {
   readonly db: SqliteDatabaseLike;
 
-  constructor(path = cycleDatabasePath()) {
-    this.db = openSqliteSync(path);
-    this.db.exec("PRAGMA foreign_keys = ON");
+  constructor(pathOrDatabase: string | SqliteDatabaseLike = ":memory:") {
+    this.db =
+      typeof pathOrDatabase === "string"
+        ? makeEffectSqliteDatabase(pathOrDatabase)
+        : pathOrDatabase;
     this.initializeSchema();
+  }
+
+  static fromSqlClient(sql: SqlClient.SqlClient): Projection {
+    return new Projection(makeSqlClientDatabase(sql));
   }
 
   close(): void {
@@ -457,9 +743,10 @@ export class Projection {
     const version = this.userVersion();
 
     if (version > CURRENT_PROJECTION_SCHEMA_VERSION) {
-      throw new Error(
-        `Projection schema version ${version} is newer than supported version ${CURRENT_PROJECTION_SCHEMA_VERSION}`,
-      );
+      throw new DatabaseSqliteError({
+        message: `Projection schema version ${version} is newer than supported version ${CURRENT_PROJECTION_SCHEMA_VERSION}`,
+        operation: "initializeProjectionSchema",
+      });
     }
 
     const hasRepositories = this.hasTable("repositories");
@@ -479,23 +766,21 @@ export class Projection {
   }
 
   private userVersion(): number {
-    const row = this.db.prepare("PRAGMA user_version").get() as
-      | { readonly user_version: number }
-      | undefined;
+    const row = this.db.get("PRAGMA user_version") as { readonly user_version: number } | undefined;
 
     return row?.user_version ?? 0;
   }
 
   private hasTable(name: string): boolean {
-    const row = this.db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
-      .get(name) as { readonly name: string } | undefined;
+    const row = this.db.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", [
+      name,
+    ]) as { readonly name: string } | undefined;
 
     return row !== undefined;
   }
 
   private hasColumn(table: string, column: string): boolean {
-    const rows = this.db.prepare(`PRAGMA table_info(${table})`).all() as unknown as ReadonlyArray<{
+    const rows = this.db.all(`PRAGMA table_info(${table})`) as unknown as ReadonlyArray<{
       readonly name: string;
     }>;
 
@@ -530,9 +815,8 @@ export class Projection {
   registerRepository(input: RepositoryInput): RepositoryStatus {
     const metadata = normalizeRepositoryMetadata(input);
 
-    this.db
-      .prepare(
-        `INSERT INTO repositories (
+    this.db.run(
+      `INSERT INTO repositories (
           repository_id, display_name, worktree_path, git_dir, watched_ref, sync_status,
           active_generation, warning_count, current_branch, default_remote, default_remote_url,
           metadata_updated_at, remotes_json
@@ -547,8 +831,7 @@ export class Projection {
           default_remote_url = excluded.default_remote_url,
           metadata_updated_at = excluded.metadata_updated_at,
           remotes_json = excluded.remotes_json`,
-      )
-      .run(
+      [
         input.repositoryId,
         input.displayName ?? input.repositoryId,
         metadata.worktreePath ?? input.worktreePath ?? null,
@@ -559,7 +842,8 @@ export class Projection {
         metadata.defaultRemoteUrl ?? null,
         metadata.inspectedAt ?? null,
         JSON.stringify(metadata.remotes),
-      );
+      ],
+    );
 
     return this.repositoryStatus(input.repositoryId);
   }
@@ -568,17 +852,18 @@ export class Projection {
     repositoryId: string,
     metadata: CycleRepositoryMetadata,
   ): RepositoryStatus {
-    this.db
-      .prepare("UPDATE repositories SET cycle_metadata_json = ? WHERE repository_id = ?")
-      .run(JSON.stringify(metadata), repositoryId);
+    this.db.run("UPDATE repositories SET cycle_metadata_json = ? WHERE repository_id = ?", [
+      JSON.stringify(metadata),
+      repositoryId,
+    ]);
 
     return this.repositoryStatus(repositoryId);
   }
 
   clearCycleRepositoryMetadata(repositoryId: string): RepositoryStatus {
-    this.db
-      .prepare("UPDATE repositories SET cycle_metadata_json = NULL WHERE repository_id = ?")
-      .run(repositoryId);
+    this.db.run("UPDATE repositories SET cycle_metadata_json = NULL WHERE repository_id = ?", [
+      repositoryId,
+    ]);
 
     return this.repositoryStatus(repositoryId);
   }
@@ -593,9 +878,9 @@ export class Projection {
   }
 
   repositoryStatus(repositoryId: string): RepositoryStatus {
-    const row = this.db
-      .prepare("SELECT * FROM repositories WHERE repository_id = ?")
-      .get(repositoryId) as RepositoryRow | undefined;
+    const row = this.db.get("SELECT * FROM repositories WHERE repository_id = ?", [
+      repositoryId,
+    ]) as RepositoryRow | undefined;
 
     if (row === undefined) {
       return {
@@ -611,39 +896,38 @@ export class Projection {
   }
 
   listRepositories(): ReadonlyArray<RepositoryStatus> {
-    const rows = this.db
-      .prepare("SELECT * FROM repositories ORDER BY repository_id ASC")
-      .all() as unknown as ReadonlyArray<RepositoryRow>;
+    const rows = this.db.all(
+      "SELECT * FROM repositories ORDER BY repository_id ASC",
+    ) as unknown as ReadonlyArray<RepositoryRow>;
 
     return rows.map(repositoryStatusFromRow);
   }
 
   maxCommitSequence(repositoryId: string): number {
-    const row = this.db
-      .prepare("SELECT MAX(sequence) AS sequence FROM commits WHERE repository_id = ?")
-      .get(repositoryId) as { readonly sequence: number | null } | undefined;
+    const row = this.db.get(
+      "SELECT MAX(sequence) AS sequence FROM commits WHERE repository_id = ?",
+      [repositoryId],
+    ) as { readonly sequence: number | null } | undefined;
 
     return row?.sequence ?? 0;
   }
 
   markSyncStarted(repositoryId: string, now: string): void {
-    this.db
-      .prepare(
-        `UPDATE repositories
+    this.db.run(
+      `UPDATE repositories
          SET sync_status = 'syncing', last_sync_started_at = ?, last_sync_error = NULL
          WHERE repository_id = ?`,
-      )
-      .run(now, repositoryId);
+      [now, repositoryId],
+    );
   }
 
   markSyncFailed(repositoryId: string, message: string): void {
-    this.db
-      .prepare(
-        `UPDATE repositories
+    this.db.run(
+      `UPDATE repositories
          SET sync_status = 'failed', last_sync_error = ?
          WHERE repository_id = ?`,
-      )
-      .run(message, repositoryId);
+      [message, repositoryId],
+    );
   }
 
   activateSnapshot(input: {
@@ -655,9 +939,8 @@ export class Projection {
     const status: RepositoryStatusValue =
       input.snapshotId === null ? "empty" : warningCount > 0 ? "degraded" : "ready";
 
-    this.db
-      .prepare(
-        `UPDATE repositories
+    this.db.run(
+      `UPDATE repositories
          SET active_snapshot_id = ?,
              active_generation = active_generation + 1,
              sync_status = ?,
@@ -665,8 +948,8 @@ export class Projection {
              last_sync_error = NULL,
              warning_count = ?
          WHERE repository_id = ?`,
-      )
-      .run(input.snapshotId, status, input.completedAt, warningCount, input.repositoryId);
+      [input.snapshotId, status, input.completedAt, warningCount, input.repositoryId],
+    );
 
     return this.repositoryStatus(input.repositoryId);
   }
@@ -693,7 +976,7 @@ export class Projection {
     ];
 
     for (const table of tables) {
-      this.db.prepare(`DELETE FROM ${table} WHERE repository_id = ?`).run(repositoryId);
+      this.db.run(`DELETE FROM ${table} WHERE repository_id = ?`, [repositoryId]);
     }
   }
 
@@ -708,9 +991,8 @@ export class Projection {
     const labels = ticket.labels ?? [];
     const relations = frontmatter.relations ?? [];
 
-    this.db
-      .prepare(
-        `INSERT INTO tickets (
+    this.db.run(
+      `INSERT INTO tickets (
           repository_id, ticket_id, snapshot_id, document_path, title, body, body_format, type,
           status, priority, assignee, parent_id, repository_key, created_at, updated_at,
           created_by_name, created_by_email, created_by_type, labels_json, frontmatter_json,
@@ -741,8 +1023,7 @@ export class Projection {
           archived_at = excluded.archived_at,
           deleted_at = excluded.deleted_at,
           relation_summary_json = excluded.relation_summary_json`,
-      )
-      .run(
+      [
         input.repositoryId,
         ticket.id,
         input.snapshotId,
@@ -771,43 +1052,44 @@ export class Projection {
         frontmatter.archivedAt ?? null,
         frontmatter.deletedAt ?? null,
         relations.length === 0 ? null : JSON.stringify(relations),
-      );
+      ],
+    );
 
-    this.db
-      .prepare("DELETE FROM ticket_labels WHERE repository_id = ? AND ticket_id = ?")
-      .run(input.repositoryId, ticket.id);
+    this.db.run("DELETE FROM ticket_labels WHERE repository_id = ? AND ticket_id = ?", [
+      input.repositoryId,
+      ticket.id,
+    ]);
     for (const label of labels) {
-      this.db
-        .prepare(
-          `INSERT OR IGNORE INTO ticket_labels (repository_id, ticket_id, label)
+      this.db.run(
+        `INSERT OR IGNORE INTO ticket_labels (repository_id, ticket_id, label)
            VALUES (?, ?, ?)`,
-        )
-        .run(input.repositoryId, ticket.id, label);
+        [input.repositoryId, ticket.id, label],
+      );
     }
 
-    this.db
-      .prepare("DELETE FROM ticket_external_links WHERE repository_id = ? AND ticket_id = ?")
-      .run(input.repositoryId, ticket.id);
+    this.db.run("DELETE FROM ticket_external_links WHERE repository_id = ? AND ticket_id = ?", [
+      input.repositoryId,
+      ticket.id,
+    ]);
     for (const link of frontmatter.externalLinks ?? []) {
-      this.db
-        .prepare(
-          `INSERT INTO ticket_external_links (repository_id, ticket_id, source, title, url)
+      this.db.run(
+        `INSERT INTO ticket_external_links (repository_id, ticket_id, source, title, url)
            VALUES (?, ?, ?, ?, ?)`,
-        )
-        .run(input.repositoryId, ticket.id, link.source ?? null, link.title ?? null, link.url);
+        [input.repositoryId, ticket.id, link.source ?? null, link.title ?? null, link.url],
+      );
     }
 
-    this.db
-      .prepare("DELETE FROM ticket_relations WHERE repository_id = ? AND ticket_id = ?")
-      .run(input.repositoryId, ticket.id);
+    this.db.run("DELETE FROM ticket_relations WHERE repository_id = ? AND ticket_id = ?", [
+      input.repositoryId,
+      ticket.id,
+    ]);
     for (const relation of relations) {
-      this.db
-        .prepare(
-          `INSERT OR IGNORE INTO ticket_relations (
+      this.db.run(
+        `INSERT OR IGNORE INTO ticket_relations (
             repository_id, ticket_id, related_issue_id, relation_type
           ) VALUES (?, ?, ?, ?)`,
-        )
-        .run(input.repositoryId, ticket.id, relation.issueId, relation.type);
+        [input.repositoryId, ticket.id, relation.issueId, relation.type],
+      );
     }
 
     this.upsertSearchDocument({
@@ -821,18 +1103,22 @@ export class Projection {
   }
 
   deleteTicket(repositoryId: string, ticketId: string): void {
-    this.db
-      .prepare("DELETE FROM tickets WHERE repository_id = ? AND ticket_id = ?")
-      .run(repositoryId, ticketId);
-    this.db
-      .prepare("DELETE FROM ticket_labels WHERE repository_id = ? AND ticket_id = ?")
-      .run(repositoryId, ticketId);
-    this.db
-      .prepare("DELETE FROM ticket_external_links WHERE repository_id = ? AND ticket_id = ?")
-      .run(repositoryId, ticketId);
-    this.db
-      .prepare("DELETE FROM ticket_relations WHERE repository_id = ? AND ticket_id = ?")
-      .run(repositoryId, ticketId);
+    this.db.run("DELETE FROM tickets WHERE repository_id = ? AND ticket_id = ?", [
+      repositoryId,
+      ticketId,
+    ]);
+    this.db.run("DELETE FROM ticket_labels WHERE repository_id = ? AND ticket_id = ?", [
+      repositoryId,
+      ticketId,
+    ]);
+    this.db.run("DELETE FROM ticket_external_links WHERE repository_id = ? AND ticket_id = ?", [
+      repositoryId,
+      ticketId,
+    ]);
+    this.db.run("DELETE FROM ticket_relations WHERE repository_id = ? AND ticket_id = ?", [
+      repositoryId,
+      ticketId,
+    ]);
     this.deleteSearchDocument(repositoryId, `ticket:${ticketId}`);
   }
 
@@ -843,9 +1129,8 @@ export class Projection {
   }): void {
     const record = input.record;
 
-    this.db
-      .prepare(
-        `INSERT INTO records (
+    this.db.run(
+      `INSERT INTO records (
           repository_id, record_id, ticket_id, record_type, created_at, created_date,
           created_by_name, created_by_email, created_by_type, payload_json, schema_version
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -859,8 +1144,7 @@ export class Projection {
           created_by_type = excluded.created_by_type,
           payload_json = excluded.payload_json,
           schema_version = excluded.schema_version`,
-      )
-      .run(
+      [
         input.repositoryId,
         record.id,
         record.issueId,
@@ -872,20 +1156,20 @@ export class Projection {
         record.createdBy.type,
         JSON.stringify(record.payload),
         record.schemaVersion,
-      );
+      ],
+    );
 
     if (normalizeKey(record.recordType) === "comment") {
       const body = commentBody(record.payload);
-      this.db
-        .prepare(
-          `INSERT INTO comments (repository_id, record_id, ticket_id, body, created_at)
+      this.db.run(
+        `INSERT INTO comments (repository_id, record_id, ticket_id, body, created_at)
            VALUES (?, ?, ?, ?, ?)
            ON CONFLICT(repository_id, record_id) DO UPDATE SET
              ticket_id = excluded.ticket_id,
              body = excluded.body,
              created_at = excluded.created_at`,
-        )
-        .run(input.repositoryId, record.id, record.issueId, body, record.createdAt);
+        [input.repositoryId, record.id, record.issueId, body, record.createdAt],
+      );
       this.upsertSearchDocument({
         body,
         documentId: `comment:${record.id}`,
@@ -895,20 +1179,23 @@ export class Projection {
         title: "",
       });
     } else {
-      this.db
-        .prepare("DELETE FROM comments WHERE repository_id = ? AND record_id = ?")
-        .run(input.repositoryId, record.id);
+      this.db.run("DELETE FROM comments WHERE repository_id = ? AND record_id = ?", [
+        input.repositoryId,
+        record.id,
+      ]);
       this.deleteSearchDocument(input.repositoryId, `comment:${record.id}`);
     }
   }
 
   deleteRecord(repositoryId: string, recordId: string): void {
-    this.db
-      .prepare("DELETE FROM records WHERE repository_id = ? AND record_id = ?")
-      .run(repositoryId, recordId);
-    this.db
-      .prepare("DELETE FROM comments WHERE repository_id = ? AND record_id = ?")
-      .run(repositoryId, recordId);
+    this.db.run("DELETE FROM records WHERE repository_id = ? AND record_id = ?", [
+      repositoryId,
+      recordId,
+    ]);
+    this.db.run("DELETE FROM comments WHERE repository_id = ? AND record_id = ?", [
+      repositoryId,
+      recordId,
+    ]);
     this.deleteSearchDocument(repositoryId, `comment:${recordId}`);
   }
 
@@ -919,9 +1206,8 @@ export class Projection {
   }): void {
     const user = input.user;
 
-    this.db
-      .prepare(
-        `INSERT INTO users (
+    this.db.run(
+      `INSERT INTO users (
           repository_id, user_id, snapshot_id, email, display_name, avatar_url, timezone, source,
           disabled_at, aliases_json, created_at, updated_at, profile_json, schema_version
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -938,8 +1224,7 @@ export class Projection {
           updated_at = excluded.updated_at,
           profile_json = excluded.profile_json,
           schema_version = excluded.schema_version`,
-      )
-      .run(
+      [
         input.repositoryId,
         user.id,
         input.snapshotId,
@@ -954,13 +1239,15 @@ export class Projection {
         user.updatedAt,
         JSON.stringify(user),
         user.schemaVersion,
-      );
+      ],
+    );
   }
 
   deleteUser(repositoryId: string, userId: string): void {
-    this.db
-      .prepare("DELETE FROM users WHERE repository_id = ? AND user_id = ?")
-      .run(repositoryId, userId);
+    this.db.run("DELETE FROM users WHERE repository_id = ? AND user_id = ?", [
+      repositoryId,
+      userId,
+    ]);
   }
 
   upsertLabel(input: {
@@ -970,9 +1257,8 @@ export class Projection {
   }): void {
     const label = input.label;
 
-    this.db
-      .prepare(
-        `INSERT INTO labels (
+    this.db.run(
+      `INSERT INTO labels (
           repository_id, label_id, snapshot_id, name, color, description, archived_at,
           created_by_name, created_by_email, created_by_type, created_at, updated_at,
           label_json, schema_version
@@ -990,8 +1276,7 @@ export class Projection {
           updated_at = excluded.updated_at,
           label_json = excluded.label_json,
           schema_version = excluded.schema_version`,
-      )
-      .run(
+      [
         input.repositoryId,
         label.id,
         input.snapshotId,
@@ -1006,13 +1291,15 @@ export class Projection {
         label.updatedAt,
         JSON.stringify(label),
         label.schemaVersion,
-      );
+      ],
+    );
   }
 
   deleteLabel(repositoryId: string, labelId: string): void {
-    this.db
-      .prepare("DELETE FROM labels WHERE repository_id = ? AND label_id = ?")
-      .run(repositoryId, labelId);
+    this.db.run("DELETE FROM labels WHERE repository_id = ? AND label_id = ?", [
+      repositoryId,
+      labelId,
+    ]);
   }
 
   upsertView(input: {
@@ -1022,9 +1309,8 @@ export class Projection {
   }): void {
     const view = input.view;
 
-    this.db
-      .prepare(
-        `INSERT INTO saved_views (
+    this.db.run(
+      `INSERT INTO saved_views (
           repository_id, view_id, snapshot_id, name, kind, group_by, pinned, built_in,
           owner_user_id, created_by_name, created_by_email, created_by_type, created_at,
           updated_at, view_json, schema_version
@@ -1044,8 +1330,7 @@ export class Projection {
           updated_at = excluded.updated_at,
           view_json = excluded.view_json,
           schema_version = excluded.schema_version`,
-      )
-      .run(
+      [
         input.repositoryId,
         view.id,
         input.snapshotId,
@@ -1062,13 +1347,15 @@ export class Projection {
         view.updatedAt,
         JSON.stringify(view),
         view.schemaVersion,
-      );
+      ],
+    );
   }
 
   deleteView(repositoryId: string, viewId: string): void {
-    this.db
-      .prepare("DELETE FROM saved_views WHERE repository_id = ? AND view_id = ?")
-      .run(repositoryId, viewId);
+    this.db.run("DELETE FROM saved_views WHERE repository_id = ? AND view_id = ?", [
+      repositoryId,
+      viewId,
+    ]);
   }
 
   upsertTemplate(input: {
@@ -1078,9 +1365,8 @@ export class Projection {
   }): void {
     const template = input.template;
 
-    this.db
-      .prepare(
-        `INSERT INTO issue_templates (
+    this.db.run(
+      `INSERT INTO issue_templates (
           repository_id, template_id, snapshot_id, name, kind, active, created_by_name,
           created_by_email, created_by_type, created_at, updated_at, template_json, schema_version
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1096,8 +1382,7 @@ export class Projection {
           updated_at = excluded.updated_at,
           template_json = excluded.template_json,
           schema_version = excluded.schema_version`,
-      )
-      .run(
+      [
         input.repositoryId,
         template.id,
         input.snapshotId,
@@ -1111,13 +1396,15 @@ export class Projection {
         template.updatedAt,
         JSON.stringify(template),
         template.schemaVersion,
-      );
+      ],
+    );
   }
 
   deleteTemplate(repositoryId: string, templateId: string): void {
-    this.db
-      .prepare("DELETE FROM issue_templates WHERE repository_id = ? AND template_id = ?")
-      .run(repositoryId, templateId);
+    this.db.run("DELETE FROM issue_templates WHERE repository_id = ? AND template_id = ?", [
+      repositoryId,
+      templateId,
+    ]);
   }
 
   upsertCommit(input: {
@@ -1133,9 +1420,8 @@ export class Projection {
     readonly sequence: number;
     readonly snapshotId: string;
   }): void {
-    this.db
-      .prepare(
-        `INSERT INTO commits (
+    this.db.run(
+      `INSERT INTO commits (
           repository_id, snapshot_id, root_tree_id, author_name, author_email, committed_at,
           committer_name, committer_email, message, sequence
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1148,8 +1434,7 @@ export class Projection {
           committer_email = excluded.committer_email,
           message = excluded.message,
           sequence = excluded.sequence`,
-      )
-      .run(
+      [
         input.repositoryId,
         input.snapshotId,
         input.rootTreeId,
@@ -1160,18 +1445,19 @@ export class Projection {
         input.committerEmail ?? null,
         input.message ?? null,
         input.sequence,
-      );
+      ],
+    );
 
-    this.db
-      .prepare("DELETE FROM commit_parents WHERE repository_id = ? AND snapshot_id = ?")
-      .run(input.repositoryId, input.snapshotId);
+    this.db.run("DELETE FROM commit_parents WHERE repository_id = ? AND snapshot_id = ?", [
+      input.repositoryId,
+      input.snapshotId,
+    ]);
     for (const parentId of input.parentIds) {
-      this.db
-        .prepare(
-          `INSERT OR IGNORE INTO commit_parents (repository_id, snapshot_id, parent_snapshot_id)
+      this.db.run(
+        `INSERT OR IGNORE INTO commit_parents (repository_id, snapshot_id, parent_snapshot_id)
            VALUES (?, ?, ?)`,
-        )
-        .run(input.repositoryId, input.snapshotId, parentId);
+        [input.repositoryId, input.snapshotId, parentId],
+      );
     }
   }
 
@@ -1186,18 +1472,17 @@ export class Projection {
     readonly repositoryId: string;
     readonly snapshotId: string;
   }): void {
-    this.db
-      .prepare("DELETE FROM commit_changes WHERE repository_id = ? AND snapshot_id = ?")
-      .run(input.repositoryId, input.snapshotId);
+    this.db.run("DELETE FROM commit_changes WHERE repository_id = ? AND snapshot_id = ?", [
+      input.repositoryId,
+      input.snapshotId,
+    ]);
 
     for (const change of input.changes) {
-      this.db
-        .prepare(
-          `INSERT INTO commit_changes (
+      this.db.run(
+        `INSERT INTO commit_changes (
             repository_id, snapshot_id, change_type, object_type, object_id, ticket_id, path
           ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
+        [
           input.repositoryId,
           input.snapshotId,
           change.changeType,
@@ -1205,18 +1490,17 @@ export class Projection {
           change.objectId ?? null,
           change.ticketId ?? null,
           change.path,
-        );
+        ],
+      );
     }
   }
 
   addWarning(warning: MaterializationWarning): void {
-    this.db
-      .prepare(
-        `INSERT INTO materialization_warnings (
+    this.db.run(
+      `INSERT INTO materialization_warnings (
           repository_id, snapshot_id, path, object_type, object_id, reason, message, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
+      [
         warning.repositoryId,
         warning.snapshotId,
         warning.path,
@@ -1225,20 +1509,21 @@ export class Projection {
         warning.reason,
         warning.message,
         warning.createdAt,
-      );
+      ],
+    );
   }
 
   warnings(repositoryId: string): ReadonlyArray<MaterializationWarning> {
     return this.db
-      .prepare(
+      .all(
         `SELECT repository_id, snapshot_id, path, object_type, object_id, reason, message, created_at
          FROM materialization_warnings
          WHERE repository_id = ?
          ORDER BY created_at ASC, path ASC`,
+        [repositoryId],
       )
-      .all(repositoryId)
       .map((row) => {
-        const warning = row as {
+        const warning = decodeSqlRow<{
           readonly created_at: string;
           readonly message: string;
           readonly object_id: string | null;
@@ -1247,7 +1532,7 @@ export class Projection {
           readonly reason: string;
           readonly repository_id: string;
           readonly snapshot_id: string;
-        };
+        }>(MaterializationWarningRowSql, row);
 
         return {
           createdAt: warning.created_at,
@@ -1263,9 +1548,8 @@ export class Projection {
   }
 
   upsertInboxItem(item: InboxItem): void {
-    this.db
-      .prepare(
-        `INSERT INTO inbox_items (
+    this.db.run(
+      `INSERT INTO inbox_items (
           repository_id, user_id, item_id, snapshot_id, sequence, event_path, ticket_id,
           record_id, reason, actor_name, actor_email, created_at, title, body_excerpt,
           metadata_json
@@ -1283,8 +1567,7 @@ export class Projection {
           title = excluded.title,
           body_excerpt = excluded.body_excerpt,
           metadata_json = excluded.metadata_json`,
-      )
-      .run(
+      [
         item.repositoryId,
         item.userId,
         item.itemId,
@@ -1300,16 +1583,16 @@ export class Projection {
         item.title,
         item.bodyExcerpt ?? null,
         item.metadataJson ?? null,
-      );
+      ],
+    );
   }
 
   listInbox(query: InboxQuery): InboxPage {
     const limit = normalizeLimit(query.limit);
     const cursor = decodeCursor(query.cursor);
     const filtered = this.inboxFilters(query, true);
-    const rows = this.db
-      .prepare(
-        `SELECT
+    const rows = this.db.all(
+      `SELECT
            i.*,
            COALESCE(s.status, 'unread') AS status,
            s.read_at AS local_read_at,
@@ -1328,8 +1611,8 @@ export class Projection {
          WHERE ${filtered.where}
          ORDER BY i.created_at DESC, i.sequence DESC, i.item_id ASC
          LIMIT ? OFFSET ?`,
-      )
-      .all(...filtered.params, limit + 1, cursor.offset) as unknown as ReadonlyArray<InboxListRow>;
+      [...filtered.params, limit + 1, cursor.offset],
+    ) as unknown as ReadonlyArray<InboxListRow>;
     const entries = rows.slice(0, limit).map(inboxEntryFromRow);
 
     return {
@@ -1341,9 +1624,8 @@ export class Projection {
 
   inboxSummary(query: InboxQuery): InboxSummary {
     const filtered = this.inboxFilters(query, false);
-    const rows = this.db
-      .prepare(
-        `SELECT
+    const rows = this.db.all(
+      `SELECT
            i.repository_id,
            i.reason,
            COALESCE(s.status, 'unread') AS status,
@@ -1358,8 +1640,8 @@ export class Projection {
           AND s.item_id = i.item_id
          WHERE ${filtered.where}
          GROUP BY i.repository_id, i.reason, COALESCE(s.status, 'unread')`,
-      )
-      .all(...filtered.params) as unknown as ReadonlyArray<{
+      [...filtered.params],
+    ) as unknown as ReadonlyArray<{
       readonly count: number;
       readonly latest: string | null;
       readonly reason: InboxReason;
@@ -1411,9 +1693,10 @@ export class Projection {
   }
 
   getTicket(repositoryId: string, ticketId: string): TicketDocument | null {
-    const row = this.db
-      .prepare("SELECT * FROM tickets WHERE repository_id = ? AND ticket_id = ?")
-      .get(repositoryId, ticketId) as TicketRow | undefined;
+    const row = this.db.get("SELECT * FROM tickets WHERE repository_id = ? AND ticket_id = ?", [
+      repositoryId,
+      ticketId,
+    ]) as TicketRow | undefined;
 
     return row === undefined ? null : ticketFromRow(row);
   }
@@ -1608,15 +1891,14 @@ export class Projection {
               : "updated_at";
     const direction = query.orderDirection === "asc" ? "ASC" : "DESC";
     const where = filters.length === 0 ? "" : `WHERE ${filters.join(" AND ")}`;
-    const rows = this.db
-      .prepare(
-        `SELECT t.*
+    const rows = this.db.all(
+      `SELECT t.*
          FROM tickets t
          ${where}
          ORDER BY t.${orderColumn} ${direction}, t.ticket_id ASC
          LIMIT ? OFFSET ?`,
-      )
-      .all(...params, limit + 1, cursor.offset) as unknown as ReadonlyArray<TicketRow>;
+      [...params, limit + 1, cursor.offset],
+    ) as unknown as ReadonlyArray<TicketRow>;
     const entries = rows.slice(0, limit).map(ticketFromRow);
 
     return {
@@ -1638,9 +1920,8 @@ export class Projection {
       params.push(...query.repositoryIds);
     }
 
-    const rows = this.db
-      .prepare(
-        `SELECT DISTINCT f.repository_id, f.ticket_id
+    const rows = this.db.all(
+      `SELECT DISTINCT f.repository_id, f.ticket_id
          FROM search_fts f
          JOIN tickets t
            ON t.repository_id = f.repository_id AND t.ticket_id = f.ticket_id
@@ -1650,8 +1931,8 @@ export class Projection {
          ${repositoryFilter}
          ORDER BY f.ticket_id ASC
          LIMIT ? OFFSET ?`,
-      )
-      .all(...params, limit + 1, cursor.offset) as unknown as ReadonlyArray<{
+      [...params, limit + 1, cursor.offset],
+    ) as unknown as ReadonlyArray<{
       readonly repository_id: string;
       readonly ticket_id: string;
     }>;
@@ -1675,9 +1956,10 @@ export class Projection {
   }
 
   getUser(repositoryId: string, userId: string): UserProfileDocument | null {
-    const row = this.db
-      .prepare("SELECT * FROM users WHERE repository_id = ? AND user_id = ?")
-      .get(repositoryId, userId) as UserRow | undefined;
+    const row = this.db.get("SELECT * FROM users WHERE repository_id = ? AND user_id = ?", [
+      repositoryId,
+      userId,
+    ]) as UserRow | undefined;
 
     return row === undefined ? null : userFromRow(row);
   }
@@ -1695,9 +1977,8 @@ export class Projection {
     const lookupPlaceholders = placeholders(normalized.length);
     const aliasFilters = normalized.map(() => "lower(aliases_json) LIKE ?").join(" OR ");
     const aliasParams = normalized.map((key) => `%"${key.replaceAll('"', '\\"')}"%`);
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM users
+    const rows = this.db.all(
+      `SELECT * FROM users
          WHERE repository_id = ?
            AND disabled_at IS NULL
            AND (
@@ -1707,14 +1988,8 @@ export class Projection {
              OR (${aliasFilters})
            )
          ORDER BY user_id ASC`,
-      )
-      .all(
-        repositoryId,
-        ...normalized,
-        ...normalized,
-        ...normalized,
-        ...aliasParams,
-      ) as unknown as ReadonlyArray<UserRow>;
+      [repositoryId, ...normalized, ...normalized, ...normalized, ...aliasParams],
+    ) as unknown as ReadonlyArray<UserRow>;
 
     return rows.map(userFromRow);
   }
@@ -1736,14 +2011,13 @@ export class Projection {
       params.push(pattern, pattern);
     }
 
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM users
+    const rows = this.db.all(
+      `SELECT * FROM users
          WHERE ${filters.join(" AND ")}
          ORDER BY disabled_at IS NOT NULL ASC, display_name ASC, user_id ASC
          LIMIT ? OFFSET ?`,
-      )
-      .all(...params, limit + 1, cursor.offset) as unknown as ReadonlyArray<UserRow>;
+      [...params, limit + 1, cursor.offset],
+    ) as unknown as ReadonlyArray<UserRow>;
 
     return {
       entries: rows.slice(0, limit).map(userFromRow),
@@ -1768,14 +2042,13 @@ export class Projection {
       params.push(pattern, pattern);
     }
 
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM labels
+    const rows = this.db.all(
+      `SELECT * FROM labels
          WHERE ${filters.join(" AND ")}
          ORDER BY archived_at IS NOT NULL ASC, name ASC, label_id ASC
          LIMIT ? OFFSET ?`,
-      )
-      .all(...params, limit + 1, cursor.offset) as unknown as ReadonlyArray<LabelRow>;
+      [...params, limit + 1, cursor.offset],
+    ) as unknown as ReadonlyArray<LabelRow>;
 
     return {
       entries: rows.slice(0, limit).map(labelFromRow),
@@ -1803,14 +2076,13 @@ export class Projection {
       params.push(pattern);
     }
 
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM saved_views
+    const rows = this.db.all(
+      `SELECT * FROM saved_views
          WHERE ${filters.join(" AND ")}
          ORDER BY pinned DESC, built_in DESC, name ASC, view_id ASC
          LIMIT ? OFFSET ?`,
-      )
-      .all(...params, limit + 1, cursor.offset) as unknown as ReadonlyArray<SavedViewRow>;
+      [...params, limit + 1, cursor.offset],
+    ) as unknown as ReadonlyArray<SavedViewRow>;
 
     return {
       entries: rows.slice(0, limit).map(viewFromRow),
@@ -1819,9 +2091,10 @@ export class Projection {
   }
 
   getView(repositoryId: string, viewId: string): SavedViewDocument | null {
-    const row = this.db
-      .prepare("SELECT * FROM saved_views WHERE repository_id = ? AND view_id = ?")
-      .get(repositoryId, viewId) as SavedViewRow | undefined;
+    const row = this.db.get("SELECT * FROM saved_views WHERE repository_id = ? AND view_id = ?", [
+      repositoryId,
+      viewId,
+    ]) as SavedViewRow | undefined;
 
     return row === undefined ? null : viewFromRow(row);
   }
@@ -1846,14 +2119,13 @@ export class Projection {
       params.push(pattern);
     }
 
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM issue_templates
+    const rows = this.db.all(
+      `SELECT * FROM issue_templates
          WHERE ${filters.join(" AND ")}
          ORDER BY active DESC, kind ASC, name ASC, template_id ASC
          LIMIT ? OFFSET ?`,
-      )
-      .all(...params, limit + 1, cursor.offset) as unknown as ReadonlyArray<IssueTemplateRow>;
+      [...params, limit + 1, cursor.offset],
+    ) as unknown as ReadonlyArray<IssueTemplateRow>;
 
     return {
       entries: rows.slice(0, limit).map(templateFromRow),
@@ -1862,9 +2134,10 @@ export class Projection {
   }
 
   getTemplate(repositoryId: string, templateId: string): IssueTemplateDocument | null {
-    const row = this.db
-      .prepare("SELECT * FROM issue_templates WHERE repository_id = ? AND template_id = ?")
-      .get(repositoryId, templateId) as IssueTemplateRow | undefined;
+    const row = this.db.get(
+      "SELECT * FROM issue_templates WHERE repository_id = ? AND template_id = ?",
+      [repositoryId, templateId],
+    ) as IssueTemplateRow | undefined;
 
     return row === undefined ? null : templateFromRow(row);
   }
@@ -1877,15 +2150,14 @@ export class Projection {
 
     if (query.recordType !== undefined) params.push(normalizeKey(query.recordType));
 
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM records
+    const rows = this.db.all(
+      `SELECT * FROM records
          WHERE repository_id = ? AND ticket_id = ?
          ${filter}
          ORDER BY created_at ASC, record_id ASC
          LIMIT ? OFFSET ?`,
-      )
-      .all(...params, limit + 1, cursor.offset) as unknown as ReadonlyArray<RecordRow>;
+      [...params, limit + 1, cursor.offset],
+    ) as unknown as ReadonlyArray<RecordRow>;
     const entries = rows.slice(0, limit).map(recordFromRow);
 
     return {
@@ -1917,9 +2189,8 @@ export class Projection {
 
     if (query.ticketId !== undefined) params.push(query.ticketId);
 
-    const rows = this.db
-      .prepare(
-        `SELECT
+    const rows = this.db.all(
+      `SELECT
            c.snapshot_id,
            c.author_name,
            c.author_email,
@@ -1948,8 +2219,8 @@ export class Projection {
          ${ticketFilter}
          ORDER BY c.sequence DESC, c.snapshot_id ASC
          LIMIT ? OFFSET ?`,
-      )
-      .all(...params, limit + 1, cursor.offset) as unknown as ReadonlyArray<HistoryRow>;
+      [...params, limit + 1, cursor.offset],
+    ) as unknown as ReadonlyArray<HistoryRow>;
     const entries = rows.slice(0, limit).map(historyFromRow);
 
     return {
@@ -1959,43 +2230,36 @@ export class Projection {
   }
 
   ticketVisible(repositoryId: string, ticketId: string): boolean {
-    const row = this.db
-      .prepare("SELECT 1 FROM tickets WHERE repository_id = ? AND ticket_id = ?")
-      .get(repositoryId, ticketId);
+    const row = this.db.get("SELECT 1 FROM tickets WHERE repository_id = ? AND ticket_id = ?", [
+      repositoryId,
+      ticketId,
+    ]);
 
     return row !== undefined;
   }
 
   recordVisible(repositoryId: string, recordId: string): boolean {
-    const row = this.db
-      .prepare("SELECT 1 FROM records WHERE repository_id = ? AND record_id = ?")
-      .get(repositoryId, recordId);
+    const row = this.db.get("SELECT 1 FROM records WHERE repository_id = ? AND record_id = ?", [
+      repositoryId,
+      recordId,
+    ]);
 
     return row !== undefined;
   }
 
   transaction<A>(f: () => A): A {
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      const result = f();
-      this.db.exec("COMMIT");
-      return result;
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
+    return this.db.transaction(f);
   }
 
   private warningCount(repositoryId: string, snapshotId: string | null): number {
     if (snapshotId === null) return 0;
 
-    const row = this.db
-      .prepare(
-        `SELECT COUNT(*) AS count
+    const row = this.db.get(
+      `SELECT COUNT(*) AS count
          FROM materialization_warnings
          WHERE repository_id = ? AND snapshot_id = ?`,
-      )
-      .get(repositoryId, snapshotId) as { readonly count: number } | undefined;
+      [repositoryId, snapshotId],
+    ) as { readonly count: number } | undefined;
 
     return row?.count ?? 0;
   }
@@ -2050,24 +2314,19 @@ export class Projection {
   ): Readonly<Record<string, string | null>> {
     const rows =
       repositoryIds !== undefined && repositoryIds.length > 0
-        ? (this.db
-            .prepare(
-              `SELECT repository_id, active_snapshot_id
+        ? (this.db.all(
+            `SELECT repository_id, active_snapshot_id
                FROM repositories
                WHERE repository_id IN (${placeholders(repositoryIds.length)})
                ORDER BY repository_id ASC`,
-            )
-            .all(...repositoryIds) as unknown as ReadonlyArray<{
+            [...repositoryIds],
+          ) as unknown as ReadonlyArray<{
             readonly active_snapshot_id: string | null;
             readonly repository_id: string;
           }>)
-        : (this.db
-            .prepare(
-              `SELECT repository_id, active_snapshot_id
+        : (this.db.all(`SELECT repository_id, active_snapshot_id
                FROM repositories
-               ORDER BY repository_id ASC`,
-            )
-            .all() as unknown as ReadonlyArray<{
+               ORDER BY repository_id ASC`) as unknown as ReadonlyArray<{
             readonly active_snapshot_id: string | null;
             readonly repository_id: string;
           }>);
@@ -2080,21 +2339,16 @@ export class Projection {
   ): InboxSummary["repositories"] {
     const rows =
       repositoryIds !== undefined && repositoryIds.length > 0
-        ? (this.db
-            .prepare(
-              `SELECT repository_id, active_snapshot_id, sync_status, warning_count
+        ? (this.db.all(
+            `SELECT repository_id, active_snapshot_id, sync_status, warning_count
                FROM repositories
                WHERE repository_id IN (${placeholders(repositoryIds.length)})
                ORDER BY repository_id ASC`,
-            )
-            .all(...repositoryIds) as unknown as ReadonlyArray<RepositoryRow>)
-        : (this.db
-            .prepare(
-              `SELECT repository_id, active_snapshot_id, sync_status, warning_count
+            [...repositoryIds],
+          ) as unknown as ReadonlyArray<RepositoryRow>)
+        : (this.db.all(`SELECT repository_id, active_snapshot_id, sync_status, warning_count
                FROM repositories
-               ORDER BY repository_id ASC`,
-            )
-            .all() as unknown as ReadonlyArray<RepositoryRow>);
+               ORDER BY repository_id ASC`) as unknown as ReadonlyArray<RepositoryRow>);
 
     return rows.map((row) => ({
       activeSnapshotId: row.active_snapshot_id,
@@ -2118,14 +2372,13 @@ export class Projection {
       };
     }
 
-    const rows = this.db
-      .prepare(
-        `SELECT repository_id, item_id
+    const rows = this.db.all(
+      `SELECT repository_id, item_id
          FROM inbox_items
          WHERE user_id = ? AND item_id IN (${placeholders(input.itemIds.length)})
          ORDER BY repository_id ASC, item_id ASC`,
-      )
-      .all(input.userId, ...input.itemIds) as unknown as ReadonlyArray<{
+      [input.userId, ...input.itemIds],
+    ) as unknown as ReadonlyArray<{
       readonly item_id: string;
       readonly repository_id: string;
     }>;
@@ -2133,23 +2386,24 @@ export class Projection {
     const missingItemIds = input.itemIds.filter((itemId) => !foundIds.has(itemId));
 
     if (missingItemIds.length > 0 && input.allowMissing !== true) {
-      throw new Error(`unknown inbox item ids: ${missingItemIds.join(", ")}`);
+      throw new DatabaseSqliteError({
+        message: `unknown inbox item ids: ${missingItemIds.join(", ")}`,
+        operation: "setInboxItemStatus",
+      });
     }
 
     if (status === "unread") {
       for (const row of rows) {
-        this.db
-          .prepare(
-            `DELETE FROM inbox_item_state
+        this.db.run(
+          `DELETE FROM inbox_item_state
              WHERE repository_id = ? AND user_id = ? AND item_id = ?`,
-          )
-          .run(row.repository_id, input.userId, row.item_id);
+          [row.repository_id, input.userId, row.item_id],
+        );
       }
     } else {
       for (const row of rows) {
-        this.db
-          .prepare(
-            `INSERT INTO inbox_item_state (
+        this.db.run(
+          `INSERT INTO inbox_item_state (
               repository_id, user_id, item_id, status, read_at, archived_at, snoozed_until,
               updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
@@ -2167,8 +2421,7 @@ export class Projection {
               END,
               snoozed_until = excluded.snoozed_until,
               updated_at = excluded.updated_at`,
-          )
-          .run(
+          [
             row.repository_id,
             input.userId,
             row.item_id,
@@ -2176,7 +2429,8 @@ export class Projection {
             status === "read" ? now : null,
             status === "archived" ? now : null,
             now,
-          );
+          ],
+        );
       }
     }
 
@@ -2197,35 +2451,35 @@ export class Projection {
     readonly title: string;
   }): void {
     this.deleteSearchDocument(input.repositoryId, input.documentId);
-    this.db
-      .prepare(
-        `INSERT INTO search_documents (
+    this.db.run(
+      `INSERT INTO search_documents (
           repository_id, document_id, ticket_id, source_type, title, body
         ) VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
+      [
         input.repositoryId,
         input.documentId,
         input.ticketId,
         input.sourceType,
         input.title,
         input.body,
-      );
-    this.db
-      .prepare(
-        `INSERT INTO search_fts (repository_id, document_id, ticket_id, title, body)
+      ],
+    );
+    this.db.run(
+      `INSERT INTO search_fts (repository_id, document_id, ticket_id, title, body)
          VALUES (?, ?, ?, ?, ?)`,
-      )
-      .run(input.repositoryId, input.documentId, input.ticketId, input.title, input.body);
+      [input.repositoryId, input.documentId, input.ticketId, input.title, input.body],
+    );
   }
 
   private deleteSearchDocument(repositoryId: string, documentId: string): void {
-    this.db
-      .prepare("DELETE FROM search_documents WHERE repository_id = ? AND document_id = ?")
-      .run(repositoryId, documentId);
-    this.db
-      .prepare("DELETE FROM search_fts WHERE repository_id = ? AND document_id = ?")
-      .run(repositoryId, documentId);
+    this.db.run("DELETE FROM search_documents WHERE repository_id = ? AND document_id = ?", [
+      repositoryId,
+      documentId,
+    ]);
+    this.db.run("DELETE FROM search_fts WHERE repository_id = ? AND document_id = ?", [
+      repositoryId,
+      documentId,
+    ]);
   }
 
   private matchedFields(
@@ -2240,9 +2494,10 @@ export class Projection {
     if (ticket?.frontmatter.title.toLowerCase().includes(needle) === true) fields.add("title");
     if (ticket?.body.toLowerCase().includes(needle) === true) fields.add("body");
 
-    const comments = this.db
-      .prepare("SELECT body FROM comments WHERE repository_id = ? AND ticket_id = ?")
-      .all(repositoryId, ticketId) as unknown as ReadonlyArray<{ readonly body: string }>;
+    const comments = this.db.all(
+      "SELECT body FROM comments WHERE repository_id = ? AND ticket_id = ?",
+      [repositoryId, ticketId],
+    ) as unknown as ReadonlyArray<{ readonly body: string }>;
 
     if (comments.some((comment) => comment.body.toLowerCase().includes(needle))) {
       fields.add("comment");
@@ -2252,7 +2507,7 @@ export class Projection {
   }
 }
 
-const inboxSchemaSql = `
+export const inboxSchemaSql = `
 CREATE TABLE IF NOT EXISTS inbox_items (
   repository_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
@@ -2290,8 +2545,8 @@ CREATE TABLE IF NOT EXISTS inbox_item_state (
 CREATE INDEX IF NOT EXISTS inbox_item_state_status ON inbox_item_state(user_id, status, updated_at DESC, item_id);
 `;
 
-const schemaSql = `
-CREATE TABLE repositories (
+export const schemaSql = `
+CREATE TABLE IF NOT EXISTS repositories (
   repository_id TEXT PRIMARY KEY,
   display_name TEXT NOT NULL,
   worktree_path TEXT,
@@ -2312,7 +2567,7 @@ CREATE TABLE repositories (
   remotes_json TEXT
 );
 
-CREATE TABLE tickets (
+CREATE TABLE IF NOT EXISTS tickets (
   repository_id TEXT NOT NULL,
   ticket_id TEXT NOT NULL,
   snapshot_id TEXT NOT NULL,
@@ -2341,20 +2596,20 @@ CREATE TABLE tickets (
   relation_summary_json TEXT,
   PRIMARY KEY (repository_id, ticket_id)
 );
-CREATE INDEX tickets_active_updated ON tickets(repository_id, archived_at, deleted_at, updated_at, ticket_id);
-CREATE INDEX tickets_active_created ON tickets(repository_id, archived_at, deleted_at, created_at, ticket_id);
-CREATE INDEX tickets_active_due_date ON tickets(repository_id, archived_at, deleted_at, due_date, ticket_id);
-CREATE INDEX tickets_active_priority_order ON tickets(repository_id, archived_at, deleted_at, priority, ticket_id);
-CREATE INDEX tickets_active_title ON tickets(repository_id, archived_at, deleted_at, title, ticket_id);
-CREATE INDEX tickets_repository_status ON tickets(repository_id, status, archived_at, deleted_at, updated_at, ticket_id);
-CREATE INDEX tickets_repository_priority ON tickets(repository_id, priority, archived_at, deleted_at, updated_at, ticket_id);
-CREATE INDEX tickets_repository_type ON tickets(repository_id, type, archived_at, deleted_at, updated_at, ticket_id);
-CREATE INDEX tickets_repository_assignee ON tickets(repository_id, assignee, archived_at, deleted_at, updated_at, ticket_id);
-CREATE INDEX tickets_repository_parent ON tickets(repository_id, parent_id, archived_at, deleted_at, updated_at, ticket_id);
-CREATE INDEX tickets_repository_due_range ON tickets(repository_id, due_date, archived_at, deleted_at, ticket_id);
-CREATE INDEX tickets_repository_estimate ON tickets(repository_id, estimate, archived_at, deleted_at, ticket_id);
+CREATE INDEX IF NOT EXISTS tickets_active_updated ON tickets(repository_id, archived_at, deleted_at, updated_at, ticket_id);
+CREATE INDEX IF NOT EXISTS tickets_active_created ON tickets(repository_id, archived_at, deleted_at, created_at, ticket_id);
+CREATE INDEX IF NOT EXISTS tickets_active_due_date ON tickets(repository_id, archived_at, deleted_at, due_date, ticket_id);
+CREATE INDEX IF NOT EXISTS tickets_active_priority_order ON tickets(repository_id, archived_at, deleted_at, priority, ticket_id);
+CREATE INDEX IF NOT EXISTS tickets_active_title ON tickets(repository_id, archived_at, deleted_at, title, ticket_id);
+CREATE INDEX IF NOT EXISTS tickets_repository_status ON tickets(repository_id, status, archived_at, deleted_at, updated_at, ticket_id);
+CREATE INDEX IF NOT EXISTS tickets_repository_priority ON tickets(repository_id, priority, archived_at, deleted_at, updated_at, ticket_id);
+CREATE INDEX IF NOT EXISTS tickets_repository_type ON tickets(repository_id, type, archived_at, deleted_at, updated_at, ticket_id);
+CREATE INDEX IF NOT EXISTS tickets_repository_assignee ON tickets(repository_id, assignee, archived_at, deleted_at, updated_at, ticket_id);
+CREATE INDEX IF NOT EXISTS tickets_repository_parent ON tickets(repository_id, parent_id, archived_at, deleted_at, updated_at, ticket_id);
+CREATE INDEX IF NOT EXISTS tickets_repository_due_range ON tickets(repository_id, due_date, archived_at, deleted_at, ticket_id);
+CREATE INDEX IF NOT EXISTS tickets_repository_estimate ON tickets(repository_id, estimate, archived_at, deleted_at, ticket_id);
 
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
   repository_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
   snapshot_id TEXT NOT NULL,
@@ -2371,10 +2626,10 @@ CREATE TABLE users (
   schema_version INTEGER NOT NULL,
   PRIMARY KEY (repository_id, user_id)
 );
-CREATE INDEX users_repository_display_name ON users(repository_id, disabled_at, display_name, user_id);
-CREATE INDEX users_repository_email ON users(repository_id, email, user_id);
+CREATE INDEX IF NOT EXISTS users_repository_display_name ON users(repository_id, disabled_at, display_name, user_id);
+CREATE INDEX IF NOT EXISTS users_repository_email ON users(repository_id, email, user_id);
 
-CREATE TABLE labels (
+CREATE TABLE IF NOT EXISTS labels (
   repository_id TEXT NOT NULL,
   label_id TEXT NOT NULL,
   snapshot_id TEXT NOT NULL,
@@ -2391,9 +2646,9 @@ CREATE TABLE labels (
   schema_version INTEGER NOT NULL,
   PRIMARY KEY (repository_id, label_id)
 );
-CREATE INDEX labels_repository_name ON labels(repository_id, archived_at, name, label_id);
+CREATE INDEX IF NOT EXISTS labels_repository_name ON labels(repository_id, archived_at, name, label_id);
 
-CREATE TABLE saved_views (
+CREATE TABLE IF NOT EXISTS saved_views (
   repository_id TEXT NOT NULL,
   view_id TEXT NOT NULL,
   snapshot_id TEXT NOT NULL,
@@ -2412,9 +2667,9 @@ CREATE TABLE saved_views (
   schema_version INTEGER NOT NULL,
   PRIMARY KEY (repository_id, view_id)
 );
-CREATE INDEX saved_views_repository_order ON saved_views(repository_id, pinned, built_in, name, view_id);
+CREATE INDEX IF NOT EXISTS saved_views_repository_order ON saved_views(repository_id, pinned, built_in, name, view_id);
 
-CREATE TABLE issue_templates (
+CREATE TABLE IF NOT EXISTS issue_templates (
   repository_id TEXT NOT NULL,
   template_id TEXT NOT NULL,
   snapshot_id TEXT NOT NULL,
@@ -2430,17 +2685,17 @@ CREATE TABLE issue_templates (
   schema_version INTEGER NOT NULL,
   PRIMARY KEY (repository_id, template_id)
 );
-CREATE INDEX issue_templates_repository_kind ON issue_templates(repository_id, active, kind, name, template_id);
+CREATE INDEX IF NOT EXISTS issue_templates_repository_kind ON issue_templates(repository_id, active, kind, name, template_id);
 
-CREATE TABLE ticket_labels (
+CREATE TABLE IF NOT EXISTS ticket_labels (
   repository_id TEXT NOT NULL,
   ticket_id TEXT NOT NULL,
   label TEXT NOT NULL,
   PRIMARY KEY (repository_id, ticket_id, label)
 );
-CREATE INDEX ticket_labels_lookup ON ticket_labels(repository_id, label, ticket_id);
+CREATE INDEX IF NOT EXISTS ticket_labels_lookup ON ticket_labels(repository_id, label, ticket_id);
 
-CREATE TABLE ticket_external_links (
+CREATE TABLE IF NOT EXISTS ticket_external_links (
   repository_id TEXT NOT NULL,
   ticket_id TEXT NOT NULL,
   source TEXT,
@@ -2448,17 +2703,17 @@ CREATE TABLE ticket_external_links (
   url TEXT NOT NULL
 );
 
-CREATE TABLE ticket_relations (
+CREATE TABLE IF NOT EXISTS ticket_relations (
   repository_id TEXT NOT NULL,
   ticket_id TEXT NOT NULL,
   related_issue_id TEXT NOT NULL,
   relation_type TEXT NOT NULL,
   PRIMARY KEY (repository_id, ticket_id, related_issue_id, relation_type)
 );
-CREATE INDEX ticket_relations_source_lookup ON ticket_relations(repository_id, ticket_id, relation_type, related_issue_id);
-CREATE INDEX ticket_relations_related_lookup ON ticket_relations(repository_id, related_issue_id, relation_type, ticket_id);
+CREATE INDEX IF NOT EXISTS ticket_relations_source_lookup ON ticket_relations(repository_id, ticket_id, relation_type, related_issue_id);
+CREATE INDEX IF NOT EXISTS ticket_relations_related_lookup ON ticket_relations(repository_id, related_issue_id, relation_type, ticket_id);
 
-CREATE TABLE records (
+CREATE TABLE IF NOT EXISTS records (
   repository_id TEXT NOT NULL,
   record_id TEXT NOT NULL,
   ticket_id TEXT NOT NULL,
@@ -2472,10 +2727,10 @@ CREATE TABLE records (
   schema_version INTEGER NOT NULL,
   PRIMARY KEY (repository_id, record_id)
 );
-CREATE INDEX records_ticket_created ON records(repository_id, ticket_id, created_at, record_id);
-CREATE INDEX records_ticket_type_created ON records(repository_id, ticket_id, record_type, created_at, record_id);
+CREATE INDEX IF NOT EXISTS records_ticket_created ON records(repository_id, ticket_id, created_at, record_id);
+CREATE INDEX IF NOT EXISTS records_ticket_type_created ON records(repository_id, ticket_id, record_type, created_at, record_id);
 
-CREATE TABLE comments (
+CREATE TABLE IF NOT EXISTS comments (
   repository_id TEXT NOT NULL,
   record_id TEXT NOT NULL,
   ticket_id TEXT NOT NULL,
@@ -2483,9 +2738,9 @@ CREATE TABLE comments (
   created_at TEXT NOT NULL,
   PRIMARY KEY (repository_id, record_id)
 );
-CREATE INDEX comments_ticket_created ON comments(repository_id, ticket_id, created_at, record_id);
+CREATE INDEX IF NOT EXISTS comments_ticket_created ON comments(repository_id, ticket_id, created_at, record_id);
 
-CREATE TABLE commits (
+CREATE TABLE IF NOT EXISTS commits (
   repository_id TEXT NOT NULL,
   snapshot_id TEXT NOT NULL,
   root_tree_id TEXT NOT NULL,
@@ -2498,17 +2753,17 @@ CREATE TABLE commits (
   sequence INTEGER NOT NULL,
   PRIMARY KEY (repository_id, snapshot_id)
 );
-CREATE INDEX commits_repository_sequence ON commits(repository_id, sequence DESC, snapshot_id);
+CREATE INDEX IF NOT EXISTS commits_repository_sequence ON commits(repository_id, sequence DESC, snapshot_id);
 
-CREATE TABLE commit_parents (
+CREATE TABLE IF NOT EXISTS commit_parents (
   repository_id TEXT NOT NULL,
   snapshot_id TEXT NOT NULL,
   parent_snapshot_id TEXT NOT NULL,
   PRIMARY KEY (repository_id, snapshot_id, parent_snapshot_id)
 );
-CREATE INDEX commit_parents_snapshot ON commit_parents(repository_id, snapshot_id, parent_snapshot_id);
+CREATE INDEX IF NOT EXISTS commit_parents_snapshot ON commit_parents(repository_id, snapshot_id, parent_snapshot_id);
 
-CREATE TABLE commit_changes (
+CREATE TABLE IF NOT EXISTS commit_changes (
   repository_id TEXT NOT NULL,
   snapshot_id TEXT NOT NULL,
   change_type TEXT NOT NULL,
@@ -2517,10 +2772,10 @@ CREATE TABLE commit_changes (
   ticket_id TEXT,
   path TEXT NOT NULL
 );
-CREATE INDEX commit_changes_snapshot_ticket ON commit_changes(repository_id, snapshot_id, ticket_id);
-CREATE INDEX commit_changes_ticket ON commit_changes(repository_id, ticket_id, snapshot_id);
+CREATE INDEX IF NOT EXISTS commit_changes_snapshot_ticket ON commit_changes(repository_id, snapshot_id, ticket_id);
+CREATE INDEX IF NOT EXISTS commit_changes_ticket ON commit_changes(repository_id, ticket_id, snapshot_id);
 
-CREATE TABLE materialization_warnings (
+CREATE TABLE IF NOT EXISTS materialization_warnings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   repository_id TEXT NOT NULL,
   snapshot_id TEXT NOT NULL,
@@ -2531,10 +2786,10 @@ CREATE TABLE materialization_warnings (
   message TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
-CREATE INDEX materialization_warnings_snapshot ON materialization_warnings(repository_id, snapshot_id);
-CREATE INDEX materialization_warnings_repository_created ON materialization_warnings(repository_id, created_at, path);
+CREATE INDEX IF NOT EXISTS materialization_warnings_snapshot ON materialization_warnings(repository_id, snapshot_id);
+CREATE INDEX IF NOT EXISTS materialization_warnings_repository_created ON materialization_warnings(repository_id, created_at, path);
 
-CREATE TABLE search_documents (
+CREATE TABLE IF NOT EXISTS search_documents (
   repository_id TEXT NOT NULL,
   document_id TEXT NOT NULL,
   ticket_id TEXT NOT NULL,
@@ -2544,7 +2799,7 @@ CREATE TABLE search_documents (
   PRIMARY KEY (repository_id, document_id)
 );
 
-CREATE VIRTUAL TABLE search_fts USING fts5(
+CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
   repository_id UNINDEXED,
   document_id UNINDEXED,
   ticket_id UNINDEXED,
@@ -2555,7 +2810,7 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
 ${inboxSchemaSql}
 `;
 
-const sharedMetadataSchemaSql = `
+export const sharedMetadataSchemaSql = `
 CREATE TABLE IF NOT EXISTS users (
   repository_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
@@ -2656,6 +2911,9 @@ const parseRemotes = (value: string | null): RepositoryMetadata["remotes"] => {
   }
 };
 
+const decodeSqlRow = <A>(schema: Schema.Top, row: unknown): A =>
+  Schema.decodeUnknownSync(schema as never)(row) as A;
+
 const metadataFromRepositoryRow = (row: RepositoryRow): RepositoryMetadata | undefined => {
   const remotes = parseRemotes(row.remotes_json);
   const metadata: RepositoryMetadata = {
@@ -2696,7 +2954,8 @@ const cycleMetadataFromRepositoryRow = (
   }
 };
 
-const repositoryStatusFromRow = (row: RepositoryRow): RepositoryStatus => {
+const repositoryStatusFromRow = (raw: RepositoryRow): RepositoryStatus => {
+  const row = decodeSqlRow<RepositoryRow>(RepositoryRowSql, raw);
   const metadata = metadataFromRepositoryRow(row);
   const cycleMetadata = cycleMetadataFromRepositoryRow(row);
 
@@ -2717,7 +2976,8 @@ const repositoryStatusFromRow = (row: RepositoryRow): RepositoryStatus => {
 const decodeJson = <S extends Schema.Top>(schema: S, value: string): S["Type"] =>
   Schema.decodeUnknownSync(schema as never, StrictDecodeOptions)(JSON.parse(value)) as S["Type"];
 
-const ticketFromRow = (row: TicketRow): TicketDocument => {
+const ticketFromRow = (raw: TicketRow): TicketDocument => {
+  const row = decodeSqlRow<TicketRow>(TicketRowSql, raw);
   const frontmatter = makeIssueFrontmatter(
     decodeJson(
       IssueFrontmatterJson,
@@ -2761,46 +3021,69 @@ const ticketFromRow = (row: TicketRow): TicketDocument => {
   };
 };
 
-const recordFromRow = (row: RecordRow): LinkedRecord => ({
-  createdAt: row.created_at,
-  createdBy: {
-    email: row.created_by_email ?? undefined,
-    name: row.created_by_name,
-    type: row.created_by_type as LinkedRecord["createdBy"]["type"],
-  },
-  createdDate: row.created_date,
-  id: row.record_id,
-  issueId: row.ticket_id,
-  payload: decodeJson(JsonValue, row.payload_json),
-  recordType: row.record_type,
-  schemaVersion: 1,
-});
+const recordFromRow = (raw: RecordRow): LinkedRecord => {
+  const row = decodeSqlRow<RecordRow>(RecordRowSql, raw);
 
-const userFromRow = (row: UserRow): UserProfileDocument =>
-  decodeJson(UserProfileDocumentJson, row.profile_json) as unknown as UserProfileDocument;
+  return {
+    createdAt: row.created_at,
+    createdBy: {
+      email: row.created_by_email ?? undefined,
+      name: row.created_by_name,
+      type: row.created_by_type as LinkedRecord["createdBy"]["type"],
+    },
+    createdDate: row.created_date,
+    id: row.record_id,
+    issueId: row.ticket_id,
+    payload: decodeJson(JsonValue, row.payload_json),
+    recordType: row.record_type,
+    schemaVersion: 1,
+  };
+};
 
-const labelFromRow = (row: LabelRow): LabelDefinitionDocument =>
-  decodeJson(LabelDefinitionDocumentJson, row.label_json) as unknown as LabelDefinitionDocument;
+const userFromRow = (raw: UserRow): UserProfileDocument => {
+  const row = decodeSqlRow<UserRow>(UserRowSql, raw);
+  return decodeJson(UserProfileDocumentJson, row.profile_json) as unknown as UserProfileDocument;
+};
 
-const viewFromRow = (row: SavedViewRow): SavedViewDocument =>
-  decodeJson(SavedViewDocumentJson, row.view_json) as unknown as SavedViewDocument;
+const labelFromRow = (raw: LabelRow): LabelDefinitionDocument => {
+  const row = decodeSqlRow<LabelRow>(LabelRowSql, raw);
+  return decodeJson(
+    LabelDefinitionDocumentJson,
+    row.label_json,
+  ) as unknown as LabelDefinitionDocument;
+};
 
-const templateFromRow = (row: IssueTemplateRow): IssueTemplateDocument =>
-  decodeJson(IssueTemplateDocumentJson, row.template_json) as unknown as IssueTemplateDocument;
+const viewFromRow = (raw: SavedViewRow): SavedViewDocument => {
+  const row = decodeSqlRow<SavedViewRow>(SavedViewRowSql, raw);
+  return decodeJson(SavedViewDocumentJson, row.view_json) as unknown as SavedViewDocument;
+};
 
-const historyFromRow = (row: HistoryRow): HistoryCommit => ({
-  authorEmail: row.author_email ?? undefined,
-  authorName: row.author_name ?? undefined,
-  changedTicketIds: parseStringListJson(row.changed_ticket_ids),
-  committedAt: row.committed_at ?? undefined,
-  message: row.message ?? undefined,
-  parentIds: parseStringListJson(row.parent_ids),
-  sequence: row.sequence,
-  snapshotId: row.snapshot_id,
-  warningCount: row.warning_count,
-});
+const templateFromRow = (raw: IssueTemplateRow): IssueTemplateDocument => {
+  const row = decodeSqlRow<IssueTemplateRow>(IssueTemplateRowSql, raw);
+  return decodeJson(
+    IssueTemplateDocumentJson,
+    row.template_json,
+  ) as unknown as IssueTemplateDocument;
+};
 
-const inboxEntryFromRow = (row: InboxListRow): InboxEntry => {
+const historyFromRow = (raw: HistoryRow): HistoryCommit => {
+  const row = decodeSqlRow<HistoryRow>(HistoryRowSql, raw);
+
+  return {
+    authorEmail: row.author_email ?? undefined,
+    authorName: row.author_name ?? undefined,
+    changedTicketIds: parseStringListJson(row.changed_ticket_ids),
+    committedAt: row.committed_at ?? undefined,
+    message: row.message ?? undefined,
+    parentIds: parseStringListJson(row.parent_ids),
+    sequence: row.sequence,
+    snapshotId: row.snapshot_id,
+    warningCount: row.warning_count,
+  };
+};
+
+const inboxEntryFromRow = (raw: InboxListRow): InboxEntry => {
+  const row = decodeSqlRow<InboxListRow>(InboxListRowSql, raw);
   const actor: InboxEntry["actor"] = {
     ...(row.actor_email === null ? {} : { email: row.actor_email }),
     ...(row.actor_name === null ? {} : { name: row.actor_name }),

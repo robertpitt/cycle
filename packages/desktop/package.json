@@ -46,6 +46,7 @@
     "@cycle/git": "workspace:*",
     "@cycle/git-store": "workspace:*",
     "@cycle/sqlite": "workspace:*",
+    "@electron/rebuild": "^4.2.0",
     "@swc/core": "^1.15.41",
     "@tailwindcss/vite": "^4.3.0",
     "@types/react": "^19.2.7",

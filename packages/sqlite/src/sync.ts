@@ -5,17 +5,27 @@ import { SqliteVectorUnavailableError } from "./SqliteVectorUnavailableError.ts"
 import { ensureSqliteParentDirectorySync, isInMemorySqlitePath } from "./internals/paths.ts";
 import { resolveSqliteVectorExtensionPathSync } from "./internals/vector.ts";
 
+/**
+ * @deprecated Use `makeSqliteLayer` with Effect SQL instead. This subpath exists only as a
+ * temporary compatibility surface while legacy stores migrate away from synchronous SQLite.
+ */
 export type SqliteRunResult = {
   readonly changes?: number | bigint;
   readonly lastInsertRowid?: number | bigint;
 };
 
+/**
+ * @deprecated Use `SqlClient.SqlClient` from `effect/unstable/sql/SqlClient`.
+ */
 export type SqliteStatementLike = {
   readonly all: (...args: ReadonlyArray<unknown>) => ReadonlyArray<unknown>;
   readonly get: (...args: ReadonlyArray<unknown>) => unknown;
   readonly run: (...args: ReadonlyArray<unknown>) => SqliteRunResult;
 };
 
+/**
+ * @deprecated Use `SqlClient.SqlClient` from `effect/unstable/sql/SqlClient`.
+ */
 export type SqliteDatabaseLike = {
   readonly close: () => void;
   readonly enableLoadExtension?: (allow: boolean) => void;
@@ -25,6 +35,9 @@ export type SqliteDatabaseLike = {
   readonly pragma?: (source: string) => unknown;
 };
 
+/**
+ * @deprecated Use `SqliteLayerOptions`.
+ */
 export type OpenSqliteSyncOptions = {
   readonly createParentDirectory?: boolean;
   readonly pragmas?: ReadonlyArray<string>;
@@ -32,6 +45,9 @@ export type OpenSqliteSyncOptions = {
   readonly vector?: "disabled" | "required";
 };
 
+/**
+ * @deprecated Use `makeSqliteLayer` with Effect SQL instead.
+ */
 export const openSqliteSync = (
   filename: string,
   options: OpenSqliteSyncOptions = {},
