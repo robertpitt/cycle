@@ -1,4 +1,4 @@
-import { GitCommands } from "@cycle/git/commands/GitCommands";
+import { Git } from "@cycle/git";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { Context, Effect, FileSystem, Layer, Path, Stream } from "effect";
 import { WorktreePathPolicyError, WorktreeSetupError } from "./WorktreeErrors.ts";
@@ -54,7 +54,7 @@ export const WorktreeSetupLive = Layer.effect(
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const git = yield* GitCommands;
+    const git = yield* Git;
 
     const runCommand = Effect.fn("WorktreeSetup.runCommand")(function* (
       record: WorktreeRecord,

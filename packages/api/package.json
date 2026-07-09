@@ -27,7 +27,7 @@
     "@cycle/agents": "workspace:*",
     "@cycle/config": "workspace:*",
     "@cycle/contracts": "workspace:*",
-    "@cycle/git": "workspace:*",
+    "@cycle/git-worktrees": "workspace:*",
     "@cycle/logging": "workspace:*",
     "@cycle/usecases": "workspace:*",
     "@effect/platform-node": "4.0.0-beta.78",

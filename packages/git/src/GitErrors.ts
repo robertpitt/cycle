@@ -22,7 +22,7 @@ export class GitRepositoryError extends Schema.TaggedErrorClass<GitRepositoryErr
   stderr: Schema.optional(Schema.String),
 }) {}
 
-const GitCliErrorFields = {
+const GitCommandErrorFields = {
   args: Schema.optional(Schema.Array(Schema.String)),
   branchName: Schema.optional(Schema.String),
   cause: Schema.optional(Schema.Defect()),
@@ -40,43 +40,43 @@ const GitCliErrorFields = {
 
 export class GitCommandError extends Schema.TaggedErrorClass<GitCommandError>(
   "@cycle/git/GitCommandError",
-)("GitCommandError", GitCliErrorFields) {}
+)("GitCommandError", GitCommandErrorFields) {}
 
 export class GitRevisionError extends Schema.TaggedErrorClass<GitRevisionError>(
   "@cycle/git/GitRevisionError",
-)("GitRevisionError", GitCliErrorFields) {}
+)("GitRevisionError", GitCommandErrorFields) {}
 
 export class GitStatusError extends Schema.TaggedErrorClass<GitStatusError>(
   "@cycle/git/GitStatusError",
-)("GitStatusError", GitCliErrorFields) {}
+)("GitStatusError", GitCommandErrorFields) {}
 
 export class GitBranchError extends Schema.TaggedErrorClass<GitBranchError>(
   "@cycle/git/GitBranchError",
-)("GitBranchError", GitCliErrorFields) {}
+)("GitBranchError", GitCommandErrorFields) {}
 
 export class GitBranchNameError extends Schema.TaggedErrorClass<GitBranchNameError>(
   "@cycle/git/GitBranchNameError",
-)("GitBranchNameError", GitCliErrorFields) {}
+)("GitBranchNameError", GitCommandErrorFields) {}
 
 export class GitRefError extends Schema.TaggedErrorClass<GitRefError>(
   "@cycle/git/GitRefError",
-)("GitRefError", GitCliErrorFields) {}
+)("GitRefError", GitCommandErrorFields) {}
 
 export class GitIndexError extends Schema.TaggedErrorClass<GitIndexError>(
   "@cycle/git/GitIndexError",
-)("GitIndexError", GitCliErrorFields) {}
+)("GitIndexError", GitCommandErrorFields) {}
 
 export class GitCommitError extends Schema.TaggedErrorClass<GitCommitError>(
   "@cycle/git/GitCommitError",
-)("GitCommitError", GitCliErrorFields) {}
+)("GitCommitError", GitCommandErrorFields) {}
 
 export class GitWorktreeError extends Schema.TaggedErrorClass<GitWorktreeError>(
   "@cycle/git/GitWorktreeError",
-)("GitWorktreeError", GitCliErrorFields) {}
+)("GitWorktreeError", GitCommandErrorFields) {}
 
 export class GitRemoteLookupError extends Schema.TaggedErrorClass<GitRemoteLookupError>(
   "@cycle/git/GitRemoteLookupError",
-)("GitRemoteLookupError", GitCliErrorFields) {}
+)("GitRemoteLookupError", GitCommandErrorFields) {}
 
 export class RemoteFetchError extends Schema.TaggedErrorClass<RemoteFetchError>(
   "@cycle/git/RemoteFetchError",

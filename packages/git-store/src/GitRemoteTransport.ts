@@ -1,4 +1,4 @@
-import { GitCommands } from "@cycle/git/commands/GitCommands";
+import { Git } from "@cycle/git";
 import { Context, Effect, Layer } from "effect";
 import { GitRemoteError, type GitStoreError } from "./GitStoreErrors.ts";
 import type { ObjectId } from "./GitStoreSchemas.ts";
@@ -32,7 +32,7 @@ export const GitRemoteTransportLive = Layer.effect(
   GitRemoteTransport,
   Effect.gen(function* () {
     const runtime = yield* GitStoreRuntime;
-    const git = yield* GitCommands;
+    const git = yield* Git;
 
     const cwdFor = (cwd?: string) => cwd ?? runtime.config.cwd;
 

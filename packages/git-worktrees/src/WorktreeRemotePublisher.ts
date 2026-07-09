@@ -1,4 +1,4 @@
-import { GitCommands } from "@cycle/git/commands/GitCommands";
+import { Git } from "@cycle/git";
 import { Context, Effect, Layer, Schedule } from "effect";
 import { RemotePushError } from "./WorktreeErrors.ts";
 import type { BranchAssociation, WorktreePushPolicy, WorktreeRecord } from "./WorktreeSchemas.ts";
@@ -49,7 +49,7 @@ const pushCategory = (stderr: string): string => {
 export const WorktreeRemotePublisherLive = Layer.effect(
   WorktreeRemotePublisher,
   Effect.gen(function* () {
-    const git = yield* GitCommands;
+    const git = yield* Git;
     const config = yield* WorktreeConfig;
 
     const push = Effect.fn("WorktreeRemotePublisher.push")(function* (input: {

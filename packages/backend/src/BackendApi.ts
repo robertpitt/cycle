@@ -23,7 +23,7 @@ import { defaultAgentProviderPreference, type AppConfigState } from "@cycle/cont
 import { DatabaseService } from "@cycle/database";
 import { GitRepository } from "@cycle/git";
 import { GitStores } from "@cycle/git-store";
-import { WorktreeService } from "@cycle/git/worktree";
+import { Worktrees } from "@cycle/git-worktrees";
 import { logError } from "@cycle/logging";
 import { repositoryIdFromInput } from "@cycle/usecases";
 import { Context, Effect, Layer, Path, Scope } from "effect";
@@ -57,7 +57,7 @@ type BackendApiStartRequirements =
   | Path.Path
   | RepositoryBootstrap
   | Scope.Scope
-  | WorktreeService;
+  | Worktrees;
 
 export type BackendApiService = {
   readonly start: (
@@ -192,7 +192,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
   const settings = yield* LocalSettings;
   const gitRepository = yield* GitRepository;
   const gitStores = yield* GitStores;
-  const worktreeService = yield* WorktreeService;
+  const worktrees = yield* Worktrees;
   const localWorkspace = yield* LocalWorkspace;
   const config = yield* appConfig.read;
   const paths = yield* backendPaths(options);
@@ -378,7 +378,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
             runtimeFile: paths.runtimeDiscoveryPath,
             staticToken: config.api.staticToken,
             useCaseLayer: Layer.mergeAll(databaseLayer, agentTaskLayer, backendRepositoryOpenLayer),
-            worktreeService,
+            worktrees,
             worktreeStoragePath: paths.agentWorktreesPath,
           });
 
@@ -452,7 +452,7 @@ export const BackendApiLive = Layer.effect(
     const path = yield* Path.Path;
     const repositoryBootstrap = yield* RepositoryBootstrap;
     const scope = yield* Scope.Scope;
-    const worktreeService = yield* WorktreeService;
+    const worktrees = yield* Worktrees;
 
     return BackendApi.of({
       start: (options) =>
@@ -467,7 +467,7 @@ export const BackendApiLive = Layer.effect(
           Effect.provideService(Path.Path, path),
           Effect.provideService(RepositoryBootstrap, repositoryBootstrap),
           Effect.provideService(Scope.Scope, scope),
-          Effect.provideService(WorktreeService, worktreeService),
+          Effect.provideService(Worktrees, worktrees),
         ),
     });
   }),

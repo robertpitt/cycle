@@ -1,4 +1,4 @@
-import { GitCommands } from "@cycle/git/commands/GitCommands";
+import { Git } from "@cycle/git";
 import { Context, Effect, FileSystem, Layer, Path, Schedule } from "effect";
 import {
   WorktreeCreateError,
@@ -120,7 +120,7 @@ export const WorktreeLifecycleLive = Layer.effect(
     const store = yield* WorktreeStore;
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const git = yield* GitCommands;
+    const git = yield* Git;
 
     const mapGitCreateError = (operation: string, path: string, cause: unknown) =>
       new WorktreeCreateError({

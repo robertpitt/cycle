@@ -1,5 +1,4 @@
-import * as GitCommands from "@cycle/git/commands/GitCommands";
-import { GitRepositoryLive } from "@cycle/git/repository/GitRepository";
+import { GitLive, GitRepositoryLive } from "@cycle/git";
 import { NodeServices } from "@effect/platform-node";
 import { Effect, Layer, LayerMap } from "effect";
 import { WorktreeBranchPublisherLive } from "./WorktreeBranchPublisher.ts";
@@ -71,7 +70,7 @@ export class WorktreeInstances extends LayerMap.Service<WorktreeInstances>()(
     idleTimeToLive: "5 minutes",
     lookup: (key: WorktreeRepositoryInstanceKey) =>
       Layer.fresh(makeRepositoryWorktreeLayer(decodeWorktreeRepositoryInstanceKey(key))).pipe(
-        Layer.provide(Layer.mergeAll(NodeServices.layer, GitRepositoryLive, GitCommands.Live)),
+        Layer.provide(Layer.mergeAll(NodeServices.layer, GitRepositoryLive, GitLive)),
       ),
   },
 ) {}

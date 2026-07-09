@@ -28,6 +28,7 @@
     "@cycle/contracts": "workspace:*",
     "@cycle/database": "workspace:*",
     "@cycle/git": "workspace:*",
+    "@cycle/git-worktrees": "workspace:*",
     "@cycle/logging": "workspace:*",
     "@cycle/sqlite": "workspace:*",
     "@cycle/usecases": "workspace:*",

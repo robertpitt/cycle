@@ -1,7 +1,7 @@
 import { makeInMemorySqliteLayer } from "@cycle/sqlite/testing";
 import { NodeServices } from "@effect/platform-node";
 import { Layer } from "effect";
-import { GitRepositoryLive } from "@cycle/git/repository/GitRepository";
+import { GitLive, GitRepositoryLive } from "@cycle/git";
 import { WorktreeBranchPublisherLive } from "../WorktreeBranchPublisher.ts";
 import { makeWorktreeConfigLayer } from "../WorktreeConfig.ts";
 import { WorktreeFinalizerLive } from "../WorktreeFinalizer.ts";
@@ -57,6 +57,6 @@ export const makeWorktreesTestLayer = (config: WorktreeRuntimeConfig) => {
 
   return WorktreeReconcilerLive.pipe(
     Layer.provideMerge(handover),
-    Layer.provide(Layer.mergeAll(NodeServices.layer, GitRepositoryLive)),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, GitRepositoryLive, GitLive)),
   );
 };

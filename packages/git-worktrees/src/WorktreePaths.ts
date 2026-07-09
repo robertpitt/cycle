@@ -1,5 +1,4 @@
-import { GitCommands } from "@cycle/git/commands/GitCommands";
-import { GitRepository } from "@cycle/git/repository/GitRepository";
+import { Git, GitRepository } from "@cycle/git";
 import { Context, Effect, FileSystem, Layer, Path } from "effect";
 import {
   WorktreePathPolicyError,
@@ -64,7 +63,7 @@ export const WorktreePathsLive = Layer.effect(
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const repositories = yield* GitRepository;
-    const git = yield* GitCommands;
+    const git = yield* Git;
 
     const ensureStorageRoot = fs.makeDirectory(config.config.storageRoot, { recursive: true }).pipe(
       Effect.as(config.config.storageRoot),

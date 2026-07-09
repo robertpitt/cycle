@@ -5,17 +5,11 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./command/GitCommand": "./src/GitCommand.ts",
+    "./Git": "./src/Git.ts",
     "./commands/GitCommands": "./src/GitCommands.ts",
     "./errors": "./src/GitErrors.ts",
-    "./object-store/Git": "./src/Git.ts",
-    "./object-store/GitCli": "./src/GitCli.ts",
-    "./object-store/GitFilesystem": "./src/GitFilesystem.ts",
-    "./object-store/GitInMemory": "./src/GitInMemory.ts",
     "./repository/GitRepository": "./src/GitRepository.ts",
-    "./schemas": "./src/GitSchemas.ts",
-    "./worktree": "./src/WorktreeService.ts",
-    "./worktree/WorktreeService": "./src/WorktreeService.ts"
+    "./schemas": "./src/GitSchemas.ts"
   },
   "scripts": {
     "test": "vitest run",

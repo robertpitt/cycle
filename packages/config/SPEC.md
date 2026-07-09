@@ -131,7 +131,7 @@ export:
 
 Service implementations MUST NOT be split into separate `*Live.ts` files unless the base service
 file re-exports the live layer and remains the public source of truth. Prefer the single-file pattern
-used by `@cycle/git/GitRepository.ts` and `@cycle/git/WorktreeService.ts`.
+used by `@cycle/git/GitRepository.ts` and comparable package-owned service files.
 
 Required service files:
 

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { AgentProviderDetector } from "@cycle/agents";
 import { AppConfig } from "@cycle/config/app-config";
 import { DatabaseService, type DatabaseServiceShape } from "@cycle/database";
-import { GitRepository, WorktreeService } from "@cycle/git";
+import { GitRepository } from "@cycle/git";
 import { NodeServices } from "@effect/platform-node";
 import { Data, Effect, Layer } from "effect";
 import { afterEach, describe, it } from "vitest";
@@ -213,19 +213,6 @@ const makeLayer = (config: AppConfigState) =>
         inspect: () => Effect.die("not implemented"),
         metadata: () => Effect.die("not implemented"),
         resolveGitDir: () => Effect.die("not implemented"),
-      }),
-    ),
-    Layer.succeed(
-      WorktreeService,
-      WorktreeService.of({
-        cleanupWorktree: () => Effect.die("not implemented"),
-        commitWorktree: () => Effect.die("not implemented"),
-        createDisposableWorktree: () => Effect.die("not implemented"),
-        createImplementationWorktree: () => Effect.die("not implemented"),
-        createOrUpdateBranch: () => Effect.die("not implemented"),
-        diffWorktree: () => Effect.die("not implemented"),
-        inspectWorktree: () => Effect.die("not implemented"),
-        retainWorktree: () => Effect.die("not implemented"),
       }),
     ),
     DesktopApiLive,

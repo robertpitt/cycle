@@ -1,4 +1,4 @@
-import { GitCommands } from "@cycle/git/commands/GitCommands";
+import { Git } from "@cycle/git";
 import { Context, Effect, Layer, Ref, Semaphore } from "effect";
 import {
   BranchCollisionError,
@@ -51,7 +51,7 @@ export class WorktreeBranchPublisher extends Context.Service<
 export const WorktreeBranchPublisherLive = Layer.effect(
   WorktreeBranchPublisher,
   Effect.gen(function* () {
-    const git = yield* GitCommands;
+    const git = yield* Git;
     const store = yield* WorktreeStore;
     const semaphores = yield* Ref.make(new Map<string, Semaphore.Semaphore>());
 

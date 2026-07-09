@@ -1,5 +1,5 @@
 import { ChildProcessSpawner } from "effect/unstable/process";
-import { Context, Effect, Layer } from "effect";
+import { Effect, Layer } from "effect";
 import {
   formatGitFailure,
   formatOperation,
@@ -8,6 +8,7 @@ import {
   type GitRunOptions,
   type GitRunResult,
 } from "./GitCommand.ts";
+import { Git } from "./Git.ts";
 import {
   GitBranchError,
   GitBranchNameError,
@@ -165,9 +166,7 @@ export type GitCommandsShape = {
   ) => Effect.Effect<void, GitWorktreeError>;
 };
 
-export class GitCommands extends Context.Service<GitCommands, GitCommandsShape>()(
-  "@cycle/git/GitCommands",
-) {}
+export { Git as GitCommands } from "./Git.ts";
 
 type CliFailureInput = {
   readonly args: ReadonlyArray<string>;
@@ -215,7 +214,7 @@ export const remoteTrackingRef = (remote: string, ref: string): string =>
 export const branchRef = (branchName: string): string => `refs/heads/${branchName}`;
 
 export const layer = Layer.effect(
-  GitCommands,
+  Git,
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
@@ -688,7 +687,7 @@ export const layer = Layer.effect(
       );
     });
 
-    return GitCommands.of({
+    return Git.of({
       absoluteGitDir,
       addAll,
       branchRef,

@@ -15,10 +15,10 @@ work. It owns the lifecycle of disposable and implementation worktrees from requ
 setup, agent handoff, finalization, branch publication, remote push, handover, reconciliation, and
 cleanup.
 
-The package replaces `@cycle/git/WorktreeService` entirely. `@cycle/git` remains the base Git access
-layer and repository command boundary. `@cycle/git-worktrees` is the canonical owner of worktree
-lifecycle behavior, durable lifecycle records, branch associations, backup handling, and handover
-orchestration.
+The package replaces the former git-package worktree lifecycle service entirely. `@cycle/git`
+remains the base Git access layer and repository command boundary. `@cycle/git-worktrees` is the
+canonical owner of worktree lifecycle behavior, durable lifecycle records, branch associations,
+backup handling, and handover orchestration.
 
 The primary operational requirement is high-volume local isolation: Cycle MUST be able to run many
 agent jobs in parallel, potentially tens or hundreds, where each agent works in a dedicated Git
@@ -39,7 +39,7 @@ choice when callers, tests, or operators need to reason about behavior.
 
 This specification is informed by:
 
-1. The current `@cycle/git/WorktreeService`, which provides a small service for detached worktree
+1. The former git-package worktree service, which provided a small service for detached worktree
    creation, branch publication, commit, and cleanup.
 2. The `@cycle/git-store` package layout and Effect service style.
 3. The Agent Work orchestration specifications that require implementation work to happen outside
@@ -71,7 +71,7 @@ owns the sequence and failure behavior around those integrations.
 
 `@cycle/git-worktrees` MUST:
 
-1. Replace `@cycle/git/WorktreeService` as the canonical worktree lifecycle API.
+1. Replace the former git-package worktree service as the canonical worktree lifecycle API.
 2. Provide Effect-first services, schemas, typed errors, layers, and testing utilities following the
    current `@cycle/git-store` package layout.
 3. Depend on `@cycle/git` as the base access layer for Git repository discovery and Git command
@@ -117,7 +117,7 @@ owns the sequence and failure behavior around those integrations.
 3. Import from `@cycle/api`, `@cycle/desktop`, or renderer packages.
 4. Mutate Cycle ticket state directly through database internals. Ticket comments and status
    transitions MUST go through handover ports supplied by the caller.
-5. Preserve compatibility aliases for `@cycle/git/WorktreeService` as a long-term API.
+5. Preserve compatibility aliases for the removed git-package worktree service as a long-term API.
 6. Keep worktrees around for convenience after successful handover unless explicit retention policy
    says so.
 7. Delete a dirty or unknown-state worktree without first creating a durable backup branch, unless
@@ -1403,9 +1403,9 @@ The remote publisher MUST normalize errors into:
 Retries MUST be bounded. Required push failures MUST block handover completion but MUST NOT delete
 the worktree unless a backup or local branch makes recovery safe.
 
-## 23. Migration From `@cycle/git/WorktreeService`
+## 23. Migration From The Legacy Service
 
-The old `@cycle/git/WorktreeService` MUST be treated as superseded.
+The old git-package worktree service MUST be treated as superseded.
 
 Migration SHOULD happen in phases:
 
@@ -1415,9 +1415,9 @@ Migration SHOULD happen in phases:
 4. Update backend composition to provide `WorktreesLive`.
 5. Update Agent Work orchestration to request worktrees through `@cycle/git-worktrees`.
 6. Remove API runtime plumbing for the old service.
-7. Delete or deprecate `@cycle/git/WorktreeService` after all consumers migrate.
+7. Delete the old service after all consumers migrate.
 
-The new package MUST NOT rely on the old `WorktreeService` implementation as its lifecycle engine.
+The new package MUST NOT rely on the old implementation as its lifecycle engine.
 It MAY temporarily reuse small pure helpers only if they are moved or copied into the new package
 with clear ownership.
 
@@ -1499,7 +1499,7 @@ The initial implementation is complete when:
 5. Orphaned worktrees are backed up to branches and removed by reconciliation.
 6. Disposable worktrees share the same state machine and clean by default.
 7. Handover side effects are delegated through idempotent ports.
-8. The new package can replace `@cycle/git/WorktreeService` in backend composition.
+8. The new package replaces the old service in backend composition.
 9. The validation matrix passes against local Git repositories.
 10. Documentation explains operational cleanup policy, backup branches, and failure recovery.
 

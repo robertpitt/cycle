@@ -110,7 +110,7 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
     startedAt: (options.startedAt ?? new Date()).toISOString(),
     staticToken: options.staticToken,
     useCaseLayer,
-    ...(options.worktreeService === undefined ? {} : { worktreeService: options.worktreeService }),
+    ...(options.worktrees === undefined ? {} : { worktrees: options.worktrees }),
     ...(options.worktreeStoragePath === undefined
       ? {}
       : { worktreeStoragePath: options.worktreeStoragePath }),

@@ -95,7 +95,7 @@ export const BackendRepositoryOpenServiceLive = Layer.effect(
             metadata,
             repositoryId: repository.id,
             store,
-            syncOnOpen: input.syncOnOpen ?? false,
+            syncOnOpen: input.syncOnOpen ?? true,
             worktreePath: repository.path,
           });
         }).pipe(Effect.mapError((error) => mapOpenFailure(error, context))),

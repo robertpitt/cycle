@@ -1,20 +1,26 @@
 export * from "./GitErrors.ts";
 export * from "./GitSchemas.ts";
-export * as GitCommand from "./GitCommand.ts";
-export * as GitCommands from "./GitCommands.ts";
-export * as Git from "./Git.ts";
-export * as GitCli from "./GitCli.ts";
-export * as GitFilesystem from "./GitFilesystem.ts";
-export * as GitInMemory from "./GitInMemory.ts";
+export { Git, type GitService, type GitShape } from "./Git.ts";
+export {
+  branchRef,
+  layer as GitLayer,
+  Live as GitLive,
+  remoteTrackingRef,
+  type GitCommitCommandInput,
+  type GitCommitResult,
+  type GitDeleteRefCommandInput,
+  type GitFetchRefInput,
+  type GitLsRemoteRefInput,
+  type GitPushCommandInput,
+  type GitRevListInput,
+  type GitStatusOptions,
+  type GitUpdateRefCommandInput,
+  type GitWorktreeAddDetachedInput,
+  type GitWorktreeAddResult,
+  type GitWorktreeRemoveInput,
+} from "./GitCommands.ts";
 export {
   GitRepository,
   GitRepositoryLive,
   type GitRepositoryServiceShape,
 } from "./GitRepository.ts";
-export {
-  WorktreeService,
-  WorktreeServiceLive,
-  type WorktreeServiceShape,
-} from "./WorktreeService.ts";
-export { Git as GitService } from "./Git.ts";
-export { GitCommands as GitCommandService } from "./GitCommands.ts";

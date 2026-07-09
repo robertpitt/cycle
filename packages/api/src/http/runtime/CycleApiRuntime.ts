@@ -17,7 +17,7 @@ import type {
   AgentServiceRegistryShape,
   AgentSessionStore,
 } from "@cycle/agents";
-import type { WorktreeServiceShape } from "@cycle/git/worktree";
+import type { WorktreesShape } from "@cycle/git-worktrees";
 import { Context, Layer } from "effect";
 import type {
   AgentActiveTurnBeginInput,
@@ -134,7 +134,7 @@ export type CycleApiOptions = {
   readonly startedAt?: Date;
   readonly staticToken: string;
   readonly useCaseLayer?: Layer.Layer<never, unknown, any>;
-  readonly worktreeService?: WorktreeServiceShape;
+  readonly worktrees?: WorktreesShape;
   readonly worktreeStoragePath?: string;
 };
 
@@ -163,7 +163,7 @@ export type CycleApiRuntimeShape = {
   readonly startedAt: string;
   readonly staticToken: string;
   readonly useCaseLayer: Layer.Layer<never, unknown, any>;
-  readonly worktreeService?: WorktreeServiceShape;
+  readonly worktrees?: WorktreesShape;
   readonly worktreeStoragePath?: string;
 };
 

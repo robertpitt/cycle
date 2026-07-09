@@ -1,4 +1,4 @@
-import { remoteTrackingRef } from "@cycle/git/commands/GitCommands";
+import { remoteTrackingRef } from "@cycle/git";
 import { Context, Effect, Layer, Semaphore } from "effect";
 import { GitSyncConflictError, type GitStoreError } from "./GitStoreErrors.ts";
 import type { Change, ChangeSet, ObjectId, RefName, Snapshot } from "./GitStoreSchemas.ts";

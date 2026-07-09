@@ -1,7 +1,8 @@
 import { AgentProviderDetectorLive } from "@cycle/agents";
 import { AppConfigLive } from "@cycle/config/app-config";
-import { GitRepositoryLive, WorktreeServiceLive } from "@cycle/git";
+import { GitRepositoryLive } from "@cycle/git";
 import { GitStoresLive, RepositoryPathsLive } from "@cycle/git-store";
+import { WorktreeConfigLive, WorktreesLive } from "@cycle/git-worktrees";
 import { NodeServices } from "@effect/platform-node";
 import { Context, Effect, Layer } from "effect";
 import { BackendApi, BackendApiLive, type BackendApiHandle } from "./BackendApi.ts";
@@ -47,6 +48,8 @@ const GitStoresServiceLive = GitStoresLive.pipe(
     ),
   ),
 );
+
+const WorktreesServiceLive = WorktreesLive.pipe(Layer.provide(WorktreeConfigLive));
 
 export const BackendRuntimeLive = Layer.effect(
   BackendRuntime,
@@ -187,7 +190,7 @@ const makeBackendServiceLayers = (options: BackendStartOptions = {}) => {
         LocalSettingsServiceLive,
         LocalWorkspaceServiceLive,
         RepositoryBootstrapServiceLive,
-        WorktreeServiceLive,
+        WorktreesServiceLive,
       ),
     ),
   );

@@ -1,4 +1,4 @@
-import { GitCommands } from "@cycle/git/commands/GitCommands";
+import { Git } from "@cycle/git";
 import { Context, Effect, Layer } from "effect";
 import {
   NoWorktreeChangesError,
@@ -81,7 +81,7 @@ const parsePorcelainZPaths = (output: string): ReadonlyArray<string> => {
 export const WorktreeFinalizerLive = Layer.effect(
   WorktreeFinalizer,
   Effect.gen(function* () {
-    const git = yield* GitCommands;
+    const git = yield* Git;
 
     const mapFinalizeError = (operation: string, path: string, cause: unknown) =>
       new WorktreeFinalizeError({
