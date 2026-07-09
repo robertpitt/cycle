@@ -1,6 +1,7 @@
 import { Switch as BaseSwitch } from "@base-ui/react/switch";
 import * as React from "react";
 import { cn } from "../../lib/cn.ts";
+import { isAriaInvalid } from "../../lib/contracts.ts";
 import { disabledControl, focusRing } from "../../lib/styles.ts";
 export type SwitchProps = Omit<BaseSwitch.Root.Props, "children" | "className" | "inputRef"> & {
   readonly className?: string;
@@ -23,6 +24,7 @@ export const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(function S
         disabledControl,
         className,
       )}
+      data-invalid={isAriaInvalid(ariaInvalid) ? "" : undefined}
     >
       <BaseSwitch.Thumb className="block size-4 translate-x-0 rounded-full bg-background shadow-sm transition-transform data-[checked]:translate-x-4" />
     </BaseSwitch.Root>

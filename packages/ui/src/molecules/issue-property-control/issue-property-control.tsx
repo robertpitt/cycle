@@ -2,6 +2,7 @@ import { Check, Circle, CircleCheck, CircleDashed, CircleOff, UserRound } from "
 import * as React from "react";
 import { Avatar, AvatarFallback } from "../../atoms/avatar/index.ts";
 import { cn } from "../../lib/cn.ts";
+import { disabledControl, focusRing } from "../../lib/styles.ts";
 
 export type IssuePriorityMarkProps = {
   readonly className?: string;
@@ -193,10 +194,12 @@ export const IssueAssigneeMark = ({ className, name, size = "sm" }: IssueAssigne
 
 const useOutsideClose = ({
   onClose,
+  onEscapeClose = onClose,
   open,
   ref,
 }: {
   readonly onClose: () => void;
+  readonly onEscapeClose?: () => void;
   readonly open: boolean;
   readonly ref: React.RefObject<HTMLElement | null>;
 }) => {
@@ -209,7 +212,7 @@ const useOutsideClose = ({
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") onEscapeClose();
     };
 
     document.addEventListener("pointerdown", handlePointerDown);
@@ -219,18 +222,21 @@ const useOutsideClose = ({
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [onClose, open, ref]);
+  }, [onClose, onEscapeClose, open, ref]);
 };
 
 const stopEventPropagation = (event: React.SyntheticEvent) => {
   event.stopPropagation();
 };
 
-const triggerClassName =
-  "grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-45";
+const triggerClassName = cn(
+  "grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-subtle hover:text-foreground",
+  focusRing,
+  disabledControl,
+);
 
 const panelClassName =
-  "absolute top-full z-50 mt-2 overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-elevated";
+  "absolute top-full z-50 mt-2 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-elevated";
 
 const panelPositionClassName = (align: "end" | "start") => (align === "end" ? "right-0" : "left-0");
 
@@ -247,17 +253,26 @@ export const IssuePropertyOptionMenu = ({
 }: IssuePropertyOptionMenuProps) => {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
   const close = React.useCallback(() => setOpen(false), []);
+  const closeAndRestoreFocus = React.useCallback(() => {
+    close();
+    window.requestAnimationFrame(() => triggerRef.current?.focus());
+  }, [close]);
 
   useOutsideClose({
     onClose: close,
+    onEscapeClose: closeAndRestoreFocus,
     open,
     ref,
   });
 
   const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (stopPropagation) event.stopPropagation();
-    if (event.key === "Escape") close();
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeAndRestoreFocus();
+    }
   };
 
   return (
@@ -269,6 +284,7 @@ export const IssuePropertyOptionMenu = ({
       ref={ref}
     >
       <button
+        ref={triggerRef}
         aria-expanded={open}
         aria-haspopup="menu"
         aria-label={label}
@@ -282,6 +298,7 @@ export const IssuePropertyOptionMenu = ({
       </button>
       {open ? (
         <div
+          aria-label={label}
           className={cn(panelClassName, panelPositionClassName(align), "p-2", widthClassName)}
           role="menu"
         >
@@ -292,9 +309,10 @@ export const IssuePropertyOptionMenu = ({
               <button
                 aria-checked={selected}
                 className={cn(
-                  "grid min-h-10 w-full grid-cols-[1.5rem_minmax(0,1fr)_auto_auto] items-center gap-3 rounded-lg px-2 text-left text-sm text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover",
+                  "grid min-h-10 w-full grid-cols-[1.5rem_minmax(0,1fr)_auto_auto] items-center gap-3 rounded-md px-2 text-left text-sm text-foreground transition-colors hover:bg-subtle",
                   selected && "bg-subtle",
                   option.disabled && "pointer-events-none opacity-45",
+                  focusRing,
                 )}
                 disabled={option.disabled}
                 key={option.value}
@@ -338,6 +356,7 @@ export const IssuePropertyPopover = ({
 }: IssuePropertyPopoverProps) => {
   const [open, setOpenState] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
   const setOpen = React.useCallback(
     (nextOpen: boolean) => {
       setOpenState(nextOpen);
@@ -346,9 +365,14 @@ export const IssuePropertyPopover = ({
     [onOpenChange],
   );
   const close = React.useCallback(() => setOpen(false), [setOpen]);
+  const closeAndRestoreFocus = React.useCallback(() => {
+    close();
+    window.requestAnimationFrame(() => triggerRef.current?.focus());
+  }, [close]);
 
   useOutsideClose({
     onClose: close,
+    onEscapeClose: closeAndRestoreFocus,
     open,
     ref,
   });
@@ -361,6 +385,7 @@ export const IssuePropertyPopover = ({
       ref={ref}
     >
       <button
+        ref={triggerRef}
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-label={label}
@@ -374,6 +399,7 @@ export const IssuePropertyPopover = ({
       </button>
       {open ? (
         <div
+          aria-label={label}
           className={cn(panelClassName, panelPositionClassName(align), "p-3", widthClassName)}
           role="dialog"
         >

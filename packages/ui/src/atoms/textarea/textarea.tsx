@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "../../lib/cn.ts";
+import { isAriaInvalid } from "../../lib/contracts.ts";
 import { disabledControl, focusRing } from "../../lib/styles.ts";
 export type TextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement> & {
   readonly invalid?: boolean;
@@ -20,7 +21,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(fun
         disabledControl,
         className,
       )}
-      data-invalid={ariaInvalid ? "" : undefined}
+      data-invalid={isAriaInvalid(ariaInvalid) ? "" : undefined}
     />
   );
 });

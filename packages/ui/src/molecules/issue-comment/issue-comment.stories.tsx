@@ -1,4 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { ArrowUp } from "lucide-react";
+import { IconButton } from "../../atoms/icon-button/index.ts";
 import { IssueActivityEvent, IssueCommentCard, IssueCommentComposer } from "./index.ts";
 import type { MarkdownEditorTagSuggestion } from "../markdown-editor/index.ts";
 
@@ -46,9 +48,22 @@ export const ActivityAndComposer: Story = {
       <IssueCommentCard
         author={author}
         body={"Comment body with **Markdown** and a task:\n\n- [x] Render safely"}
+        replyAction={
+          <IconButton
+            icon={<ArrowUp aria-hidden className="size-4" />}
+            label="Start a reply"
+            onClick={() => undefined}
+            size="sm"
+          />
+        }
         timestamp="just now"
       />
-      <IssueCommentComposer author={author} tagSuggestions={tagSuggestions} />
+      <IssueCommentComposer
+        author={author}
+        onAttach={() => undefined}
+        onSubmit={() => undefined}
+        tagSuggestions={tagSuggestions}
+      />
     </div>
   ),
 };

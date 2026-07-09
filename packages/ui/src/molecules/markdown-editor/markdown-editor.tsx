@@ -20,6 +20,7 @@ import {
   UserRound,
 } from "lucide-react";
 import * as React from "react";
+import { getMarkdownEditorShortcut } from "../../internal/markdown-editor-shortcuts.ts";
 import {
   INSERT_CHECK_LIST_COMMAND,
   INSERT_ORDERED_LIST_COMMAND,
@@ -1004,27 +1005,15 @@ const MarkdownEditorKeyboardPlugin = ({ onSubmit }: { readonly onSubmit?: () => 
       editor.registerCommand(
         KEY_MODIFIER_COMMAND,
         (event) => {
-          const key = event.key.toLowerCase();
+          const shortcut = getMarkdownEditorShortcut(event);
 
-          if (key === "enter" && onSubmitRef.current) {
+          if (shortcut === "submit" && onSubmitRef.current) {
             event.preventDefault();
             onSubmitRef.current();
             return true;
           }
 
-          if (key === "b") {
-            event.preventDefault();
-            applyFormatAction(editor, "bold");
-            return true;
-          }
-
-          if (key === "i") {
-            event.preventDefault();
-            applyFormatAction(editor, "italic");
-            return true;
-          }
-
-          if (key === "k") {
+          if (shortcut === "link") {
             event.preventDefault();
             applyFormatAction(editor, "link");
             return true;
@@ -1201,6 +1190,7 @@ export const MarkdownEditor = React.forwardRef<HTMLDivElement, MarkdownEditorPro
       onCycleReferenceClick,
       onCommit,
       onEditorError,
+      onExternalLinkClick,
       onFormatSelect,
       onIssueReferenceClick,
       onRepositoryReferenceClick,
@@ -1367,6 +1357,7 @@ export const MarkdownEditor = React.forwardRef<HTMLDivElement, MarkdownEditorPro
             onAgentReferenceClick={onAgentReferenceClick}
             onCommitReferenceClick={onCommitReferenceClick}
             onCycleReferenceClick={onCycleReferenceClick}
+            onExternalLinkClick={onExternalLinkClick}
             onIssueReferenceClick={onIssueReferenceClick}
             onRepositoryReferenceClick={onRepositoryReferenceClick}
             onUserReferenceClick={onUserReferenceClick}

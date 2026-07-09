@@ -6,11 +6,17 @@ export type BrandMarkProps = React.HTMLAttributes<HTMLDivElement> & {
   readonly showLabel?: boolean;
 };
 export const BrandMark = React.forwardRef<HTMLDivElement, BrandMarkProps>(function BrandMark(
-  { className, label = "Cycle", mark, showLabel = true, ...props },
+  { "aria-label": ariaLabel, className, label = "Cycle", mark, role, showLabel = true, ...props },
   ref,
 ) {
   return (
-    <div {...props} ref={ref} className={cn("inline-flex items-center gap-2.5", className)}>
+    <div
+      {...props}
+      ref={ref}
+      aria-label={ariaLabel ?? (!showLabel ? label : undefined)}
+      className={cn("inline-flex items-center gap-2.5", className)}
+      role={role ?? (!showLabel ? "img" : undefined)}
+    >
       {mark ?? (
         <span
           aria-hidden

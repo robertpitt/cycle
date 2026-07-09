@@ -34,20 +34,21 @@ export const IssueGroupHeader = React.forwardRef<HTMLDivElement, IssueGroupHeade
           className,
         )}
       >
-        <StatusIndicator label={String(title)} shape="ring" tone={statusTone} />
+        <StatusIndicator shape="ring" tone={statusTone} />
         <span className="text-base font-semibold text-foreground">{title}</span>
         {count !== undefined && count !== null ? (
           <span className="text-sm text-muted-foreground">{count}</span>
         ) : null}
-        {action ?? (
-          <IconButton
-            className="ml-auto"
-            icon={<Plus aria-hidden className="size-4" />}
-            label={actionLabel}
-            onClick={onAction}
-            size="sm"
-          />
-        )}
+        {action ??
+          (onAction ? (
+            <IconButton
+              className="ml-auto"
+              icon={<Plus aria-hidden className="size-4" />}
+              label={actionLabel}
+              onClick={onAction}
+              size="sm"
+            />
+          ) : null)}
       </div>
     );
   },

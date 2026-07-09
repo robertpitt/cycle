@@ -1,3 +1,5 @@
+import type * as React from "react";
+
 export const componentTones = [
   "neutral",
   "info",
@@ -53,3 +55,6 @@ export const normalizeTone = (
 
 export const mergeIds = (...ids: readonly (string | undefined)[]) =>
   ids.filter(Boolean).join(" ") || undefined;
+
+export const isAriaInvalid = (value: React.AriaAttributes["aria-invalid"]): boolean =>
+  value !== undefined && value !== false && value !== "false";

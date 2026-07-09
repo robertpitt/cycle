@@ -15,6 +15,8 @@ export const Default: Story = {
     <div className="max-w-3xl rounded-lg border border-border bg-background p-8">
       <IssueEditor
         defaultValue={"## Test Issue Description\n\n- [ ] Render Markdown\n- [ ] Preserve syntax"}
+        onAttach={() => undefined}
+        onMention={() => undefined}
       />
     </div>
   ),

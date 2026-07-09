@@ -25,6 +25,7 @@ export type IssueCommentCardProps = React.HTMLAttributes<HTMLDivElement> &
   MarkdownReferenceHandlers & {
     readonly author: IssueAuthor;
     readonly body: React.ReactNode;
+    readonly replyAction?: React.ReactNode;
     readonly replyPlaceholder?: string;
     readonly timestamp?: React.ReactNode;
   };
@@ -99,9 +100,11 @@ export const IssueCommentCard = React.forwardRef<HTMLDivElement, IssueCommentCar
       onAgentReferenceClick,
       onCommitReferenceClick,
       onCycleReferenceClick,
+      onExternalLinkClick,
       onIssueReferenceClick,
       onRepositoryReferenceClick,
       onUserReferenceClick,
+      replyAction,
       replyPlaceholder = "Leave a reply...",
       timestamp,
       ...props
@@ -135,6 +138,7 @@ export const IssueCommentCard = React.forwardRef<HTMLDivElement, IssueCommentCar
                   onAgentReferenceClick={onAgentReferenceClick}
                   onCommitReferenceClick={onCommitReferenceClick}
                   onCycleReferenceClick={onCycleReferenceClick}
+                  onExternalLinkClick={onExternalLinkClick}
                   onIssueReferenceClick={onIssueReferenceClick}
                   onRepositoryReferenceClick={onRepositoryReferenceClick}
                   onUserReferenceClick={onUserReferenceClick}
@@ -144,23 +148,14 @@ export const IssueCommentCard = React.forwardRef<HTMLDivElement, IssueCommentCar
               )}
             </div>
           </div>
-          <div className="flex min-h-14 items-center gap-3 border-t border-border px-4">
-            <span className={cn("min-w-0 flex-1 text-muted-foreground", typography.bodyCompact)}>
-              {replyPlaceholder}
-            </span>
-            <IconButton
-              icon={<Paperclip aria-hidden className="size-4" />}
-              label="Attach reply file"
-              size="sm"
-              title="Attach reply file"
-            />
-            <IconButton
-              icon={<ArrowUp aria-hidden className="size-4" />}
-              label="Send reply"
-              size="sm"
-              title="Send reply"
-            />
-          </div>
+          {replyAction ? (
+            <div className="flex min-h-14 items-center gap-3 border-t border-border px-4">
+              <span className={cn("min-w-0 flex-1 text-muted-foreground", typography.bodyCompact)}>
+                {replyPlaceholder}
+              </span>
+              {replyAction}
+            </div>
+          ) : null}
         </div>
       </article>
     );
@@ -187,8 +182,8 @@ export const IssueCommentComposer = React.forwardRef<HTMLFormElement, IssueComme
     const [value, setValue] = React.useState(defaultValue);
     const submitCurrentValue = React.useCallback(() => {
       const trimmed = value.trim();
-      if (!trimmed) return;
-      onSubmit?.(trimmed);
+      if (!trimmed || !onSubmit) return;
+      onSubmit(trimmed);
       setValue("");
     }, [onSubmit, value]);
 
@@ -224,21 +219,25 @@ export const IssueCommentComposer = React.forwardRef<HTMLFormElement, IssueComme
         <div className="flex items-center gap-2 px-4 pb-4">
           {author ? <IssueAvatar author={author} className="size-6 opacity-80" /> : null}
           <span className="flex-1" />
-          <IconButton
-            icon={<Paperclip aria-hidden className="size-4" />}
-            label="Attach comment file"
-            onClick={onAttach}
-            size="sm"
-            title="Attach comment file"
-          />
-          <IconButton
-            disabled={value.trim().length === 0}
-            icon={<ArrowUp aria-hidden className="size-4" />}
-            label={submitLabel}
-            size="sm"
-            title={submitLabel}
-            type="submit"
-          />
+          {onAttach ? (
+            <IconButton
+              icon={<Paperclip aria-hidden className="size-4" />}
+              label="Attach comment file"
+              onClick={onAttach}
+              size="sm"
+              title="Attach comment file"
+            />
+          ) : null}
+          {onSubmit ? (
+            <IconButton
+              disabled={value.trim().length === 0}
+              icon={<ArrowUp aria-hidden className="size-4" />}
+              label={submitLabel}
+              size="sm"
+              title={submitLabel}
+              type="submit"
+            />
+          ) : null}
         </div>
       </form>
     );

@@ -148,7 +148,9 @@ export const DateTime = React.forwardRef<HTMLTimeElement, DateTimeProps>(functio
 
   if (date === undefined || formatted === undefined) {
     return fallback === null || fallback === undefined ? null : (
-      <span className={className}>{fallback}</span>
+      <span {...props} className={className}>
+        {fallback}
+      </span>
     );
   }
 

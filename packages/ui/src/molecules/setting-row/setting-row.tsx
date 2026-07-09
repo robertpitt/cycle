@@ -7,7 +7,7 @@ export type SettingRowProps = React.HTMLAttributes<HTMLDivElement> & {
   readonly title: React.ReactNode;
 };
 export const SettingRow = React.forwardRef<HTMLDivElement, SettingRowProps>(function SettingRow(
-  { className, control, description, disabled = false, title, ...props },
+  { className, control, description, disabled = false, inert, title, ...props },
   ref,
 ) {
   return (
@@ -21,6 +21,7 @@ export const SettingRow = React.forwardRef<HTMLDivElement, SettingRowProps>(func
         className,
       )}
       data-disabled={disabled ? "" : undefined}
+      inert={inert ?? disabled}
     >
       <div>
         <p className="text-[13px] font-medium text-foreground">{title}</p>

@@ -50,4 +50,15 @@ describe("MarkdownRenderer", () => {
     expect(markup).toContain('href="https://example.com"');
     expect(markup).not.toContain("javascript:");
   });
+
+  it("treats protocol-relative URLs as external links", () => {
+    const markup = renderToStaticMarkup(
+      createElement(MarkdownRenderer, {
+        markdown: "[external](//example.com/docs)",
+      }),
+    );
+
+    expect(markup).toContain('target="_blank"');
+    expect(markup).toContain('rel="noreferrer noopener"');
+  });
 });

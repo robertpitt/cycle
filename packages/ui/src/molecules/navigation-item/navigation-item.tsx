@@ -31,6 +31,7 @@ export const NavigationItem = React.forwardRef<HTMLButtonElement, NavigationItem
       onClick,
       onNavigate,
       showDisclosure = false,
+      type = "button",
       ...props
     },
     ref,
@@ -63,7 +64,7 @@ export const NavigationItem = React.forwardRef<HTMLButtonElement, NavigationItem
             aria-hidden
             className={cn(
               "size-3.5 text-muted-foreground transition-transform",
-              (expanded ?? active) && "rotate-180",
+              expanded && "rotate-180",
             )}
             strokeWidth={2}
           />
@@ -86,7 +87,7 @@ export const NavigationItem = React.forwardRef<HTMLButtonElement, NavigationItem
           ref={ref as React.Ref<HTMLAnchorElement>}
           aria-current={active ? "page" : undefined}
           aria-disabled={disabled ? true : undefined}
-          aria-expanded={isExpandable ? (expanded ?? active) : undefined}
+          aria-expanded={isExpandable ? (expanded ?? false) : undefined}
           className={classNames}
           data-state={active ? "active" : "inactive"}
           href={disabled ? undefined : href}
@@ -103,9 +104,10 @@ export const NavigationItem = React.forwardRef<HTMLButtonElement, NavigationItem
         {...props}
         ref={ref}
         aria-current={active ? "page" : undefined}
-        aria-expanded={isExpandable ? (expanded ?? active) : undefined}
+        aria-expanded={isExpandable ? (expanded ?? false) : undefined}
         className={classNames}
         data-state={active ? "active" : "inactive"}
+        disabled={disabled}
         onClick={(event) => {
           if (disabled) {
             event.preventDefault();
@@ -115,7 +117,7 @@ export const NavigationItem = React.forwardRef<HTMLButtonElement, NavigationItem
           onNavigate?.(event);
         }}
         tabIndex={props.tabIndex}
-        type="button"
+        type={type}
       >
         {children}
       </button>

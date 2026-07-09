@@ -2,6 +2,7 @@ import { Select as BaseSelect } from "@base-ui/react/select";
 import { Check, ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
 import * as React from "react";
 import { cn } from "../../lib/cn.ts";
+import { isAriaInvalid } from "../../lib/contracts.ts";
 import { disabledControl, focusRing } from "../../lib/styles.ts";
 export type SelectItem = {
   readonly disabled?: boolean;
@@ -15,6 +16,7 @@ export type SelectProps = Omit<BaseSelect.Root.Props<string>, "children" | "item
   readonly "aria-labelledby"?: string;
   readonly children?: React.ReactNode;
   readonly className?: string;
+  readonly emptyLabel?: React.ReactNode;
   readonly invalid?: boolean;
   readonly items?: readonly SelectItem[];
   readonly label?: React.ReactNode;
@@ -28,7 +30,10 @@ const getTextFromNode = (node: React.ReactNode): string => {
     return String(node);
   }
   if (Array.isArray(node)) {
-    return node.map(getTextFromNode).join("");
+    return node.map(getTextFromNode).join(" ");
+  }
+  if (React.isValidElement<{ readonly children?: React.ReactNode }>(node)) {
+    return getTextFromNode(node.props.children);
   }
   return "";
 };
@@ -58,6 +63,7 @@ export const Select = React.forwardRef<HTMLButtonElement, SelectProps>(function 
     "aria-labelledby": ariaLabelledBy,
     children,
     className,
+    emptyLabel = "No options",
     invalid = false,
     items,
     label,
@@ -100,6 +106,7 @@ export const Select = React.forwardRef<HTMLButtonElement, SelectProps>(function 
             disabledControl,
             className,
           )}
+          data-invalid={isAriaInvalid(ariaInvalid) ? "" : undefined}
           ref={ref}
         >
           <BaseSelect.Value className="min-w-0 flex-1 truncate" placeholder={placeholder} />
@@ -137,6 +144,9 @@ export const Select = React.forwardRef<HTMLButtonElement, SelectProps>(function 
                     </BaseSelect.ItemText>
                   </BaseSelect.Item>
                 ))}
+                {resolvedItems.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-muted-foreground">{emptyLabel}</div>
+                ) : null}
               </BaseSelect.List>
               <BaseSelect.ScrollDownArrow className="grid h-6 place-items-center text-muted-foreground">
                 <ChevronDown aria-hidden className="size-4" strokeWidth={1.8} />

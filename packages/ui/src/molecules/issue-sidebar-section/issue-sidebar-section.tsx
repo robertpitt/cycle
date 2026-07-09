@@ -19,6 +19,7 @@ export const IssueSidebarSection = React.forwardRef<HTMLDivElement, IssueSidebar
     { actions, children, className, defaultOpen = true, onOpenChange, open, title, ...props },
     ref,
   ) {
+    const contentId = React.useId();
     const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen);
     const isControlled = open !== undefined;
     const currentOpen = isControlled ? open : uncontrolledOpen;
@@ -44,6 +45,7 @@ export const IssueSidebarSection = React.forwardRef<HTMLDivElement, IssueSidebar
       >
         <div className="flex min-h-12 items-center justify-between gap-3 px-4">
           <button
+            aria-controls={contentId}
             aria-expanded={currentOpen}
             className={cn(
               "inline-flex min-w-0 items-center gap-2 rounded-md text-left text-muted-foreground transition hover:text-foreground",
@@ -62,7 +64,11 @@ export const IssueSidebarSection = React.forwardRef<HTMLDivElement, IssueSidebar
           </button>
           {actions ? <div className="shrink-0">{actions}</div> : null}
         </div>
-        {currentOpen ? <div className="grid gap-3 px-4 pb-4">{children}</div> : null}
+        {currentOpen ? (
+          <div className="grid gap-3 px-4 pb-4" id={contentId}>
+            {children}
+          </div>
+        ) : null}
       </section>
     );
   },

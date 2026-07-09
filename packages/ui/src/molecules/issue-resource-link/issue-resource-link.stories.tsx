@@ -17,6 +17,7 @@ export const Default: Story = {
     description: "Search the world's information, including webpages, images, videos and more.",
     favicon: <span className={cn(typography.sectionTitle, "font-bold text-primary")}>G</span>,
     meta: "6d",
+    onMore: () => undefined,
     title: "Test Link",
   },
   render: (args) => (

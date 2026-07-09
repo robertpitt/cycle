@@ -80,7 +80,7 @@ const withSelectedOptions = (
     ...section,
     options: section.options.map((option) => ({
       ...option,
-      selected: option.selected ?? selectedIds.has(option.id),
+      selected: selectedIds.has(option.id),
     })),
   }));
 
@@ -118,6 +118,7 @@ export const PropertyPicker = React.forwardRef<HTMLDivElement, PropertyPickerPro
         ref={ref}
         className={cn("max-w-full", className)}
         closeOnSelect={closeOnSelect ?? !multiple}
+        multiple={multiple}
         onSelect={(option) => {
           const nextValue = multiple
             ? selectedIds.has(option.id)

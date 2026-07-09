@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { getMarkdownEditorShortcut } from "../src/internal/markdown-editor-shortcuts.ts";
 import {
   filterMarkdownEditorTagSuggestions,
   getMarkdownEditorTagSuggestionInsertLabel,
@@ -11,6 +12,37 @@ import {
 } from "../src/molecules/markdown-editor/markdown-editor-utils.ts";
 
 describe("Markdown editor utilities", () => {
+  const keyboardEvent = (
+    overrides: Partial<Parameters<typeof getMarkdownEditorShortcut>[0]>,
+  ): Parameters<typeof getMarkdownEditorShortcut>[0] => ({
+    altKey: false,
+    ctrlKey: false,
+    isComposing: false,
+    key: "",
+    metaKey: false,
+    shiftKey: false,
+    ...overrides,
+  });
+
+  it("does not consume capital letters as formatting shortcuts", () => {
+    expect(getMarkdownEditorShortcut(keyboardEvent({ key: "I", shiftKey: true }))).toBeUndefined();
+    expect(getMarkdownEditorShortcut(keyboardEvent({ key: "B", shiftKey: true }))).toBeUndefined();
+    expect(getMarkdownEditorShortcut(keyboardEvent({ key: "K", shiftKey: true }))).toBeUndefined();
+  });
+
+  it("only handles exact custom Ctrl/Cmd shortcuts", () => {
+    expect(getMarkdownEditorShortcut(keyboardEvent({ ctrlKey: true, key: "Enter" }))).toBe(
+      "submit",
+    );
+    expect(getMarkdownEditorShortcut(keyboardEvent({ key: "k", metaKey: true }))).toBe("link");
+    expect(
+      getMarkdownEditorShortcut(keyboardEvent({ altKey: true, ctrlKey: true, key: "k" })),
+    ).toBeUndefined();
+    expect(
+      getMarkdownEditorShortcut(keyboardEvent({ ctrlKey: true, isComposing: true, key: "k" })),
+    ).toBeUndefined();
+  });
+
   it("round-trips the core Cycle Markdown subset", () => {
     const markdown = [
       "## Hello",

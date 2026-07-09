@@ -58,7 +58,9 @@ export const IssueListRow = React.forwardRef<HTMLDivElement, IssueListRowProps>(
     ref,
   ) {
     const isInteractive = Boolean(onClick || onSelect);
-    const visibleMeta = meta.slice(0, metaLimit);
+    const resolvedRole = props.role ?? (isInteractive ? "button" : undefined);
+    const resolvedMetaLimit = Number.isFinite(metaLimit) ? Math.max(0, Math.floor(metaLimit)) : 0;
+    const visibleMeta = meta.slice(0, resolvedMetaLimit);
     const hiddenMetaCount = Math.max(meta.length - visibleMeta.length, 0);
     const selectRow = () => {
       if (!disabled) {
@@ -70,7 +72,10 @@ export const IssueListRow = React.forwardRef<HTMLDivElement, IssueListRowProps>(
         {...props}
         ref={ref}
         aria-disabled={disabled ? true : undefined}
-        aria-selected={selected || undefined}
+        aria-pressed={resolvedRole === "button" ? selected : undefined}
+        aria-selected={
+          resolvedRole && resolvedRole !== "button" ? selected || undefined : undefined
+        }
         className={cn(
           "grid grid-cols-[28px_86px_28px_minmax(220px,1fr)_minmax(180px,0.75fr)_68px_40px] items-center gap-2 border-b border-border px-5 text-sm last:border-b-0 hover:bg-subtle/45",
           densityClassName[density],
@@ -95,10 +100,10 @@ export const IssueListRow = React.forwardRef<HTMLDivElement, IssueListRowProps>(
             (event.key === "Enter" || event.key === " ")
           ) {
             event.preventDefault();
-            selectRow();
+            event.currentTarget.click();
           }
         }}
-        role={props.role ?? (isInteractive ? "button" : undefined)}
+        role={resolvedRole}
         tabIndex={props.tabIndex ?? (isInteractive && !disabled ? 0 : undefined)}
       >
         <span className="grid size-7 place-items-center justify-self-start">
@@ -125,7 +130,7 @@ export const IssueListRow = React.forwardRef<HTMLDivElement, IssueListRowProps>(
               title={`${hiddenMetaCount} more metadata item${hiddenMetaCount === 1 ? "" : "s"}`}
             >{`+${hiddenMetaCount}`}</span>
           ) : null}
-          {updateCount ? (
+          {updateCount !== undefined && updateCount !== null ? (
             <span className="inline-flex h-7 items-center gap-1 rounded-full border border-border bg-popover px-2 text-sm text-muted-foreground">
               <Clock3 aria-hidden className="size-3.5" />
               {updateCount}

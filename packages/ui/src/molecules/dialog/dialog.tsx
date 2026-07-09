@@ -172,4 +172,8 @@ export const DialogCloseButton = React.forwardRef<HTMLButtonElement, DialogClose
   },
 );
 
-export const DialogClose = BaseDialog.Close;
+export const DialogClose = React.forwardRef<HTMLButtonElement, BaseDialog.Close.Props>(
+  function DialogClose({ type = "button", ...props }, ref) {
+    return <BaseDialog.Close {...props} ref={ref} type={type} />;
+  },
+);

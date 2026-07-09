@@ -33,6 +33,7 @@ export type IssueEditorProps = Omit<
     readonly onAttach?: React.MouseEventHandler<HTMLButtonElement>;
     readonly onCommandSelect?: (command: IssueEditorCommand) => void;
     readonly onFormatSelect?: (action: IssueEditorFormatAction) => void;
+    readonly onMention?: React.MouseEventHandler<HTMLButtonElement>;
     readonly onPreviewOpenChange?: (open: boolean) => void;
     readonly onSave?: (value: string) => void;
     readonly onTagQueryChange?: (query: string) => void;
@@ -64,7 +65,9 @@ export const IssueEditor = React.forwardRef<HTMLDivElement, IssueEditorProps>(fu
     onCommandSelect,
     onCommitReferenceClick,
     onCycleReferenceClick,
+    onExternalLinkClick,
     onFormatSelect,
+    onMention,
     onIssueReferenceClick,
     onPreviewOpenChange,
     onRepositoryReferenceClick,
@@ -113,6 +116,7 @@ export const IssueEditor = React.forwardRef<HTMLDivElement, IssueEditorProps>(fu
         onCommitReferenceClick={onCommitReferenceClick}
         onCommit={onSave}
         onCycleReferenceClick={onCycleReferenceClick}
+        onExternalLinkClick={onExternalLinkClick}
         onFormatSelect={onFormatSelect}
         onIssueReferenceClick={onIssueReferenceClick}
         onRepositoryReferenceClick={onRepositoryReferenceClick}
@@ -129,21 +133,26 @@ export const IssueEditor = React.forwardRef<HTMLDivElement, IssueEditorProps>(fu
         value={value}
       />
       <div className="flex items-center gap-2">
-        <IconButton
-          disabled={disabled || readOnly}
-          icon={<AtSign aria-hidden className="size-4" />}
-          label="Mention"
-          size="sm"
-          title="Mention"
-        />
-        <IconButton
-          disabled={disabled || readOnly}
-          icon={<Paperclip aria-hidden className="size-4" />}
-          label="Attach file"
-          onClick={onAttach}
-          size="sm"
-          title="Attach file"
-        />
+        {onMention ? (
+          <IconButton
+            disabled={disabled || readOnly}
+            icon={<AtSign aria-hidden className="size-4" />}
+            label="Mention"
+            onClick={onMention}
+            size="sm"
+            title="Mention"
+          />
+        ) : null}
+        {onAttach ? (
+          <IconButton
+            disabled={disabled || readOnly}
+            icon={<Paperclip aria-hidden className="size-4" />}
+            label="Attach file"
+            onClick={onAttach}
+            size="sm"
+            title="Attach file"
+          />
+        ) : null}
         <span className="flex-1" />
         <button
           className={cn(

@@ -25,11 +25,15 @@ const tones = ["neutral", "info", "success", "warning", "danger", "accent"] as c
 export const Playground: Story = {};
 export const Variants: Story = {
   render: () => (
-    <div className="flex flex-wrap gap-2">
-      {tones.map((tone) => (
-        <Badge key={tone} tone={tone}>
-          {tone[0]?.toUpperCase() + tone.slice(1)}
-        </Badge>
+    <div className="grid gap-3">
+      {(["soft", "solid", "outline"] as const).map((appearance) => (
+        <div className="flex flex-wrap gap-2" key={appearance}>
+          {tones.map((tone) => (
+            <Badge appearance={appearance} key={tone} tone={tone}>
+              {tone[0]?.toUpperCase() + tone.slice(1)}
+            </Badge>
+          ))}
+        </div>
       ))}
     </div>
   ),

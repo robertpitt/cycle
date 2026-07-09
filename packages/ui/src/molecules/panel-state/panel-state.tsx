@@ -16,13 +16,13 @@ export type PanelStateProps = React.HTMLAttributes<HTMLDivElement> & {
 };
 
 const toneForKind = (kind: PanelStateKind): ComponentTone => {
-  if (kind === "error") return "warning";
+  if (kind === "error") return "danger";
   return "neutral";
 };
 
 const defaultIcon = (kind: PanelStateKind) => {
   if (kind === "loading") {
-    return <Spinner className="size-4" />;
+    return <Spinner decorative className="size-4" />;
   }
 
   if (kind === "error") {
@@ -42,13 +42,19 @@ const iconToneClassName = {
 } satisfies Record<ComponentTone, string>;
 
 export const PanelState = React.forwardRef<HTMLDivElement, PanelStateProps>(function PanelState(
-  { className, description, icon, kind = "empty", message, tone, ...props },
+  { className, description, icon, kind = "empty", message, role, tone, ...props },
   ref,
 ) {
   const resolvedTone = tone ?? toneForKind(kind);
 
   return (
-    <div {...props} ref={ref} className={cn("grid min-h-full place-items-center p-8", className)}>
+    <div
+      {...props}
+      ref={ref}
+      aria-busy={kind === "loading" || undefined}
+      className={cn("grid min-h-full place-items-center p-8", className)}
+      role={role ?? (kind === "error" ? "alert" : kind === "loading" ? "status" : undefined)}
+    >
       <div className="flex max-w-md items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 text-left shadow-card">
         <span
           className={cn("grid size-4 shrink-0 place-items-center", iconToneClassName[resolvedTone])}

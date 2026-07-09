@@ -32,7 +32,33 @@ export const badgeVariants = cva(
     compoundVariants: [
       {
         appearance: "outline",
+        className: "border-accent/35 bg-transparent text-accent",
+        tone: "accent",
+      },
+      {
+        appearance: "outline",
+        className: "border-destructive/35 bg-transparent text-destructive",
+        tone: "danger",
+      },
+      {
+        appearance: "outline",
+        className: "border-primary/35 bg-transparent text-primary",
+        tone: "info",
+      },
+      {
+        appearance: "outline",
         className: "border-border bg-transparent text-muted-foreground",
+        tone: "neutral",
+      },
+      {
+        appearance: "outline",
+        className: "border-success/35 bg-transparent text-success",
+        tone: "success",
+      },
+      {
+        appearance: "outline",
+        className: "border-warning/40 bg-transparent text-warning",
+        tone: "warning",
       },
       {
         appearance: "solid",
@@ -58,6 +84,11 @@ export const badgeVariants = cva(
         appearance: "solid",
         className: "bg-warning text-warning-foreground",
         tone: "warning",
+      },
+      {
+        appearance: "solid",
+        className: "bg-secondary text-secondary-foreground",
+        tone: "neutral",
       },
     ],
   },
@@ -97,18 +128,22 @@ export const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(function Badg
   { appearance, className, tone, variant, ...props },
   ref,
 ) {
+  const resolvedAppearance = resolveBadgeAppearance(appearance, variant);
+  const resolvedTone = resolveBadgeTone(tone, variant);
+
   return (
     <span
       {...props}
       ref={ref}
       className={cn(
         badgeVariants({
-          appearance: resolveBadgeAppearance(appearance, variant),
-          tone: resolveBadgeTone(tone, variant),
+          appearance: resolvedAppearance,
+          tone: resolvedTone,
         }),
         className,
       )}
-      data-tone={resolveBadgeTone(tone, variant)}
+      data-appearance={resolvedAppearance}
+      data-tone={resolvedTone}
     />
   );
 });

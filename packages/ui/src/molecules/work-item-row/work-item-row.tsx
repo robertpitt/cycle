@@ -46,6 +46,7 @@ export const WorkItemRow = React.forwardRef<HTMLDivElement, WorkItemRowProps>(fu
   ref,
 ) {
   const isInteractive = Boolean(onClick || onSelect);
+  const resolvedRole = props.role ?? (isInteractive ? "button" : undefined);
   const selectRow = () => {
     if (!disabled) {
       onSelect?.(id);
@@ -56,7 +57,8 @@ export const WorkItemRow = React.forwardRef<HTMLDivElement, WorkItemRowProps>(fu
       {...props}
       ref={ref}
       aria-disabled={disabled ? true : undefined}
-      aria-selected={selected || undefined}
+      aria-pressed={resolvedRole === "button" ? selected : undefined}
+      aria-selected={resolvedRole && resolvedRole !== "button" ? selected || undefined : undefined}
       className={cn(
         "grid grid-cols-[auto_88px_1fr_112px_40px] items-center gap-3 border-b border-border px-4 text-sm last:border-b-0 hover:bg-subtle/70",
         densityClassName[density],
@@ -81,18 +83,20 @@ export const WorkItemRow = React.forwardRef<HTMLDivElement, WorkItemRowProps>(fu
           (event.key === "Enter" || event.key === " ")
         ) {
           event.preventDefault();
-          selectRow();
+          event.currentTarget.click();
         }
       }}
-      role={props.role ?? (isInteractive ? "button" : undefined)}
+      role={resolvedRole}
       tabIndex={props.tabIndex ?? (isInteractive && !disabled ? 0 : undefined)}
     >
       <span aria-hidden className={cn("size-2.5 rounded-full", priorityClassName[priority])} />
       <span className="min-w-0 truncate text-muted-foreground" title={id}>
         {id}
       </span>
-      <span className="truncate text-foreground">{title}</span>
-      <Badge appearance="outline" tone={statusTone}>
+      <span className="truncate text-foreground" title={title}>
+        {title}
+      </span>
+      <Badge appearance="outline" className="max-w-full truncate" title={status} tone={statusTone}>
         {status}
       </Badge>
       <Avatar className="size-6">

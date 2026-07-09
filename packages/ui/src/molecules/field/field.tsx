@@ -7,7 +7,7 @@ import { Select, type SelectProps } from "../../atoms/select/index.ts";
 import { Switch, type SwitchProps } from "../../atoms/switch/index.ts";
 import { Textarea, type TextareaProps } from "../../atoms/textarea/index.ts";
 import { cn } from "../../lib/cn.ts";
-import { mergeIds } from "../../lib/contracts.ts";
+import { isAriaInvalid, mergeIds } from "../../lib/contracts.ts";
 type FieldContextValue = {
   readonly controlId: string;
   readonly descriptionId: string;
@@ -85,7 +85,11 @@ export const useFieldControlProps = <TProps extends FieldControlProps>(props: TP
   if (!field) {
     return props;
   }
-  const invalid = props.invalid ?? field.invalid ?? false;
+  const invalid =
+    props.invalid ??
+    (props["aria-invalid"] === undefined
+      ? (field.invalid ?? false)
+      : isAriaInvalid(props["aria-invalid"]));
   return {
     ...props,
     "aria-describedby": mergeIds(

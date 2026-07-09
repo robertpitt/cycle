@@ -29,3 +29,12 @@ export const Lengths: Story = {
     </div>
   ),
 };
+export const States: Story = {
+  render: () => (
+    <div className="grid gap-5">
+      <OtpCodeField aria-label="Verification code" defaultValue="4207" length={4} />
+      <OtpCodeField disabled defaultValue="123456" />
+      <OtpCodeField invalid defaultValue="123" />
+    </div>
+  ),
+};

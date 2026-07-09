@@ -3,6 +3,7 @@ import { IssueGroupHeader } from "./index.ts";
 const meta = {
   args: {
     count: "12",
+    onAction: () => undefined,
     statusTone: "success",
     title: "In Review",
   },

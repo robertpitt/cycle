@@ -33,6 +33,7 @@ export type MarkdownReferenceHandlers = Pick<
   | "onAgentReferenceClick"
   | "onCommitReferenceClick"
   | "onCycleReferenceClick"
+  | "onExternalLinkClick"
   | "onIssueReferenceClick"
   | "onRepositoryReferenceClick"
   | "onUserReferenceClick"
@@ -115,7 +116,7 @@ const components = (
       return <span>{children}</span>;
     }
 
-    const external = /^https?:/iu.test(href);
+    const external = /^https?:/iu.test(href) || href.startsWith("//");
 
     return (
       <a

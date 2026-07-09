@@ -23,6 +23,10 @@ export const States: Story = {
         <Checkbox />
         Unchecked
       </label>
+      <label className="flex items-center gap-2 text-sm">
+        <Checkbox indeterminate />
+        Partially selected
+      </label>
       <label className="flex items-center gap-2 text-sm text-muted-foreground">
         <Checkbox disabled />
         Disabled

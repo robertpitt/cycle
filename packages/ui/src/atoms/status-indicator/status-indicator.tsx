@@ -22,6 +22,12 @@ export const statusIndicatorVariants = cva("inline-flex shrink-0", {
       warning: "bg-warning border-warning text-warning",
     },
   },
+  compoundVariants: [
+    {
+      className: "bg-transparent",
+      shape: "ring",
+    },
+  ],
 });
 export type StatusIndicatorProps = React.HTMLAttributes<HTMLSpanElement> &
   Omit<VariantProps<typeof statusIndicatorVariants>, "tone"> & {

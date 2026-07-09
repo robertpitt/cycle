@@ -1,23 +1,25 @@
 import * as React from "react";
 import { cn } from "../../lib/cn.ts";
 export type SpinnerProps = React.HTMLAttributes<HTMLSpanElement> & {
+  readonly decorative?: boolean;
   readonly label?: string;
 };
 export const Spinner = React.forwardRef<HTMLSpanElement, SpinnerProps>(function Spinner(
-  { className, label = "Loading", ...props },
+  { className, decorative = false, label = "Loading", role, ...props },
   ref,
 ) {
   return (
     <span
       {...props}
       ref={ref}
+      aria-hidden={decorative ? true : props["aria-hidden"]}
       className={cn(
         "inline-flex size-4 animate-spin rounded-full border-2 border-current border-t-transparent",
         className,
       )}
-      role="status"
+      role={decorative ? undefined : (role ?? "status")}
     >
-      <span className="sr-only">{label}</span>
+      {decorative ? null : <span className="sr-only">{label}</span>}
     </span>
   );
 });

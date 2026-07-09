@@ -1,7 +1,8 @@
 import { Checkbox as BaseCheckbox } from "@base-ui/react/checkbox";
-import { Check } from "lucide-react";
+import { Check, Minus } from "lucide-react";
 import * as React from "react";
 import { cn } from "../../lib/cn.ts";
+import { isAriaInvalid } from "../../lib/contracts.ts";
 import { disabledControl, focusRing } from "../../lib/styles.ts";
 export type CheckboxProps = Omit<BaseCheckbox.Root.Props, "children" | "className" | "inputRef"> & {
   readonly className?: string;
@@ -25,9 +26,15 @@ export const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(functi
         disabledControl,
         className,
       )}
+      data-invalid={isAriaInvalid(ariaInvalid) ? "" : undefined}
     >
-      <BaseCheckbox.Indicator className="grid size-full place-items-center">
-        <Check aria-hidden className="size-3" strokeWidth={3} />
+      <BaseCheckbox.Indicator className="group grid size-full place-items-center">
+        <Check aria-hidden className="size-3 group-data-[indeterminate]:hidden" strokeWidth={3} />
+        <Minus
+          aria-hidden
+          className="hidden size-3 group-data-[indeterminate]:block"
+          strokeWidth={3}
+        />
       </BaseCheckbox.Indicator>
     </BaseCheckbox.Root>
   );

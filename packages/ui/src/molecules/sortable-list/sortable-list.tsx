@@ -36,12 +36,15 @@ export type SortableListProps = Omit<React.HTMLAttributes<HTMLDivElement>, "chil
 const SortableListRow = ({
   handleLabel,
   item,
+  reorderEnabled,
 }: {
   readonly handleLabel: (item: SortableListItem) => string;
   readonly item: SortableListItem;
+  readonly reorderEnabled: boolean;
 }) => {
+  const disabled = item.disabled || !reorderEnabled;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    disabled: item.disabled,
+    disabled,
     id: item.id,
   });
 
@@ -56,6 +59,7 @@ const SortableListRow = ({
         transform: CSS.Transform.toString(transform),
         transition,
       }}
+      role="listitem"
     >
       <button
         {...attributes}
@@ -65,7 +69,7 @@ const SortableListRow = ({
           "grid size-8 place-items-center rounded-md text-muted-foreground transition hover:bg-subtle hover:text-foreground",
           focusRing,
         )}
-        disabled={item.disabled}
+        disabled={disabled}
         type="button"
       >
         <GripVertical aria-hidden className="size-4" />
@@ -107,7 +111,7 @@ export const SortableList = React.forwardRef<HTMLDivElement, SortableListProps>(
     );
 
     return (
-      <div {...props} ref={ref} className={cn("grid gap-2", className)}>
+      <div {...props} ref={ref} className={cn("grid gap-2", className)} role={props.role ?? "list"}>
         <DndContext
           collisionDetection={closestCenter}
           modifiers={[restrictToVerticalAxis, restrictToParentElement]}
@@ -116,7 +120,12 @@ export const SortableList = React.forwardRef<HTMLDivElement, SortableListProps>(
         >
           <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
             {items.map((item) => (
-              <SortableListRow handleLabel={handleLabel} item={item} key={item.id} />
+              <SortableListRow
+                handleLabel={handleLabel}
+                item={item}
+                key={item.id}
+                reorderEnabled={onOrderChange !== undefined}
+              />
             ))}
           </SortableContext>
         </DndContext>

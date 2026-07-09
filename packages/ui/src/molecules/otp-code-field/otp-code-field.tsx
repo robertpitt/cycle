@@ -1,4 +1,11 @@
 import * as React from "react";
+import {
+  normalizeOtpLength,
+  normalizeOtpValue,
+  pasteOtpDigits,
+  removeOtpDigit,
+  replaceOtpDigit,
+} from "../../internal/otp-code.ts";
 import { cn } from "../../lib/cn.ts";
 import { disabledControl, focusRing } from "../../lib/styles.ts";
 export type OtpCodeFieldProps = Omit<
@@ -14,12 +21,11 @@ export type OtpCodeFieldProps = Omit<
   readonly onValueChange?: (value: string) => void;
   readonly value?: string;
 };
-const normalizeValue = (value: string, length: number) =>
-  value.replace(/\D/g, "").slice(0, length).split("");
 export const OtpCodeField = React.forwardRef<HTMLDivElement, OtpCodeFieldProps>(
   function OtpCodeField(
     {
       autoFocus = false,
+      "aria-label": ariaLabel,
       className,
       defaultValue = "",
       disabled = false,
@@ -33,15 +39,16 @@ export const OtpCodeField = React.forwardRef<HTMLDivElement, OtpCodeFieldProps>(
     },
     ref,
   ) {
+    const resolvedLength = normalizeOtpLength(length);
     const inputRefs = React.useRef<Array<HTMLInputElement | null>>([]);
     const isControlled = value !== undefined;
     const [uncontrolledValue, setUncontrolledValue] = React.useState(defaultValue);
     const resolvedValue = isControlled ? value : uncontrolledValue;
-    const chars = normalizeValue(resolvedValue, length);
+    const chars = normalizeOtpValue(resolvedValue, resolvedLength).split("");
     const stringValue = chars.join("");
     const setValue = React.useCallback(
       (nextValue: string, nextFocusIndex?: number) => {
-        const normalized = normalizeValue(nextValue, length).join("");
+        const normalized = normalizeOtpValue(nextValue, resolvedLength);
         if (!isControlled) {
           setUncontrolledValue(normalized);
         }
@@ -50,58 +57,51 @@ export const OtpCodeField = React.forwardRef<HTMLDivElement, OtpCodeFieldProps>(
           window.requestAnimationFrame(() => inputRefs.current[nextFocusIndex]?.focus());
         }
       },
-      [isControlled, length, onValueChange],
-    );
-    const updateAtIndex = React.useCallback(
-      (index: number, nextInputValue: string) => {
-        const nextChars = [...chars];
-        const nextCharsFromInput = normalizeValue(nextInputValue, length - index);
-        nextCharsFromInput.forEach((char, offset) => {
-          nextChars[index + offset] = char;
-        });
-        const nextFocusIndex = Math.min(index + Math.max(nextCharsFromInput.length, 1), length - 1);
-        setValue(nextChars.join(""), nextFocusIndex);
-      },
-      [chars, length, setValue],
+      [isControlled, onValueChange, resolvedLength],
     );
     const handleKeyDown = React.useCallback(
       (event: React.KeyboardEvent<HTMLInputElement>, index: number) => {
-        if (event.key === "Backspace" && !chars[index] && index > 0) {
+        if (event.key === "Backspace") {
           event.preventDefault();
-          const nextChars = [...chars];
-          nextChars[index - 1] = "";
-          setValue(nextChars.join(""), index - 1);
+          const removeIndex = chars[index] ? index : Math.max(index - 1, 0);
+          setValue(removeOtpDigit(stringValue, removeIndex, resolvedLength), removeIndex);
+          return;
+        }
+        if (event.key === "Delete" && chars[index]) {
+          event.preventDefault();
+          setValue(removeOtpDigit(stringValue, index, resolvedLength), index);
+          return;
         }
         if (event.key === "ArrowLeft" && index > 0) {
           event.preventDefault();
           inputRefs.current[index - 1]?.focus();
         }
-        if (event.key === "ArrowRight" && index < length - 1) {
+        if (event.key === "ArrowRight" && index < resolvedLength - 1) {
           event.preventDefault();
           inputRefs.current[index + 1]?.focus();
         }
       },
-      [chars, length, setValue],
+      [chars, resolvedLength, setValue, stringValue],
     );
     return (
       <div
         {...props}
         ref={ref}
-        aria-label={`${length} digit verification code`}
+        aria-label={ariaLabel ?? `${resolvedLength} digit verification code`}
         aria-invalid={invalid ? true : undefined}
         className={cn("grid gap-2", className)}
         data-invalid={invalid ? "" : undefined}
-        data-value-state={stringValue.length === length ? "complete" : "incomplete"}
+        data-value-state={stringValue.length === resolvedLength ? "complete" : "incomplete"}
         role="group"
         style={{
-          gridTemplateColumns: `repeat(${length}, minmax(0, 2.5rem))`,
+          gridTemplateColumns: `repeat(${resolvedLength}, minmax(0, 2.5rem))`,
           ...style,
         }}
       >
-        {name ? <input name={name} type="hidden" value={stringValue} /> : null}
+        {name ? <input disabled={disabled} name={name} type="hidden" value={stringValue} /> : null}
         {Array.from(
           {
-            length,
+            length: resolvedLength,
           },
           (_, index) => (
             <input
@@ -118,16 +118,31 @@ export const OtpCodeField = React.forwardRef<HTMLDivElement, OtpCodeFieldProps>(
               disabled={disabled}
               inputMode="numeric"
               key={index}
-              maxLength={length}
-              onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
-                updateAtIndex(index, event.currentTarget.value)
-              }
+              maxLength={2}
+              onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+                const nextValue = replaceOtpDigit(
+                  stringValue,
+                  index,
+                  event.currentTarget.value,
+                  resolvedLength,
+                );
+                const nextFocusIndex = Math.min(index + 1, resolvedLength - 1);
+                setValue(nextValue, nextFocusIndex);
+              }}
               onKeyDown={(event: React.KeyboardEvent<HTMLInputElement>) =>
                 handleKeyDown(event, index)
               }
               onPaste={(event: React.ClipboardEvent<HTMLInputElement>) => {
                 event.preventDefault();
-                updateAtIndex(index, event.clipboardData.getData("text"));
+                const pastedDigits = normalizeOtpValue(
+                  event.clipboardData.getData("text"),
+                  resolvedLength - index,
+                );
+                const nextValue = pasteOtpDigits(stringValue, index, pastedDigits, resolvedLength);
+                setValue(
+                  nextValue,
+                  Math.min(index + Math.max(pastedDigits.length, 1), resolvedLength - 1),
+                );
               }}
               pattern="[0-9]*"
               ref={(node: HTMLInputElement | null) => {

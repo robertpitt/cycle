@@ -368,6 +368,7 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
     onCommentCreate,
     onCommitReferenceClick,
     onCycleReferenceClick,
+    onExternalLinkClick,
     onDescriptionSave,
     onEditorCommandSelect,
     onEditorFormatSelect,
@@ -529,6 +530,7 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
             onCommandSelect={onEditorCommandSelect}
             onCommitReferenceClick={onCommitReferenceClick}
             onCycleReferenceClick={onCycleReferenceClick}
+            onExternalLinkClick={onExternalLinkClick}
             onFormatSelect={onEditorFormatSelect}
             onIssueReferenceClick={onIssueReferenceClick}
             onRepositoryReferenceClick={onRepositoryReferenceClick}
@@ -638,6 +640,7 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
                   onAgentReferenceClick={onAgentReferenceClick}
                   onCommitReferenceClick={onCommitReferenceClick}
                   onCycleReferenceClick={onCycleReferenceClick}
+                  onExternalLinkClick={onExternalLinkClick}
                   onIssueReferenceClick={onIssueReferenceClick}
                   onRepositoryReferenceClick={onRepositoryReferenceClick}
                   onUserReferenceClick={onUserReferenceClick}

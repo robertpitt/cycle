@@ -1,6 +1,7 @@
 import { Input as BaseInput } from "@base-ui/react/input";
 import * as React from "react";
 import { cn } from "../../lib/cn.ts";
+import { isAriaInvalid } from "../../lib/contracts.ts";
 import { disabledControl, focusRing } from "../../lib/styles.ts";
 export type InputProps = Omit<BaseInput.Props, "className"> & {
   readonly className?: string;
@@ -24,6 +25,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Inp
         disabledControl,
         className,
       )}
+      data-invalid={isAriaInvalid(ariaInvalid) ? "" : undefined}
       type={type}
     />
   );

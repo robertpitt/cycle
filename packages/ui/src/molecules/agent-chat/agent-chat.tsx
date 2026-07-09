@@ -869,6 +869,7 @@ export const AgentChatThreadListItem = ({
           onThreadDelete && "pr-9",
           "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
         )}
+        disabled={onThreadSelect === undefined}
         onClick={() => onThreadSelect?.(thread.id)}
         type="button"
       >
@@ -1790,7 +1791,7 @@ export const AgentChatProviderModelPicker = ({
       <Select
         aria-label="Agent provider"
         className={compactSelectClassName}
-        disabled={disabled}
+        disabled={disabled || onProviderChange === undefined}
         items={providerItems(providers, providerId)}
         onValueChange={(value) => {
           onProviderChange?.(value && value.length > 0 ? value : null);
@@ -1803,7 +1804,7 @@ export const AgentChatProviderModelPicker = ({
       <Select
         aria-label="Agent model"
         className={compactSelectClassName}
-        disabled={disabled || !providerId}
+        disabled={disabled || !providerId || onModelChange === undefined}
         items={modelItems(providers, providerId, model)}
         onValueChange={(value) => {
           onModelChange?.(value && value.length > 0 ? value : null);
@@ -1841,7 +1842,7 @@ export const AgentChatRuntimeModePicker = ({
     <Select
       aria-label="Permission mode"
       className={cn(compactSelectClassName, className)}
-      disabled={disabled}
+      disabled={disabled || onRuntimeModeChange === undefined}
       items={runtimeModeItems}
       onValueChange={(value) =>
         onRuntimeModeChange?.(
@@ -1901,7 +1902,7 @@ export const AgentChatThinkingSelector = ({
       <Select
         aria-label="Reasoning level"
         className={cn(compactSelectClassName, className)}
-        disabled={disabled || levels.length === 0}
+        disabled={disabled || levels.length === 0 || onThinkingLevelChange === undefined}
         items={items}
         onValueChange={(value) => onThinkingLevelChange?.(value && value.length > 0 ? value : null)}
         placeholder="Reasoning"
@@ -1940,7 +1941,11 @@ export const AgentChatAnswerOptionGroup = ({
   };
 
   return (
-    <div className="grid gap-2" role={item.multiSelect ? "group" : "radiogroup"}>
+    <div
+      aria-label={item.question}
+      className="grid gap-2"
+      role={item.multiSelect ? "group" : "radiogroup"}
+    >
       {item.options.map((option) => {
         const value = getAgentChatQuestionOptionValue(option);
         const selected = selectedSet.has(value);
@@ -1954,7 +1959,7 @@ export const AgentChatAnswerOptionGroup = ({
               selected && "border-primary/40 bg-primary/10",
               (disabled || option.disabled) && "pointer-events-none opacity-45",
             )}
-            disabled={disabled || option.disabled}
+            disabled={disabled || option.disabled || onValueChange === undefined}
             key={value}
             onClick={() => toggleValue(value)}
             role={item.multiSelect ? "checkbox" : "radio"}
@@ -2046,7 +2051,9 @@ export const AgentChatQuestionCard = ({
               <AgentChatAnswerOptionGroup
                 disabled={disabled || question.status !== "open"}
                 item={item}
-                onValueChange={(values) => onDraftChange?.(item.id, values)}
+                onValueChange={
+                  onDraftChange ? (values) => onDraftChange(item.id, values) : undefined
+                }
                 value={draft[item.id] ?? []}
               />
             </div>
@@ -2055,7 +2062,7 @@ export const AgentChatQuestionCard = ({
         {question.status === "open" ? (
           <div className="mt-4 flex justify-end">
             <Button
-              disabled={disabled || !canAnswer}
+              disabled={disabled || !canAnswer || onAnswer === undefined}
               onClick={() =>
                 onAnswer?.({
                   items: question.questions.map((item) => ({

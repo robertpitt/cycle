@@ -20,7 +20,7 @@ export const ShellSidebarSection = React.forwardRef<HTMLElement, ShellSidebarSec
           <h2 className="truncate text-[11px] font-semibold uppercase text-muted-foreground">
             {title}
           </h2>
-          {action ? <div className="shrink-0">{action}</div> : null}
+          {!collapsed && action ? <div className="shrink-0">{action}</div> : null}
         </div>
         {children}
       </section>
