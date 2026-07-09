@@ -2,6 +2,7 @@ import { defaultRuntimeDiscoveryPath, RuntimeDiscoveryFile } from "@cycle/config
 import { Config, Effect, Path, Schema } from "effect";
 
 export type BackendPaths = {
+  readonly agentsDatabasePath: string;
   readonly agentWorktreesPath: string;
   readonly cycleHome: string;
   readonly databasePath: string;
@@ -31,6 +32,7 @@ export const backendPaths = (options: BackendStartOptions = {}) =>
 
     return {
       agentWorktreesPath: path.join(cycleHome, "agent-task-worktrees"),
+      agentsDatabasePath: path.join(cycleHome, "agents.sqlite"),
       cycleHome,
       databasePath: path.join(cycleHome, "cycle.db"),
       runtimeDiscoveryPath,

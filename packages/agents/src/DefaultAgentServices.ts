@@ -18,7 +18,6 @@ export const makeDefaultAgentServiceRegistry = (
   const claudeCodeService = makeClaudeCodeAgentService({
     ...options.claudeCode,
     env: options.env,
-    sessionStore: options.sessionStore,
   });
 
   return makeAgentServiceRegistry([

@@ -1,8 +1,4 @@
-import type {
-  AgentChatEventBusShape,
-  AgentChatRuntimeShape,
-  AgentChatStoreShape,
-} from "@cycle/agent-chat";
+import type { AgentChatShape } from "@cycle/agent-chat";
 import type {
   UseCaseInput,
   UseCaseMeta,
@@ -10,20 +6,9 @@ import type {
   UseCaseSideEffect,
   UseCaseSuccess,
 } from "@cycle/usecases/contracts";
-import type {
-  AgentOrchestrationServiceShape,
-  AgentProviderId,
-  AgentProviderProfile,
-  AgentServiceRegistryShape,
-  AgentSessionStore,
-} from "@cycle/agents";
+import type { AgentProviderId, AgentProviderProfile } from "@cycle/agents";
 import type { WorktreesShape } from "@cycle/git-worktrees";
 import { Context, Layer } from "effect";
-import type {
-  AgentActiveTurnBeginInput,
-  AgentActiveTurnBeginResult,
-  AgentActiveTurnDirectoryShape,
-} from "../../agents/services/AgentActiveTurnDirectory.ts";
 
 export type ApiConfig = {
   readonly enabled: boolean;
@@ -109,11 +94,13 @@ export type CycleApiMcpOptions = {
 };
 
 export type CycleApiOptions = {
-  readonly agentServices?: AgentServiceRegistryShape;
-  readonly agentOrchestration?: AgentOrchestrationServiceShape;
-  readonly agentChatStore?: AgentChatStoreShape;
+  readonly agentChat?: AgentChatShape;
+  readonly assignTicketToAgent?: (
+    repositoryId: string,
+    ticketId: string,
+    input: Readonly<Record<string, unknown>>,
+  ) => Promise<unknown>;
   readonly agentProviderProfiles?: () => Promise<readonly AgentProviderProfile[]>;
-  readonly agentSessionStore?: AgentSessionStore;
   readonly apiVersion?: string;
   readonly baseUrl?: string;
   readonly listRepositories?: RepositoryDirectoryResolver;
@@ -135,13 +122,13 @@ export type CycleApi = {
 };
 
 export type CycleApiRuntimeShape = {
-  readonly agentServices?: AgentServiceRegistryShape;
-  readonly agentOrchestration?: AgentOrchestrationServiceShape;
-  readonly agentChatEventBus?: AgentChatEventBusShape;
-  readonly agentChatRuntime?: AgentChatRuntimeShape;
+  readonly agentChat?: AgentChatShape;
   readonly agentProviderProfiles: () => Promise<readonly AgentProviderProfile[]>;
-  readonly agentSessionStore?: AgentSessionStore;
-  readonly activeAgentTurns: AgentActiveTurnDirectoryShape;
+  readonly assignTicketToAgent?: (
+    repositoryId: string,
+    ticketId: string,
+    input: Readonly<Record<string, unknown>>,
+  ) => Promise<unknown>;
   readonly apiVersion: string;
   readonly baseUrl?: string;
   readonly listRepositories?: RepositoryDirectoryResolver;
@@ -163,12 +150,6 @@ export type CycleApiUseCaseSuccessEvent<Name extends UseCaseName = UseCaseName> 
   readonly name: Name;
   readonly sideEffect: UseCaseSideEffect;
   readonly value: UseCaseSuccess<Name>;
-};
-
-export type {
-  AgentActiveTurnBeginInput,
-  AgentActiveTurnBeginResult,
-  AgentActiveTurnDirectoryShape,
 };
 
 export class CycleApiRuntime extends Context.Service<CycleApiRuntime, CycleApiRuntimeShape>()(

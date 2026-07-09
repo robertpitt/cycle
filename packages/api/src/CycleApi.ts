@@ -1,10 +1,8 @@
-import { makeAgentChatEventBus, makeAgentChatRuntime } from "@cycle/agent-chat";
 import { UseCaseServicesLive } from "@cycle/usecases";
 import { NodeServices } from "@effect/platform-node";
-import { Effect, Layer } from "effect";
+import { Layer } from "effect";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
-import { makeAgentActiveTurnDirectory } from "./agents/services/AgentActiveTurnDirectory.ts";
 import { CycleHttpApi, makeOpenApiDocument } from "./http/CycleHttpApi.ts";
 import { SystemApiHandlers } from "./http/handlers/System.ts";
 import { V1ApiHandlers } from "./http/handlers/V1.ts";
@@ -44,57 +42,16 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
   const mcpUrl =
     baseUrl === undefined || mcpPath === undefined ? undefined : joinBaseUrlPath(baseUrl, mcpPath);
   const useCaseLayer = Layer.mergeAll(UseCaseServicesLive, options.useCaseLayer ?? Layer.empty);
-  const activeAgentTurns = makeAgentActiveTurnDirectory();
-  const agentServices = options.agentServices;
-  const chatAgentServices = agentServices ?? unavailableAgentServices;
   const listAgentProviderProfiles = async () => {
     const profiles = await (options.agentProviderProfiles ?? (async () => []))();
-    return profiles.map((profile) => ({
-      ...profile,
-      activeRunCount: activeAgentTurns.countByProvider(profile.provider),
-    }));
+    return profiles;
   };
-  const agentChatEventBus =
-    options.agentChatStore === undefined ? undefined : makeAgentChatEventBus();
-  const agentChatRuntime =
-    options.agentChatStore === undefined
-      ? undefined
-      : makeAgentChatRuntime({
-          activeTurns: activeAgentTurns,
-          agentProviderProfiles: listAgentProviderProfiles,
-          agentServices: chatAgentServices,
-          ...(options.listRepositories === undefined
-            ? {}
-            : { listRepositories: options.listRepositories }),
-          mcp: ({ origin, required }) => {
-            const url =
-              mcpUrl ?? (mcpPath === undefined ? undefined : joinBaseUrlPath(origin, mcpPath));
-            if (url === undefined) return undefined;
-            return {
-              headers: {
-                authorization: `Bearer ${options.staticToken}`,
-              },
-              mode: "http" as const,
-              ...(required ? { required: true } : {}),
-              url,
-            };
-          },
-          now: options.now ?? (() => new Date()),
-          ...(agentChatEventBus === undefined ? {} : { publish: agentChatEventBus.publish }),
-          store: options.agentChatStore,
-        });
   const runtimeShape: CycleApiRuntimeShape = {
-    activeAgentTurns,
-    ...(agentChatEventBus === undefined ? {} : { agentChatEventBus }),
-    ...(agentChatRuntime === undefined ? {} : { agentChatRuntime }),
-    ...(options.agentOrchestration === undefined
-      ? {}
-      : { agentOrchestration: options.agentOrchestration }),
+    ...(options.agentChat === undefined ? {} : { agentChat: options.agentChat }),
     agentProviderProfiles: listAgentProviderProfiles,
-    ...(agentServices === undefined ? {} : { agentServices }),
-    ...(options.agentSessionStore === undefined
+    ...(options.assignTicketToAgent === undefined
       ? {}
-      : { agentSessionStore: options.agentSessionStore }),
+      : { assignTicketToAgent: options.assignTicketToAgent }),
     apiVersion: options.apiVersion ?? "0.1.0",
     ...(baseUrl === undefined ? {} : { baseUrl }),
     ...(options.listRepositories === undefined
@@ -115,21 +72,7 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
       ? {}
       : { worktreeStoragePath: options.worktreeStoragePath }),
   };
-  const runtime = Layer.effect(
-    CycleApiRuntime,
-    Effect.gen(function* () {
-      if (agentChatRuntime !== undefined) {
-        yield* Effect.addFinalizer(() =>
-          Effect.tryPromise({
-            try: () => agentChatRuntime.close(),
-            catch: () => undefined,
-          }).pipe(Effect.catch(() => Effect.void)),
-        );
-      }
-
-      return CycleApiRuntime.of(runtimeShape);
-    }),
-  );
+  const runtime = Layer.succeed(CycleApiRuntime, CycleApiRuntime.of(runtimeShape));
   const handlers = V1ApiHandlers.pipe(
     Layer.provideMerge(SystemApiHandlers),
     Layer.provide(CycleAuthorizationLive),
@@ -171,11 +114,6 @@ const normalizeBaseUrl = (baseUrl: string | undefined): string | undefined =>
 
 const joinBaseUrlPath = (baseUrl: string, path: string): string =>
   `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
-
-const unavailableAgentServices: NonNullable<CycleApiOptions["agentServices"]> = {
-  serviceFor: (provider) =>
-    Effect.die(new Error(`Agent provider '${provider}' is not available in this API host.`)),
-};
 
 const normalizeMcpToken = (mcp: CycleApiMcpOptions, staticToken: string): string =>
   mcp.auth !== false && mcp.auth?.token !== undefined

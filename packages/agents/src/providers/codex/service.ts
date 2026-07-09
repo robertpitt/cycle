@@ -22,7 +22,7 @@ import {
 import { listCodexModels } from "./app-server/models.ts";
 import { codexAgentCapabilities } from "./capabilities.ts";
 import { codexProviderId, newCodexId, now } from "./constants.ts";
-import { bindingFromSession, sessionFromBinding, withNativeThreadId } from "./session.ts";
+import { bindingFromSession, withNativeThreadId } from "./session.ts";
 import type { ActiveCodexTurn, CodexAgentServiceOptions, StoredCodexSession } from "./types.ts";
 
 export const makeCodexAgentService = (options: CodexAgentServiceOptions = {}): AgentService => {
@@ -54,8 +54,6 @@ export const makeCodexAgentService = (options: CodexAgentServiceOptions = {}): A
     };
 
     sessions.set(storedSession.id, storedSession);
-    await options.sessionStore?.upsert(binding);
-
     return storedSession;
   };
 
@@ -86,13 +84,6 @@ export const makeCodexAgentService = (options: CodexAgentServiceOptions = {}): A
   };
 
   const resumeSession = async (sessionId: string): Promise<AgentSession> => {
-    const storedBinding = await options.sessionStore?.get(sessionId);
-    if (storedBinding !== undefined) {
-      const storedSession = sessionFromBinding(storedBinding);
-      sessions.set(storedSession.id, storedSession);
-      return storedSession;
-    }
-
     const existing = sessions.get(sessionId);
     if (existing !== undefined) return existing;
 

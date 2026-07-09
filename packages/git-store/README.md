@@ -1,5 +1,9 @@
 # @cycle/git-store
 
+[![Event Sourcing — Martin Fowler, YOW! 2016](https://i.ytimg.com/vi/ck7t592bvBg/hqdefault.jpg)](https://www.youtube.com/watch?v=ck7t592bvBg)
+
+> [Event Sourcing — Martin Fowler, YOW! 2016](https://www.youtube.com/watch?v=ck7t592bvBg)
+
 `@cycle/git-store` is an Effect-native store for Cycle documents and append-only event files backed
 directly by a Git object database.
 

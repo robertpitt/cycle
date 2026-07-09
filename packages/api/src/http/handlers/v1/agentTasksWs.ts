@@ -1,6 +1,5 @@
-import { AgentTaskFailure } from "@cycle/agents";
 import type { AgentTaskEvent } from "@cycle/contracts/schemas/agents/agent-task-schemas";
-import { AgentTaskUsecases, type AgentTaskUsecasesShape } from "@cycle/usecases";
+import { AgentTaskFailure, AgentTaskUsecases, type AgentTaskUsecasesShape } from "@cycle/usecases";
 import { Effect, Layer, Stream } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http";
 import type { CycleApiRuntimeShape } from "../../runtime/CycleApiRuntime.ts";
@@ -14,7 +13,7 @@ type ServerMessage = {
 };
 
 type AgentTaskUsecaseRequirements = Effect.Services<
-  ReturnType<AgentTaskUsecasesShape["createTicketTask"]>
+  ReturnType<AgentTaskUsecasesShape["createGenericTask"]>
 >;
 
 type AgentTaskOperation<A> = (

@@ -5,7 +5,6 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./agent-session-store": "./src/BackendAgentSessionStore.ts",
     "./api": "./src/BackendApi.ts",
     "./bootstrap": "./src/RepositoryBootstrap.ts",
     "./config": "./src/BackendConfig.ts",
@@ -13,7 +12,6 @@
     "./errors": "./src/BackendErrors.ts",
     "./runtime": "./src/BackendRuntime.ts",
     "./settings": "./src/LocalSettings.ts",
-    "./testing": "./src/testing/index.ts",
     "./workspace": "./src/LocalWorkspace.ts"
   },
   "scripts": {
@@ -28,13 +26,13 @@
     "@cycle/contracts": "workspace:*",
     "@cycle/database": "workspace:*",
     "@cycle/git": "workspace:*",
+    "@cycle/git-store": "workspace:*",
     "@cycle/git-worktrees": "workspace:*",
     "@cycle/logging": "workspace:*",
     "@cycle/sqlite": "workspace:*",
     "@cycle/usecases": "workspace:*",
     "@effect/platform-node": "4.0.0-beta.78",
-    "effect": "4.0.0-beta.78",
-    "@cycle/git-store": "workspace:*"
+    "effect": "4.0.0-beta.78"
   },
   "devDependencies": {
     "vitest": "^4.1.8"

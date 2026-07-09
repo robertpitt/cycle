@@ -2,7 +2,7 @@ import type {
   CodexAppServerClient,
   CodexAppServerChildProcessOptions,
 } from "./app-server/CodexAppServer.ts";
-import type { AgentSession, AgentSessionBinding, AgentSessionStore } from "../../types.ts";
+import type { AgentSession, AgentSessionBinding } from "../../types.ts";
 
 export type CodexAgentServiceOptions = {
   readonly appServerClient?:
@@ -12,7 +12,6 @@ export type CodexAgentServiceOptions = {
   readonly cwd?: string;
   readonly env?: NodeJS.ProcessEnv;
   readonly executablePath?: string;
-  readonly sessionStore?: AgentSessionStore;
   readonly timeoutMs?: number;
 };
 

@@ -1,12 +1,19 @@
 import {
-  providerProfileForChat,
-  type AgentChatPublishedEvent,
-  type AgentChatRuntimeShape,
-} from "@cycle/agent-chat/runtime";
-import { requestOrigin } from "@cycle/agent-chat/prompt";
-import { Effect, Layer, Schema } from "effect";
+  AgentChatCreateInput,
+  type AgentChatEvent,
+  AgentChatSendInput,
+  type AgentChatShape,
+} from "@cycle/agent-chat";
+import { Effect, Fiber, Layer, Option, Schema, Stream } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http";
 import { CycleApiError } from "../../../../CycleApiError.ts";
+import {
+  chatProviderProfile,
+  chatProtocolMessageRecord,
+  chatSnapshotRecord,
+  chatThreadRecord,
+  chatTurnRecord,
+} from "../../../../agents/services/AgentChatTransport.ts";
 import type { CycleApiRuntimeShape } from "../../../runtime/CycleApiRuntime.ts";
 
 type WriteMessage = (message: ServerMessage) => Promise<void>;
@@ -154,6 +161,7 @@ type ChatConnection = {
   authenticated: boolean;
   readonly close: () => void;
   readonly origin: string;
+  readonly observers: Map<string, Fiber.Fiber<void>>;
   readonly send: WriteMessage;
   readonly subscribedThreadIds: Set<string>;
 };
@@ -165,6 +173,90 @@ type ChatGateway = {
     authorizationToken: string | undefined,
   ) => ChatConnection;
   readonly handleRawMessage: (connection: ChatConnection, raw: string) => Promise<void>;
+};
+
+const rawEventMessage = (event: AgentChatEvent): ServerMessage => ({
+  createdAt: event.createdAt,
+  eventId: event.eventId,
+  payload: event.payload,
+  sequence: event.sequence,
+  threadId: event.threadId,
+  type: event.type,
+  version: 1,
+});
+
+const taskEventMessage = (
+  event: AgentChatEvent,
+  type: "turn.started" | "turn.completed" | "turn.failed" | "turn.cancelled",
+  status: "queued" | "running" | "completed" | "failed" | "cancelled",
+): ServerMessage => ({
+  createdAt: event.createdAt,
+  eventId: event.eventId,
+  payload: {
+    turn: {
+      id: event.taskId,
+      ...(typeof event.payload.message === "string" ? { lastError: event.payload.message } : {}),
+      status,
+      threadId: event.threadId,
+    },
+  },
+  sequence: event.sequence,
+  threadId: event.threadId,
+  type,
+  version: 1,
+});
+
+export const projectEventForChatProtocol = (
+  chat: AgentChatShape,
+  event: AgentChatEvent,
+): Effect.Effect<ReadonlyArray<ServerMessage>, unknown> => {
+  switch (event.type) {
+    case "task.submitted":
+      return Effect.succeed([rawEventMessage(event)]);
+    case "task.queued":
+      return Effect.succeed([taskEventMessage(event, "turn.started", "queued")]);
+    case "task.started":
+      return Effect.succeed([taskEventMessage(event, "turn.started", "running")]);
+    case "task.completed":
+      return Effect.succeed([taskEventMessage(event, "turn.completed", "completed")]);
+    case "task.failed":
+      return Effect.succeed([taskEventMessage(event, "turn.failed", "failed")]);
+    case "task.cancelled":
+      return Effect.succeed([taskEventMessage(event, "turn.cancelled", "cancelled")]);
+    case "message.delta":
+    case "message.completed":
+    case "message.failed":
+      return chat.get(event.threadId).pipe(
+        Effect.map(
+          Option.match({
+            onNone: () => [rawEventMessage(event)],
+            onSome: (view) => {
+              const messageId =
+                typeof event.payload.messageId === "string" ? event.payload.messageId : undefined;
+              const message = view.messages.find((candidate) => candidate.messageId === messageId);
+              if (message === undefined) return [rawEventMessage(event)];
+              const projected: ServerMessage = {
+                createdAt: event.createdAt,
+                eventId: event.eventId,
+                payload: { message: chatProtocolMessageRecord(message) },
+                sequence: event.sequence,
+                threadId: event.threadId,
+                type:
+                  event.type === "message.delta" || message.role === "user"
+                    ? "message.created"
+                    : "message.completed",
+                version: 1,
+              };
+              return event.type === "message.delta"
+                ? [projected, rawEventMessage(event)]
+                : [projected];
+            },
+          }),
+        ),
+      );
+    default:
+      return Effect.succeed([rawEventMessage(event)]);
+  }
 };
 
 export const makeChatWebSocketLayer = (
@@ -259,11 +351,6 @@ export const makeChatWebSocketLayer = (
 
 const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
   const connections = new Map<string, ChatConnection>();
-  const subscribersByThreadId = new Map<string, Set<ChatConnection>>();
-
-  runtime.agentChatEventBus?.subscribe(async (event) => {
-    await broadcastPublishedEvent(subscribersByThreadId, event);
-  });
 
   const sendCommandError = (
     connection: ChatConnection,
@@ -309,11 +396,11 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
     return false;
   };
 
-  const requireChatRuntime = async (
+  const requireChat = async (
     connection: ChatConnection,
     command: ClientMessage,
-  ): Promise<AgentChatRuntimeShape | undefined> => {
-    if (runtime.agentChatRuntime !== undefined) return runtime.agentChatRuntime;
+  ): Promise<AgentChatShape | undefined> => {
+    if (runtime.agentChat !== undefined) return runtime.agentChat;
     await sendCommandError(
       connection,
       command,
@@ -324,65 +411,79 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
     return undefined;
   };
 
-  const acknowledgeResult = async (
+  const runChat = async <A>(
     connection: ChatConnection,
     command: ClientMessage,
-    result:
-      | {
-          readonly _tag: "error";
-          readonly code: string;
-          readonly message: string;
-          readonly retryable?: boolean;
-        }
-      | {
-          readonly _tag: "ok";
-          readonly result: unknown;
-        },
-  ): Promise<boolean> => {
-    if (result._tag === "error") {
-      await sendCommandError(connection, command, result.code, result.message, result.retryable);
-      return false;
+    effect: Effect.Effect<
+      A,
+      { readonly code: string; readonly message: string; readonly retryable: boolean }
+    >,
+  ): Promise<A | undefined> => {
+    const result = await Effect.runPromise(Effect.result(effect));
+    if (result._tag === "Failure") {
+      await sendCommandError(
+        connection,
+        command,
+        result.failure.code,
+        result.failure.message,
+        result.failure.retryable,
+      );
+      return undefined;
     }
-    await acknowledge(connection, command, result.result);
-    return true;
+    return result.success;
   };
 
-  const subscribe = (connection: ChatConnection, threadId: string) => {
+  const subscribe = (
+    connection: ChatConnection,
+    chat: AgentChatShape,
+    threadId: string,
+    afterSequence: number,
+  ) => {
+    if (connection.observers.has(threadId)) return;
     connection.subscribedThreadIds.add(threadId);
-    let subscribers = subscribersByThreadId.get(threadId);
-    if (subscribers === undefined) {
-      subscribers = new Set();
-      subscribersByThreadId.set(threadId, subscribers);
-    }
-    subscribers.add(connection);
+    const observer = Effect.runFork(
+      chat.observe({ afterSequence, tail: true, threadId }).pipe(
+        Stream.runForEach((event) =>
+          projectEventForChatProtocol(chat, event).pipe(
+            Effect.flatMap((messages) =>
+              Effect.forEach(
+                messages,
+                (message) => Effect.promise(() => safeSend(connection, message)),
+                {
+                  discard: true,
+                },
+              ),
+            ),
+          ),
+        ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            connection.observers.delete(threadId);
+            connection.subscribedThreadIds.delete(threadId);
+          }),
+        ),
+        Effect.catch(() => Effect.void),
+      ),
+    );
+    connection.observers.set(threadId, observer);
   };
 
   const unsubscribe = (connection: ChatConnection, threadId: string) => {
     connection.subscribedThreadIds.delete(threadId);
-    const subscribers = subscribersByThreadId.get(threadId);
-    subscribers?.delete(connection);
-    if (subscribers?.size === 0) subscribersByThreadId.delete(threadId);
+    const observer = connection.observers.get(threadId);
+    if (observer !== undefined) Effect.runFork(Fiber.interrupt(observer));
+    connection.observers.delete(threadId);
   };
 
   const close = (connection: ChatConnection) => {
     connections.delete(connection.id);
-    for (const threadId of connection.subscribedThreadIds) {
-      subscribersByThreadId.get(threadId)?.delete(connection);
-      if (subscribersByThreadId.get(threadId)?.size === 0) {
-        subscribersByThreadId.delete(threadId);
-      }
-    }
+    for (const observer of connection.observers.values()) Effect.runFork(Fiber.interrupt(observer));
+    connection.observers.clear();
     connection.subscribedThreadIds.clear();
   };
 
   const clearThreadSubscriptions = (threadId: string) => {
-    const subscribers = subscribersByThreadId.get(threadId);
-    if (subscribers === undefined) return;
-
-    for (const subscriber of subscribers) {
-      subscriber.subscribedThreadIds.delete(threadId);
-    }
-    subscribersByThreadId.delete(threadId);
+    for (const connection of connections.values()) unsubscribe(connection, threadId);
   };
 
   const broadcastThreadDeleted = async (threadId: string, deletedAt: string): Promise<void> => {
@@ -404,11 +505,7 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
     );
   };
 
-  const handleCommand = async (
-    connection: ChatConnection,
-    command: ClientMessage,
-    origin: string,
-  ) => {
+  const handleCommand = async (connection: ChatConnection, command: ClientMessage) => {
     switch (command.type) {
       case "connection.authenticate": {
         const payload = objectPayload(command);
@@ -449,7 +546,7 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
         await safeSend(connection, {
           commandId: command.commandId,
           payload: {
-            providers: profiles.map(providerProfileForChat),
+            providers: profiles.map(chatProviderProfile),
           },
           type: "provider.list.snapshot",
           version: 1,
@@ -460,24 +557,19 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
 
       case "thread.list": {
         if (!(await requireAuthenticated(connection, command))) return;
-        const chat = await requireChatRuntime(connection, command);
+        const chat = await requireChat(connection, command);
         if (chat === undefined) return;
-        const result = await chat.listThreads({
-          includeArchived: objectPayload(command).includeArchived === true,
-        });
-        if (result._tag === "error") {
-          await sendCommandError(
-            connection,
-            command,
-            result.code,
-            result.message,
-            result.retryable,
-          );
-          return;
-        }
+        const threads = await runChat(
+          connection,
+          command,
+          chat
+            .list({ includeArchived: objectPayload(command).includeArchived === true })
+            .pipe(Stream.map(chatThreadRecord), Stream.runCollect),
+        );
+        if (threads === undefined) return;
         await safeSend(connection, {
           commandId: command.commandId,
-          payload: result.result,
+          payload: { threads },
           type: "thread.list.snapshot",
           version: 1,
         });
@@ -487,19 +579,35 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
 
       case "thread.create": {
         if (!(await requireAuthenticated(connection, command))) return;
-        const chat = await requireChatRuntime(connection, command);
+        const chat = await requireChat(connection, command);
         if (chat === undefined) return;
-        await acknowledgeResult(
+        const payload = objectPayload(command);
+        const providerId = stringValue(payload.providerId) ?? "codex";
+        const requestedModel = stringValue(payload.model);
+        const model =
+          requestedModel ??
+          (await runtime.agentProviderProfiles()).find((profile) => profile.provider === providerId)
+            ?.defaultModel ??
+          undefined;
+        const view = await runChat(
           connection,
           command,
-          await chat.createThread(objectPayload(command)),
+          chat.create(
+            new AgentChatCreateInput({
+              model,
+              providerId,
+              title: stringValue(payload.title) ?? "Agent conversation",
+            }),
+          ),
         );
+        if (view !== undefined)
+          await acknowledge(connection, command, { thread: chatThreadRecord(view.thread) });
         return;
       }
 
       case "thread.subscribe": {
         if (!(await requireAuthenticated(connection, command))) return;
-        const chat = await requireChatRuntime(connection, command);
+        const chat = await requireChat(connection, command);
         if (chat === undefined) return;
         const payload = objectPayload(command);
         const threadId = stringValue(payload.threadId);
@@ -507,21 +615,17 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
           await sendCommandError(connection, command, "INVALID_PAYLOAD", "threadId is required.");
           return;
         }
-        const result = await chat.getThreadSnapshot({ threadId });
-        if (result._tag === "error") {
-          await sendCommandError(
-            connection,
-            command,
-            result.code,
-            result.message,
-            result.retryable,
-          );
+        const option = await runChat(connection, command, chat.get(threadId));
+        if (option === undefined) return;
+        if (Option.isNone(option)) {
+          await sendCommandError(connection, command, "NOT_FOUND", "Chat thread not found.");
           return;
         }
-        subscribe(connection, threadId);
+        const view = option.value;
+        subscribe(connection, chat, threadId, view.lastSequence);
         await safeSend(connection, {
           commandId: command.commandId,
-          payload: result.result,
+          payload: chatSnapshotRecord(view),
           threadId,
           type: "thread.snapshot",
           version: 1,
@@ -540,26 +644,26 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
 
       case "thread.update_settings": {
         if (!(await requireAuthenticated(connection, command))) return;
-        const chat = await requireChatRuntime(connection, command);
+        const chat = await requireChat(connection, command);
         if (chat === undefined) return;
         const payload = objectPayload(command);
-        await acknowledgeResult(
+        const option = await runChat(
           connection,
           command,
-          await chat.updateThreadSettings({
-            model: stringOrNull(payload.model),
-            providerId: stringOrNull(payload.providerId),
-            runtimeMode: runtimeModeOrNull(payload.runtimeMode),
-            thinkingLevel: stringOrNull(payload.thinkingLevel),
-            threadId: stringValue(payload.threadId) ?? "",
-          }),
+          chat.get(stringValue(payload.threadId) ?? ""),
         );
+        if (option === undefined) return;
+        if (Option.isNone(option)) {
+          await sendCommandError(connection, command, "NOT_FOUND", "Chat thread not found.");
+          return;
+        }
+        await acknowledge(connection, command, { thread: chatThreadRecord(option.value.thread) });
         return;
       }
 
       case "thread.delete": {
         if (!(await requireAuthenticated(connection, command))) return;
-        const chat = await requireChatRuntime(connection, command);
+        const chat = await requireChat(connection, command);
         if (chat === undefined) return;
         const payload = objectPayload(command);
         const threadId = stringValue(payload.threadId);
@@ -567,8 +671,9 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
           await sendCommandError(connection, command, "INVALID_PAYLOAD", "threadId is required.");
           return;
         }
-        const result = await chat.deleteThread({ threadId });
-        if (!(await acknowledgeResult(connection, command, result))) return;
+        const view = await runChat(connection, command, chat.archive(threadId));
+        if (view === undefined) return;
+        await acknowledge(connection, command, { deleted: true, threadId });
         const deletedAt = runtime.now().toISOString();
         await broadcastThreadDeleted(threadId, deletedAt);
         clearThreadSubscriptions(threadId);
@@ -577,73 +682,143 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
 
       case "turn.send": {
         if (!(await requireAuthenticated(connection, command))) return;
-        const chat = await requireChatRuntime(connection, command);
+        const chat = await requireChat(connection, command);
         if (chat === undefined) return;
         const payload = objectPayload(command);
-        await acknowledgeResult(
+        const threadId = stringValue(payload.threadId) ?? "";
+        const view = await runChat(
           connection,
           command,
-          await chat.sendTurn({
-            message: stringValue(payload.message) ?? "",
-            metadata: isRecord(payload.metadata) ? payload.metadata : undefined,
-            model: stringOrNull(payload.model),
-            origin,
-            providerId: stringValue(payload.providerId) ?? "",
-            runtimeMode: runtimeModeOrNull(payload.runtimeMode),
-            thinkingLevel: stringOrNull(payload.thinkingLevel),
-            threadId: stringValue(payload.threadId) ?? "",
-          }),
+          chat.send(
+            new AgentChatSendInput({
+              idempotencyKey: command.commandId ?? `ws-turn-${crypto.randomUUID()}`,
+              message: stringValue(payload.message) ?? "",
+              threadId,
+            }),
+          ),
         );
+        if (view !== undefined) {
+          const taskId = view.thread.activeTaskId ?? "";
+          await acknowledge(connection, command, {
+            thread: chatThreadRecord(view.thread),
+            turn: chatTurnRecord(view, taskId),
+          });
+        }
         return;
       }
 
       case "turn.cancel": {
         if (!(await requireAuthenticated(connection, command))) return;
-        const chat = await requireChatRuntime(connection, command);
+        const chat = await requireChat(connection, command);
         if (chat === undefined) return;
         const payload = objectPayload(command);
-        await acknowledgeResult(
+        const threadId = stringValue(payload.threadId) ?? "";
+        const option = await runChat(connection, command, chat.get(threadId));
+        if (option === undefined) return;
+        const taskId = Option.isSome(option) ? option.value.thread.activeTaskId : undefined;
+        if (taskId === undefined) {
+          await acknowledge(connection, command, {
+            accepted: false,
+            reason: "not_active",
+            staleCleared: false,
+          });
+          return;
+        }
+        const interrupted = await runChat(
           connection,
           command,
-          await chat.cancelTurn({
-            threadId: stringValue(payload.threadId) ?? "",
-            turnId: stringValue(payload.turnId),
-          }),
+          chat.interrupt({ taskId, threadId }).pipe(Effect.as(true)),
         );
+        if (interrupted !== undefined) {
+          await acknowledge(connection, command, {
+            accepted: true,
+            reason: "cancel_requested",
+            staleCleared: false,
+          });
+        }
         return;
       }
 
       case "question.respond": {
         if (!(await requireAuthenticated(connection, command))) return;
-        const chat = await requireChatRuntime(connection, command);
+        const chat = await requireChat(connection, command);
         if (chat === undefined) return;
         const payload = objectPayload(command);
-        await acknowledgeResult(
+        const threadId = stringValue(payload.threadId) ?? "";
+        const questionId = stringValue(payload.questionId) ?? "";
+        const option = await runChat(connection, command, chat.get(threadId));
+        if (option === undefined) return;
+        const interaction = Option.isSome(option)
+          ? option.value.interactions.find((candidate) => candidate.interactionId === questionId)
+          : undefined;
+        if (interaction === undefined) {
+          await sendCommandError(
+            connection,
+            command,
+            "interaction_not_found",
+            "Question not found.",
+          );
+          return;
+        }
+        const responded = await runChat(
           connection,
           command,
-          await chat.respondToQuestion({
-            answers: isRecord(payload.answers) ? payload.answers : {},
-            questionId: stringValue(payload.questionId) ?? "",
-            threadId: stringValue(payload.threadId) ?? "",
-          }),
+          chat
+            .respond({
+              commandId: command.commandId ?? `question-${questionId}`,
+              interactionId: questionId,
+              responderId: "user",
+              response: (isRecord(payload.answers) ? payload.answers : {}) as Schema.Json,
+              taskId: interaction.taskId,
+              threadId,
+            })
+            .pipe(Effect.as(true)),
         );
+        if (responded !== undefined)
+          await acknowledge(connection, command, {
+            question: { id: questionId, status: "answered" },
+          });
         return;
       }
 
       case "approval.respond": {
         if (!(await requireAuthenticated(connection, command))) return;
-        const chat = await requireChatRuntime(connection, command);
+        const chat = await requireChat(connection, command);
         if (chat === undefined) return;
         const payload = objectPayload(command);
-        await acknowledgeResult(
+        const threadId = stringValue(payload.threadId) ?? "";
+        const requestId = stringValue(payload.requestId) ?? "";
+        const option = await runChat(connection, command, chat.get(threadId));
+        if (option === undefined) return;
+        const interaction = Option.isSome(option)
+          ? option.value.interactions.find((candidate) => candidate.interactionId === requestId)
+          : undefined;
+        if (interaction === undefined) {
+          await sendCommandError(
+            connection,
+            command,
+            "interaction_not_found",
+            "Approval not found.",
+          );
+          return;
+        }
+        const decision = approvalDecisionFromUnknown(payload.decision) ?? "cancel";
+        const responded = await runChat(
           connection,
           command,
-          await chat.respondToApproval({
-            decision: approvalDecisionFromUnknown(payload.decision) ?? "cancel",
-            requestId: stringValue(payload.requestId) ?? "",
-            threadId: stringValue(payload.threadId) ?? "",
-          }),
+          chat
+            .respond({
+              commandId: command.commandId ?? `approval-${requestId}`,
+              interactionId: requestId,
+              responderId: "user",
+              response: decision,
+              taskId: interaction.taskId,
+              threadId,
+            })
+            .pipe(Effect.as(true)),
         );
+        if (responded !== undefined)
+          await acknowledge(connection, command, { requestId, response: decision });
         return;
       }
 
@@ -668,6 +843,7 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
         authenticated: false,
         close: () => close(connection),
         id: `connection_${crypto.randomUUID()}`,
+        observers: new Map(),
         origin,
         send: write,
         subscribedThreadIds: new Set(),
@@ -690,31 +866,9 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
         connection.close();
         return;
       }
-      await handleCommand(connection, command, connection.origin);
+      await handleCommand(connection, command);
     },
   };
-};
-
-const broadcastPublishedEvent = async (
-  subscribersByThreadId: Map<string, Set<ChatConnection>>,
-  event: AgentChatPublishedEvent,
-): Promise<void> => {
-  const subscribers = subscribersByThreadId.get(event.threadId);
-  if (subscribers === undefined) return;
-
-  await Promise.all(
-    [...subscribers].map((connection) =>
-      safeSend(connection, {
-        createdAt: event.createdAt,
-        eventId: event.eventId,
-        payload: event.payload,
-        sequence: event.sequence,
-        threadId: event.threadId,
-        type: event.type,
-        version: 1,
-      }),
-    ),
-  );
 };
 
 const safeSend = (connection: ChatConnection, message: ServerMessage): Promise<void> =>
@@ -743,19 +897,22 @@ const bearerTokenFromHeaders = (
   return match?.[1];
 };
 
+const requestOrigin = (request: {
+  readonly headers: Readonly<Record<string, string | undefined>>;
+  readonly url: string;
+}): string => {
+  const host = request.headers["x-forwarded-host"] ?? request.headers.host;
+  if (host !== undefined && host.length > 0) {
+    return `${request.headers["x-forwarded-proto"] ?? "http"}://${host}`;
+  }
+  return new URL(request.url).origin;
+};
+
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const stringValue = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim().length > 0 ? value : undefined;
-
-const stringOrNull = (value: unknown): string | null =>
-  typeof value === "string" && value.trim().length > 0 ? value : null;
-
-const runtimeModeOrNull = (
-  value: unknown,
-): "read-only" | "workspace-write" | "full-access" | null =>
-  value === "read-only" || value === "workspace-write" || value === "full-access" ? value : null;
 
 const approvalDecisionFromUnknown = (
   value: unknown,

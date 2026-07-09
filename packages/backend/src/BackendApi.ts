@@ -5,19 +5,25 @@ import {
 } from "@cycle/api";
 import {
   AgentProviderDetector,
-  AgentTaskServiceLive,
-  AgentTaskStore,
   agentProviderDefinitionById,
   agentProviderProfileFromDetection,
   makeDefaultAgentServiceRegistry,
-  makeNodeSqliteAgentTaskStore,
   mcpBearerTokenEnvVar,
   supportedAgentProviders,
   type AgentModelCatalog,
   type AgentProviderId,
   type AgentProviderProfile,
 } from "@cycle/agents";
-import { makeSqliteAgentChatStore } from "@cycle/agent-chat/store";
+import { AgentRuntimeService } from "@cycle/agents/runtime";
+import { AgentRuntimeSystemLive } from "@cycle/agents/system";
+import {
+  AgentTaskSubmitInput as DurableAgentTaskSubmitInput,
+  type AgentTaskSnapshot as DurableAgentTaskSnapshot,
+  AgentThreadCreateInput as DurableAgentThreadCreateInput,
+  type AgentRunId as DurableAgentRunId,
+} from "@cycle/agents/models";
+import { AgentWorkflowError } from "@cycle/agents/errors";
+import { AgentChat, AgentChatLive } from "@cycle/agent-chat";
 import {
   AppConfig,
   appConfigStaticToken,
@@ -31,11 +37,10 @@ import { GitStores } from "@cycle/git-store";
 import { Worktrees } from "@cycle/git-worktrees";
 import { logError } from "@cycle/logging";
 import { repositoryIdFromInput } from "@cycle/usecases";
-import { Context, Effect, Layer, Path, Scope } from "effect";
+import { Context, DateTime, Effect, Layer, Option, Path, Scope, Stream } from "effect";
 import { backendPaths, type BackendStartOptions } from "./BackendConfig.ts";
 import { BackendApiError, errorMessage } from "./BackendErrors.ts";
 import { BackendRepositoryOpenServiceLive } from "./BackendRepositoryOpen.ts";
-import { makeBackendAgentSessionStore } from "./internals/agentSessionStore.ts";
 import { LocalSettings } from "./LocalSettings.ts";
 import { LocalWorkspace } from "./LocalWorkspace.ts";
 import { RepositoryBootstrap } from "./RepositoryBootstrap.ts";
@@ -187,6 +192,78 @@ const toBackendApiError = (cause: unknown): BackendApiError =>
         operation: "BackendApi.start",
       });
 
+const ticketWorkflowError = (cause: unknown): AgentWorkflowError =>
+  cause instanceof AgentWorkflowError
+    ? cause
+    : new AgentWorkflowError({
+        code: "ticket_workflow_failed",
+        message: cause instanceof Error ? cause.message : "Ticket completion workflow failed.",
+        retryable: true,
+        workflowId: "ticket-implementation",
+      });
+
+const agentTaskResourceProjection = (
+  snapshot: DurableAgentTaskSnapshot,
+  input: {
+    readonly prompt: string;
+    readonly repositoryId: string;
+    readonly ticketId: string;
+  },
+) => {
+  const task = snapshot.task;
+  const status = (() => {
+    switch (task.status) {
+      case "claimed":
+      case "preparing":
+      case "resuming":
+        return "starting" as const;
+      case "suspended":
+      case "suspending":
+        return "waiting_for_input" as const;
+      case "retry-wait":
+        return "queued" as const;
+      default:
+        return task.status;
+    }
+  })();
+  return {
+    agentId: task.agentId,
+    attempt: task.currentAttempt,
+    authority: { mode: "workspace-write" as const },
+    completedAt: task.completedAt === undefined ? undefined : DateTime.formatIso(task.completedAt),
+    createdAt: DateTime.formatIso(task.createdAt),
+    idempotencyKey: task.idempotencyKey,
+    lastError: task.terminal?.status === "failed" ? task.terminal.error : undefined,
+    maxAttempts: task.maxAttempts,
+    metadata: task.metadata,
+    model: task.model,
+    origin: { kind: "ticket", repositoryId: input.repositoryId, ticketId: input.ticketId },
+    providerId: task.providerId,
+    request: {
+      authority: { mode: "workspace-write" as const },
+      context: { repositoryId: input.repositoryId, ticketId: input.ticketId },
+      input: input.prompt,
+      instructions: "Implement the assigned ticket in its managed worktree.",
+      metadata: task.metadata,
+      origin: { kind: "ticket", repositoryId: input.repositoryId, ticketId: input.ticketId },
+      requestedBy: "user",
+    },
+    rootRunId: task.currentRunId ?? null,
+    schemaVersion: 1 as const,
+    startedAt: task.startedAt === undefined ? undefined : DateTime.formatIso(task.startedAt),
+    status,
+    taskId: task.taskId,
+    updatedAt: DateTime.formatIso(task.updatedAt),
+    workspace:
+      task.authority.workspacePath === undefined
+        ? undefined
+        : {
+            path: task.authority.workspacePath,
+            workspaceId: task.authority.worktreeId,
+          },
+  };
+};
+
 const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
   options: BackendStartOptions = {},
 ) {
@@ -232,14 +309,276 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
       }),
     );
 
+  const codexPreference = preferenceForProvider(config, "codex");
+  const claudeCodePreference = preferenceForProvider(config, "claude-code");
+  const scope = yield* Effect.scope;
+  const agentChatContext = yield* Layer.buildWithScope(
+    AgentChatLive.pipe(
+      Layer.provideMerge(
+        AgentRuntimeSystemLive({
+          databasePath: paths.agentsDatabasePath,
+          codex: {
+            env: {
+              ...environment,
+              [mcpBearerTokenEnvVar]: staticToken,
+            },
+            ...(codexPreference.executablePath === null ||
+            codexPreference.executablePath === undefined
+              ? {}
+              : { executablePath: codexPreference.executablePath }),
+          },
+          claude: {
+            config: claudeCodePreference.config ?? {},
+            env: environment,
+            executablePath: claudeCodePreference.executablePath ?? null,
+          },
+          workflows: [
+            {
+              id: "ticket-implementation",
+              complete: ({ summary, task }) =>
+                Effect.gen(function* () {
+                  const repositoryId = task.metadata.repositoryId;
+                  const ticketId = task.metadata.ticketId;
+                  const worktreeId = task.metadata.worktreeId;
+                  if (
+                    typeof repositoryId !== "string" ||
+                    typeof ticketId !== "string" ||
+                    typeof worktreeId !== "string"
+                  ) {
+                    return yield* ticketWorkflowError(
+                      new Error("Ticket workflow metadata is incomplete."),
+                    );
+                  }
+                  const repositories = yield* localWorkspace.listRepositories;
+                  const repository = repositories.find(
+                    (candidate) => candidate.id === repositoryId,
+                  );
+                  if (repository === undefined) {
+                    return yield* ticketWorkflowError(
+                      new Error(`Repository is not configured: ${repositoryId}`),
+                    );
+                  }
+                  const ticket = yield* database.getTicket(repositoryId, ticketId);
+                  if (ticket === null) {
+                    return yield* ticketWorkflowError(
+                      new Error(`Ticket was not found: ${ticketId}`),
+                    );
+                  }
+                  const handover = yield* worktrees.handover(
+                    { repositoryId, repositoryPath: repository.path },
+                    {
+                      actor: "cycle-agent-runtime",
+                      handoverId: `worktree_handover_${task.taskId}`,
+                      message: `${ticketId}: ${ticket.title}`,
+                      pushPolicy: "required",
+                      summary,
+                      targetStatus: "needs-review",
+                      worktreeId,
+                    },
+                  );
+                  const handoverId =
+                    typeof handover === "object" && handover !== null && "handoverId" in handover
+                      ? String(handover.handoverId)
+                      : `worktree_handover_${task.taskId}`;
+                  const commentBody = [
+                    "Agent implementation completed and the managed branch was pushed.",
+                    "",
+                    summary,
+                    "",
+                    `Task: ${task.taskId}`,
+                    `Worktree: ${worktreeId}`,
+                    `Handover: ${handoverId}`,
+                  ].join("\n");
+                  const comments = yield* database.ticketRecords(repositoryId, ticketId, {
+                    limit: 500,
+                    recordType: "comment",
+                  });
+                  const alreadyCommented = comments.entries.some((record) => {
+                    const payload = record.payload;
+                    return (
+                      typeof payload === "object" &&
+                      payload !== null &&
+                      "body" in payload &&
+                      typeof payload.body === "string" &&
+                      payload.body.includes(`Handover: ${handoverId}`)
+                    );
+                  });
+                  if (!alreadyCommented) {
+                    yield* database.addComment(repositoryId, ticketId, { body: commentBody });
+                  }
+                  if (ticket.status !== "needs-review") {
+                    yield* database.transitionTicket(
+                      repositoryId,
+                      ticketId,
+                      {
+                        reason: "Agent implementation is ready for human review.",
+                        status: "needs-review",
+                      },
+                      { message: `Mark ${ticketId} ready for review` },
+                    );
+                  }
+                }).pipe(Effect.mapError(ticketWorkflowError)),
+            },
+          ],
+        }),
+      ),
+    ),
+    scope,
+  ).pipe(Effect.mapError(toBackendApiError));
+  const agentChat = Context.get(agentChatContext, AgentChat);
+  const agentRuntime = Context.get(agentChatContext, AgentRuntimeService);
+
+  const assignTicketToAgent = (
+    repositoryId: string,
+    ticketId: string,
+    input: Readonly<Record<string, unknown>>,
+  ): Promise<unknown> =>
+    runPromise(
+      Effect.gen(function* () {
+        const repositories = yield* localWorkspace.listRepositories;
+        const repository = repositories.find((candidate) => candidate.id === repositoryId);
+        if (repository === undefined) {
+          return yield* new BackendApiError({
+            message: `Repository is not configured in this workspace: ${repositoryId}`,
+            operation: "BackendApi.assignTicket.repository",
+          });
+        }
+        const ticket = yield* database
+          .getTicket(repositoryId, ticketId)
+          .pipe(Effect.mapError(toBackendApiError));
+        if (ticket === null) {
+          return yield* new BackendApiError({
+            message: `Ticket was not found: ${ticketId}`,
+            operation: "BackendApi.assignTicket.ticket",
+          });
+        }
+
+        const providerId = typeof input.providerId === "string" ? input.providerId : "codex";
+        const agentId = typeof input.agentId === "string" ? input.agentId : providerId;
+        const model = typeof input.model === "string" ? input.model : undefined;
+        const idempotencyKey =
+          typeof input.idempotencyKey === "string"
+            ? input.idempotencyKey
+            : `ticket:${repositoryId}:${ticketId}:assignment:${agentId}`;
+        const requestedInput = input.input;
+        const prompt =
+          typeof requestedInput === "string"
+            ? requestedInput
+            : `Implement ticket ${ticketId}: ${ticket.title}\n\n${ticket.body}`;
+        const existing = yield* agentRuntime.listTasks({ limit: 10_000 }).pipe(
+          Stream.filter((task) => task.idempotencyKey === idempotencyKey),
+          Stream.runHead,
+        );
+        if (Option.isSome(existing)) {
+          const existingSnapshot = yield* agentRuntime.getTask(existing.value.taskId);
+          if (Option.isSome(existingSnapshot)) {
+            return agentTaskResourceProjection(existingSnapshot.value, {
+              prompt,
+              repositoryId,
+              ticketId,
+            });
+          }
+        }
+
+        const rootRunId = yield* Effect.sync(
+          () => `agent_run_${crypto.randomUUID().replaceAll("-", "")}` as DurableAgentRunId,
+        );
+        const jobId = `job_${crypto.randomUUID().replaceAll("-", "")}`;
+        const descriptor = { repositoryId, repositoryPath: repository.path };
+        const worktree = yield* worktrees
+          .create(descriptor, {
+            jobId: jobId as never,
+            mode: "implementation",
+            repositoryId: repositoryId as never,
+            repositoryPath: repository.path,
+            ticketId: ticketId as never,
+            ticketSlugSource: ticket.title,
+            ticketType: ticket.type,
+          })
+          .pipe(Effect.mapError(toBackendApiError));
+
+        yield* database
+          .transitionTicket(
+            repositoryId,
+            ticketId,
+            {
+              reason: "Explicitly assigned to the Cycle agent runtime.",
+              status: "in-progress",
+            },
+            { message: `Assign ${ticketId} to agent` },
+          )
+          .pipe(Effect.mapError(toBackendApiError));
+
+        const thread = yield* agentRuntime
+          .createThread(
+            new DurableAgentThreadCreateInput({
+              agentId,
+              authority: {
+                allowedOperations: [
+                  "repository.read",
+                  "workspace.write",
+                  "command.execute",
+                  "ticket.comment",
+                  "ticket.transition.needs-review",
+                ],
+                mode: "implementation-worktree",
+                repositoryId,
+                ticketId,
+                workspacePath: worktree.path,
+                worktreeId: worktree.worktreeId,
+              },
+              harnessId: providerId,
+              idempotencyKey: `thread:${idempotencyKey}`,
+              kind: "ticket-implementation",
+              providerId,
+              repositoryId,
+              ticketId,
+              title: `${ticketId}: ${ticket.title}`,
+              workflowId: "ticket-implementation",
+              ...(model === undefined ? {} : { model }),
+            }),
+          )
+          .pipe(Effect.mapError(toBackendApiError));
+        const taskSnapshot = yield* agentRuntime
+          .submit(
+            new DurableAgentTaskSubmitInput({
+              agentId,
+              authority: thread.thread.authority,
+              harnessId: providerId,
+              idempotencyKey,
+              input: {
+                message: prompt,
+                repositoryId,
+                ticketId,
+                ticketTitle: ticket.title,
+                workflow:
+                  "Implement in the assigned worktree. Validate the result and provide a detailed completion summary.",
+              },
+              kind: "ticket-implementation",
+              maxAttempts: typeof input.maxAttempts === "number" ? input.maxAttempts : undefined,
+              metadata: {
+                repositoryId,
+                ticketId,
+                worktreeId: worktree.worktreeId,
+              },
+              priorityLane: "assigned",
+              providerId,
+              repositoryId,
+              rootRunId,
+              threadId: thread.thread.threadId,
+              workflowId: "ticket-implementation",
+              ...(model === undefined ? {} : { model }),
+            }),
+          )
+          .pipe(Effect.mapError(toBackendApiError));
+
+        return agentTaskResourceProjection(taskSnapshot, { prompt, repositoryId, ticketId });
+      }),
+    );
+
   return yield* Effect.acquireRelease(
     Effect.tryPromise({
       try: async () => {
-        const agentChatStore = makeSqliteAgentChatStore(paths.databasePath);
-        const agentSessionStore = makeBackendAgentSessionStore(paths.databasePath);
-        const agentTaskStore = makeNodeSqliteAgentTaskStore(paths.databasePath);
-        const codexPreference = preferenceForProvider(config, "codex");
-        const claudeCodePreference = preferenceForProvider(config, "claude-code");
         const agentServices = makeDefaultAgentServiceRegistry({
           env: {
             ...environment,
@@ -253,7 +592,6 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
             config: claudeCodePreference.config ?? {},
             executablePath: claudeCodePreference.executablePath ?? null,
           },
-          sessionStore: agentSessionStore,
         });
         const listAgentProviderProfiles = async (): Promise<readonly AgentProviderProfile[]> => {
           const currentConfig = await runPromise(appConfig.read);
@@ -308,9 +646,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
             }),
           );
         };
-        const agentTaskLayer = AgentTaskServiceLive().pipe(
-          Layer.provide(Layer.succeed(AgentTaskStore, AgentTaskStore.of(agentTaskStore))),
-        );
+        const agentTaskLayer = Layer.succeed(AgentRuntimeService, agentRuntime);
         const databaseLayer = Layer.succeed(DatabaseService, DatabaseService.of(database));
         const backendRepositoryOpenLayer = BackendRepositoryOpenServiceLive.pipe(
           Layer.provide(
@@ -323,81 +659,73 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
           ),
         );
 
-        try {
-          const handle = await startCycleApiServer({
-            agentChatStore,
-            agentProviderProfiles: listAgentProviderProfiles,
-            agentServices,
-            agentSessionStore,
-            host: options.host ?? config.api.host,
-            localSettings: {
-              completeOnboarding: (input) =>
-                runAppConfigPromise(
-                  settings.completeOnboarding({
-                    displayName: input.displayName,
-                    email: input.email,
-                    enabledAgentProviderIds: input.enabledAgentProviderIds,
-                    themePreference: input.themePreference,
-                  }),
-                ),
-              read: () => runAppConfigPromise(settings.read),
-              removeRepository: (repositoryId) =>
-                runAppConfigPromise(settings.removeRepository(repositoryId)),
-              setInterfaceDensity: (density) =>
-                runAppConfigPromise(settings.setInterfaceDensity(density)),
-              setThemePreference: (preference) =>
-                runAppConfigPromise(settings.setThemePreference(preference)),
-              updateProfile: (input) => runPromise(settings.updateProfile(input)),
-              updateRepositoryPreferences: (input) =>
-                runPromise(
-                  settings.updateRepositoryPreferences({
-                    id: input.id,
-                    preferences: input.preferences,
-                  }),
-                ),
-              updateAgentProviderPreference: (input) =>
-                runAppConfigPromise(
-                  settings.updateAgentProviderPreference({
-                    preference: input.preference,
-                    providerId: input.providerId,
-                  }),
-                ),
+        const handle = await startCycleApiServer({
+          agentChat,
+          assignTicketToAgent,
+          agentProviderProfiles: listAgentProviderProfiles,
+          host: options.host ?? config.api.host,
+          localSettings: {
+            completeOnboarding: (input) =>
+              runAppConfigPromise(
+                settings.completeOnboarding({
+                  displayName: input.displayName,
+                  email: input.email,
+                  enabledAgentProviderIds: input.enabledAgentProviderIds,
+                  themePreference: input.themePreference,
+                }),
+              ),
+            read: () => runAppConfigPromise(settings.read),
+            removeRepository: (repositoryId) =>
+              runAppConfigPromise(settings.removeRepository(repositoryId)),
+            setInterfaceDensity: (density) =>
+              runAppConfigPromise(settings.setInterfaceDensity(density)),
+            setThemePreference: (preference) =>
+              runAppConfigPromise(settings.setThemePreference(preference)),
+            updateProfile: (input) => runPromise(settings.updateProfile(input)),
+            updateRepositoryPreferences: (input) =>
+              runPromise(
+                settings.updateRepositoryPreferences({
+                  id: input.id,
+                  preferences: input.preferences,
+                }),
+              ),
+            updateAgentProviderPreference: (input) =>
+              runAppConfigPromise(
+                settings.updateAgentProviderPreference({
+                  preference: input.preference,
+                  providerId: input.providerId,
+                }),
+              ),
+          },
+          logging: { console: false, packageName: "backend" },
+          mcp: {
+            apiToken: staticToken,
+            auth: { token: staticToken },
+            enabled: true,
+            env: {
+              ...environment,
+              CYCLE_API_RUNTIME_FILE: paths.runtimeDiscoveryPath,
             },
-            logging: { console: false, packageName: "backend" },
-            mcp: {
-              apiToken: staticToken,
-              auth: { token: staticToken },
-              enabled: true,
-              env: {
-                ...environment,
-                CYCLE_API_RUNTIME_FILE: paths.runtimeDiscoveryPath,
-              },
-              path: "/mcp",
-            },
-            listRepositories,
-            port: (() => {
-              const configuredPort = options.port ?? config.api.port;
-              return configuredPort === "auto" ? undefined : configuredPort;
-            })(),
-            onUseCaseSuccess: (event) => {
-              const repositoryId = repositoryIdFromInput(event.input);
-              if (event.sideEffect !== "write" || repositoryId === undefined) return;
-              return runPromise(bootstrap.notifyRepositoryChanged(repositoryId)) as Promise<void>;
-            },
-            runtimeFile: paths.runtimeDiscoveryPath,
-            staticToken,
-            useCaseLayer: Layer.mergeAll(databaseLayer, agentTaskLayer, backendRepositoryOpenLayer),
-            worktrees,
-            worktreeStoragePath: paths.agentWorktreesPath,
-          });
+            path: "/mcp",
+          },
+          listRepositories,
+          port: (() => {
+            const configuredPort = options.port ?? config.api.port;
+            return configuredPort === "auto" ? undefined : configuredPort;
+          })(),
+          onUseCaseSuccess: (event) => {
+            const repositoryId = repositoryIdFromInput(event.input);
+            if (event.sideEffect !== "write" || repositoryId === undefined) return;
+            return runPromise(bootstrap.notifyRepositoryChanged(repositoryId)) as Promise<void>;
+          },
+          runtimeFile: paths.runtimeDiscoveryPath,
+          staticToken,
+          useCaseLayer: Layer.mergeAll(databaseLayer, agentTaskLayer, backendRepositoryOpenLayer),
+          worktrees,
+          worktreeStoragePath: paths.agentWorktreesPath,
+        });
 
-          return { agentChatStore, agentSessionStore, agentTaskStore, handle };
-        } catch (error) {
-          await Effect.runPromise(agentTaskStore.close);
-          await agentChatStore.close?.();
-          await agentSessionStore.close?.();
-          throw error;
-        }
+        return { handle };
       },
       catch: (cause) =>
         new BackendApiError({
@@ -406,13 +734,10 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
           operation: "BackendApi.start",
         }),
     }),
-    ({ agentChatStore, agentSessionStore, agentTaskStore, handle }) =>
+    ({ handle }) =>
       Effect.tryPromise({
         try: async () => {
           await handle.close();
-          await Effect.runPromise(agentTaskStore.close);
-          await agentChatStore.close?.();
-          await agentSessionStore.close?.();
         },
         catch: (cause) =>
           new BackendApiError({

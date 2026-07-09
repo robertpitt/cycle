@@ -7,7 +7,7 @@ import { CycleRequestContext } from "../../middleware/CycleRequestContextMiddlew
 import { asPage, pageLimitFrom, urlFromRequest } from "../query.ts";
 import { collectionResponse, resourceResponse } from "../responses.ts";
 import { decodeHttpValue, meta, runUseCase, scoped } from "../usecases.ts";
-import { idFromResult } from "@cycle/agent-chat/runtime";
+import { idFromResult } from "../../../agents/services/AgentChatUtilities.ts";
 import { handleSuccessfulCommentMentions } from "./commentMentions.ts";
 import type { V1Request } from "./types.ts";
 

@@ -8,7 +8,7 @@ import { describe, it, vi } from "vitest";
 import { makeCodexAgentService } from "../src/providers/codex/service.ts";
 import { makeAgentJobRequestMetadata } from "../src/providers/capabilities.ts";
 import { parseStructured } from "../src/providers/codex/structured.ts";
-import type { AgentEvent, AgentSessionBinding, AgentSessionStore } from "../src/types.ts";
+import type { AgentEvent } from "../src/types.ts";
 
 class Pushable<T> implements AsyncIterable<T> {
   private ended = false;
@@ -350,18 +350,10 @@ describe("@cycle/agents codex app-server adapter", () => {
     assert.equal(events.at(-1)?.type, "turn.completed");
   });
 
-  it("streams normalized events and persists app-server session binding state", async () => {
+  it("streams normalized app-server events", async () => {
     const peer = makeMockPeer();
-    const bindings = new Map<string, AgentSessionBinding>();
-    const sessionStore: AgentSessionStore = {
-      get: async (sessionId) => bindings.get(sessionId),
-      upsert: async (binding) => {
-        bindings.set(binding.sessionId, binding);
-      },
-    };
     const service = makeCodexAgentService({
       appServerClient: peer.client,
-      sessionStore,
     });
     const session = await service.createSession({
       runtimeMode: "workspace-write",
@@ -437,12 +429,6 @@ describe("@cycle/agents codex app-server adapter", () => {
     assert.equal(completed?.result.text, "Hello");
     assert.equal(completed?.result.usage?.totalTokens, 5);
     assert.deepEqual(completed?.result.metadata, metadata);
-
-    const stored = bindings.get(session.id);
-    assert.equal(stored?.native?.threadId, "native_thread");
-    assert.deepEqual(stored?.native?.resumeCursor, { threadId: "native_thread" });
-    assert.equal(stored?.native?.runtimeMode, "workspace-write");
-    assert.equal(stored?.status, "idle");
   });
 
   it("schema-decodes structured app-server stream results", async () => {

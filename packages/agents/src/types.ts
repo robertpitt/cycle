@@ -221,14 +221,6 @@ export type AgentSessionBinding = {
   readonly metadata?: JsonObject;
 };
 
-export type AgentSessionStore = {
-  readonly get: (sessionId: string) => Promise<AgentSessionBinding | undefined>;
-  readonly upsert: (binding: AgentSessionBinding) => Promise<void>;
-  readonly delete?: (sessionId: string) => Promise<void>;
-  readonly list?: () => Promise<readonly AgentSessionBinding[]>;
-  readonly close?: () => Promise<void> | void;
-};
-
 export type AgentTurnRuntimeStatus =
   | "starting"
   | "running"

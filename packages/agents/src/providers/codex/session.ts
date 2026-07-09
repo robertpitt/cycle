@@ -1,28 +1,11 @@
 import type { AgentSession, AgentSessionBinding, AgentSessionBindingStatus } from "../../types.ts";
-import { codexProviderId, now } from "./constants.ts";
+import { codexProviderId } from "./constants.ts";
 import type { StoredCodexSession } from "./types.ts";
-
-const dateFromBinding = (value: string): Date => {
-  const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? now() : date;
-};
 
 const serializableNative = (
   native: AgentSession["native"] | undefined,
 ): Readonly<Record<string, unknown>> | undefined =>
   native === undefined ? undefined : { ...native };
-
-export const sessionFromBinding = (binding: AgentSessionBinding): StoredCodexSession => ({
-  binding,
-  createdAt: dateFromBinding(binding.createdAt),
-  harnessId: codexProviderId,
-  id: binding.sessionId,
-  metadata: binding.metadata,
-  native: binding.native,
-  provider: codexProviderId,
-  title: binding.title,
-  updatedAt: dateFromBinding(binding.updatedAt),
-});
 
 export const bindingFromSession = (
   session: StoredCodexSession,

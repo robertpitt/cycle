@@ -30,10 +30,6 @@ export type ClaudeCodeAgentServiceOptions = {
   readonly config?: ClaudeCodeProviderConfig | JsonObject;
   readonly env?: NodeJS.ProcessEnv;
   readonly executablePath?: string | null;
-  readonly sessionStore?: {
-    readonly get: (sessionId: string) => Promise<AgentSessionBinding | undefined>;
-    readonly upsert: (binding: AgentSessionBinding) => Promise<void>;
-  };
 };
 
 type StoredClaudeCodeSession = AgentSession & {
@@ -82,7 +78,6 @@ export const makeClaudeCodeAgentService = (
     };
     const stored = { ...updated, binding };
     sessions.set(stored.id, stored);
-    await options.sessionStore?.upsert(binding);
     return stored;
   };
 
@@ -108,13 +103,6 @@ export const makeClaudeCodeAgentService = (
   };
 
   const resumeSession = async (sessionId: string): Promise<AgentSession> => {
-    const storedBinding = await options.sessionStore?.get(sessionId);
-    if (storedBinding !== undefined) {
-      const storedSession = sessionFromBinding(storedBinding);
-      sessions.set(storedSession.id, storedSession);
-      return storedSession;
-    }
-
     const existing = sessions.get(sessionId);
     if (existing !== undefined) return existing;
 
@@ -426,15 +414,3 @@ const bridgeAbort = (source: AbortSignal | undefined, target: AbortController): 
   source.addEventListener("abort", abort, { once: true });
   return () => source.removeEventListener("abort", abort);
 };
-
-const sessionFromBinding = (binding: AgentSessionBinding): StoredClaudeCodeSession => ({
-  createdAt: new Date(binding.createdAt),
-  harnessId: claudeCodeProviderId,
-  id: binding.sessionId,
-  metadata: binding.metadata,
-  native: binding.native,
-  provider: binding.provider,
-  title: binding.title,
-  updatedAt: new Date(binding.updatedAt),
-  binding,
-});

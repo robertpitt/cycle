@@ -1,6 +1,5 @@
-import { AgentTaskFailure } from "@cycle/agents";
 import type { AgentTaskStatus } from "@cycle/contracts/schemas/agents/agent-task-schemas";
-import { AgentTaskUsecases, type AgentTaskUsecasesShape } from "@cycle/usecases";
+import { AgentTaskFailure, AgentTaskUsecases, type AgentTaskUsecasesShape } from "@cycle/usecases";
 import { Effect, Result } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 import { CycleApiRuntime } from "../../runtime/CycleApiRuntime.ts";
@@ -10,7 +9,7 @@ import { collectionResponse, errorResponse, resourceResponse } from "../response
 import type { V1Request } from "./types.ts";
 
 type AgentTaskUsecaseRequirements = Effect.Services<
-  ReturnType<AgentTaskUsecasesShape["createTicketTask"]>
+  ReturnType<AgentTaskUsecasesShape["createGenericTask"]>
 >;
 
 type AgentTaskOperation<A> = (
@@ -20,14 +19,35 @@ type AgentTaskOperation<A> = (
 export const createAgentTask = ({ payload, request }: V1Request<"createAgentTask">) =>
   taskResponse(request, 202, (usecases) => usecases.createGenericTask(payload));
 
-export const createIssueAgentTask = ({
-  params,
-  payload,
-  request,
-}: V1Request<"createIssueAgentTask">) =>
-  taskResponse(request, 202, (usecases) =>
-    usecases.createTicketTask(params.repositoryId, params.issueId, payload),
-  );
+export const createIssueAgentTask = ({ params, payload }: V1Request<"createIssueAgentTask">) =>
+  Effect.gen(function* () {
+    const runtime = yield* CycleApiRuntime;
+    if (runtime.assignTicketToAgent === undefined) {
+      const { requestId } = yield* CycleRequestContext;
+      return errorResponse(
+        requestId,
+        503,
+        "AGENT_ASSIGNMENT_UNAVAILABLE",
+        "Ticket assignment requires the durable agent workflow host.",
+        true,
+      );
+    }
+    const { requestId } = yield* CycleRequestContext;
+    const assigned = yield* Effect.result(
+      Effect.tryPromise({
+        try: () => runtime.assignTicketToAgent!(params.repositoryId, params.issueId, payload),
+        catch: (cause) =>
+          new AgentTaskFailure({
+            cause,
+            code: "storage_failed",
+            message: cause instanceof Error ? cause.message : "Ticket assignment failed.",
+            retryable: true,
+          }),
+      }),
+    );
+    if (Result.isFailure(assigned)) return failureResponse(requestId, assigned.failure);
+    return resourceResponse(requestId, 202, assigned.success);
+  });
 
 export const listAgentTasks = ({ query, request }: V1Request<"listAgentTasks">) =>
   Effect.gen(function* () {

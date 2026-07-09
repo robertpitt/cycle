@@ -1,7 +1,7 @@
-import { requestOrigin } from "@cycle/agent-chat/prompt";
-import { parseAgentMentions } from "@cycle/agent-chat/runtime";
+import { AgentChatCreateInput, AgentChatSendInput } from "@cycle/agent-chat";
 import { Effect } from "effect";
 import type { HttpServerRequest } from "effect/unstable/http";
+import { parseAgentMentions } from "../../../agents/services/AgentChatUtilities.ts";
 import { CycleApiRuntime } from "../../runtime/CycleApiRuntime.ts";
 
 export const handleSuccessfulCommentMentions = (input: {
@@ -14,28 +14,45 @@ export const handleSuccessfulCommentMentions = (input: {
   readonly ticketId: string;
 }): Effect.Effect<void, never, CycleApiRuntime> =>
   Effect.gen(function* () {
-    if (parseAgentMentions(input.body).length === 0) return;
-
+    const mentions = parseAgentMentions(input.body);
+    if (mentions.length === 0) return;
     const runtime = yield* CycleApiRuntime;
-    const chat = runtime.agentChatRuntime;
-    if (chat === undefined) return;
+    if (runtime.agentChat === undefined) return;
+    const profiles = yield* Effect.tryPromise({
+      try: runtime.agentProviderProfiles,
+      catch: () => undefined,
+    }).pipe(Effect.orElseSucceed(() => []));
+    const available = new Set(profiles.map((profile) => profile.provider));
 
-    let origin = "http://localhost";
-    try {
-      origin = requestOrigin(input.request);
-    } catch {
-      origin = "http://localhost";
-    }
-
-    void chat
-      .handleSuccessfulCommentMentions({
-        body: input.body,
-        comment: input.comment,
-        commentId: input.commentId,
-        origin,
-        repositoryId: input.repositoryId,
-        requestId: input.requestId,
-        ticketId: input.ticketId,
-      })
-      .catch(() => undefined);
+    yield* Effect.forEach(
+      mentions.filter((providerId) => available.has(providerId as never)),
+      (providerId) =>
+        runtime
+          .agentChat!.create(
+            new AgentChatCreateInput({
+              agentId: providerId,
+              idempotencyKey: `comment:${input.repositoryId}:${input.ticketId}:${input.commentId}:${providerId}`,
+              providerId,
+              repositoryId: input.repositoryId,
+              title: `${providerId} review: ${input.ticketId}`,
+            }),
+          )
+          .pipe(
+            Effect.flatMap((view) =>
+              runtime.agentChat!.send(
+                new AgentChatSendInput({
+                  idempotencyKey: `comment-turn:${input.commentId}:${providerId}`,
+                  message: [
+                    input.body,
+                    "",
+                    `Issue context: cycle://repository/${input.repositoryId}/tickets/${input.ticketId}`,
+                  ].join("\n"),
+                  threadId: view.thread.threadId,
+                }),
+              ),
+            ),
+            Effect.catch(() => Effect.void),
+          ),
+      { concurrency: "unbounded", discard: true },
+    );
   }).pipe(Effect.catch(() => Effect.void));

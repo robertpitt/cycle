@@ -4,13 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./domain": "./src/domain.ts",
-    "./payload-records": "./src/payloadRecords.ts",
-    "./prompt": "./src/prompt.ts",
-    "./records": "./src/records.ts",
-    "./runtime": "./src/runtime/AgentChatRuntime.ts",
-    "./store": "./src/SqliteAgentChatStore.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -18,7 +12,6 @@
   },
   "dependencies": {
     "@cycle/agents": "workspace:*",
-    "@cycle/sqlite": "workspace:*",
     "effect": "4.0.0-beta.78"
   },
   "devDependencies": {

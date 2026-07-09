@@ -104,6 +104,10 @@ export const WorktreeHandoverLive = Layer.effect(
       readonly validation?: string | undefined;
       readonly worktreeId: string;
     }) {
+      if (input.handoverId !== undefined) {
+        const existing = yield* store.findHandover(input.handoverId as never);
+        if (existing?.status === "completed") return existing;
+      }
       const record = yield* store.get(input.worktreeId as never);
       if (record.status !== "ready") {
         return yield* new WorktreeStateConflictError({

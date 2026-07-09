@@ -94,6 +94,9 @@ export type WorktreeStoreShape = {
     repositoryId: RepositoryId,
     jobId: JobId,
   ) => Effect.Effect<ReadonlyArray<WorktreeRecord>, WorktreeStoreError>;
+  readonly findHandover: (
+    handoverId: WorktreeHandoverId,
+  ) => Effect.Effect<WorktreeHandoverRecord | null, WorktreeStoreError>;
   readonly get: (
     worktreeId: WorktreeId,
   ) => Effect.Effect<WorktreeRecord, WorktreeStoreError | WorktreeNotFoundError>;
@@ -1081,6 +1084,15 @@ export const WorktreeStoreSqliteLive = Layer.effect(
       return rowToHandover(row);
     });
 
+    const findHandover = Effect.fn("WorktreeStore.findHandover")(function* (
+      handoverId: WorktreeHandoverId,
+    ) {
+      const rows = yield* sql<HandoverRow>`
+        SELECT * FROM worktree_handovers WHERE handover_id = ${handoverId}
+      `.pipe(Effect.mapError((cause) => mapSqlError("findHandover", cause)));
+      return rows[0] === undefined ? null : rowToHandover(rows[0]);
+    });
+
     const updateHandoverStep = Effect.fn("WorktreeStore.updateHandoverStep")(function* (input: {
       readonly backupBranchName?: string | undefined;
       readonly branchAssociationId?: BranchAssociationId | undefined;
@@ -1175,6 +1187,7 @@ export const WorktreeStoreSqliteLive = Layer.effect(
       createWorktreeRecord,
       findBranchAssociationByBranch,
       findByJob,
+      findHandover,
       get,
       heartbeatLease,
       listActive,
