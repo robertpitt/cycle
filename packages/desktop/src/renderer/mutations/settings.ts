@@ -13,6 +13,7 @@ import {
 import type { ProfileUpdateInput } from "../../shared/Profile.ts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
+import { useNotifications } from "../notifications/NotificationProvider.tsx";
 import { appConfigQueryKey } from "../queries/appConfig.ts";
 import { agentProvidersQueryKey } from "../queries/agentProviders.ts";
 import type { AgentProviderId } from "@cycle/contracts/schemas/agents";
@@ -20,6 +21,17 @@ import type { AgentProviderId } from "@cycle/contracts/schemas/agents";
 type SettingsMutationOptions = {
   readonly appConfig?: AppConfigState;
 };
+
+export const applyLocalWorkspacePreferences = (
+  current: AppConfigState,
+  preferences: LocalWorkspacePreferencesPatch,
+): AppConfigState => ({
+  ...current,
+  localWorkspace: {
+    ...current.localWorkspace,
+    ...preferences,
+  },
+});
 
 export const useUpdateProfileMutation = ({ appConfig }: SettingsMutationOptions = {}) => {
   const queryClient = useQueryClient();
@@ -76,10 +88,37 @@ export const useSetInterfaceDensityMutation = () => {
 
 export const useUpdateLocalWorkspacePreferencesMutation = () => {
   const queryClient = useQueryClient();
+  const notifications = useNotifications();
 
   return useMutation({
     mutationFn: async (preferences: LocalWorkspacePreferencesPatch): Promise<AppConfigState> =>
       cycleApiClient.updateLocalWorkspacePreferences(preferences),
+    onMutate: async (preferences) => {
+      await queryClient.cancelQueries({ queryKey: appConfigQueryKey });
+      const previous = queryClient.getQueryData<AppConfigState>(appConfigQueryKey);
+
+      if (previous !== undefined) {
+        queryClient.setQueryData(
+          appConfigQueryKey,
+          applyLocalWorkspacePreferences(previous, preferences),
+        );
+      }
+
+      return { previous };
+    },
+    onError: (error, _preferences, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(appConfigQueryKey, context.previous);
+      }
+
+      notifications.notify({
+        description:
+          error instanceof Error ? error.message : "Cycle could not save the sidebar preference.",
+        durationMs: 9000,
+        title: "Sidebar preference update failed",
+        tone: "danger",
+      });
+    },
     onSuccess: (next) => {
       queryClient.setQueryData(appConfigQueryKey, next);
     },
