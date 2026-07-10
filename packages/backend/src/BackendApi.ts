@@ -19,6 +19,8 @@ import { AgentControlInput, AgentRuntimeService } from "@cycle/agents/runtime";
 import { AgentRuntimeSystemLive } from "@cycle/agents/system";
 import {
   AgentTaskSubmitInput as DurableAgentTaskSubmitInput,
+  ImplementationContext,
+  ImplementationContextService,
   type AgentTaskSnapshot as DurableAgentTaskSnapshot,
   AgentThreadCreateInput as DurableAgentThreadCreateInput,
   type AgentRunId as DurableAgentRunId,
@@ -837,6 +839,14 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
         const cleanupWorktree = worktrees
           .cleanup(descriptor, { actor: "cycle-ticket-implementation", record: worktree })
           .pipe(Effect.catch(() => Effect.void));
+        const implementationContext = new ImplementationContext({
+          assignedUserId,
+          branchName: worktree.desiredBranchName ?? "",
+          repositoryId,
+          ticketId,
+          worktreeId: worktree.worktreeId,
+          worktreePath: worktree.path,
+        });
         const thread = yield* agentRuntime
           .createThread(
             new DurableAgentThreadCreateInput({
@@ -857,14 +867,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
               harnessId: providerId,
               idempotencyKey: `thread:${idempotencyKey}`,
               kind: "ticket-implementation",
-              metadata: {
-                assignedUserId,
-                branchName: worktree.desiredBranchName ?? "",
-                repositoryId,
-                ticketId,
-                worktreePath: worktree.path,
-                worktreeId: worktree.worktreeId,
-              },
+              metadata: ImplementationContextService.metadata(implementationContext),
               providerId,
               repositoryId,
               ticketId,
@@ -934,17 +937,11 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
               },
               kind: "ticket-implementation",
               maxAttempts: typeof input.maxAttempts === "number" ? input.maxAttempts : undefined,
-              metadata: {
-                assignedUserId,
-                branchName: worktree.desiredBranchName ?? "",
+              metadata: ImplementationContextService.metadata(implementationContext, {
                 commandId,
                 commandInput: canonicalCommandInput,
-                repositoryId,
-                ticketId,
                 threadId: thread.thread.threadId,
-                worktreePath: worktree.path,
-                worktreeId: worktree.worktreeId,
-              },
+              }),
               priorityLane: "assigned",
               providerId,
               repositoryId,

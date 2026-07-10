@@ -586,6 +586,10 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
         const requestedModel = stringValue(payload.model);
         const origin = isRecord(payload.origin) ? payload.origin : undefined;
         const repositoryId = origin === undefined ? undefined : stringValue(origin.repositoryId);
+        const ticketId =
+          origin === undefined
+            ? undefined
+            : (stringValue(origin.ticketId) ?? stringValue(origin.issueId));
         const requestedRuntimeMode = stringValue(payload.runtimeMode);
         const runtimeMode =
           requestedRuntimeMode === "workspace-write" || requestedRuntimeMode === "full-access"
@@ -596,6 +600,35 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
           (await runtime.agentProviderProfiles()).find((profile) => profile.provider === providerId)
             ?.defaultModel ??
           undefined;
+        if (repositoryId !== undefined && ticketId !== undefined) {
+          const existing = await runChat(
+            connection,
+            command,
+            chat.list({ repositoryId }).pipe(
+              Stream.filter(
+                (thread) =>
+                  thread.kind === "ticket-implementation" &&
+                  thread.ticketId === ticketId &&
+                  thread.status !== "archived",
+              ),
+              Stream.runHead,
+            ),
+          );
+          if (existing === undefined) return;
+          if (Option.isSome(existing)) {
+            await acknowledge(connection, command, {
+              thread: chatThreadRecord(existing.value),
+            });
+            return;
+          }
+          await sendCommandError(
+            connection,
+            command,
+            "IMPLEMENTATION_CONTEXT_NOT_FOUND",
+            `No resumable implementation chat exists for ticket ${ticketId}. Recover or start the implementation from the ticket view.`,
+          );
+          return;
+        }
         const view = await runChat(
           connection,
           command,

@@ -13,6 +13,7 @@
     "./codex": "./src/codex.ts",
     "./executable-resolver": "./src/ExecutableResolver.ts",
     "./errors": "./src/AgentErrors.ts",
+    "./implementation-context": "./src/ImplementationContext.ts",
     "./providers": "./src/providers/index.ts",
     "./providers/claude-code": "./src/providers/claude-code/index.ts",
     "./providers/codex": "./src/providers/codex/index.ts",

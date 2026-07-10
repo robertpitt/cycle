@@ -27,6 +27,7 @@ export const AgentSchedulerLive = Layer.effect(
         yield* supervisor.run(claim.value).pipe(
           Effect.catchTags({
             AgentHarnessError: (error) => Effect.logError(error.message),
+            ImplementationContextIncomplete: (error) => Effect.logError(error.message),
             AgentStateConflictError: () => Effect.void,
             AgentStorageError: (error) => Effect.logError(error.message),
           }),

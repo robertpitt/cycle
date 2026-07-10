@@ -1,13 +1,19 @@
 import { Context, Effect, Layer, Option, Ref, Stream } from "effect";
 import type { AgentInteractionResponseInput } from "./AgentInteraction.ts";
 import { AgentConfig } from "./AgentConfig.ts";
-import { AgentHarnessError, AgentStateConflictError, AgentStorageError } from "./AgentErrors.ts";
+import {
+  AgentHarnessError,
+  AgentStateConflictError,
+  AgentStorageError,
+  type ImplementationContextIncomplete,
+} from "./AgentErrors.ts";
 import {
   AgentHarnessBinding,
   type AgentHarnessEvent,
   type AgentHarnessSession,
 } from "./AgentHarness.ts";
 import { AgentHarnessCatalog } from "./AgentHarnessCatalog.ts";
+import { ImplementationContextService } from "./ImplementationContext.ts";
 import {
   AgentExecutionStore,
   type AgentExecutionLease,
@@ -16,6 +22,7 @@ import {
 import type { AgentTaskId } from "./AgentIds.ts";
 import { AgentQueueStore } from "./AgentQueueStore.ts";
 import { AgentReadStore } from "./AgentReadStore.ts";
+import { AgentTask } from "./AgentTask.ts";
 import { AgentWorkflowRegistry } from "./AgentWorkflow.ts";
 
 type ActiveExecution = {
@@ -34,7 +41,13 @@ export type AgentSupervisorShape = {
   ) => Effect.Effect<void, AgentHarnessError | AgentStateConflictError>;
   readonly run: (
     lease: AgentExecutionLease,
-  ) => Effect.Effect<void, AgentHarnessError | AgentStorageError | AgentStateConflictError>;
+  ) => Effect.Effect<
+    void,
+    | AgentHarnessError
+    | AgentStorageError
+    | AgentStateConflictError
+    | ImplementationContextIncomplete
+  >;
   readonly steer: (
     taskId: AgentTaskId,
     message: string,
@@ -139,6 +152,38 @@ export const AgentSupervisorLive = Layer.effect(
     });
 
     const run = Effect.fn("AgentSupervisor.run")(function* (lease: AgentExecutionLease) {
+      if (lease.task.kind === "ticket-implementation") {
+        const owner = yield* reads.threadSnapshot(lease.task.threadId);
+        if (Option.isNone(owner)) {
+          yield* ImplementationContextService.validateTask(lease.task);
+        } else {
+          const implementationContext = yield* ImplementationContextService.fromThread(
+            owner.value.thread,
+          );
+          yield* ImplementationContextService.ensureWorkspace(implementationContext, {
+            threadId: lease.task.threadId,
+            ticketId: implementationContext.ticketId,
+          });
+          lease = {
+            ...lease,
+            task: new AgentTask({
+              ...lease.task,
+              agentId: owner.value.thread.agentId,
+              authority: owner.value.thread.authority,
+              harnessId: owner.value.thread.harnessId,
+              metadata: ImplementationContextService.metadata(
+                implementationContext,
+                lease.task.metadata,
+              ),
+              model: owner.value.thread.model,
+              priorityLane: "assigned",
+              providerId: owner.value.thread.providerId,
+              repositoryId: implementationContext.repositoryId,
+              workflowId: "ticket-implementation",
+            }),
+          };
+        }
+      }
       const harness = yield* catalog.get(lease.task.harnessId);
       const exit = yield* Effect.scoped(
         Effect.gen(function* () {

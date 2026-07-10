@@ -1,15 +1,26 @@
 import { strict as assert } from "node:assert";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { migrationsFromRecord } from "@cycle/sqlite";
 import { makeInMemorySqliteLayer } from "@cycle/sqlite/testing";
 import { DateTime, Effect, Layer, Option, Stream } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { describe, it } from "vitest";
 import { AgentConfig, AgentRuntimeConfigValue } from "../src/AgentConfig.ts";
+import { AgentCommandStoreLive } from "../src/AgentCommandStore.ts";
 import { AgentEventJournal, AgentEventJournalLive } from "../src/AgentEventJournal.ts";
 import { AgentExecutionStore, AgentExecutionStoreLive } from "../src/AgentExecutionStore.ts";
 import { AgentHarnessBinding } from "../src/AgentHarness.ts";
 import { AgentQueueStore, AgentQueueStoreLive } from "../src/AgentQueueStore.ts";
 import { AgentReadStore, AgentReadStoreLive } from "../src/AgentReadStore.ts";
+import {
+  AgentRuntimeService,
+  AgentRuntimeServiceLive,
+  AgentThreadSendInput,
+} from "../src/AgentRuntimeService.ts";
+import { AgentScheduler } from "../src/AgentScheduler.ts";
+import { AgentSupervisor } from "../src/AgentSupervisor.ts";
 import { AgentTaskSubmitInput } from "../src/AgentTask.ts";
 import { AgentThreadCreateInput } from "../src/AgentThread.ts";
 import { AgentThreadStore, AgentThreadStoreLive } from "../src/AgentThreadStore.ts";
@@ -52,12 +63,31 @@ const database = makeInMemorySqliteLayer({
 });
 
 const testLayer = Layer.mergeAll(
+  AgentCommandStoreLive,
   AgentThreadStoreLive,
   AgentQueueStoreLive,
   AgentEventJournalLive,
   AgentExecutionStoreLive,
   AgentReadStoreLive,
 ).pipe(Layer.provideMerge(Layer.mergeAll(config, database, AgentEventHubLive)));
+
+const runtimeTestLayer = AgentRuntimeServiceLive.pipe(
+  Layer.provideMerge(
+    Layer.mergeAll(
+      testLayer,
+      Layer.succeed(AgentScheduler, AgentScheduler.of({ wake: Effect.void })),
+      Layer.succeed(
+        AgentSupervisor,
+        AgentSupervisor.of({
+          interrupt: () => Effect.void,
+          respond: () => Effect.void,
+          run: () => Effect.void,
+          steer: () => Effect.void,
+        }),
+      ),
+    ),
+  ),
+);
 
 const authority = {
   allowedOperations: [] as ReadonlyArray<string>,
@@ -99,6 +129,203 @@ const makeThread = () =>
   });
 
 describe("durable agent runtime store", () => {
+  it("preserves implementation context across assignment and repeated follow-up sends", async () => {
+    const worktreePath = await mkdtemp(join(tmpdir(), "cycle-implementation-context-"));
+    try {
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const runtime = yield* AgentRuntimeService;
+          const implementationAuthority = {
+            allowedOperations: ["repository.read", "workspace.write", "command.execute"],
+            mode: "implementation-worktree" as const,
+            repositoryId: "repository-1",
+            ticketId: "UKN-28CT1",
+            workspacePath: worktreePath,
+            worktreeId: "worktree-1",
+          };
+          const context = {
+            assignedUserId: "reviewer@example.com",
+            branchName: "cycle/ukn-28ct1",
+            repositoryId: "repository-1",
+            ticketId: "UKN-28CT1",
+            worktreeId: "worktree-1",
+            worktreePath,
+          };
+          const thread = yield* runtime.createThread(
+            new AgentThreadCreateInput({
+              agentId: "codex",
+              authority: implementationAuthority,
+              harnessId: "codex",
+              kind: "ticket-implementation",
+              metadata: context,
+              providerId: "codex",
+              repositoryId: "repository-1",
+              ticketId: "UKN-28CT1",
+              workflowId: "ticket-implementation",
+            }),
+          );
+          const initial = yield* runtime.submit(
+            new AgentTaskSubmitInput({
+              agentId: "codex",
+              authority: implementationAuthority,
+              harnessId: "codex",
+              idempotencyKey: "implementation-initial",
+              input: { message: "Implement the ticket" },
+              kind: "ticket-implementation",
+              metadata: context,
+              priorityLane: "assigned",
+              providerId: "codex",
+              repositoryId: "repository-1",
+              threadId: thread.thread.threadId,
+              workflowId: "ticket-implementation",
+            }),
+          );
+          const first = yield* runtime.send(
+            new AgentThreadSendInput({
+              idempotencyKey: "frontend-message-1",
+              message: "Please adjust the tests",
+              metadata: { repositoryId: "attempted-overwrite" },
+              threadId: thread.thread.threadId,
+            }),
+          );
+          const second = yield* runtime.send(
+            new AgentThreadSendInput({
+              idempotencyKey: "frontend-message-2",
+              message: "One more review round",
+              threadId: thread.thread.threadId,
+            }),
+          );
+          const duplicate = yield* runtime.send(
+            new AgentThreadSendInput({
+              idempotencyKey: "frontend-message-2",
+              message: "One more review round",
+              threadId: thread.thread.threadId,
+            }),
+          );
+          return { duplicate, first, initial, second, thread };
+        }).pipe(Effect.provide(runtimeTestLayer)),
+      );
+
+      for (const snapshot of [result.initial, result.first, result.second]) {
+        assert.equal(snapshot.task.kind, "ticket-implementation");
+        assert.equal(snapshot.task.priorityLane, "assigned");
+        assert.equal(snapshot.task.workflowId, "ticket-implementation");
+        assert.equal(snapshot.task.authority.mode, "implementation-worktree");
+        assert.equal(snapshot.task.authority.workspacePath, worktreePath);
+        assert.equal(snapshot.task.repositoryId, "repository-1");
+        assert.equal(snapshot.task.metadata.repositoryId, "repository-1");
+        assert.equal(snapshot.task.metadata.ticketId, "UKN-28CT1");
+        assert.equal(snapshot.task.metadata.worktreeId, "worktree-1");
+        assert.equal(snapshot.task.metadata.worktreePath, worktreePath);
+        assert.equal(snapshot.task.metadata.branchName, "cycle/ukn-28ct1");
+        assert.equal(snapshot.task.metadata.assignedUserId, "reviewer@example.com");
+      }
+      assert.equal(result.duplicate.task.taskId, result.second.task.taskId);
+      assert.equal(result.first.task.providerId, result.thread.thread.providerId);
+      assert.equal(result.first.task.harnessId, result.thread.thread.harnessId);
+    } finally {
+      await rm(worktreePath, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects missing, stale, and archived implementation contexts before execution", async () => {
+    const worktreePath = await mkdtemp(join(tmpdir(), "cycle-stale-context-"));
+    try {
+      const missing = await Effect.runPromise(
+        Effect.gen(function* () {
+          const runtime = yield* AgentRuntimeService;
+          return yield* runtime
+            .createThread(
+              new AgentThreadCreateInput({
+                agentId: "codex",
+                authority: {
+                  allowedOperations: [],
+                  mode: "implementation-worktree",
+                  repositoryId: "repository-1",
+                  ticketId: "UKN-28CT1",
+                  workspacePath: worktreePath,
+                  worktreeId: "worktree-1",
+                },
+                harnessId: "codex",
+                kind: "ticket-implementation",
+                metadata: {},
+                providerId: "codex",
+                repositoryId: "repository-1",
+                ticketId: "UKN-28CT1",
+                workflowId: "ticket-implementation",
+              }),
+            )
+            .pipe(Effect.flip);
+        }).pipe(Effect.provide(runtimeTestLayer)),
+      );
+      assert.equal(missing._tag, "ImplementationContextIncomplete");
+      if (missing._tag === "ImplementationContextIncomplete") {
+        assert.ok(missing.missingBindings.includes("branchName"));
+        assert.ok(missing.missingBindings.includes("assignedUserId"));
+      }
+
+      const staleAndArchived = await Effect.runPromise(
+        Effect.gen(function* () {
+          const runtime = yield* AgentRuntimeService;
+          const authority = {
+            allowedOperations: [] as ReadonlyArray<string>,
+            mode: "implementation-worktree" as const,
+            repositoryId: "repository-1",
+            ticketId: "UKN-28CT1",
+            workspacePath: worktreePath,
+            worktreeId: "worktree-1",
+          };
+          const thread = yield* runtime.createThread(
+            new AgentThreadCreateInput({
+              agentId: "codex",
+              authority,
+              harnessId: "codex",
+              kind: "ticket-implementation",
+              metadata: {
+                assignedUserId: "reviewer@example.com",
+                branchName: "cycle/ukn-28ct1",
+                repositoryId: "repository-1",
+                ticketId: "UKN-28CT1",
+                worktreeId: "worktree-1",
+                worktreePath,
+              },
+              providerId: "codex",
+              repositoryId: "repository-1",
+              ticketId: "UKN-28CT1",
+              workflowId: "ticket-implementation",
+            }),
+          );
+          yield* Effect.promise(() => rm(worktreePath, { force: true, recursive: true }));
+          const stale = yield* runtime
+            .send(
+              new AgentThreadSendInput({
+                message: "resume",
+                threadId: thread.thread.threadId,
+              }),
+            )
+            .pipe(Effect.flip);
+          yield* runtime.archiveThread(thread.thread.threadId);
+          const archived = yield* runtime
+            .send(
+              new AgentThreadSendInput({
+                message: "resume archived",
+                threadId: thread.thread.threadId,
+              }),
+            )
+            .pipe(Effect.flip);
+          return { archived, stale };
+        }).pipe(Effect.provide(runtimeTestLayer)),
+      );
+      assert.equal(staleAndArchived.stale._tag, "ImplementationContextIncomplete");
+      if (staleAndArchived.stale._tag === "ImplementationContextIncomplete") {
+        assert.equal(staleAndArchived.stale.reason, "stale");
+        assert.match(staleAndArchived.stale.recoveryAction, /Restore the managed worktree/u);
+      }
+      assert.equal(staleAndArchived.archived._tag, "AgentStateConflictError");
+    } finally {
+      await rm(worktreePath, { force: true, recursive: true });
+    }
+  });
   it("repairs databases that recorded migration 0001 without the enqueue allocator", async () => {
     const rows = await Effect.runPromise(
       Effect.gen(function* () {

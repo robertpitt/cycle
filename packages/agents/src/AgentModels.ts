@@ -4,6 +4,7 @@ export * from "./AgentCommand.ts";
 export * from "./AgentCommon.ts";
 export * from "./AgentIds.ts";
 export * from "./AgentInteraction.ts";
+export * from "./ImplementationContext.ts";
 export * from "./AgentMessage.ts";
 export * from "./AgentRun.ts";
 export * from "./AgentSessionBinding.ts";

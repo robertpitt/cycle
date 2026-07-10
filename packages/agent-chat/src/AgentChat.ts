@@ -93,12 +93,19 @@ const mapError = (cause: unknown): AgentChatError =>
       typeof cause === "object" && cause !== null && "code" in cause
         ? String(cause.code)
         : "agent_chat_error",
-    message:
-      cause instanceof Error
-        ? cause.message
-        : typeof cause === "object" && cause !== null && "message" in cause
-          ? String(cause.message)
-          : "Agent chat operation failed.",
+    message: (() => {
+      const message =
+        cause instanceof Error
+          ? cause.message
+          : typeof cause === "object" && cause !== null && "message" in cause
+            ? String(cause.message)
+            : "Agent chat operation failed.";
+      const recoveryAction =
+        typeof cause === "object" && cause !== null && "recoveryAction" in cause
+          ? String(cause.recoveryAction)
+          : undefined;
+      return recoveryAction === undefined ? message : `${message} ${recoveryAction}`;
+    })(),
     retryable:
       typeof cause === "object" &&
       cause !== null &&

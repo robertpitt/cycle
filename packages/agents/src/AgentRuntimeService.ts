@@ -8,6 +8,7 @@ import { AgentExecutionStore } from "./AgentExecutionStore.ts";
 import type { AgentRuntimeEvent } from "./AgentEvents.ts";
 import { AgentCommandId, AgentTaskId, AgentThreadId, type AgentInteractionId } from "./AgentIds.ts";
 import { AgentInteractionResponseInput } from "./AgentInteraction.ts";
+import { ImplementationContextService } from "./ImplementationContext.ts";
 import { AgentQueueStore, type AgentQueueStoreShape } from "./AgentQueueStore.ts";
 import { AgentReadStore } from "./AgentReadStore.ts";
 import { AgentScheduler } from "./AgentScheduler.ts";
@@ -122,7 +123,47 @@ export const AgentRuntimeServiceLive = Layer.effect(
     });
 
     const submit = Effect.fn("AgentRuntime.submit")(function* (input: AgentTaskSubmitInput) {
-      const task = yield* queue.submit(input);
+      const owner = yield* threads.get(input.threadId);
+      if (Option.isNone(owner)) {
+        return yield* new AgentNotFoundError({
+          code: "agent_thread_not_found",
+          entityId: input.threadId,
+          entityType: "thread",
+          message: `Agent thread not found: ${input.threadId}`,
+          retryable: false,
+        });
+      }
+      if (owner.value.status !== "open") {
+        return yield* new AgentStateConflictError({
+          actualState: owner.value.status,
+          code: "agent_thread_closed",
+          entityId: input.threadId,
+          expectedState: "open",
+          message: "Cannot submit work to an archived thread.",
+          retryable: false,
+        });
+      }
+      const canonicalInput =
+        owner.value.kind === "ticket-implementation"
+          ? yield* Effect.gen(function* () {
+              const context = yield* ImplementationContextService.fromThread(owner.value);
+              yield* ImplementationContextService.ensureWorkspace(context, owner.value);
+              return new AgentTaskSubmitInput({
+                ...input,
+                agentId: owner.value.agentId,
+                authority: owner.value.authority,
+                harnessId: owner.value.harnessId,
+                kind: "ticket-implementation",
+                metadata: ImplementationContextService.metadata(context, input.metadata),
+                model: owner.value.model,
+                priorityLane: "assigned",
+                providerId: owner.value.providerId,
+                repositoryId: context.repositoryId,
+                workflowId: "ticket-implementation",
+              });
+            })
+          : input;
+      const task = yield* queue.submit(canonicalInput);
       yield* scheduler.wake;
       return yield* requireTaskSnapshot(task.taskId);
     });
@@ -165,9 +206,21 @@ export const AgentRuntimeServiceLive = Layer.effect(
           return yield* requireTaskSnapshot(input.taskId);
         }),
       createThread: (input) =>
-        threads
-          .create(input)
-          .pipe(Effect.flatMap((thread) => requireThreadSnapshot(thread.threadId))),
+        Effect.gen(function* () {
+          if (input.kind === "ticket-implementation") {
+            yield* ImplementationContextService.fromThread({
+              authority: input.authority,
+              kind: input.kind,
+              metadata: input.metadata ?? {},
+              repositoryId: input.repositoryId,
+              threadId: (input.idempotencyKey ?? "pending-ticket-implementation") as AgentThreadId,
+              ticketId: input.ticketId,
+              workflowId: input.workflowId,
+            });
+          }
+          const thread = yield* threads.create(input);
+          return yield* requireThreadSnapshot(thread.threadId);
+        }),
       getTask: reads.taskSnapshot,
       getThread: reads.threadSnapshot,
       interrupt: (input) =>

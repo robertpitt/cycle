@@ -379,6 +379,7 @@ const AgentTaskSidebar = ({
   cancelPending,
   tasks,
   onCancel,
+  onOpenChat,
   onRetry,
   providers,
   retryPending,
@@ -386,6 +387,7 @@ const AgentTaskSidebar = ({
   readonly cancelPending: boolean;
   readonly tasks: readonly AgentTask[];
   readonly onCancel: (taskId: string) => void;
+  readonly onOpenChat: (threadId: string) => void;
   readonly onRetry: (taskId: string) => void;
   readonly providers: readonly DetectedAgentProvider[];
   readonly retryPending: boolean;
@@ -396,6 +398,7 @@ const AgentTaskSidebar = ({
   const worktreePath = currentTask?.workspace?.path ?? metadataString(currentTask, "worktreePath");
   const canCancel = currentTask !== undefined && !terminalAgentTaskStatuses.has(currentTask.status);
   const canRetry = currentTask !== undefined && resumableAgentTaskStatuses.has(currentTask.status);
+  const threadId = metadataString(currentTask, "threadId");
 
   return (
     <div className="grid gap-3 text-sm">
@@ -447,8 +450,13 @@ const AgentTaskSidebar = ({
             </div>
           ) : null}
           {currentTask.handoff ? <MergeHandoffCard handoff={currentTask.handoff} /> : null}
-          {canCancel || canRetry ? (
+          {threadId !== undefined || canCancel || canRetry ? (
             <div className="flex flex-wrap items-center gap-2 pt-1">
+              {threadId !== undefined ? (
+                <Button onClick={() => onOpenChat(threadId)} size="sm" variant="outline">
+                  Open chat
+                </Button>
+              ) : null}
               {canCancel ? (
                 <Button
                   loading={cancelPending}
@@ -990,6 +998,7 @@ export const ViewIssuePanel = ({
             cancelPending={cancelAgentTask.isPending}
             tasks={agentTasks}
             onCancel={(taskId) => cancelAgentTask.mutate(taskId)}
+            onOpenChat={(threadId) => onChatOpen?.(threadId)}
             onRetry={(taskId) => retryAgentTask.mutate(taskId)}
             providers={agentProviders}
             retryPending={retryAgentTask.isPending}

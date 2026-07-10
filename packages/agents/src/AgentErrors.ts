@@ -61,6 +61,18 @@ export class AgentWorkflowError extends Schema.TaggedErrorClass<AgentWorkflowErr
   { ...ErrorFields, operationId: Schema.optional(Schema.String), workflowId: Schema.String },
 ) {}
 
+export class ImplementationContextIncomplete extends Schema.TaggedErrorClass<ImplementationContextIncomplete>()(
+  "ImplementationContextIncomplete",
+  {
+    ...ErrorFields,
+    missingBindings: Schema.Array(Schema.String),
+    reason: Schema.Literals(["missing", "mismatch", "stale"]),
+    recoveryAction: Schema.String,
+    threadId: Schema.String,
+    ticketId: Schema.optional(Schema.String),
+  },
+) {}
+
 export class AgentInteractionError extends Schema.TaggedErrorClass<AgentInteractionError>()(
   "AgentInteractionError",
   { ...ErrorFields, interactionId: Schema.String },
@@ -87,6 +99,7 @@ export type AgentError =
   | AgentMigrationError
   | AgentHarnessError
   | AgentWorkflowError
+  | ImplementationContextIncomplete
   | AgentInteractionError
   | AgentReconciliationError
   | AgentRetentionError;

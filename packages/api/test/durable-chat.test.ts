@@ -26,6 +26,7 @@ const timestamp = "2026-07-09T12:00:00.000Z";
 const makeChat = (
   onCreate?: (input: AgentChatCreateInput) => void,
   onSend?: (input: AgentChatSendInput) => void,
+  implementation = false,
 ): AgentChatShape => {
   let view: AgentChatView | undefined;
   const unsupported = Effect.die(new Error("Unexpected durable chat test operation."));
@@ -42,6 +43,13 @@ const makeChat = (
             agentId: input.agentId ?? "codex",
             createdAt: timestamp,
             harnessId: input.harnessId ?? "codex",
+            ...(implementation
+              ? {
+                  kind: "ticket-implementation",
+                  repositoryId: "repository-1",
+                  ticketId: "UKN-28CT1",
+                }
+              : {}),
             providerId: input.providerId ?? "codex",
             status: "open",
             threadId: "agent_thread_websocket_regression",
@@ -241,6 +249,86 @@ describe("durable chat WebSocket", () => {
       };
       assert.equal(sendPayload.result.turn.id, "agent_task_websocket_regression");
       assert.equal(sentInput?.idempotencyKey, "ws-turn:agent_thread_websocket_regression:chat_3");
+    } finally {
+      client.socket.close();
+      await handle.close();
+    }
+  });
+
+  it("keeps websocket follow-up delivery idempotent across frontend reconnects", async () => {
+    const sent: AgentChatSendInput[] = [];
+    const chat = makeChat(undefined, (input) => sent.push(input));
+    const view = await Effect.runPromise(
+      chat.create(new AgentChatCreateInput({ providerId: "codex" })),
+    );
+    const handle = await startCycleApiServer({
+      agentChat: chat,
+      agentProviderProfiles: async () => [],
+      staticToken: token,
+    });
+    const deliver = async () => {
+      const client = await connect(handle.baseUrl);
+      client.send("connection.authenticate", { token });
+      await client.waitFor((message) => message.type === "connection.ready");
+      const commandId = client.send("turn.send", {
+        message: "Reconnect-safe review feedback",
+        providerId: "codex",
+        threadId: view.thread.threadId,
+      });
+      await client.waitFor(
+        (message) => message.commandId === commandId && message.type === "command.ack",
+      );
+      client.socket.close();
+    };
+
+    try {
+      await deliver();
+      await deliver();
+      assert.equal(sent.length, 2);
+      assert.equal(sent[0]?.idempotencyKey, `ws-turn:${view.thread.threadId}:chat_2`);
+      assert.equal(sent[1]?.idempotencyKey, sent[0]?.idempotencyKey);
+    } finally {
+      await handle.close();
+    }
+  });
+
+  it("resolves ticket Open chat to the existing implementation thread", async () => {
+    let createCount = 0;
+    const chat = makeChat(
+      () => {
+        createCount += 1;
+      },
+      undefined,
+      true,
+    );
+    const existing = await Effect.runPromise(
+      chat.create(new AgentChatCreateInput({ providerId: "codex" })),
+    );
+    const handle = await startCycleApiServer({
+      agentChat: chat,
+      agentProviderProfiles: async () => [],
+      staticToken: token,
+    });
+    const client = await connect(handle.baseUrl);
+    try {
+      client.send("connection.authenticate", { token });
+      await client.waitFor((message) => message.type === "connection.ready");
+      const commandId = client.send("thread.create", {
+        origin: {
+          kind: "ticket-agent-work",
+          repositoryId: "repository-1",
+          ticketId: "UKN-28CT1",
+        },
+        providerId: "codex",
+      });
+      const response = await client.waitFor(
+        (message) => message.commandId === commandId && message.type === "command.ack",
+      );
+      const payload = response.payload as {
+        readonly result: { readonly thread: { readonly id: string } };
+      };
+      assert.equal(payload.result.thread.id, existing.thread.threadId);
+      assert.equal(createCount, 1);
     } finally {
       client.socket.close();
       await handle.close();
