@@ -1,0 +1,1 @@
+{"op":"record.add","value":{"createdAt":"2026-07-10T14:07:16.779Z","createdBy":{"email":"robert.pitt@foodhub.com","name":"Robert Pitt","type":"human"},"createdDate":"2026-07-10","id":"UKN-WB555_status-change_rec_0bb60ccfd8ee432da5d4643760ffd1ce","issueId":"UKN-WB555","payload":{"from":"todo","to":"in-progress"},"recordType":"status-change","schemaVersion":1}}
