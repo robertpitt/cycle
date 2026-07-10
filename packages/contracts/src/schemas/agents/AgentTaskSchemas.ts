@@ -14,6 +14,7 @@ export const AgentTaskStatus = Schema.Literals([
   "starting",
   "running",
   "waiting_for_input",
+  "blocked",
   "cancelling",
   "completed",
   "failed",

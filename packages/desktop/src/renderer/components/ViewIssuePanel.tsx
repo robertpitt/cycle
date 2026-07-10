@@ -30,7 +30,7 @@ import {
   useCancelAgentTaskMutation,
   useCreateIssueMutation,
   useRetryAgentTaskMutation,
-  useStartIssueAgentChatMutation,
+  useStartIssueAgentTaskMutation,
   useUpdateIssueMutation,
 } from "../mutations/index.ts";
 import {
@@ -48,6 +48,7 @@ import { labelColorClassName } from "../screens/workspace/createIssueOptions.tsx
 import type { RepositoryRecord } from "@cycle/config";
 import type { DetectedAgentProvider } from "@cycle/contracts/schemas/agents";
 import {
+  latestAgentTask,
   taskStatusTone,
   statusLabel,
   terminalAgentTaskStatuses,
@@ -59,7 +60,7 @@ type ViewIssuePanelProps = {
   readonly agentProviders?: readonly DetectedAgentProvider[];
   readonly issueId?: string;
   readonly onArchived?: () => void;
-  readonly onChatOpen?: () => void;
+  readonly onChatOpen?: (threadId?: string) => void;
   readonly repositories?: readonly RepositoryRecord[];
   readonly repositoryId?: string;
 };
@@ -359,19 +360,6 @@ const IssueEstimateControl = ({
   );
 };
 
-const agentTaskTime = (task: AgentTask): number => {
-  const value = task.updatedAt ?? task.startedAt ?? task.createdAt;
-  if (!value) return 0;
-  const time = new Date(value).getTime();
-  return Number.isFinite(time) ? time : 0;
-};
-
-const latestAgentTask = (tasks: readonly AgentTask[]): AgentTask | undefined =>
-  [...tasks].sort((left, right) => agentTaskTime(right) - agentTaskTime(left))[0];
-
-const activeAgentTask = (tasks: readonly AgentTask[]): AgentTask | undefined =>
-  latestAgentTask(tasks.filter((task) => !terminalAgentTaskStatuses.has(task.status)));
-
 const metadataString = (task: AgentTask | undefined, key: string): string | undefined => {
   const value = task?.metadata?.[key];
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
@@ -398,7 +386,7 @@ const AgentTaskSidebar = ({
   readonly providers: readonly DetectedAgentProvider[];
   readonly retryPending: boolean;
 }) => {
-  const currentTask = activeAgentTask(tasks) ?? latestAgentTask(tasks);
+  const currentTask = latestAgentTask(tasks);
   const branchName = metadataString(currentTask, "branchName");
   const commitSha = metadataString(currentTask, "commitSha");
   const worktreePath = currentTask?.workspace?.path ?? metadataString(currentTask, "worktreePath");
@@ -718,10 +706,9 @@ export const ViewIssuePanel = ({
     issueId,
     repositoryId,
   });
-  const issueRepository = repositories.find((repository) => repository.id === repositoryId) ?? null;
-  const startAgentChat = useStartIssueAgentChatMutation({
-    issue: issueQuery.data ?? null,
-    repository: issueRepository,
+  const startAgentTask = useStartIssueAgentTaskMutation({
+    issueId,
+    repositoryId,
   });
   const cancelAgentTask = useCancelAgentTaskMutation();
   const retryAgentTask = useRetryAgentTaskMutation();
@@ -761,19 +748,20 @@ export const ViewIssuePanel = ({
     const providerId = agentTaskProviderId.trim();
     if (!agentId || !providerId) return;
 
-    startAgentChat.mutate(
+    startAgentTask.mutate(
       {
-        authority: { mode: "workspace-write" },
+        authority: { mode: "full-access" },
         agentId,
+        commandId: crypto.randomUUID(),
         instructions: agentTaskInstructions.trim() || undefined,
         model: agentTaskModel.trim() || undefined,
         providerId,
         requestedBy: "user",
       },
       {
-        onSuccess: () => {
+        onSuccess: (task) => {
           setAgentTaskDialogOpen(false);
-          onChatOpen?.();
+          onChatOpen?.(metadataString(task, "threadId"));
         },
       },
     );
@@ -1050,7 +1038,7 @@ export const ViewIssuePanel = ({
       />
       <StartAgentTaskDialog
         agentId={agentTaskAgentId}
-        error={startAgentChat.error instanceof Error ? startAgentChat.error.message : undefined}
+        error={startAgentTask.error instanceof Error ? startAgentTask.error.message : undefined}
         instructions={agentTaskInstructions}
         model={agentTaskModel}
         onAgentIdChange={setAgentTaskAgentId}
@@ -1060,7 +1048,7 @@ export const ViewIssuePanel = ({
         onProviderIdChange={setAgentTaskProviderId}
         onSubmit={submitAgentTask}
         open={agentTaskDialogOpen}
-        pending={startAgentChat.isPending}
+        pending={startAgentTask.isPending}
         providerId={agentTaskProviderId}
         providers={agentProviders}
       />

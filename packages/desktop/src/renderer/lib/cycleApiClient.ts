@@ -126,18 +126,6 @@ export type StartTicketDraftChatResult = {
   readonly threadId: string;
 };
 
-export type StartIssueAgentChatInput = {
-  readonly instructions?: string | null;
-  readonly issue: Pick<TicketDocument, "id" | "status" | "title" | "type">;
-  readonly model?: string | null;
-  readonly providerId?: string;
-  readonly repository: Pick<AppRepositoryRecord, "displayName" | "id" | "path">;
-};
-
-export type StartIssueAgentChatResult = {
-  readonly threadId: string;
-};
-
 const API_URL_STORAGE_KEY = "cycle.api.baseUrl";
 const API_TOKEN_STORAGE_KEY = "cycle.api.token";
 const DEV_PROXY_BASE_URL = "/cycle-api";
@@ -351,39 +339,6 @@ const ticketDraftPrompt = ({ instructions, repository }: StartTicketDraftChatInp
     instructions.trim(),
   ].join("\n\n");
 
-const assignedTicketImplementationWorkflow = (): string =>
-  [
-    "Assigned ticket implementation workflow:",
-    "1. Resolve the repository and ticket through Cycle MCP tools before making repository or ticket claims.",
-    "2. Prepare a dedicated git worktree for the ticket and do the implementation work there with full read-write permissions.",
-    "3. Before changing code, assign the ticket to the current user when the current user identity is available, and transition the ticket to `In Progress`.",
-    "4. Complete the ticket scope. If you discover a separate out-of-scope issue, capture it as a follow-up Cycle ticket using a sub-agent when delegation is available, and continue the original task.",
-    "5. After implementation, run relevant tests, commit the branch when appropriate, and push to the configured remote when possible.",
-    "6. Move the ticket to `In Review`. If that status is not available through the exposed tools, create it or otherwise make it available when the tools support that operation; otherwise use the closest available workflow operation and report the limitation.",
-    "7. Add a ticket comment with a handoff that includes completed work, branch or remote links, testing performed, and known limitations or follow-up tickets.",
-    "Do not create a pull request as part of this workflow.",
-  ].join("\n");
-
-const issueAgentChatPrompt = ({
-  instructions,
-  issue,
-  repository,
-}: StartIssueAgentChatInput): string =>
-  [
-    `Target repository: cycle://repository/${repository.id} (${repository.displayName})`,
-    `Ticket: cycle://repository/${repository.id}/tickets/${issue.id}`,
-    `Ticket title: ${issue.title}`,
-    `Ticket type: ${issue.type}`,
-    `Ticket status: ${issue.status}`,
-    "Work on this Cycle ticket in implementation mode.",
-    assignedTicketImplementationWorkflow(),
-    "Use Cycle MCP tools to inspect the ticket and repository context before making claims.",
-    instructions?.trim() ? "User instructions:" : undefined,
-    instructions?.trim() ? instructions.trim() : undefined,
-  ]
-    .filter((part): part is string => part !== undefined)
-    .join("\n\n");
-
 const startAgentChatThread = async (
   input: StartAgentChatThreadInput,
 ): Promise<StartTicketDraftChatResult> => {
@@ -563,29 +518,6 @@ const startTicketDraftChat = async (
     runtimeMode: "workspace-write",
     timeoutMessage: "Timed out while starting the ticket draft chat.",
     title: "Draft ticket",
-  });
-
-const startIssueAgentChat = async (
-  input: StartIssueAgentChatInput,
-): Promise<StartIssueAgentChatResult> =>
-  startAgentChatThread({
-    closedMessage: "Agent chat connection closed before the ticket work chat started.",
-    commandPrefix: "ticket_work",
-    message: issueAgentChatPrompt(input),
-    missingThreadMessage: "Ticket work chat was not created.",
-    model: input.model,
-    origin: {
-      issueId: input.issue.id,
-      kind: "ticket-agent-work",
-      label: `Work on ${input.issue.id}`,
-      repositoryId: input.repository.id,
-      ticketId: input.issue.id,
-      trigger: "ticket-view",
-    },
-    providerId: input.providerId,
-    runtimeMode: "full-access",
-    timeoutMessage: "Timed out while starting the ticket work chat.",
-    title: `Work on ${input.issue.id}`,
   });
 
 const StrictDecodeOptions = { onExcessProperty: "error" } as const;
@@ -1199,7 +1131,6 @@ export const cycleApiClient = {
   },
 
   startTicketDraftChat,
-  startIssueAgentChat,
 
   createAgentTask: async (input: CreateAgentTaskInput): Promise<AgentTask | null> =>
     parseAgentTask(await unknownResource("POST", "/v1/agent-tasks", input)),
@@ -1208,8 +1139,8 @@ export const cycleApiClient = {
     repositoryId: string,
     issueId: string,
     input: StartIssueAgentTaskInput,
-  ): Promise<AgentTask | null> =>
-    parseAgentTask(
+  ): Promise<AgentTask> => {
+    const task = parseAgentTask(
       await unknownResource(
         "POST",
         `${repositoryPath(repositoryId)}/issues/${encodeSegment(issueId)}/agent-tasks`,
@@ -1219,7 +1150,17 @@ export const cycleApiClient = {
           model: input.model ?? undefined,
         },
       ),
-    ),
+    );
+    const threadId = task?.metadata.threadId;
+    if (task === null || typeof threadId !== "string" || threadId.length === 0) {
+      throw new CycleApiRequestError({
+        code: "INVALID_TICKET_AGENT_START_RESPONSE",
+        message: "Cycle prepared an agent task without a linked chat thread.",
+        status: 502,
+      });
+    }
+    return task;
+  },
 
   listAgentTasks: async (query: QueryInput = {}): Promise<ReadonlyArray<AgentTask>> =>
     (await unknownCollection("GET", withQuery("/v1/agent-tasks", query))).flatMap((entry) => {

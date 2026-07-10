@@ -33,6 +33,8 @@ import { useIssueListQuery, useUserListQuery } from "../queries/index.ts";
 
 type ChatPanelProps = {
   readonly agentProviders: readonly DetectedAgentProvider[];
+  readonly initialThreadId?: string;
+  readonly onInitialThreadSelected?: () => void;
   readonly profile?: ProfileConfig;
   readonly repositories: readonly RepositoryRecord[];
 };
@@ -500,7 +502,13 @@ const questionAnswersForProtocol = (
     ]),
   );
 
-export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelProps) => {
+export const ChatPanel = ({
+  agentProviders,
+  initialThreadId,
+  onInitialThreadSelected,
+  profile,
+  repositories,
+}: ChatPanelProps) => {
   const repositoryIds = React.useMemo(
     () => repositories.map((repository) => repository.id),
     [repositories],
@@ -564,7 +572,12 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
   const socketRef = React.useRef<WebSocket | null>(null);
   const pendingCommandsRef = React.useRef<Map<string, PendingCommand>>(new Map());
   const commandSequenceRef = React.useRef(0);
+  const initialThreadIdRef = React.useRef(initialThreadId);
   const selectedThreadIdRef = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    initialThreadIdRef.current = initialThreadId;
+  }, [initialThreadId]);
 
   React.useEffect(() => {
     selectedThreadIdRef.current = selectedThreadId;
@@ -643,16 +656,26 @@ export const ChatPanel = ({ agentProviders, profile, repositories }: ChatPanelPr
       });
 
       const currentSelectedId = selectedThreadIdRef.current;
+      const initialThreadId = initialThreadIdRef.current;
+      const requestedThreadId =
+        initialThreadId !== undefined && sorted.some((thread) => thread.id === initialThreadId)
+          ? initialThreadId
+          : null;
+      if (requestedThreadId !== null) {
+        initialThreadIdRef.current = undefined;
+        onInitialThreadSelected?.();
+      }
       const selectedExists =
         currentSelectedId !== null && sorted.some((thread) => thread.id === currentSelectedId);
-      const nextSelectedId = selectedExists ? currentSelectedId : (sorted[0]?.id ?? null);
+      const nextSelectedId =
+        requestedThreadId ?? (selectedExists ? currentSelectedId : (sorted[0]?.id ?? null));
       if (nextSelectedId !== currentSelectedId) {
         selectedThreadIdRef.current = nextSelectedId;
         setSelectedThreadId(nextSelectedId);
       }
       if (nextSelectedId !== null) subscribeThread(nextSelectedId);
     },
-    [subscribeThread],
+    [onInitialThreadSelected, subscribeThread],
   );
 
   const handleServerMessage = React.useCallback(

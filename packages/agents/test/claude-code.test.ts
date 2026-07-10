@@ -48,11 +48,12 @@ describe("@cycle/agents Claude Code provider", () => {
           mode: "http",
           url: "http://127.0.0.1:4738/mcp",
         },
-        runtimeMode: "workspace-write",
+        runtimeMode: "full-access",
       },
     });
 
     assert.deepEqual(options.allowedTools, ["mcp__cycle__*"]);
+    assert.equal(options.permissionMode, "bypassPermissions");
     assert.deepEqual(options.tools, {
       preset: "claude_code",
       type: "preset",

@@ -99,6 +99,7 @@ const runtimeMode = (input: AgentHarnessOpenInput) => {
     case "repository-read":
       return "read-only" as const;
     case "implementation-worktree":
+      return "full-access" as const;
     case "disposable-worktree":
       return "workspace-write" as const;
     case "operator-full-access":

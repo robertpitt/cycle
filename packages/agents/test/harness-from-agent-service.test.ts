@@ -31,6 +31,7 @@ const harnessCapabilities: AgentHarnessCapabilities = {
 };
 
 const openInput = (input: {
+  readonly authority?: AgentHarnessOpenInput["task"]["authority"];
   readonly message: string;
   readonly messages?: ReadonlyArray<AgentMessage>;
   readonly runId: string;
@@ -46,7 +47,7 @@ const openInput = (input: {
       runId: input.runId,
     },
     task: {
-      authority: {
+      authority: input.authority ?? {
         allowedOperations: [],
         mode: "conversation-read",
       },
@@ -110,6 +111,14 @@ describe("agent service harness", () => {
       Effect.scoped(
         harness.open(
           openInput({
+            authority: {
+              allowedOperations: ["workspace.write", "command.execute"],
+              mode: "implementation-worktree",
+              repositoryId: "repo_test",
+              ticketId: "TEST-1",
+              workspacePath: "/tmp/cycle-test-worktree",
+              worktreeId: "worktree_test",
+            },
             message: "List my Cycle tickets",
             runId: "agent_run_first",
             taskId: "agent_task_first",
@@ -119,6 +128,8 @@ describe("agent service harness", () => {
     );
 
     assert.deepEqual(request?.mcp, mcp);
+    assert.equal(request?.runtimeMode, "full-access");
+    assert.equal(request?.context?.cwd, "/tmp/cycle-test-worktree");
   });
 
   it("reuses a thread-level provider session and supplies prior messages", async () => {

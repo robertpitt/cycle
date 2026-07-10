@@ -14,6 +14,7 @@ import type {
 import { makeWorktreeStoreSqliteTestLayer } from "../src/testing/index.ts";
 import { implementationBranchName, resolveBranchCollision } from "../src/internal/branch.ts";
 import { validateManagedPath } from "../src/internal/path-policy.ts";
+import { omitUndefinedProperties } from "../src/internal/record.ts";
 import { canTransition } from "../src/internal/state-machine.ts";
 import { assert, describe, it } from "./effect-vitest.ts";
 
@@ -136,4 +137,15 @@ describe("@cycle/git-worktrees primitives", () => {
       }).pipe(Effect.provide(makeWorktreeStoreSqliteTestLayer())),
     ),
   );
+
+  it("omits undefined optional worktree fields at the store boundary", () => {
+    const record = omitUndefinedProperties({
+      ...makeRecord("/tmp/cycle-worktree-record"),
+      remoteName: undefined,
+      setupProfileId: undefined,
+    });
+
+    assert.strictEqual("remoteName" in record, false);
+    assert.strictEqual("setupProfileId" in record, false);
+  });
 });

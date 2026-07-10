@@ -72,7 +72,14 @@ export type LocalSettingsProviderShape = {
 };
 
 export type ApiRequestContext = {
+  readonly actor?: {
+    readonly email?: string;
+    readonly name: string;
+    readonly provider?: string;
+    readonly type: "agent" | "human" | "import";
+  };
   readonly requestId: string;
+  readonly source?: string;
 };
 
 export type RepositoryDirectoryEntry = {
@@ -99,6 +106,7 @@ export type CycleApiOptions = {
     repositoryId: string,
     ticketId: string,
     input: Readonly<Record<string, unknown>>,
+    requestContext: ApiRequestContext,
   ) => Promise<unknown>;
   readonly agentProviderProfiles?: () => Promise<readonly AgentProviderProfile[]>;
   readonly apiVersion?: string;
@@ -128,6 +136,7 @@ export type CycleApiRuntimeShape = {
     repositoryId: string,
     ticketId: string,
     input: Readonly<Record<string, unknown>>,
+    requestContext: ApiRequestContext,
   ) => Promise<unknown>;
   readonly apiVersion: string;
   readonly baseUrl?: string;

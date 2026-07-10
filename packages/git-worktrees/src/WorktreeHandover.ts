@@ -231,13 +231,16 @@ export const WorktreeHandoverLive = Layer.effect(
               worktreeId: record.worktreeId,
             });
 
-            yield* lifecycle.cleanup({
-              actor: input.actor,
-              fencingToken: lease.fencingToken,
-              record,
-            });
+            const cleanupAfterHandover = record.cleanupPolicy === "delete_after_handover";
+            if (cleanupAfterHandover) {
+              yield* lifecycle.cleanup({
+                actor: input.actor,
+                fencingToken: lease.fencingToken,
+                record,
+              });
+            }
             handoverRecord = yield* store.updateHandoverStep({
-              completedStep: "remove_worktree",
+              completedStep: cleanupAfterHandover ? "remove_worktree" : "retain_worktree",
               fencingToken: lease.fencingToken,
               handoverId,
               status: "completed",

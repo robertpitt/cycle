@@ -38,6 +38,7 @@ import {
 } from "./WorktreeSchemas.ts";
 import { WorktreeConfig } from "./WorktreeConfig.ts";
 import { newLifecycleEventId, newWorktreeLeaseId } from "./internal/ids.ts";
+import { omitUndefinedProperties } from "./internal/record.ts";
 import { validateTransition } from "./internal/state-machine.ts";
 
 export type CreateWorktreeRecordInput = Omit<WorktreeRecord, "createdAt" | "updatedAt"> & {
@@ -641,8 +642,9 @@ export const WorktreeStoreSqliteLive = Layer.effect(
       input: CreateWorktreeRecordInput,
     ) {
       const now = nowIso();
+      const definedInput = omitUndefinedProperties(input) as CreateWorktreeRecordInput;
       const record = WorktreeRecord.make({
-        ...input,
+        ...definedInput,
         createdAt: input.createdAt ?? now,
         updatedAt: input.updatedAt ?? now,
       });
