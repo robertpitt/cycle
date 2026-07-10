@@ -22,6 +22,7 @@ import { NavigationItem } from "../src/molecules/navigation-item/index.ts";
 import { PanelState } from "../src/molecules/panel-state/index.ts";
 import { PropertyPicker } from "../src/molecules/property-picker/index.ts";
 import { SettingRow } from "../src/molecules/setting-row/index.ts";
+import { ViewIssue } from "../src/organisms/view-issue/index.ts";
 
 describe("component regressions", () => {
   it("keeps semantic badge tones in outline appearance", () => {
@@ -185,6 +186,32 @@ describe("component regressions", () => {
     expect(errorMarkup).toContain('role="alert"');
     expect(errorMarkup).toContain("text-destructive");
     expect(decorativeSpinnerMarkup).not.toContain('role="status"');
+  });
+
+  it("renders sub-issues and each ticket relationship group", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ViewIssue, {
+        defaultDescription: "Ticket body",
+        defaultTitle: "Relationship visibility",
+        dependencyState: {
+          blocked: true,
+          blockingTickets: [{ id: "CYC-2", status: "todo", title: "Prerequisite" }],
+          dependencyTickets: [{ id: "CYC-2", status: "todo", title: "Prerequisite" }],
+          downstreamBlockedTickets: [{ id: "CYC-3", status: "backlog", title: "Dependent" }],
+          downstreamTickets: [{ id: "CYC-3", status: "backlog", title: "Dependent" }],
+          relatedTickets: [{ id: "CYC-4", status: "backlog", title: "Related work" }],
+          warnings: [],
+        },
+        subIssues: [{ id: "CYC-5", status: "todo", title: "Child ticket" }],
+      }),
+    );
+
+    expect(markup).toContain("Sub-issues");
+    expect(markup).toContain("Child ticket");
+    expect(markup).toContain("Relationships");
+    expect(markup).toContain("Depends on");
+    expect(markup).toContain("Blocks");
+    expect(markup).toContain("Related work");
   });
 });
 

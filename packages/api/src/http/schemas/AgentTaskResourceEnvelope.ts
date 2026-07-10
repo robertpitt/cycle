@@ -18,6 +18,7 @@ export const TicketAgentTaskCreatePayload = strictSchema(
   Schema.Struct({
     agentId: Schema.optional(Schema.String),
     authority: Schema.optional(AgentTaskSchemas.AgentTaskAuthority),
+    commandId: Schema.optional(Schema.String),
     idempotencyKey: Schema.optional(Schema.String),
     input: Schema.optional(Schema.Union([Schema.String, AgentTaskSchemas.AgentTaskJsonObject])),
     instructions: Schema.optional(Schema.String),

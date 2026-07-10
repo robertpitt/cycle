@@ -1,7 +1,10 @@
 import { strict as assert } from "node:assert";
 import type { TicketDocument } from "@cycle/contracts/schemas";
 import { describe, it } from "vitest";
-import { mapTicketDependencies } from "../src/renderer/lib/ticketDependencies.ts";
+import {
+  mapTicketDependencies,
+  mapTicketSubIssues,
+} from "../src/renderer/lib/ticketDependencies.ts";
 
 const ticket = (
   id: string,
@@ -52,6 +55,10 @@ describe("ticket dependency renderer mapping", () => {
       ["CYC-2"],
     );
     assert.deepEqual(
+      state.dependencyTickets.map((entry) => entry.id),
+      ["CYC-2", "CYC-3"],
+    );
+    assert.deepEqual(
       state.downstreamBlockedTickets.map((entry) => entry.id),
       ["CYC-4"],
     );
@@ -82,6 +89,36 @@ describe("ticket dependency renderer mapping", () => {
     assert.equal(
       state.warnings.some((warning) => warning.includes("CYC-404")),
       true,
+    );
+  });
+
+  it("does not report unavailable relationships while target reads are pending", () => {
+    const current = ticket("CYC-1", "todo", [{ issueId: "CYC-2", type: "depends_on" }]);
+    const state = mapTicketDependencies(current, [], { reportMissing: false });
+
+    assert.equal(state.blocked, false);
+    assert.deepEqual(state.warnings, []);
+  });
+
+  it("maps related tickets and direct sub-issues for visible relationship content", () => {
+    const current = ticket("CYC-1", "todo", [{ issueId: "CYC-2", type: "related" }]);
+    const related = ticket("CYC-2", "backlog");
+    const child = {
+      ...ticket("CYC-3", "todo"),
+      frontmatter: {
+        ...ticket("CYC-3", "todo").frontmatter,
+        parent: "CYC-1",
+      },
+    } as TicketDocument;
+    const state = mapTicketDependencies(current, [related, child]);
+
+    assert.deepEqual(
+      state.relatedTickets.map((entry) => entry.id),
+      ["CYC-2"],
+    );
+    assert.deepEqual(
+      mapTicketSubIssues(current, [related, child]).map((entry) => entry.id),
+      ["CYC-3"],
     );
   });
 });

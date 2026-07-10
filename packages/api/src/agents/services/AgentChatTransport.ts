@@ -7,7 +7,24 @@ export const chatThreadRecord = (thread: AgentChatThread) => ({
   createdAt: thread.createdAt,
   id: thread.threadId,
   model: thread.model ?? null,
+  origin:
+    thread.metadata !== undefined &&
+    typeof thread.metadata.origin === "object" &&
+    thread.metadata.origin !== null &&
+    !Array.isArray(thread.metadata.origin)
+      ? thread.metadata.origin
+      : thread.ticketId === undefined
+        ? null
+        : {
+            issueId: thread.ticketId,
+            kind: "ticket-agent-work",
+            label: thread.title ?? `Work on ${thread.ticketId}`,
+            repositoryId: thread.repositoryId ?? null,
+            ticketId: thread.ticketId,
+            trigger: "ticket-view",
+          },
   providerId: thread.providerId,
+  runtimeMode: thread.runtimeMode ?? "read-only",
   status: thread.status === "archived" ? "archived" : thread.status === "busy" ? "active" : "draft",
   summary: thread.title ?? "Agent conversation",
   title: thread.title ?? "Agent conversation",

@@ -9,7 +9,10 @@ export type TicketDependencyViewTicket = {
 export type TicketDependencyViewState = {
   readonly blocked: boolean;
   readonly blockingTickets: ReadonlyArray<TicketDependencyViewTicket>;
+  readonly dependencyTickets: ReadonlyArray<TicketDependencyViewTicket>;
   readonly downstreamBlockedTickets: ReadonlyArray<TicketDependencyViewTicket>;
+  readonly downstreamTickets: ReadonlyArray<TicketDependencyViewTicket>;
+  readonly relatedTickets: ReadonlyArray<TicketDependencyViewTicket>;
   readonly warnings: ReadonlyArray<string>;
 };
 
@@ -28,6 +31,11 @@ const dependencyIds = (ticket: TicketDocument): ReadonlyArray<string> =>
 const downstreamIds = (ticket: TicketDocument): ReadonlyArray<string> =>
   (ticket.frontmatter.relations ?? []).flatMap((relation) =>
     relation.type === "blocks" || relation.type === "blocking" ? [relation.issueId] : [],
+  );
+
+const relatedIds = (ticket: TicketDocument): ReadonlyArray<string> =>
+  (ticket.frontmatter.relations ?? []).flatMap((relation) =>
+    relation.type === "related" ? [relation.issueId] : [],
   );
 
 const hasCycle = (
@@ -59,22 +67,31 @@ const viewTicket = (ticket: TicketDocument): TicketDependencyViewTicket => ({
 export const mapTicketDependencies = (
   ticket: TicketDocument,
   repositoryTickets: ReadonlyArray<TicketDocument>,
+  options: { readonly reportMissing?: boolean } = {},
 ): TicketDependencyViewState => {
   const ticketsById = new Map(repositoryTickets.map((entry) => [entry.id, entry] as const));
   ticketsById.set(ticket.id, ticket);
   const missingPrerequisiteIds = new Set<string>();
   const missingDownstreamIds = new Set<string>();
+  const missingRelatedIds = new Set<string>();
+  const reportMissing = options.reportMissing ?? true;
 
   const prerequisites = [...new Set(dependencyIds(ticket))].flatMap((id) => {
     const prerequisite = ticketsById.get(id);
     if (prerequisite !== undefined) return [prerequisite];
-    missingPrerequisiteIds.add(id);
+    if (reportMissing) missingPrerequisiteIds.add(id);
     return [];
   });
   const downstream = [...new Set(downstreamIds(ticket))].flatMap((id) => {
     const dependent = ticketsById.get(id);
     if (dependent !== undefined) return [dependent];
-    missingDownstreamIds.add(id);
+    if (reportMissing) missingDownstreamIds.add(id);
+    return [];
+  });
+  const related = [...new Set(relatedIds(ticket))].flatMap((id) => {
+    const relatedTicket = ticketsById.get(id);
+    if (relatedTicket !== undefined) return [relatedTicket];
+    if (reportMissing) missingRelatedIds.add(id);
     return [];
   });
   const blockingTickets = prerequisites.filter((prerequisite) => !isFinished(prerequisite));
@@ -84,10 +101,16 @@ export const mapTicketDependencies = (
       : [
           `Blocked by ${blockingTickets.length} unfinished prerequisite${blockingTickets.length === 1 ? "" : "s"}.`,
         ]),
-    ...(missingPrerequisiteIds.size === 0 && missingDownstreamIds.size === 0
+    ...(missingPrerequisiteIds.size === 0 &&
+    missingDownstreamIds.size === 0 &&
+    missingRelatedIds.size === 0
       ? []
       : [
-          `Dependency tickets unavailable: ${[...missingPrerequisiteIds, ...missingDownstreamIds]
+          `Relationship tickets unavailable: ${[
+            ...missingPrerequisiteIds,
+            ...missingDownstreamIds,
+            ...missingRelatedIds,
+          ]
             .sort()
             .join(", ")}.`,
         ]),
@@ -97,9 +120,21 @@ export const mapTicketDependencies = (
   return {
     blocked: blockingTickets.length > 0 || missingPrerequisiteIds.size > 0,
     blockingTickets: blockingTickets.map(viewTicket),
+    dependencyTickets: prerequisites.map(viewTicket),
     downstreamBlockedTickets: isFinished(ticket)
       ? []
       : downstream.filter((dependent) => !isFinished(dependent)).map(viewTicket),
+    downstreamTickets: downstream.map(viewTicket),
+    relatedTickets: related.map(viewTicket),
     warnings,
   };
 };
+
+export const mapTicketSubIssues = (
+  ticket: TicketDocument,
+  repositoryTickets: ReadonlyArray<TicketDocument>,
+): ReadonlyArray<TicketDependencyViewTicket> =>
+  repositoryTickets
+    .filter((candidate) => candidate.frontmatter.parent === ticket.id)
+    .map(viewTicket)
+    .sort((left, right) => left.id.localeCompare(right.id));

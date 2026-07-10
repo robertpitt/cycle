@@ -584,6 +584,13 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
         const payload = objectPayload(command);
         const providerId = stringValue(payload.providerId) ?? "codex";
         const requestedModel = stringValue(payload.model);
+        const origin = isRecord(payload.origin) ? payload.origin : undefined;
+        const repositoryId = origin === undefined ? undefined : stringValue(origin.repositoryId);
+        const requestedRuntimeMode = stringValue(payload.runtimeMode);
+        const runtimeMode =
+          requestedRuntimeMode === "workspace-write" || requestedRuntimeMode === "full-access"
+            ? requestedRuntimeMode
+            : "read-only";
         const model =
           requestedModel ??
           (await runtime.agentProviderProfiles()).find((profile) => profile.provider === providerId)
@@ -595,7 +602,10 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
           chat.create(
             new AgentChatCreateInput({
               model,
+              origin,
               providerId,
+              repositoryId,
+              runtimeMode,
               title: stringValue(payload.title) ?? "Agent conversation",
             }),
           ),

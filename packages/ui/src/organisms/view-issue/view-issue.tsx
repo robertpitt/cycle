@@ -90,7 +90,10 @@ export type ViewIssueDependencyTicket = {
 export type ViewIssueDependencyState = {
   readonly blocked: boolean;
   readonly blockingTickets: readonly ViewIssueDependencyTicket[];
+  readonly dependencyTickets: readonly ViewIssueDependencyTicket[];
   readonly downstreamBlockedTickets: readonly ViewIssueDependencyTicket[];
+  readonly downstreamTickets: readonly ViewIssueDependencyTicket[];
+  readonly relatedTickets: readonly ViewIssueDependencyTicket[];
   readonly warnings: readonly string[];
 };
 
@@ -132,10 +135,70 @@ export type ViewIssueProps = Omit<React.HTMLAttributes<HTMLDivElement>, "title">
     readonly propertiesDefaultOpen?: boolean;
     readonly resources?: readonly ViewIssueResource[];
     readonly status?: React.ReactNode;
+    readonly subIssues?: readonly ViewIssueDependencyTicket[];
     readonly tagSuggestions?: readonly IssueEditorTagSuggestion[];
     readonly title?: string;
     readonly viewer?: IssueAuthor;
   };
+
+const RelationshipTicketRow = ({
+  blocking = false,
+  onSelect,
+  ticket,
+}: {
+  readonly blocking?: boolean;
+  readonly onSelect?: (issueId: string) => void;
+  readonly ticket: ViewIssueDependencyTicket;
+}) => (
+  <button
+    className={cn(
+      "grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border px-3 py-2 text-left transition",
+      blocking
+        ? "border-warning/30 bg-warning/8 hover:bg-warning/12"
+        : "border-border bg-subtle hover:bg-muted",
+      onSelect === undefined && "cursor-default",
+    )}
+    disabled={onSelect === undefined}
+    onClick={() => onSelect?.(ticket.id)}
+    type="button"
+  >
+    <span className="font-mono text-xs font-medium text-muted-foreground">{ticket.id}</span>
+    <span className="truncate text-sm font-medium text-foreground">{ticket.title}</span>
+    <span
+      className={cn(
+        "rounded-full px-2 py-0.5 text-xs font-medium",
+        blocking ? "bg-warning/15 text-warning" : "bg-muted text-muted-foreground",
+      )}
+    >
+      {ticket.status}
+    </span>
+  </button>
+);
+
+const RelationshipTicketGroup = ({
+  blockingIds = new Set<string>(),
+  label,
+  onSelect,
+  tickets,
+}: {
+  readonly blockingIds?: ReadonlySet<string>;
+  readonly label: string;
+  readonly onSelect?: (issueId: string) => void;
+  readonly tickets: readonly ViewIssueDependencyTicket[];
+}) =>
+  tickets.length === 0 ? null : (
+    <div className="grid gap-2">
+      <h3 className="text-sm font-medium text-foreground">{label}</h3>
+      {tickets.map((ticket) => (
+        <RelationshipTicketRow
+          blocking={blockingIds.has(ticket.id)}
+          key={ticket.id}
+          onSelect={onSelect}
+          ticket={ticket}
+        />
+      ))}
+    </div>
+  );
 
 const defaultAuthor: IssueAuthor = {
   initials: "RP",
@@ -403,6 +466,7 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
     propertiesDefaultOpen = true,
     resources = defaultResources,
     status,
+    subIssues = [],
     tagSuggestions,
     title,
     viewer = defaultAuthor,
@@ -561,62 +625,36 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
           />
         </div>
 
-        {dependencyState !== undefined &&
-        (dependencyState.blocked ||
-          dependencyState.downstreamBlockedTickets.length > 0 ||
-          dependencyState.warnings.length > 0) ? (
-          <section
-            aria-label="Dependencies"
-            className="grid gap-3 rounded-lg border border-border bg-subtle p-4"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <h2 className={typography.sectionTitle}>Dependencies</h2>
-              {dependencyState.blocked ? (
-                <span className="rounded-full bg-warning/15 px-2 py-1 text-xs font-medium text-warning">
-                  Blocked
-                </span>
-              ) : null}
-            </div>
-            {dependencyState.blockingTickets.length > 0 ? (
-              <div className="grid gap-1 text-sm">
-                <div className="font-medium text-foreground">Blocking tickets</div>
-                {dependencyState.blockingTickets.map((ticket) => (
-                  <div className="text-muted-foreground" key={ticket.id}>
-                    {ticket.id} · {ticket.title} · {ticket.status}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            {dependencyState.downstreamBlockedTickets.length > 0 ? (
-              <div className="grid gap-1 text-sm">
-                <div className="font-medium text-foreground">Downstream blocked tickets</div>
-                {dependencyState.downstreamBlockedTickets.map((ticket) => (
-                  <div className="text-muted-foreground" key={ticket.id}>
-                    {ticket.id} · {ticket.title} · {ticket.status}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            {dependencyState.warnings.map((warning) => (
-              <div className="text-sm text-warning" key={warning}>
-                {warning}
-              </div>
-            ))}
-          </section>
-        ) : null}
-
         <section className="grid gap-4" aria-label="Sub-issues">
-          <button
-            className={cn(
-              "inline-flex w-fit items-center gap-2 rounded-md px-1 text-muted-foreground transition hover:text-foreground",
-              typography.control,
-            )}
-            onClick={() => setSubIssueComposerOpen(true)}
-            type="button"
-          >
-            <Plus aria-hidden className="size-4" />
-            Add sub-issues
-          </button>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className={typography.sectionTitle}>Sub-issues</h2>
+            <button
+              className={cn(
+                "inline-flex items-center gap-2 rounded-md px-1 text-muted-foreground transition hover:text-foreground",
+                typography.control,
+              )}
+              onClick={() => setSubIssueComposerOpen(true)}
+              type="button"
+            >
+              <Plus aria-hidden className="size-4" />
+              Add sub-issue
+            </button>
+          </div>
+          {subIssues.length > 0 ? (
+            <div className="grid gap-2">
+              {subIssues.map((ticket) => (
+                <RelationshipTicketRow
+                  key={ticket.id}
+                  onSelect={onIssueReferenceClick}
+                  ticket={ticket}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted-foreground">
+              No sub-issues yet.
+            </div>
+          )}
           {subIssueComposerOpen ? (
             <IssueSubIssueComposer
               onCancel={() => setSubIssueComposerOpen(false)}
@@ -628,6 +666,50 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
             />
           ) : null}
         </section>
+
+        {dependencyState !== undefined &&
+        (dependencyState.dependencyTickets.length > 0 ||
+          dependencyState.downstreamTickets.length > 0 ||
+          dependencyState.relatedTickets.length > 0 ||
+          dependencyState.warnings.length > 0) ? (
+          <section aria-label="Relationships" className="grid gap-4">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className={typography.sectionTitle}>Relationships</h2>
+              {dependencyState.blocked ? (
+                <span className="rounded-full bg-warning/15 px-2 py-1 text-xs font-medium text-warning">
+                  Blocked
+                </span>
+              ) : null}
+            </div>
+            <RelationshipTicketGroup
+              blockingIds={new Set(dependencyState.blockingTickets.map((ticket) => ticket.id))}
+              label="Depends on"
+              onSelect={onIssueReferenceClick}
+              tickets={dependencyState.dependencyTickets}
+            />
+            <RelationshipTicketGroup
+              blockingIds={
+                new Set(dependencyState.downstreamBlockedTickets.map((ticket) => ticket.id))
+              }
+              label="Blocks"
+              onSelect={onIssueReferenceClick}
+              tickets={dependencyState.downstreamTickets}
+            />
+            <RelationshipTicketGroup
+              label="Related"
+              onSelect={onIssueReferenceClick}
+              tickets={dependencyState.relatedTickets}
+            />
+            {dependencyState.warnings.map((warning) => (
+              <div
+                className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning"
+                key={warning}
+              >
+                {warning}
+              </div>
+            ))}
+          </section>
+        ) : null}
 
         <section className="grid gap-4" aria-label="Resources">
           <div className="flex items-center justify-between gap-3">

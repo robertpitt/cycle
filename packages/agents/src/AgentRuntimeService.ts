@@ -272,10 +272,17 @@ export const AgentRuntimeServiceLive = Layer.effect(
                 input.idempotencyKey ??
                 (yield* makeAgentId<string>("agent_interactive_idempotency")),
               input: { message: input.message },
-              kind: "interactive-turn",
-              metadata: input.metadata ?? {},
+              kind:
+                thread.thread.kind === "ticket-implementation"
+                  ? "ticket-implementation"
+                  : "interactive-turn",
+              metadata: {
+                ...thread.thread.metadata,
+                ...input.metadata,
+              },
               model: thread.thread.model,
-              priorityLane: "interactive",
+              priorityLane:
+                thread.thread.kind === "ticket-implementation" ? "assigned" : "interactive",
               providerId: thread.thread.providerId,
               repositoryId: thread.thread.repositoryId,
               threadId: input.threadId,

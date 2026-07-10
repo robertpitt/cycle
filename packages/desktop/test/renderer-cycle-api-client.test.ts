@@ -1,6 +1,11 @@
 import { strict as assert } from "node:assert";
 import { afterEach, describe, it } from "vitest";
-import { parseAgentTask, statusLabel, taskStatusTone } from "../src/renderer/lib/agentTasks.ts";
+import {
+  latestAgentTask,
+  parseAgentTask,
+  statusLabel,
+  taskStatusTone,
+} from "../src/renderer/lib/agentTasks.ts";
 import { cycleApiClient, decodeRepositoryIssueCursor } from "../src/renderer/lib/cycleApiClient.ts";
 
 const originalFetch = globalThis.fetch;
@@ -103,6 +108,25 @@ describe("renderer cycle API client", () => {
     assert.equal(statusLabel("waiting_for_input"), "Waiting For Input");
     assert.equal(taskStatusTone("failed"), "danger");
     assert.equal(taskStatusTone("cancelled"), "neutral");
+  });
+
+  it("selects a successful retry instead of an older blocked attempt", () => {
+    const blockedTask = parseAgentTask({
+      ...agentTaskRecord("task-blocked", "blocked"),
+      updatedAt: "2026-07-10T14:00:00.000Z",
+    });
+    const completedRetry = parseAgentTask({
+      ...agentTaskRecord("task-retry", "completed"),
+      createdAt: "2026-07-10T14:01:00.000Z",
+      metadata: {
+        retryOfTaskId: "task-blocked",
+      },
+      updatedAt: "2026-07-10T14:05:00.000Z",
+    });
+
+    assert.ok(blockedTask);
+    assert.ok(completedRetry);
+    assert.equal(latestAgentTask([blockedTask, completedRetry])?.taskId, "task-retry");
   });
 
   it("uses canonical query parameters and adapts inbox collection pages", async () => {
@@ -259,6 +283,53 @@ describe("renderer cycle API client", () => {
         ["http://cycle.test/v1/agent-tasks/task-a/retry", "{}"],
       ],
     );
+  });
+
+  it("starts ticket implementation through the durable issue task endpoint", async () => {
+    installRendererApiWindow();
+    let request:
+      | { readonly body?: string; readonly method?: string; readonly url: string }
+      | undefined;
+    globalThis.fetch = async (input, init) => {
+      request = {
+        body: typeof init?.body === "string" ? init.body : undefined,
+        method: init?.method,
+        url: String(input),
+      };
+      return jsonResponse({
+        data: {
+          ...agentTaskRecord("task-ticket", "queued"),
+          authority: { mode: "full-access" },
+          metadata: { threadId: "agent_thread_ticket" },
+          request: {
+            ...agentTaskRecord("task-ticket", "queued").request,
+            authority: { mode: "full-access" },
+          },
+        },
+        meta: { requestId: "req-ticket" },
+      });
+    };
+
+    const task = await cycleApiClient.startIssueAgentTask("repo-a", "ISSUE-1", {
+      agentId: "codex",
+      commandId: "f80af9f2-c01f-48d9-96bf-7f22511f1eaf",
+      instructions: "Include regression coverage",
+      providerId: "codex",
+    });
+
+    assert.equal(request?.method, "POST");
+    assert.equal(
+      request?.url,
+      "http://cycle.test/v1/repositories/repo-a/issues/ISSUE-1/agent-tasks",
+    );
+    assert.deepEqual(JSON.parse(request?.body ?? "{}"), {
+      agentId: "codex",
+      commandId: "f80af9f2-c01f-48d9-96bf-7f22511f1eaf",
+      instructions: "Include regression coverage",
+      providerId: "codex",
+    });
+    assert.equal(task?.metadata.threadId, "agent_thread_ticket");
+    assert.equal(task?.authority.mode, "full-access");
   });
 
   it("sends the desktop profile as explicit human actor metadata", async () => {
@@ -507,65 +578,6 @@ describe("renderer cycle API client", () => {
       /Target repository: cycle:\/\/repository\/repo-cycle \(Cycle\)/u,
     );
     assert.match(sendTurn?.payload.message, /Draft login bug/u);
-
-    const workResult = await cycleApiClient.startIssueAgentChat({
-      instructions: "Implement this with tests",
-      issue: {
-        id: "CYC-123",
-        status: "todo",
-        title: "Fix login redirect",
-        type: "bug",
-      },
-      model: "gpt-test",
-      providerId: "codex",
-      repository: {
-        displayName: "Cycle",
-        id: "repo-cycle",
-        path: "/tmp/cycle",
-      },
-    });
-
-    assert.deepEqual(workResult, { threadId: "thread-work" });
-
-    const workSent = sockets[1]?.sent.map((raw) => JSON.parse(raw) as any) ?? [];
-    const workCreateThread = workSent.find((message) => message.type === "thread.create");
-    const workSendTurn = workSent.find((message) => message.type === "turn.send");
-
-    assert.equal(workCreateThread?.payload.origin.kind, "ticket-agent-work");
-    assert.equal(workCreateThread?.payload.origin.repositoryId, "repo-cycle");
-    assert.equal(workCreateThread?.payload.origin.issueId, "CYC-123");
-    assert.equal(workCreateThread?.payload.runtimeMode, "full-access");
-    assert.equal(workCreateThread?.payload.model, "gpt-test");
-    assert.equal(workSendTurn?.payload.threadId, "thread-work");
-    assert.match(
-      workSendTurn?.payload.message,
-      /Ticket: cycle:\/\/repository\/repo-cycle\/tickets\/CYC-123/u,
-    );
-    assert.match(workSendTurn?.payload.message, /Assigned ticket implementation workflow/u);
-    assert.match(workSendTurn?.payload.message, /dedicated git worktree/u);
-    assert.match(workSendTurn?.payload.message, /Do not create a pull request/u);
-    assert.match(workSendTurn?.payload.message, /Implement this with tests/u);
-
-    await cycleApiClient.startIssueAgentChat({
-      issue: {
-        id: "CYC-123",
-        status: "todo",
-        title: "Fix login redirect",
-        type: "bug",
-      },
-      providerId: "codex",
-      repository: {
-        displayName: "Cycle",
-        id: "repo-cycle",
-        path: "/tmp/cycle",
-      },
-    });
-    const repeatedWorkSent = sockets[2]?.sent.map((raw) => JSON.parse(raw) as any) ?? [];
-    const repeatedWorkSendTurn = repeatedWorkSent.find((message) => message.type === "turn.send");
-
-    assert.match(workSendTurn?.commandId, /^ticket_work_[0-9a-f-]+_2$/u);
-    assert.match(repeatedWorkSendTurn?.commandId, /^ticket_work_[0-9a-f-]+_2$/u);
-    assert.notEqual(repeatedWorkSendTurn?.commandId, workSendTurn?.commandId);
   });
 });
 

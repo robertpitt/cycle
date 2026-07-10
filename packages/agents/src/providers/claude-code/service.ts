@@ -399,7 +399,8 @@ const permissionModeForRuntime = (
   providerConfig: ClaudeCodeProviderConfig,
 ): Options["permissionMode"] => {
   if (runtimeMode === "read-only") return "dontAsk";
-  if (providerConfig.permissionMode === "bypassPermissions" && runtimeMode !== "full-access") {
+  if (runtimeMode === "full-access") return "bypassPermissions";
+  if (providerConfig.permissionMode === "bypassPermissions") {
     return "default";
   }
   return providerConfig.permissionMode ?? "default";

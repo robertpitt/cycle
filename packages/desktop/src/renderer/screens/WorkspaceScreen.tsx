@@ -199,6 +199,8 @@ export const WorkspaceScreen = () => {
   const [setupStep, setSetupStep] = React.useState<InitialSetupStep>("profile");
   const [fullName, setFullName] = React.useState("");
   const [email, setEmail] = React.useState("");
+  const [initialChatThreadId, setInitialChatThreadId] = React.useState<string>();
+  const clearInitialChatThreadId = React.useCallback(() => setInitialChatThreadId(undefined), []);
   const [repositoryImportError, setRepositoryImportError] = React.useState<React.ReactNode>();
   const [repositoryInitialiseRequest, setRepositoryInitialiseRequest] = React.useState<{
     readonly message?: string;
@@ -1232,6 +1234,8 @@ export const WorkspaceScreen = () => {
               ) : isChatPage ? (
                 <ChatPanel
                   agentProviders={detectedAgentProviders}
+                  initialThreadId={initialChatThreadId}
+                  onInitialThreadSelected={clearInitialChatThreadId}
                   profile={appConfigQuery.data?.profile}
                   repositories={repositories}
                 />
@@ -1253,12 +1257,22 @@ export const WorkspaceScreen = () => {
                   agentProviders={detectedAgentProviders}
                   issueId={selectedIssueId}
                   onArchived={navigateToParent}
-                  onChatOpen={() =>
+                  onChatOpen={(threadId) => {
+                    setInitialChatThreadId(threadId);
                     navigateWorkspace({
                       page: "chat",
                       scope: "workspace",
-                    })
-                  }
+                    });
+                  }}
+                  onIssueSelect={(issueId) => {
+                    if (!selectedIssueRepositoryId) return;
+                    navigateWorkspace({
+                      issueId,
+                      page: "issues",
+                      repositoryId: selectedIssueRepositoryId,
+                      scope: "repository",
+                    });
+                  }}
                   repositories={repositories}
                   repositoryId={selectedIssueRepositoryId}
                 />

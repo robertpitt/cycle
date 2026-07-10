@@ -123,9 +123,10 @@ const status = (task: DurableAgentTask): AgentTask["status"] => {
     case "cancelling":
       return "cancelling";
     case "completed":
-    case "failed":
     case "cancelled":
       return task.status;
+    case "failed":
+      return task.kind === "ticket-implementation" ? "blocked" : "failed";
     case "queued":
     case "retry-wait":
       return "queued";
@@ -141,6 +142,18 @@ const taskProjection = (snapshot: AgentTaskSnapshot): AgentTask => {
   const task = snapshot.task;
   const original = object(task.metadata.originalRequest);
   const originalAuthority = object(original.authority);
+  const projectedOrigin =
+    original.origin === undefined
+      ? {
+          kind: task.kind === "ticket-implementation" ? "ticket" : task.kind,
+          ...(typeof task.metadata.repositoryId === "string"
+            ? { repositoryId: task.metadata.repositoryId }
+            : {}),
+          ...(typeof task.metadata.ticketId === "string"
+            ? { ticketId: task.metadata.ticketId }
+            : {}),
+        }
+      : object(original.origin);
   const terminalError = task.terminal?.status === "failed" ? task.terminal.error : undefined;
   const latestAttempt = snapshot.attempts.at(-1);
   const input = original.input ?? task.input.message ?? task.input;
@@ -150,7 +163,12 @@ const taskProjection = (snapshot: AgentTaskSnapshot): AgentTask => {
   const authorityMode =
     originalAuthority.mode === "workspace-write" || originalAuthority.mode === "full-access"
       ? originalAuthority.mode
-      : "read-only";
+      : task.authority.mode === "implementation-worktree" ||
+          task.authority.mode === "operator-full-access"
+        ? "full-access"
+        : task.authority.mode === "disposable-worktree"
+          ? "workspace-write"
+          : "read-only";
 
   return {
     agentId: task.agentId,
@@ -181,9 +199,15 @@ const taskProjection = (snapshot: AgentTaskSnapshot): AgentTask => {
       ? {}
       : { lastHeartbeatAt: iso(latestAttempt.heartbeatAt) }),
     maxAttempts: task.maxAttempts,
-    metadata: task.metadata,
+    metadata: {
+      ...task.metadata,
+      threadId: task.threadId,
+      ...(task.authority.workspacePath === undefined
+        ? {}
+        : { worktreePath: task.authority.workspacePath }),
+    },
     ...(task.model === undefined ? {} : { model: task.model }),
-    ...(original.origin === undefined ? {} : { origin: object(original.origin) }),
+    origin: projectedOrigin,
     providerId: task.providerId,
     request: {
       authority: {
@@ -200,7 +224,7 @@ const taskProjection = (snapshot: AgentTaskSnapshot): AgentTask => {
       input: typeof input === "string" ? input : object(input),
       instructions,
       metadata: object(original.metadata ?? task.metadata),
-      ...(original.origin === undefined ? {} : { origin: object(original.origin) }),
+      origin: projectedOrigin,
       requestedBy,
     },
     rootRunId: snapshot.runs[0]?.rootRunId ?? null,
@@ -404,12 +428,15 @@ export const makeAgentTaskUsecases = (): AgentTaskUsecasesShape => ({
         Stream.filter((task) => {
           const original = object(task.metadata.originalRequest);
           const origin = object(original.origin);
-          return query.originKind === undefined ? true : origin.kind === query.originKind;
+          const kind =
+            origin.kind ?? (task.kind === "ticket-implementation" ? "ticket" : task.kind);
+          return query.originKind === undefined ? true : kind === query.originKind;
         }),
         Stream.filter((task) => {
           const original = object(task.metadata.originalRequest);
           const origin = object(original.origin);
-          return query.ticketId === undefined ? true : origin.ticketId === query.ticketId;
+          const ticketId = origin.ticketId ?? task.metadata.ticketId;
+          return query.ticketId === undefined ? true : ticketId === query.ticketId;
         }),
         Stream.take((query.limit ?? 100) + 1),
         Stream.mapEffect((task) => runtime.getTask(task.taskId)),

@@ -25,8 +25,10 @@ export class AgentChatCreateInput extends Schema.Class<AgentChatCreateInput>(
   harnessId: Schema.optional(Schema.String),
   idempotencyKey: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
+  origin: Schema.optional(Schema.Record(Schema.String, Schema.Json)),
   providerId: Schema.optional(Schema.String),
   repositoryId: Schema.optional(Schema.String),
+  runtimeMode: Schema.optional(Schema.Literals(["read-only", "workspace-write", "full-access"])),
   title: Schema.optional(Schema.String),
 }) {}
 
@@ -110,11 +112,15 @@ const threadProjection = (snapshot: {
     readonly agentId: string;
     readonly createdAt: DateTime.Utc;
     readonly harnessId: string;
+    readonly authority: { readonly mode: string };
+    readonly kind: string;
+    readonly metadata: Readonly<Record<string, Schema.Json>>;
     readonly model?: string;
     readonly providerId: string;
     readonly repositoryId?: string;
     readonly status: "open" | "archived";
     readonly threadId: string;
+    readonly ticketId?: string;
     readonly title?: string;
     readonly updatedAt: DateTime.Utc;
   };
@@ -123,7 +129,16 @@ const threadProjection = (snapshot: {
     agentId: snapshot.thread.agentId,
     createdAt: DateTime.formatIso(snapshot.thread.createdAt),
     harnessId: snapshot.thread.harnessId,
+    kind: snapshot.thread.kind,
+    metadata: snapshot.thread.metadata,
     providerId: snapshot.thread.providerId,
+    runtimeMode:
+      snapshot.thread.authority.mode === "implementation-worktree" ||
+      snapshot.thread.authority.mode === "operator-full-access"
+        ? "full-access"
+        : snapshot.thread.authority.mode === "disposable-worktree"
+          ? "workspace-write"
+          : "read-only",
     status:
       snapshot.thread.status === "archived"
         ? "archived"
@@ -140,6 +155,7 @@ const threadProjection = (snapshot: {
       ? {}
       : { repositoryId: snapshot.thread.repositoryId }),
     ...(snapshot.thread.title === undefined ? {} : { title: snapshot.thread.title }),
+    ...(snapshot.thread.ticketId === undefined ? {} : { ticketId: snapshot.thread.ticketId }),
   });
 
 const messageProjection = (message: {
@@ -216,13 +232,26 @@ export const AgentChatLive = Layer.effect(
           .createThread(
             new AgentThreadCreateInput({
               agentId: input.agentId ?? "default",
-              authority: {
-                allowedOperations: [],
-                mode: input.repositoryId === undefined ? "conversation-read" : "repository-read",
-                ...(input.repositoryId === undefined ? {} : { repositoryId: input.repositoryId }),
-              },
+              authority:
+                input.runtimeMode === "full-access"
+                  ? {
+                      allowedOperations: ["repository.read", "workspace.write", "command.execute"],
+                      mode: "operator-full-access",
+                      ...(input.repositoryId === undefined
+                        ? {}
+                        : { repositoryId: input.repositoryId }),
+                    }
+                  : {
+                      allowedOperations: [],
+                      mode:
+                        input.repositoryId === undefined ? "conversation-read" : "repository-read",
+                      ...(input.repositoryId === undefined
+                        ? {}
+                        : { repositoryId: input.repositoryId }),
+                    },
               harnessId: input.harnessId ?? input.providerId ?? "codex",
               kind: "interactive",
+              metadata: input.origin === undefined ? {} : { origin: input.origin },
               providerId: input.providerId ?? "codex",
               ...(input.idempotencyKey === undefined
                 ? {}

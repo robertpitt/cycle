@@ -32,10 +32,17 @@ export const createIssueAgentTask = ({ params, payload }: V1Request<"createIssue
         true,
       );
     }
-    const { requestId } = yield* CycleRequestContext;
+    const requestContext = yield* CycleRequestContext;
+    const { requestId } = requestContext;
     const assigned = yield* Effect.result(
       Effect.tryPromise({
-        try: () => runtime.assignTicketToAgent!(params.repositoryId, params.issueId, payload),
+        try: () =>
+          runtime.assignTicketToAgent!(
+            params.repositoryId,
+            params.issueId,
+            payload,
+            requestContext,
+          ),
         catch: (cause) => {
           const message = cause instanceof Error ? cause.message : "Ticket assignment failed.";
           const blocked = message.includes("blocked by unfinished prerequisite tickets");

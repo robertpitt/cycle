@@ -1,5 +1,6 @@
 import {
   startCycleApiServer,
+  type ApiRequestContext,
   type CycleApiServerHandle,
   type RepositoryDirectoryEntry,
 } from "@cycle/api";
@@ -14,7 +15,7 @@ import {
   type AgentProviderId,
   type AgentProviderProfile,
 } from "@cycle/agents";
-import { AgentRuntimeService } from "@cycle/agents/runtime";
+import { AgentControlInput, AgentRuntimeService } from "@cycle/agents/runtime";
 import { AgentRuntimeSystemLive } from "@cycle/agents/system";
 import {
   AgentTaskSubmitInput as DurableAgentTaskSubmitInput,
@@ -222,6 +223,8 @@ const agentTaskResourceProjection = (
         return "waiting_for_input" as const;
       case "retry-wait":
         return "queued" as const;
+      case "failed":
+        return task.kind === "ticket-implementation" ? ("blocked" as const) : "failed";
       default:
         return task.status;
     }
@@ -229,18 +232,24 @@ const agentTaskResourceProjection = (
   return {
     agentId: task.agentId,
     attempt: task.currentAttempt,
-    authority: { mode: "workspace-write" as const },
+    authority: { mode: "full-access" as const },
     completedAt: task.completedAt === undefined ? undefined : DateTime.formatIso(task.completedAt),
     createdAt: DateTime.formatIso(task.createdAt),
     idempotencyKey: task.idempotencyKey,
     lastError: task.terminal?.status === "failed" ? task.terminal.error : undefined,
     maxAttempts: task.maxAttempts,
-    metadata: task.metadata,
+    metadata: {
+      ...task.metadata,
+      threadId: task.threadId,
+      ...(task.authority.workspacePath === undefined
+        ? {}
+        : { worktreePath: task.authority.workspacePath }),
+    },
     model: task.model,
     origin: { kind: "ticket", repositoryId: input.repositoryId, ticketId: input.ticketId },
     providerId: task.providerId,
     request: {
-      authority: { mode: "workspace-write" as const },
+      authority: { mode: "full-access" as const },
       context: { repositoryId: input.repositoryId, ticketId: input.ticketId },
       input: input.prompt,
       instructions: "Implement the assigned ticket in its managed worktree.",
@@ -333,10 +342,23 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
             env: environment,
             executablePath: claudeCodePreference.executablePath ?? null,
           },
-          mcp: () =>
+          mcp: (input) =>
             Deferred.await(cycleMcpUrl).pipe(
               Effect.map((url) => ({
-                headers: { authorization: `Bearer ${staticToken}` },
+                headers: {
+                  authorization: `Bearer ${staticToken}`,
+                  "x-cycle-agent-task-id": input.task.taskId,
+                  "x-cycle-agent-thread-id": input.task.threadId,
+                  ...(input.task.repositoryId === undefined
+                    ? {}
+                    : { "x-cycle-repository-id": input.task.repositoryId }),
+                  ...(input.task.authority.ticketId === undefined
+                    ? {}
+                    : { "x-cycle-ticket-id": input.task.authority.ticketId }),
+                  ...(input.task.authority.worktreeId === undefined
+                    ? {}
+                    : { "x-cycle-worktree-id": input.task.authority.worktreeId }),
+                },
                 mode: "http" as const,
                 url,
               })),
@@ -344,6 +366,40 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
           workflows: [
             {
               id: "ticket-implementation",
+              prepare: ({ task }) =>
+                Effect.gen(function* () {
+                  const repositoryId = task.metadata.repositoryId;
+                  const ticketId = task.metadata.ticketId;
+                  if (typeof repositoryId !== "string" || typeof ticketId !== "string") {
+                    return yield* ticketWorkflowError(
+                      new Error("Ticket workflow metadata is incomplete."),
+                    );
+                  }
+                  const ticket = yield* database.getTicket(repositoryId, ticketId);
+                  if (ticket === null) {
+                    return yield* ticketWorkflowError(
+                      new Error(`Ticket was not found: ${ticketId}`),
+                    );
+                  }
+                  if (ticket.status === "done" || ticket.status === "canceled") {
+                    return yield* ticketWorkflowError(
+                      new Error(
+                        `Ticket ${ticketId} is ${ticket.status}; implementation cannot resume.`,
+                      ),
+                    );
+                  }
+                  if (ticket.status === "needs-review" || ticket.status === "in-review") {
+                    yield* database.transitionTicket(
+                      repositoryId,
+                      ticketId,
+                      {
+                        reason: "Review feedback resumed the existing agent implementation.",
+                        status: "in-progress",
+                      },
+                      { message: `Resume ${ticketId} after review feedback` },
+                    );
+                  }
+                }).pipe(Effect.mapError(ticketWorkflowError)),
               complete: ({ summary, task }) =>
                 Effect.gen(function* () {
                   const repositoryId = task.metadata.repositoryId;
@@ -427,6 +483,64 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
                     );
                   }
                 }).pipe(Effect.mapError(ticketWorkflowError)),
+              failed: ({ error, task }) =>
+                Effect.gen(function* () {
+                  const repositoryId = task.metadata.repositoryId;
+                  const ticketId = task.metadata.ticketId;
+                  if (typeof repositoryId !== "string" || typeof ticketId !== "string") return;
+                  const marker = `Agent blocker: ${task.taskId}:${error.code}`;
+                  const comments = yield* database.ticketRecords(repositoryId, ticketId, {
+                    limit: 500,
+                    recordType: "comment",
+                  });
+                  const alreadyCommented = comments.entries.some((record) => {
+                    const payload = record.payload;
+                    return (
+                      typeof payload === "object" &&
+                      payload !== null &&
+                      "body" in payload &&
+                      typeof payload.body === "string" &&
+                      payload.body.includes(marker)
+                    );
+                  });
+                  if (!alreadyCommented) {
+                    const worktreePath = task.metadata.worktreePath;
+                    const branchName = task.metadata.branchName;
+                    yield* database.addComment(repositoryId, ticketId, {
+                      body: [
+                        "Agent implementation is blocked and requires attention.",
+                        "",
+                        `Error: ${error.code} — ${error.message}`,
+                        `Provider: ${task.providerId}`,
+                        `Task: ${task.taskId}`,
+                        ...(typeof worktreePath === "string" ? [`Worktree: ${worktreePath}`] : []),
+                        ...(typeof branchName === "string" && branchName.length > 0
+                          ? [`Branch: ${branchName}`]
+                          : []),
+                        "No worktree cleanup was performed. Resolve the error, then retry from the original Cycle chat.",
+                        "",
+                        marker,
+                      ].join("\n"),
+                    });
+                  }
+                  const current = yield* database.getTicket(repositoryId, ticketId);
+                  if (
+                    current !== null &&
+                    current.status !== "in-progress" &&
+                    current.status !== "done" &&
+                    current.status !== "canceled"
+                  ) {
+                    yield* database.transitionTicket(
+                      repositoryId,
+                      ticketId,
+                      {
+                        reason: "Agent implementation is blocked and remains active.",
+                        status: "in-progress",
+                      },
+                      { message: `Mark ${ticketId} agent implementation blocked` },
+                    );
+                  }
+                }).pipe(Effect.mapError(ticketWorkflowError)),
             },
           ],
         }),
@@ -441,6 +555,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
     repositoryId: string,
     ticketId: string,
     input: Readonly<Record<string, unknown>>,
+    requestContext: ApiRequestContext,
   ): Promise<unknown> =>
     runPromise(
       Effect.gen(function* () {
@@ -462,24 +577,109 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
           });
         }
 
-        const providerId = typeof input.providerId === "string" ? input.providerId : "codex";
+        if (ticket.status === "done" || ticket.status === "canceled") {
+          return yield* new BackendApiError({
+            message: `Ticket ${ticketId} is ${ticket.status} and cannot start implementation work.`,
+            operation: "BackendApi.assignTicket.terminalTicket",
+          });
+        }
+
+        const requestedProviderId =
+          typeof input.providerId === "string" ? input.providerId : "codex";
+        const providerDefinition = supportedAgentProviders.find(
+          (candidate) => candidate.id === requestedProviderId,
+        );
+        if (providerDefinition === undefined) {
+          return yield* new BackendApiError({
+            message: `Agent provider is not supported: ${requestedProviderId}`,
+            operation: "BackendApi.assignTicket.provider",
+          });
+        }
+        const providerId = providerDefinition.id;
+        const providerPreference = preferenceForProvider(config, providerId);
+        if (!providerPreference.enabled) {
+          return yield* new BackendApiError({
+            message: `Agent provider is disabled: ${providerId}`,
+            operation: "BackendApi.assignTicket.providerDisabled",
+          });
+        }
+        const detectedProviders = yield* agentProviderDetector.detect.pipe(
+          Effect.mapError(toBackendApiError),
+        );
+        const detectedProvider = detectedProviders.find((candidate) => candidate.id === providerId);
+        if (detectedProvider?.status !== "available") {
+          return yield* new BackendApiError({
+            message: detectedProvider?.message ?? `Agent provider is unavailable: ${providerId}`,
+            operation: "BackendApi.assignTicket.providerUnavailable",
+          });
+        }
+
+        const profile = yield* settings.getProfile.pipe(Effect.mapError(toBackendApiError));
+        const assignedUserId = profile.email.trim().toLowerCase();
+        if (!/^[^\s/@]+@[^\s/@]+\.[^\s/@]+$/u.test(assignedUserId)) {
+          return yield* new BackendApiError({
+            message: "Complete your Cycle profile with a valid email before starting an agent.",
+            operation: "BackendApi.assignTicket.currentUser",
+          });
+        }
+        const requestEmail =
+          requestContext.actor?.type === "human"
+            ? requestContext.actor.email?.trim().toLowerCase()
+            : undefined;
+        if (requestEmail !== undefined && requestEmail !== assignedUserId) {
+          return yield* new BackendApiError({
+            message: "The desktop actor does not match the configured Cycle profile.",
+            operation: "BackendApi.assignTicket.actorMismatch",
+          });
+        }
+
         const agentId = typeof input.agentId === "string" ? input.agentId : providerId;
         const model = typeof input.model === "string" ? input.model : undefined;
-        const idempotencyKey =
-          typeof input.idempotencyKey === "string"
-            ? input.idempotencyKey
-            : `ticket:${repositoryId}:${ticketId}:assignment:${agentId}`;
+        const commandId =
+          typeof input.commandId === "string"
+            ? input.commandId
+            : typeof input.idempotencyKey === "string"
+              ? input.idempotencyKey
+              : crypto.randomUUID();
+        const idempotencyKey = `ticket:${repositoryId}:${ticketId}:command:${commandId}`;
         const requestedInput = input.input;
+        const additionalInstructions =
+          typeof input.instructions === "string" && input.instructions.trim().length > 0
+            ? input.instructions.trim()
+            : undefined;
         const prompt =
           typeof requestedInput === "string"
             ? requestedInput
-            : `Implement ticket ${ticketId}: ${ticket.title}\n\n${ticket.body}`;
-        const existing = yield* agentRuntime.listTasks({ limit: 10_000 }).pipe(
+            : [
+                `Implement ticket ${ticketId}: ${ticket.title}`,
+                "",
+                ticket.body,
+                ...(additionalInstructions === undefined
+                  ? []
+                  : ["", "Additional user instructions:", additionalInstructions]),
+                "",
+                "Cycle has already prepared and attached the implementation worktree. Work only in the provided current working directory. Do not create, attach, remove, or relocate Git worktrees. Implement and verify the ticket, then provide a detailed completion summary; Cycle owns final commit, push, handover comment, and ticket transition.",
+              ].join("\n");
+        const canonicalCommandInput = JSON.stringify({
+          additionalInstructions: additionalInstructions ?? null,
+          agentId,
+          model: model ?? null,
+          providerId,
+          requestedInput: requestedInput ?? null,
+        });
+
+        const commandTask = yield* agentRuntime.listTasks({ limit: 10_000 }).pipe(
           Stream.filter((task) => task.idempotencyKey === idempotencyKey),
           Stream.runHead,
         );
-        if (Option.isSome(existing)) {
-          const existingSnapshot = yield* agentRuntime.getTask(existing.value.taskId);
+        if (Option.isSome(commandTask)) {
+          if (commandTask.value.metadata.commandInput !== canonicalCommandInput) {
+            return yield* new BackendApiError({
+              message: "The idempotency key was already used with different task input.",
+              operation: "BackendApi.assignTicket.idempotencyConflict",
+            });
+          }
+          const existingSnapshot = yield* agentRuntime.getTask(commandTask.value.taskId);
           if (Option.isSome(existingSnapshot)) {
             return agentTaskResourceProjection(existingSnapshot.value, {
               prompt,
@@ -519,6 +719,67 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
           });
         }
 
+        const existingContextTask = yield* agentRuntime.listTasks({ limit: 10_000 }).pipe(
+          Stream.filter(
+            (task) =>
+              task.kind === "ticket-implementation" &&
+              task.metadata.repositoryId === repositoryId &&
+              task.metadata.ticketId === ticketId,
+          ),
+          Stream.runHead,
+        );
+        if (Option.isSome(existingContextTask)) {
+          const existingTask = existingContextTask.value;
+          if (existingTask.providerId !== providerId) {
+            return yield* new BackendApiError({
+              message: `Ticket ${ticketId} already has an implementation thread using ${existingTask.providerId}. Resume that thread instead of changing provider.`,
+              operation: "BackendApi.assignTicket.activeContextConflict",
+            });
+          }
+          const contextUserId = existingTask.metadata.assignedUserId;
+          if (typeof contextUserId === "string" && contextUserId !== assignedUserId) {
+            return yield* new BackendApiError({
+              message: `Ticket ${ticketId} already has an implementation context assigned to another user.`,
+              operation: "BackendApi.assignTicket.assigneeConflict",
+            });
+          }
+          if (ticket.frontmatter.assignee !== assignedUserId) {
+            yield* database
+              .updateTicket(repositoryId, ticketId, {
+                frontmatter: { assignee: assignedUserId },
+                message: `Assign ${ticketId} to ${profile.displayName}`,
+              })
+              .pipe(Effect.mapError(toBackendApiError));
+          }
+          if (
+            ticket.status !== "in-progress" &&
+            ticket.status !== "needs-review" &&
+            ticket.status !== "in-review"
+          ) {
+            yield* database
+              .transitionTicket(
+                repositoryId,
+                ticketId,
+                {
+                  reason: "Resume the existing Cycle implementation context.",
+                  status: "in-progress",
+                },
+                { message: `Resume ${ticketId} agent implementation` },
+              )
+              .pipe(Effect.mapError(toBackendApiError));
+          }
+          const existingSnapshot = yield* agentRuntime.getTask(existingTask.taskId);
+          if (Option.isSome(existingSnapshot)) {
+            const existingPrompt =
+              typeof existingTask.input.message === "string" ? existingTask.input.message : prompt;
+            return agentTaskResourceProjection(existingSnapshot.value, {
+              prompt: existingPrompt,
+              repositoryId,
+              ticketId,
+            });
+          }
+        }
+
         const rootRunId = yield* Effect.sync(
           () => `agent_run_${crypto.randomUUID().replaceAll("-", "")}` as DurableAgentRunId,
         );
@@ -526,6 +787,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
         const descriptor = { repositoryId, repositoryPath: repository.path };
         const worktree = yield* worktrees
           .create(descriptor, {
+            cleanupPolicy: "retain_until",
             jobId: jobId as never,
             mode: "implementation",
             repositoryId: repositoryId as never,
@@ -536,18 +798,9 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
           })
           .pipe(Effect.mapError(toBackendApiError));
 
-        yield* database
-          .transitionTicket(
-            repositoryId,
-            ticketId,
-            {
-              reason: "Explicitly assigned to the Cycle agent runtime.",
-              status: "in-progress",
-            },
-            { message: `Assign ${ticketId} to agent` },
-          )
-          .pipe(Effect.mapError(toBackendApiError));
-
+        const cleanupWorktree = worktrees
+          .cleanup(descriptor, { actor: "cycle-ticket-implementation", record: worktree })
+          .pipe(Effect.catch(() => Effect.void));
         const thread = yield* agentRuntime
           .createThread(
             new DurableAgentThreadCreateInput({
@@ -558,7 +811,6 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
                   "workspace.write",
                   "command.execute",
                   "ticket.comment",
-                  "ticket.transition.needs-review",
                 ],
                 mode: "implementation-worktree",
                 repositoryId,
@@ -569,6 +821,14 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
               harnessId: providerId,
               idempotencyKey: `thread:${idempotencyKey}`,
               kind: "ticket-implementation",
+              metadata: {
+                assignedUserId,
+                branchName: worktree.desiredBranchName ?? "",
+                repositoryId,
+                ticketId,
+                worktreePath: worktree.path,
+                worktreeId: worktree.worktreeId,
+              },
               providerId,
               repositoryId,
               ticketId,
@@ -577,7 +837,50 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
               ...(model === undefined ? {} : { model }),
             }),
           )
-          .pipe(Effect.mapError(toBackendApiError));
+          .pipe(
+            Effect.mapError(toBackendApiError),
+            Effect.catch((error) => cleanupWorktree.pipe(Effect.andThen(Effect.fail(error)))),
+          );
+
+        const restorePreparedState = Effect.gen(function* () {
+          yield* database
+            .updateTicket(repositoryId, ticketId, {
+              frontmatter: {
+                assignee: ticket.frontmatter.assignee ?? null,
+                status: ticket.status,
+              },
+              message: `Restore ${ticketId} after agent startup failure`,
+            })
+            .pipe(Effect.catch(() => Effect.void));
+          yield* agentRuntime
+            .archiveThread(thread.thread.threadId)
+            .pipe(Effect.catch(() => Effect.void));
+          yield* cleanupWorktree;
+        });
+
+        yield* Effect.gen(function* () {
+          if (ticket.frontmatter.assignee !== assignedUserId) {
+            yield* database.updateTicket(repositoryId, ticketId, {
+              frontmatter: { assignee: assignedUserId },
+              message: `Assign ${ticketId} to ${profile.displayName}`,
+            });
+          }
+          if (ticket.status !== "in-progress") {
+            yield* database.transitionTicket(
+              repositoryId,
+              ticketId,
+              {
+                reason: "Cycle prepared the implementation worktree and agent thread.",
+                status: "in-progress",
+              },
+              { message: `Start ${ticketId} agent implementation` },
+            );
+          }
+        }).pipe(
+          Effect.mapError(toBackendApiError),
+          Effect.catch((error) => restorePreparedState.pipe(Effect.andThen(Effect.fail(error)))),
+        );
+
         const taskSnapshot = yield* agentRuntime
           .submit(
             new DurableAgentTaskSubmitInput({
@@ -596,8 +899,14 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
               kind: "ticket-implementation",
               maxAttempts: typeof input.maxAttempts === "number" ? input.maxAttempts : undefined,
               metadata: {
+                assignedUserId,
+                branchName: worktree.desiredBranchName ?? "",
+                commandId,
+                commandInput: canonicalCommandInput,
                 repositoryId,
                 ticketId,
+                threadId: thread.thread.threadId,
+                worktreePath: worktree.path,
                 worktreeId: worktree.worktreeId,
               },
               priorityLane: "assigned",
@@ -609,11 +918,77 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
               ...(model === undefined ? {} : { model }),
             }),
           )
-          .pipe(Effect.mapError(toBackendApiError));
+          .pipe(
+            Effect.mapError(toBackendApiError),
+            Effect.catch((error) => restorePreparedState.pipe(Effect.andThen(Effect.fail(error)))),
+          );
 
         return agentTaskResourceProjection(taskSnapshot, { prompt, repositoryId, ticketId });
       }),
     );
+
+  const cleanupTerminalTicket = Effect.fn("BackendApi.cleanupTerminalTicket")(function* (
+    repositoryId: string,
+    ticketId: string,
+  ) {
+    const repositories = yield* localWorkspace.listRepositories;
+    const repository = repositories.find((candidate) => candidate.id === repositoryId);
+    if (repository === undefined) return;
+    const descriptor = { repositoryId, repositoryPath: repository.path };
+    const tasks = yield* agentRuntime.listTasks({ limit: 10_000 }).pipe(
+      Stream.filter(
+        (task) =>
+          task.kind === "ticket-implementation" &&
+          task.metadata.repositoryId === repositoryId &&
+          task.metadata.ticketId === ticketId,
+      ),
+      Stream.runCollect,
+    );
+    const contexts = new Map<
+      string,
+      { readonly task: (typeof tasks)[number]; readonly worktreeId: string }
+    >();
+    for (const task of tasks) {
+      const worktreeId = task.metadata.worktreeId;
+      if (typeof worktreeId === "string" && !contexts.has(task.threadId)) {
+        contexts.set(task.threadId, { task, worktreeId });
+      }
+    }
+    yield* Effect.forEach(
+      contexts.values(),
+      ({ task, worktreeId }) =>
+        Effect.gen(function* () {
+          if (
+            task.status !== "completed" &&
+            task.status !== "failed" &&
+            task.status !== "cancelled"
+          ) {
+            yield* agentRuntime
+              .cancel(
+                new AgentControlInput({
+                  reason: `Ticket ${ticketId} became terminal.`,
+                  taskId: task.taskId,
+                  threadId: task.threadId,
+                }),
+              )
+              .pipe(Effect.catch(() => Effect.void));
+          }
+          const record = yield* worktrees
+            .get(descriptor, worktreeId)
+            .pipe(Effect.catch(() => Effect.succeed(undefined)));
+          if (record !== undefined && record.status !== "removed" && record.status !== "removing") {
+            yield* worktrees
+              .cleanup(descriptor, {
+                actor: "cycle-ticket-terminal-cleanup",
+                record,
+              })
+              .pipe(Effect.catch(() => Effect.void));
+          }
+          yield* agentRuntime.archiveThread(task.threadId).pipe(Effect.catch(() => Effect.void));
+        }),
+      { concurrency: 1, discard: true },
+    );
+  });
 
   return yield* Effect.acquireRelease(
     Effect.tryPromise({
@@ -755,7 +1130,21 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
           onUseCaseSuccess: (event) => {
             const repositoryId = repositoryIdFromInput(event.input);
             if (event.sideEffect !== "write" || repositoryId === undefined) return;
-            return runPromise(bootstrap.notifyRepositoryChanged(repositoryId)) as Promise<void>;
+            const value =
+              typeof event.value === "object" && event.value !== null
+                ? (event.value as Readonly<Record<string, unknown>>)
+                : undefined;
+            const ticketId = typeof value?.id === "string" ? value.id : undefined;
+            const status = typeof value?.status === "string" ? value.status : undefined;
+            const terminalCleanup =
+              (event.name === "IssueUpdate" || event.name === "IssueTransition") &&
+              ticketId !== undefined &&
+              (status === "done" || status === "canceled")
+                ? cleanupTerminalTicket(repositoryId, ticketId)
+                : Effect.void;
+            return runPromise(
+              bootstrap.notifyRepositoryChanged(repositoryId).pipe(Effect.andThen(terminalCleanup)),
+            ) as Promise<void>;
           },
           runtimeFile: paths.runtimeDiscoveryPath,
           staticToken,

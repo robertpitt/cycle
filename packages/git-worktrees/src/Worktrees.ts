@@ -9,6 +9,7 @@ import {
 } from "./WorktreeLifecycle.ts";
 import { WorktreeReconciler, type WorktreeReconciliationResult } from "./WorktreeReconciler.ts";
 import type { RepositoryId, WorktreeRecord } from "./WorktreeSchemas.ts";
+import { WorktreeStore } from "./WorktreeStore.ts";
 import type { WorktreeHandoverShape } from "./WorktreeHandover.ts";
 import {
   WorktreeInstances,
@@ -26,10 +27,18 @@ export type WorktreesShape = {
     descriptor: WorktreeRepositoryInstanceDescriptor,
     input: CreateWorktreeInput,
   ) => Effect.Effect<WorktreeRecord, WorktreeError>;
+  readonly cleanup: (
+    descriptor: WorktreeRepositoryInstanceDescriptor,
+    input: Parameters<WorktreeLifecycleShape["cleanup"]>[0],
+  ) => Effect.Effect<WorktreeRecord, WorktreeError>;
   readonly handover: (
     descriptor: WorktreeRepositoryInstanceDescriptor,
     input: Parameters<WorktreeHandoverShape["handover"]>[0],
   ) => Effect.Effect<unknown, WorktreeError>;
+  readonly get: (
+    descriptor: WorktreeRepositoryInstanceDescriptor,
+    worktreeId: string,
+  ) => Effect.Effect<WorktreeRecord, WorktreeError>;
   readonly reconcileRepository: (
     descriptor: WorktreeRepositoryInstanceDescriptor,
     repositoryId: RepositoryId,
@@ -90,6 +99,17 @@ export const WorktreesLive = Layer.effect(
       );
     });
 
+    const cleanup = Effect.fn("Worktrees.cleanup")(function* (
+      descriptor: WorktreeRepositoryInstanceDescriptor,
+      input: Parameters<WorktreeLifecycleShape["cleanup"]>[0],
+    ) {
+      return yield* withRepositoryLayer(
+        descriptor,
+        "cleanup",
+        Effect.flatMap(WorktreeLifecycle, (lifecycle) => lifecycle.cleanup(input)),
+      );
+    });
+
     const acquireForAgentRun = Effect.fn("Worktrees.acquireForAgentRun")(function* (
       descriptor: WorktreeRepositoryInstanceDescriptor,
       input: Parameters<WorktreeLifecycleShape["acquireForAgentRun"]>[0],
@@ -112,6 +132,17 @@ export const WorktreesLive = Layer.effect(
       );
     });
 
+    const get = Effect.fn("Worktrees.get")(function* (
+      descriptor: WorktreeRepositoryInstanceDescriptor,
+      worktreeId: string,
+    ) {
+      return yield* withRepositoryLayer(
+        descriptor,
+        "get",
+        Effect.flatMap(WorktreeStore, (store) => store.get(worktreeId as never)),
+      );
+    });
+
     const reconcileRepository = Effect.fn("Worktrees.reconcileRepository")(function* (
       descriptor: WorktreeRepositoryInstanceDescriptor,
       repositoryId: RepositoryId,
@@ -127,7 +158,9 @@ export const WorktreesLive = Layer.effect(
 
     return Worktrees.of({
       acquireForAgentRun,
+      cleanup,
       create,
+      get,
       handover,
       reconcileRepository,
     });

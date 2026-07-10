@@ -14,6 +14,7 @@ export type AgentTaskStatus = AgentTask["status"];
 export type StartIssueAgentTaskInput = {
   readonly agentId: string;
   readonly authority?: AgentTaskAuthority;
+  readonly commandId: string;
   readonly instructions?: string | null;
   readonly model?: string | null;
   readonly providerId?: string;
@@ -29,13 +30,24 @@ export const terminalAgentTaskStatuses = new Set<AgentTaskStatus>([
   "failed",
 ]);
 
-export const resumableAgentTaskStatuses = new Set<AgentTaskStatus>(["failed"]);
+export const resumableAgentTaskStatuses = new Set<AgentTaskStatus>(["blocked", "failed"]);
+
+const agentTaskTime = (task: AgentTask): number => {
+  const value = task.updatedAt ?? task.startedAt ?? task.createdAt;
+  if (!value) return 0;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
+};
+
+export const latestAgentTask = (tasks: readonly AgentTask[]): AgentTask | undefined =>
+  [...tasks].sort((left, right) => agentTaskTime(right) - agentTaskTime(left))[0];
 
 export const taskStatusTone = (
   status: AgentTaskStatus | string,
 ): "danger" | "info" | "neutral" | "success" | "warning" => {
   if (status === "completed") return "success";
   if (status === "failed") return "danger";
+  if (status === "blocked") return "warning";
   if (status === "cancelled") return "neutral";
   if (status === "waiting_for_input") return "warning";
   if (status === "queued") return "neutral";

@@ -1,5 +1,6 @@
 import {
   useInfiniteQuery,
+  useQueries,
   useQuery,
   type InfiniteData,
   type QueryKey,
@@ -201,6 +202,32 @@ export const useIssueDetailQuery = (
     },
     queryKey: issueDetailQueryKey(repositoryId, issueId),
   });
+
+export const useIssueRelationshipTicketQueries = (
+  repositoryId: string | undefined,
+  issue: TicketDocument | null | undefined,
+) => {
+  const issueIds = [
+    ...new Set((issue?.frontmatter.relations ?? []).map((relation) => relation.issueId)),
+  ].sort();
+
+  return useQueries({
+    queries: issueIds.map((relationshipIssueId) => ({
+      enabled: repositoryId !== undefined,
+      queryFn: () => {
+        if (!repositoryId) {
+          throw new Error("Choose a repository before loading relationship tickets.");
+        }
+
+        return getIssueForRepository({
+          issueId: relationshipIssueId,
+          repositoryId,
+        });
+      },
+      queryKey: issueDetailQueryKey(repositoryId, relationshipIssueId),
+    })),
+  });
+};
 
 export const useIssueRecordsQuery = (
   repositoryId: string | undefined,

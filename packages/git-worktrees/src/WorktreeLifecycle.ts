@@ -14,6 +14,7 @@ import {
   type JobId,
   type RepositoryId,
   type TicketId,
+  type WorktreeCleanupPolicy,
   type WorktreeLease,
   type WorktreeMode,
   type WorktreeRecord,
@@ -28,6 +29,7 @@ import { newWorktreeId } from "./internal/ids.ts";
 
 export type CreateWorktreeInput = {
   readonly baseRef?: string | undefined;
+  readonly cleanupPolicy?: WorktreeCleanupPolicy | undefined;
   readonly jobId: JobId;
   readonly mode: WorktreeMode;
   readonly pathPolicy?: WorktreePathPolicy | undefined;
@@ -186,26 +188,30 @@ export const WorktreeLifecycleLive = Layer.effect(
       yield* store.createWorktreeRecord({
         baseRef,
         baseSha,
-        cleanupPolicy: config.config.cleanupPolicy,
+        cleanupPolicy: input.cleanupPolicy ?? config.config.cleanupPolicy,
         commonGitDir: repository.commonGitDir,
         createdAt: timestamp,
         gitDir: repository.gitDir,
         jobId: input.jobId,
         mode: input.mode,
         path: worktreePath,
-        remoteName: input.remoteName,
         repositoryId: input.repositoryId,
         repositoryPath: repository.primaryPath,
         setupDirtyPolicy: input.setupProfile?.dirtyPolicy ?? "require_clean",
-        setupProfileId: input.setupProfile?.profileId,
         status: "creating",
         storageRoot: config.config.storageRoot,
-        ticketId: input.ticketId,
-        ticketSlugSource: input.ticketSlugSource,
-        ticketType: input.ticketType,
         updatedAt: timestamp,
         worktreeId,
-        desiredBranchName,
+        ...(desiredBranchName === undefined ? {} : { desiredBranchName }),
+        ...(input.remoteName === undefined ? {} : { remoteName: input.remoteName }),
+        ...(input.setupProfile?.profileId === undefined
+          ? {}
+          : { setupProfileId: input.setupProfile.profileId }),
+        ...(input.ticketId === undefined ? {} : { ticketId: input.ticketId }),
+        ...(input.ticketSlugSource === undefined
+          ? {}
+          : { ticketSlugSource: input.ticketSlugSource }),
+        ...(input.ticketType === undefined ? {} : { ticketType: input.ticketType }),
       });
 
       const acquire = store.acquireLease({
@@ -376,9 +382,7 @@ export const WorktreeLifecycleLive = Layer.effect(
           worktreePath: record.path,
         })
         .pipe(
-          Effect.mapError((cause) =>
-            mapGitCreateError("git worktree remove", record.path, cause),
-          ),
+          Effect.mapError((cause) => mapGitCreateError("git worktree remove", record.path, cause)),
           Effect.retry(
             Schedule.exponential("100 millis").pipe(
               Schedule.jittered,

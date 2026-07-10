@@ -9,11 +9,28 @@ export type AgentWorkflowCompletionInput = {
   readonly task: AgentTask;
 };
 
+export type AgentWorkflowFailureInput = {
+  readonly error: {
+    readonly code: string;
+    readonly message: string;
+    readonly retryable: boolean;
+  };
+  readonly task: AgentTask;
+};
+
+export type AgentWorkflowPreparationInput = {
+  readonly task: AgentTask;
+};
+
 export type AgentWorkflowDefinition = {
   readonly complete: (
     input: AgentWorkflowCompletionInput,
   ) => Effect.Effect<void, AgentWorkflowError>;
+  readonly failed?: (input: AgentWorkflowFailureInput) => Effect.Effect<void, AgentWorkflowError>;
   readonly id: string;
+  readonly prepare?: (
+    input: AgentWorkflowPreparationInput,
+  ) => Effect.Effect<void, AgentWorkflowError>;
 };
 
 export type AgentWorkflowRegistryShape = {

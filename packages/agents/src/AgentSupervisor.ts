@@ -130,10 +130,20 @@ export const AgentSupervisorLive = Layer.effect(
         return yield* use(execution);
       });
 
+    const notifyWorkflowFailed = Effect.fn("AgentSupervisor.notifyWorkflowFailed")(function* (
+      task: AgentExecutionLease["task"],
+      error: { readonly code: string; readonly message: string; readonly retryable: boolean },
+    ) {
+      const workflow = yield* workflows.get(task.workflowId);
+      if (workflow.failed !== undefined) yield* workflow.failed({ error, task });
+    });
+
     const run = Effect.fn("AgentSupervisor.run")(function* (lease: AgentExecutionLease) {
       const harness = yield* catalog.get(lease.task.harnessId);
       const exit = yield* Effect.scoped(
         Effect.gen(function* () {
+          const workflow = yield* workflows.get(lease.task.workflowId);
+          if (workflow.prepare !== undefined) yield* workflow.prepare({ task: lease.task });
           const thread = yield* reads.threadSnapshot(lease.task.threadId);
           const previousSession = yield* reads.latestSessionBinding({
             harnessId: lease.task.harnessId,
@@ -224,6 +234,11 @@ export const AgentSupervisorLive = Layer.effect(
                     .complete({ run: running.run, summary, task: running.task })
                     .pipe(Effect.result);
                   if (completion._tag === "Failure") {
+                    yield* notifyWorkflowFailed(running.task, {
+                      code: completion.failure.code,
+                      message: completion.failure.message,
+                      retryable: completion.failure.retryable,
+                    }).pipe(Effect.catch(() => Effect.void));
                     yield* executions.append(running, {
                       eventType: "workflow.failed",
                       payload: {
@@ -272,6 +287,9 @@ export const AgentSupervisorLive = Layer.effect(
                   if (error.retryable && running.task.currentAttempt < running.task.maxAttempts) {
                     yield* executions.scheduleRetry(running, error);
                   } else {
+                    yield* notifyWorkflowFailed(running.task, error).pipe(
+                      Effect.catch(() => Effect.void),
+                    );
                     yield* executions.finish(running, { error, status: "failed" });
                   }
                   yield* Ref.set(terminal, true);
@@ -321,12 +339,14 @@ export const AgentSupervisorLive = Layer.effect(
             ),
           );
           if (!(yield* Ref.get(terminal))) {
+            const error = {
+              code: "provider_stream_ended",
+              message: "The provider stream ended without a terminal event.",
+              retryable: true,
+            };
+            yield* notifyWorkflowFailed(running.task, error).pipe(Effect.catch(() => Effect.void));
             yield* executions.finish(running, {
-              error: {
-                code: "provider_stream_ended",
-                message: "The provider stream ended without a terminal event.",
-                retryable: true,
-              },
+              error,
               status: "failed",
             });
           }
@@ -339,6 +359,9 @@ export const AgentSupervisorLive = Layer.effect(
           message: "The provider execution failed before a terminal result was persisted.",
           retryable: true,
         };
+        if (lease.task.currentAttempt >= lease.task.maxAttempts) {
+          yield* notifyWorkflowFailed(lease.task, error).pipe(Effect.catch(() => Effect.void));
+        }
         const current = yield* (
           lease.task.currentAttempt < lease.task.maxAttempts
             ? executions.scheduleRetry(lease, error)

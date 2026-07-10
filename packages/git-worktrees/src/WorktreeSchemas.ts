@@ -104,6 +104,7 @@ export const WorktreeHandoverStep = Schema.Literals([
   "push_branch",
   "deliver_handover",
   "remove_worktree",
+  "retain_worktree",
 ]);
 export type WorktreeHandoverStep = typeof WorktreeHandoverStep.Type;
 
