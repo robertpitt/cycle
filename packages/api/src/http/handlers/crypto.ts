@@ -22,22 +22,19 @@ export const requestIdFromHeadersWithCrypto = (
   });
 };
 
-export const timingSafeTokenEqualWithCrypto = (
-  crypto: Crypto.Crypto,
-  supplied: string,
-  expected: string,
-): Effect.Effect<boolean> =>
-  Effect.gen(function* () {
+export const timingSafeTokenEqualWithCrypto = Effect.fn("timingSafeTokenEqualWithCrypto")(
+  function* (crypto: Crypto.Crypto, supplied: string, expected: string) {
     const [suppliedDigest, expectedDigest] = yield* Effect.all(
       [
         crypto.digest("SHA-256", textEncoder.encode(supplied)),
         crypto.digest("SHA-256", textEncoder.encode(expected)),
       ] as const,
       { concurrency: "unbounded" },
-    ).pipe(Effect.catch(() => Effect.succeed([new Uint8Array(), new Uint8Array()] as const)));
+    );
 
     return constantTimeEqual(suppliedDigest, expectedDigest);
-  });
+  },
+);
 
 const constantTimeEqual = (left: Uint8Array, right: Uint8Array): boolean => {
   const length = Math.max(left.length, right.length);
