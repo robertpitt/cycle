@@ -1,6 +1,14 @@
 import * as React from "react";
 
-type ShortcutBinding = readonly string[];
+type ModifiedShortcutBinding = {
+  readonly altKey?: boolean;
+  readonly ctrlKey?: boolean;
+  readonly keys: readonly string[];
+  readonly metaKey?: boolean;
+  readonly shiftKey?: boolean;
+};
+
+type ShortcutBinding = readonly string[] | ModifiedShortcutBinding;
 
 export type ShortcutAction = {
   readonly allowInEditable?: boolean;
@@ -37,14 +45,54 @@ const shortcutContext = React.createContext<ShortcutContextValue | null>(null);
 
 const ignoredKeys = new Set(["Alt", "CapsLock", "Control", "Fn", "Meta", "Shift", "Tab"]);
 
-const normalizeBinding = (binding: ShortcutBinding): readonly string[] =>
-  binding.map((key) => normalizeShortcutKey(key)).filter((key): key is string => key !== undefined);
+type NormalizedShortcutBinding = {
+  readonly altKey: boolean;
+  readonly ctrlKey: boolean;
+  readonly keys: readonly string[];
+  readonly metaKey: boolean;
+  readonly shiftKey: boolean;
+};
+
+const isModifiedShortcutBinding = (binding: ShortcutBinding): binding is ModifiedShortcutBinding =>
+  !Array.isArray(binding);
+
+const normalizeKeys = (keys: readonly string[]): readonly string[] =>
+  keys.map((key) => normalizeShortcutKey(key)).filter((key): key is string => key !== undefined);
+
+const normalizeBinding = (binding: ShortcutBinding): NormalizedShortcutBinding => {
+  if (isModifiedShortcutBinding(binding)) {
+    return {
+      altKey: binding.altKey ?? false,
+      ctrlKey: binding.ctrlKey ?? false,
+      keys: normalizeKeys(binding.keys),
+      metaKey: binding.metaKey ?? false,
+      shiftKey: binding.shiftKey ?? false,
+    };
+  }
+
+  return {
+    altKey: false,
+    ctrlKey: false,
+    keys: normalizeKeys(binding),
+    metaKey: false,
+    shiftKey: false,
+  };
+};
 
 const bindingMatches = (binding: readonly string[], sequence: readonly string[]): boolean =>
   binding.length === sequence.length && binding.every((key, index) => key === sequence[index]);
 
 const bindingStartsWith = (binding: readonly string[], sequence: readonly string[]): boolean =>
   binding.length > sequence.length && sequence.every((key, index) => key === binding[index]);
+
+const bindingModifiersMatch = (
+  binding: NormalizedShortcutBinding,
+  input: ShortcutDispatchInput,
+): boolean =>
+  binding.altKey === (input.altKey ?? false) &&
+  binding.ctrlKey === (input.ctrlKey ?? false) &&
+  binding.metaKey === (input.metaKey ?? false) &&
+  binding.shiftKey === (input.shiftKey ?? false);
 
 const latestEntry = (entries: readonly ShortcutEntry[]): ShortcutEntry | undefined =>
   entries.reduce<ShortcutEntry | undefined>(
@@ -103,11 +151,6 @@ export class ShortcutRegistry {
   }
 
   dispatch(input: ShortcutDispatchInput): string | undefined {
-    if (input.altKey || input.ctrlKey || input.metaKey) {
-      this.resetSequence();
-      return undefined;
-    }
-
     const key = normalizeShortcutKey(input.key);
     if (!key) return undefined;
 
@@ -119,7 +162,7 @@ export class ShortcutRegistry {
     const editable = isEditableShortcutTarget(input.target);
     const candidates = this.activeEntries(editable);
     const attemptedSequence = [...this.sequence, key];
-    const resolved = this.resolveSequence(candidates, attemptedSequence);
+    const resolved = this.resolveSequence(candidates, attemptedSequence, input);
 
     if (resolved.exact) {
       input.preventDefault?.();
@@ -135,7 +178,7 @@ export class ShortcutRegistry {
       return undefined;
     }
 
-    const fresh = this.resolveSequence(candidates, [key]);
+    const fresh = this.resolveSequence(candidates, [key], input);
     if (fresh.exact) {
       input.preventDefault?.();
       this.resetSequence();
@@ -164,16 +207,17 @@ export class ShortcutRegistry {
   private resolveSequence(
     entries: readonly ShortcutEntry[],
     sequence: readonly string[],
+    input: ShortcutDispatchInput,
   ): { readonly exact?: ShortcutEntry; readonly partial: boolean } {
     const exactEntries: ShortcutEntry[] = [];
     let partial = false;
 
     for (const entry of entries) {
       for (const binding of entry.action.bindings.map(normalizeBinding)) {
-        if (binding.length === 0) continue;
-        if (bindingMatches(binding, sequence)) {
+        if (binding.keys.length === 0 || !bindingModifiersMatch(binding, input)) continue;
+        if (bindingMatches(binding.keys, sequence)) {
           exactEntries.push(entry);
-        } else if (bindingStartsWith(binding, sequence)) {
+        } else if (bindingStartsWith(binding.keys, sequence)) {
           partial = true;
         }
       }

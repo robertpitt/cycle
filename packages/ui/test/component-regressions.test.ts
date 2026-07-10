@@ -22,6 +22,11 @@ import { NavigationItem } from "../src/molecules/navigation-item/index.ts";
 import { PanelState } from "../src/molecules/panel-state/index.ts";
 import { PropertyPicker } from "../src/molecules/property-picker/index.ts";
 import { SettingRow } from "../src/molecules/setting-row/index.ts";
+import {
+  AppShellFrame,
+  AppShellHeader,
+  AppShellSidebar,
+} from "../src/organisms/app-shell/index.ts";
 import { ViewIssue } from "../src/organisms/view-issue/index.ts";
 
 describe("component regressions", () => {
@@ -61,6 +66,70 @@ describe("component regressions", () => {
 
     expect(markup).toContain('aria-label="Cycle"');
     expect(markup).toContain('role="img"');
+  });
+
+  it("keeps collapsed app navigation named, focusable, and context-rich", () => {
+    const markup = renderToStaticMarkup(
+      createElement(AppShellSidebar, {
+        activeItemId: "issues",
+        collapsed: true,
+        id: "app-navigation-sidebar",
+        navSections: [
+          {
+            id: "workspace",
+            items: [{ id: "issues", label: "Issues" }],
+            title: "Workspace",
+          },
+        ],
+      }),
+    );
+
+    expect(markup).toContain('id="app-navigation-sidebar"');
+    expect(markup).toContain('aria-label="Cycle navigation"');
+    expect(markup).toContain('aria-current="page"');
+    expect(markup).toContain('title="Issues"');
+    expect(markup).toContain(">Issues</span>");
+    expect(markup).toContain("size-9 justify-center");
+  });
+
+  it("exposes sidebar toggle state and shortcut context", () => {
+    const collapsedHeader = renderToStaticMarkup(
+      createElement(AppShellHeader, {
+        collapsed: true,
+        onToggleSidebar: () => undefined,
+        sidebarId: "app-navigation-sidebar",
+        sidebarShortcut: "⌘B",
+        sidebarShortcutKeys: "Meta+B",
+        title: "Issues",
+      }),
+    );
+    const expandedHeader = renderToStaticMarkup(
+      createElement(AppShellHeader, {
+        collapsed: false,
+        onToggleSidebar: () => undefined,
+        sidebarId: "app-navigation-sidebar",
+        sidebarShortcut: "⌘B",
+        sidebarShortcutKeys: "Meta+B",
+        title: "Issues",
+      }),
+    );
+
+    expect(collapsedHeader).toContain('aria-label="Expand sidebar"');
+    expect(collapsedHeader).toContain('aria-controls="app-navigation-sidebar"');
+    expect(collapsedHeader).toContain('aria-expanded="false"');
+    expect(collapsedHeader).toContain('aria-keyshortcuts="Meta+B"');
+    expect(collapsedHeader).toContain('title="Expand sidebar (⌘B)"');
+    expect(expandedHeader).toContain('aria-label="Collapse sidebar"');
+    expect(expandedHeader).toContain('aria-expanded="true"');
+  });
+
+  it("adapts app-shell columns for expanded and collapsed navigation", () => {
+    const expanded = renderToStaticMarkup(createElement(AppShellFrame));
+    const collapsed = renderToStaticMarkup(createElement(AppShellFrame, { collapsed: true }));
+
+    expect(expanded).toContain("grid-cols-[280px_minmax(0,1fr)]");
+    expect(collapsed).toContain("grid-cols-[72px_minmax(0,1fr)]");
+    expect(collapsed).toContain("transition-[grid-template-columns]");
   });
 
   it("preserves fallback attributes for invalid dates", () => {

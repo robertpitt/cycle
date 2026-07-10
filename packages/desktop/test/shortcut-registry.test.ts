@@ -37,6 +37,67 @@ describe("ShortcutRegistry", () => {
     expect(prevented).toBe(1);
   });
 
+  it("runs modifier-aware bindings without colliding with unmodified shortcuts", () => {
+    const registry = new ShortcutRegistry();
+    const runs: string[] = [];
+    let prevented = 0;
+
+    registry.register({
+      bindings: [["b"]],
+      id: "navigation.unmodifiedB",
+      label: "Unmodified B",
+      run: () => {
+        runs.push("unmodified");
+      },
+    });
+    registry.register({
+      bindings: [{ keys: ["b"], metaKey: true }],
+      id: "navigation.toggleSidebar",
+      label: "Toggle sidebar",
+      run: () => {
+        runs.push("sidebar");
+      },
+    });
+
+    expect(
+      registry.dispatch({
+        key: "B",
+        metaKey: true,
+        preventDefault: () => {
+          prevented += 1;
+        },
+      }),
+    ).toBe("navigation.toggleSidebar");
+    expect(runs).toEqual(["sidebar"]);
+    expect(prevented).toBe(1);
+
+    expect(registry.dispatch({ key: "b" })).toBe("navigation.unmodifiedB");
+    expect(runs).toEqual(["sidebar", "unmodified"]);
+  });
+
+  it("preserves editable-field commands for modifier-aware app shortcuts", () => {
+    const registry = new ShortcutRegistry();
+    let count = 0;
+
+    registry.register({
+      bindings: [{ keys: ["b"], metaKey: true }],
+      id: "navigation.toggleSidebar",
+      label: "Toggle sidebar",
+      run: () => {
+        count += 1;
+      },
+    });
+
+    expect(
+      registry.dispatch({
+        key: "b",
+        metaKey: true,
+        target: editableTarget("textarea"),
+      }),
+    ).toBeUndefined();
+    expect(count).toBe(0);
+  });
+
   it("matches multi-key sequences", () => {
     const registry = new ShortcutRegistry();
     let destination = "";

@@ -57,6 +57,9 @@ export type AppShellHeaderProps = React.HTMLAttributes<HTMLElement> & {
   readonly breadcrumb?: React.ReactNode;
   readonly collapsed?: boolean;
   readonly onToggleSidebar?: React.MouseEventHandler<HTMLButtonElement>;
+  readonly sidebarId?: string;
+  readonly sidebarShortcut?: string;
+  readonly sidebarShortcutKeys?: string;
   readonly subtitle?: React.ReactNode;
   readonly title: React.ReactNode;
 };
@@ -250,6 +253,9 @@ export const AppShellHeader = React.forwardRef<HTMLElement, AppShellHeaderProps>
       className,
       collapsed = false,
       onToggleSidebar,
+      sidebarId,
+      sidebarShortcut,
+      sidebarShortcutKeys,
       subtitle,
       title,
       ...props
@@ -268,7 +274,9 @@ export const AppShellHeader = React.forwardRef<HTMLElement, AppShellHeaderProps>
         <div className="flex min-w-0 items-center gap-3">
           {onToggleSidebar ? (
             <IconButton
-              aria-pressed={collapsed}
+              aria-controls={sidebarId}
+              aria-expanded={!collapsed}
+              aria-keyshortcuts={sidebarShortcutKeys}
               icon={
                 collapsed ? (
                   <PanelLeftOpen aria-hidden className="size-4" />
@@ -279,7 +287,9 @@ export const AppShellHeader = React.forwardRef<HTMLElement, AppShellHeaderProps>
               label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
               onClick={onToggleSidebar}
               size="sm"
-              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={`${collapsed ? "Expand sidebar" : "Collapse sidebar"}${
+                sidebarShortcut ? ` (${sidebarShortcut})` : ""
+              }`}
               variant="outline"
             />
           ) : null}

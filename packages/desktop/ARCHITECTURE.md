@@ -509,13 +509,14 @@ repository.
 
 ### Navigation And Shortcuts
 
-`ShortcutProvider` supports single-key and multi-key bindings. It ignores
-shortcuts in editable targets unless an action opts in. Latest registration wins
-on binding conflicts.
+`ShortcutProvider` supports single-key, multi-key, and exact modifier-key
+bindings. It ignores shortcuts in editable targets unless an action opts in.
+Latest registration wins on binding conflicts.
 
 Implemented workspace navigation shortcuts include:
 
 ```text
+Command+B Toggle the app navigation sidebar (outside editable text fields)
 Escape    Go back or parent route
 g n       Inbox
 g i       Issues
@@ -527,6 +528,9 @@ g r v     Active repository views
 g r h     Active repository history
 g r ,     Active repository settings
 ```
+
+The sidebar collapse preference is stored in renderer local storage, alongside
+the last workspace route preference, so it survives route changes and reloads.
 
 ## Renderer Data Model
 

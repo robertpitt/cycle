@@ -84,7 +84,10 @@ import {
   type WorkspaceLocation,
 } from "./workspace/workspaceRoute.ts";
 import { useMacTrackpadSwipeNavigation } from "./workspace/macTrackpadSwipeNavigation.ts";
+import { readSidebarCollapsed, toggleSidebarCollapsed } from "./workspace/sidebarPreference.ts";
 import type { AgentProviderId } from "@cycle/contracts/schemas/agents";
+
+const appNavigationSidebarId = "app-navigation-sidebar";
 
 const ticketTypeSections = [
   {
@@ -170,7 +173,9 @@ const workspaceLocationForNavItemId = (itemId: string): WorkspaceLocation | unde
 };
 
 export const WorkspaceScreen = () => {
-  const collapsed = false;
+  const [collapsed, setCollapsed] = React.useState(() =>
+    readSidebarCollapsed(typeof window === "undefined" ? undefined : window.localStorage),
+  );
   const location = useLocation();
   const navigate = useNavigate();
   const workspaceLocation =
@@ -640,6 +645,33 @@ export const WorkspaceScreen = () => {
 
   const navigationShortcutsDisabled =
     !onboardingCompleted || createIssueForm.open || repositoryInitialiseRequest !== null;
+
+  const toggleSidebar = React.useCallback(() => {
+    setCollapsed((current) =>
+      toggleSidebarCollapsed(
+        typeof window === "undefined" ? undefined : window.localStorage,
+        current,
+      ),
+    );
+  }, []);
+
+  useShortcutAction(
+    React.useMemo(
+      () => ({
+        bindings: [
+          {
+            keys: ["b"],
+            metaKey: true,
+          },
+        ],
+        disabled: navigationShortcutsDisabled,
+        id: "navigation.toggleSidebar",
+        label: "Toggle sidebar",
+        run: toggleSidebar,
+      }),
+      [navigationShortcutsDisabled, toggleSidebar],
+    ),
+  );
 
   const navigateToParent = React.useCallback(() => {
     const parentPath = parentWorkspacePath(workspaceLocation);
@@ -1158,6 +1190,8 @@ export const WorkspaceScreen = () => {
           {isSettingsPage ? (
             <SettingsSidebar
               activeItemId={activeSettingsItemId}
+              collapsed={collapsed}
+              id={appNavigationSidebarId}
               navSections={settingsNavSections}
               onBack={navigateToParent}
               onNavItemSelect={handleSettingsNavItemSelect}
@@ -1166,6 +1200,7 @@ export const WorkspaceScreen = () => {
             <AppShellSidebar
               activeItemId={activeItemId}
               collapsed={collapsed}
+              id={appNavigationSidebarId}
               navSections={rendererNavSections}
               onNavItemSelect={handleNavItemSelect}
               onSettingsSelect={() =>
@@ -1180,7 +1215,15 @@ export const WorkspaceScreen = () => {
           )}
           {/* add rounded corners */}
           <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-surface">
-            <AppShellHeader title={activePageTitle} actions={pageHeaderActions} />
+            <AppShellHeader
+              actions={pageHeaderActions}
+              collapsed={collapsed}
+              onToggleSidebar={toggleSidebar}
+              sidebarId={appNavigationSidebarId}
+              sidebarShortcut="⌘B"
+              sidebarShortcutKeys="Meta+B"
+              title={activePageTitle}
+            />
             <AppShellMain
               className={
                 isIssueDetailPage

@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Inbox, ListTodo, Plus, Settings, SquareKanban } from "lucide-react";
+import { useState } from "react";
 import { Button } from "../../atoms/button/index.ts";
 import {
   AppShellFrame,
@@ -59,42 +60,55 @@ const navSections: readonly AppShellNavSection[] = [
   },
 ];
 
-const ShellExample = ({ collapsed = false }: { readonly collapsed?: boolean }) => (
-  <div className="h-[680px] overflow-hidden rounded-lg border border-border bg-background">
-    <AppShellRoot className="min-h-[680px]">
-      <AppShellFrame className="min-h-[680px]" collapsed={collapsed}>
-        <AppShellSidebar
-          activeItemId="issues"
-          collapsed={collapsed}
-          createLabel="Add repository"
-          navSections={navSections}
-          settingsActive={false}
-        />
-        <div className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-surface">
-          <AppShellHeader
-            actions={
-              <Button leftIcon={<Plus aria-hidden className="size-4" />} size="sm">
-                New issue
-              </Button>
-            }
-            breadcrumb="Horizon"
+const ShellExample = ({
+  collapsed: initialCollapsed = false,
+}: {
+  readonly collapsed?: boolean;
+}) => {
+  const [collapsed, setCollapsed] = useState(initialCollapsed);
+
+  return (
+    <div className="h-[680px] overflow-hidden rounded-lg border border-border bg-background">
+      <AppShellRoot className="min-h-[680px]">
+        <AppShellFrame className="min-h-[680px]" collapsed={collapsed}>
+          <AppShellSidebar
+            activeItemId="issues"
             collapsed={collapsed}
-            title="Issues"
+            createLabel="Add repository"
+            id="storybook-app-navigation"
+            navSections={navSections}
+            settingsActive={false}
           />
-          <AppShellMain className="grid place-items-center bg-background/70 p-3">
-            <div className="grid w-full max-w-md gap-2 text-center">
-              <h2 className="text-base font-semibold tracking-normal">Workspace content</h2>
-              <p className="text-sm leading-6 text-muted-foreground">
-                App packages own data and route state. The shell owns layout, navigation chrome, and
-                action placement.
-              </p>
-            </div>
-          </AppShellMain>
-        </div>
-      </AppShellFrame>
-    </AppShellRoot>
-  </div>
-);
+          <div className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-surface">
+            <AppShellHeader
+              actions={
+                <Button leftIcon={<Plus aria-hidden className="size-4" />} size="sm">
+                  New issue
+                </Button>
+              }
+              breadcrumb="Horizon"
+              collapsed={collapsed}
+              onToggleSidebar={() => setCollapsed((current) => !current)}
+              sidebarId="storybook-app-navigation"
+              sidebarShortcut="⌘B"
+              sidebarShortcutKeys="Meta+B"
+              title="Issues"
+            />
+            <AppShellMain className="grid place-items-center bg-background/70 p-3">
+              <div className="grid w-full max-w-md gap-2 text-center">
+                <h2 className="text-base font-semibold tracking-normal">Workspace content</h2>
+                <p className="text-sm leading-6 text-muted-foreground">
+                  App packages own data and route state. The shell owns layout, navigation chrome,
+                  and action placement.
+                </p>
+              </div>
+            </AppShellMain>
+          </div>
+        </AppShellFrame>
+      </AppShellRoot>
+    </div>
+  );
+};
 
 const meta = {
   component: AppShellRoot,
