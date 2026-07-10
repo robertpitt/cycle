@@ -30,6 +30,13 @@ export const CycleAuthorizationLive = Layer.effect(
           crypto,
           supplied,
           runtime.staticToken,
+        ).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("api bearer token digest failed").pipe(
+              Effect.annotateLogs({ cause: error.message }),
+              Effect.as(false),
+            ),
+          ),
         );
 
         if (!authorized) {

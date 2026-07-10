@@ -6,7 +6,7 @@ import {
 } from "@cycle/agents";
 import { DatabaseService, type DatabaseServiceShape } from "@cycle/database";
 import { type TicketDocument } from "@cycle/contracts";
-import { Effect, Layer, Tracer } from "effect";
+import { Crypto, Effect, Layer, PlatformError, Tracer } from "effect";
 import { NodeServices } from "@effect/platform-node";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { describe, it } from "vitest";
@@ -702,6 +702,53 @@ describe("@cycle/api", () => {
       assert.equal(body.error?.requestId, "req_auth");
     } finally {
       await api.dispose();
+    }
+  });
+
+  it("rejects bearer authorization when token digesting fails", async () => {
+    const crypto = Layer.succeed(
+      Crypto.Crypto,
+      Crypto.make({
+        digest: () =>
+          Effect.fail(
+            PlatformError.systemError({
+              _tag: "Unknown",
+              description: "digest unavailable",
+              method: "digest",
+              module: "Crypto",
+            }),
+          ),
+        randomBytes: (size) => new Uint8Array(size),
+      }),
+    );
+    const appLayer = (
+      makeCycleApiLayer({
+        staticToken: token,
+        useCaseLayer: unexpectedDatabaseLayer,
+      }) as Layer.Layer<never, unknown, any>
+    ).pipe(Layer.provide(crypto), Layer.provide([HttpServer.layerServices, NodeServices.layer]));
+    const { dispose, handler: rawHandler } = HttpRouter.toWebHandler(appLayer as any, {
+      disableLogger: true,
+    });
+    const handler = rawHandler as (request: Request) => Promise<Response>;
+
+    try {
+      const response = await handler(
+        new Request("http://cycle.test/v1/status", {
+          headers: {
+            authorization: `Bearer ${token}`,
+            "x-request-id": "req_crypto_failure",
+          },
+        }),
+      );
+      const body = (await response.json()) as { error?: { code?: string; requestId?: string } };
+
+      assert.equal(response.status, 401);
+      assert.equal(response.headers.get("x-request-id"), "req_crypto_failure");
+      assert.equal(body.error?.code, "UNAUTHORIZED");
+      assert.equal(body.error?.requestId, "req_crypto_failure");
+    } finally {
+      await dispose();
     }
   });
 
