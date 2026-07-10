@@ -268,6 +268,7 @@ export const AppShellHeader = React.forwardRef<HTMLElement, AppShellHeaderProps>
         <div className="flex min-w-0 items-center gap-3">
           {onToggleSidebar ? (
             <IconButton
+              aria-expanded={!collapsed}
               aria-pressed={collapsed}
               icon={
                 collapsed ? (
@@ -279,7 +280,7 @@ export const AppShellHeader = React.forwardRef<HTMLElement, AppShellHeaderProps>
               label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
               onClick={onToggleSidebar}
               size="sm"
-              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={collapsed ? "Expand sidebar (S then B)" : "Collapse sidebar (S then B)"}
               variant="outline"
             />
           ) : null}

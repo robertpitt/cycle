@@ -23,6 +23,7 @@ const LocalSettingsFromProfile = Layer.effect(
       shouldAutoSyncRepository: unavailable,
       updateAgentProviderPreference: unavailable,
       updateProfile: (input) => profile.updateProfile(input),
+      updateLocalWorkspacePreferences: unavailable,
       updateRepositoryPreferences: unavailable,
     });
   }),

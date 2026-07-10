@@ -1095,6 +1095,8 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
               runAppConfigPromise(settings.setInterfaceDensity(density)),
             setThemePreference: (preference) =>
               runAppConfigPromise(settings.setThemePreference(preference)),
+            updateLocalWorkspacePreferences: (preferences) =>
+              runAppConfigPromise(settings.updateLocalWorkspacePreferences(preferences)),
             updateProfile: (input) => runPromise(settings.updateProfile(input)),
             updateRepositoryPreferences: (input) =>
               runPromise(

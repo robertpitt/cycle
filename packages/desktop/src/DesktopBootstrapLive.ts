@@ -23,6 +23,8 @@ const LocalSettingsFromElectronPreferences = Layer.effect(
         preferences.shouldAutoSyncRepository(repositoryId),
       updateAgentProviderPreference: (input) => preferences.updateAgentProviderPreference(input),
       updateProfile: (input) => preferences.updateProfile(input),
+      updateLocalWorkspacePreferences: (workspacePreferences) =>
+        preferences.updateLocalWorkspacePreferences(workspacePreferences),
       updateRepositoryPreferences: (input) => preferences.updateRepositoryPreferences(input),
     });
   }),

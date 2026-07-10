@@ -56,6 +56,32 @@ describe("ShortcutRegistry", () => {
     expect(destination).toBe("history");
   });
 
+  it("toggles the sidebar with S then B without conflicting with navigation shortcuts", () => {
+    const registry = new ShortcutRegistry();
+    const runs: string[] = [];
+
+    registry.register({
+      bindings: [["g", "i"]],
+      id: "navigation.issues",
+      label: "Open issues",
+      run: () => runs.push("issues"),
+    });
+    registry.register({
+      bindings: [["s", "b"]],
+      id: "layout.toggleSidebar",
+      label: "Toggle sidebar",
+      run: () => runs.push("sidebar"),
+    });
+
+    expect(registry.dispatch({ key: "s", now: 1 })).toBeUndefined();
+    expect(registry.dispatch({ key: "b", now: 2 })).toBe("layout.toggleSidebar");
+    expect(runs).toEqual(["sidebar"]);
+
+    registry.dispatch({ key: "g", now: 3 });
+    expect(registry.dispatch({ key: "i", now: 4 })).toBe("navigation.issues");
+    expect(runs).toEqual(["sidebar", "issues"]);
+  });
+
   it("resets stale sequences after the timeout", () => {
     const registry = new ShortcutRegistry();
     let count = 0;

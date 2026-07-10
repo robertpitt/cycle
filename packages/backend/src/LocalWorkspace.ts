@@ -2,6 +2,7 @@ import { RepositoryCommitStyle, RepositoryRecord } from "@cycle/config";
 import { AppConfig, AppConfigError } from "@cycle/config";
 import {
   defaultRepositoryPreferences,
+  type LocalWorkspacePreferencesPatch,
   type RepositoryRecord as RepositoryRecordType,
 } from "@cycle/config";
 import { makeGitRepositoryStoreEffect } from "@cycle/database";
@@ -59,6 +60,9 @@ export type LocalWorkspaceService = {
   readonly removeRepository: (
     id: string,
   ) => Effect.Effect<ReadonlyArray<RepositoryRecordType>, AppConfigError>;
+  readonly updatePreferences: (
+    preferences: LocalWorkspacePreferencesPatch,
+  ) => Effect.Effect<void, AppConfigError>;
   readonly updateRepositoryPreferences: (
     input: UpdateRepositoryPreferencesInput,
   ) => Effect.Effect<RepositoryRecordType | null, AppConfigError>;
@@ -333,6 +337,7 @@ export const LocalWorkspaceLive = Layer.effect(
           .update((current) => ({
             ...current,
             localWorkspace: {
+              ...current.localWorkspace,
               repositories:
                 existing === undefined
                   ? [...current.localWorkspace.repositories, nextRepository]
@@ -382,6 +387,7 @@ export const LocalWorkspaceLive = Layer.effect(
           const updated = yield* appConfig.update((current) => ({
             ...current,
             localWorkspace: {
+              ...current.localWorkspace,
               repositories: current.localWorkspace.repositories.map((repository) =>
                 repository.id === id ? { ...repository, lastOpenedAt: openedAt } : repository,
               ),
@@ -396,17 +402,29 @@ export const LocalWorkspaceLive = Layer.effect(
           .update((current) => ({
             ...current,
             localWorkspace: {
+              ...current.localWorkspace,
               repositories: current.localWorkspace.repositories.filter(
                 (repository) => repository.id !== id,
               ),
             },
           }))
           .pipe(Effect.map((config) => config.localWorkspace.repositories)),
+      updatePreferences: (preferences) =>
+        appConfig
+          .update((current) => ({
+            ...current,
+            localWorkspace: {
+              ...current.localWorkspace,
+              ...preferences,
+            },
+          }))
+          .pipe(Effect.asVoid),
       updateRepositoryPreferences: (input: UpdateRepositoryPreferencesInput) =>
         Effect.gen(function* () {
           const updated = yield* appConfig.update((current) => ({
             ...current,
             localWorkspace: {
+              ...current.localWorkspace,
               repositories: current.localWorkspace.repositories.map((repository) =>
                 repository.id === input.id
                   ? {

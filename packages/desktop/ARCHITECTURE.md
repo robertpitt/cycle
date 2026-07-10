@@ -517,6 +517,7 @@ Implemented workspace navigation shortcuts include:
 
 ```text
 Escape    Go back or parent route
+s b       Toggle the application sidebar
 g n       Inbox
 g i       Issues
 g p       Initiatives
@@ -619,14 +620,14 @@ built renderer HTML file.
 
 Workspace package dependencies:
 
-| Package            | Used for                                                             |
-| ------------------ | -------------------------------------------------------------------- |
-| `@cycle/ui`        | Renderer visual components, theme provider, styles.                  |
-| `@cycle/api`       | Local HTTP API server used by renderer, CLI, MCP, and browser tests. |
-| `@cycle/contracts` | Ticket/domain types used by renderer queries and mutations.          |
-| `@cycle/usecases`  | Named usecase definitions run by the local HTTP API.                 |
-| `@cycle/database`  | Projection database, repository status, ticket operations.           |
-| `@cycle/git`       | Git repository validation, initialization, and metadata inspection.  |
+| Package            | Used for                                                              |
+| ------------------ | --------------------------------------------------------------------- |
+| `@cycle/ui`        | Renderer visual components, theme provider, styles.                   |
+| `@cycle/api`       | Local HTTP API server used by renderer, CLI, MCP, and browser tests.  |
+| `@cycle/contracts` | Ticket/domain types used by renderer queries and mutations.           |
+| `@cycle/usecases`  | Named usecase definitions run by the local HTTP API.                  |
+| `@cycle/database`  | Projection database, repository status, ticket operations.            |
+| `@cycle/git`       | Git repository validation, initialization, and metadata inspection.   |
 | `@cycle/git-store` | Git-backed document/event storage and remote sync/push orchestration. |
 
 Third-party runtime dependencies:

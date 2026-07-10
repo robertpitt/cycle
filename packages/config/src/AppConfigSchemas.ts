@@ -72,6 +72,7 @@ export const LocalWorkspaceConfig = Schema.Struct({
   repositories: Schema.Array(RepositoryRecord).pipe(
     Schema.withDecodingDefaultTypeKey(Effect.succeed([])),
   ),
+  sidebarCollapsed: Schema.Boolean.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(false))),
 });
 export type LocalWorkspaceConfig = typeof LocalWorkspaceConfig.Type;
 
@@ -179,7 +180,9 @@ export const AppConfigState = Schema.Struct({
     ),
   ),
   localWorkspace: LocalWorkspaceConfig.pipe(
-    Schema.withDecodingDefaultTypeKey(Effect.succeed({ repositories: [] })),
+    Schema.withDecodingDefaultTypeKey(
+      Effect.succeed({ repositories: [], sidebarCollapsed: false }),
+    ),
   ),
   onboarding: OnboardingConfig.pipe(
     Schema.withDecodingDefaultTypeKey(Effect.succeed({ completed: false })),
@@ -251,7 +254,7 @@ export const defaultApiConfig = (staticToken: string = DEFAULT_STATIC_TOKEN): Ap
 export const defaultAppConfig = (staticToken: string = DEFAULT_STATIC_TOKEN): AppConfigEncoded => ({
   agentProviders: { preferences: [] },
   api: defaultApiConfig(staticToken),
-  localWorkspace: { repositories: [] },
+  localWorkspace: { repositories: [], sidebarCollapsed: false },
   onboarding: { completed: false },
   profile: { displayName: "", email: "" },
   schemaVersion: CURRENT_APP_CONFIG_SCHEMA_VERSION,
@@ -276,6 +279,11 @@ export const InitializeRepositoryPathInput = Schema.Struct({
   path: Schema.NonEmptyString,
 });
 export type InitializeRepositoryPathInput = typeof InitializeRepositoryPathInput.Type;
+
+export const LocalWorkspacePreferencesPatch = Schema.Struct({
+  sidebarCollapsed: Schema.optionalKey(Schema.Boolean),
+});
+export type LocalWorkspacePreferencesPatch = typeof LocalWorkspacePreferencesPatch.Type;
 
 export const UpdateRepositoryPreferencesInput = Schema.Struct({
   id: Schema.String,

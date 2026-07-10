@@ -9,6 +9,7 @@ import {
   ThemePreference,
   type AppConfigState,
   type InterfaceDensity,
+  type LocalWorkspacePreferencesPatch,
   type ProfileConfig,
   type RepositoryRecord,
   type ThemePreference as ThemePreferenceType,
@@ -71,6 +72,9 @@ export type LocalSettingsService = {
   readonly updateProfile: (
     input: ProfileUpdateInput,
   ) => Effect.Effect<ProfileConfig, AppConfigError>;
+  readonly updateLocalWorkspacePreferences: (
+    preferences: LocalWorkspacePreferencesPatch,
+  ) => Effect.Effect<AppConfigState, AppConfigError>;
   readonly updateRepositoryPreferences: (
     input: UpdateRepositoryPreferencesInput,
   ) => Effect.Effect<RepositoryRecord | null, AppConfigError>;
@@ -197,6 +201,8 @@ export const LocalSettingsLive = Layer.effect(
           };
         }),
       updateProfile,
+      updateLocalWorkspacePreferences: (preferences) =>
+        localWorkspace.updatePreferences(preferences).pipe(Effect.flatMap(() => appConfig.read)),
       updateRepositoryPreferences: (input: UpdateRepositoryPreferencesInput) =>
         localWorkspace.updateRepositoryPreferences(input),
     });

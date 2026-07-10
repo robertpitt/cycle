@@ -315,6 +315,7 @@ describe("desktop app config", () => {
             sidebarExpanded: false,
           },
         });
+        yield* workspace.updatePreferences({ sidebarCollapsed: true });
         const opened = yield* workspace.markRepositoryOpened(first.id);
         const beforeRemoval = yield* workspace.listRepositories;
         const afterRemoval = yield* workspace.removeRepository(first.id);
@@ -346,6 +347,7 @@ describe("desktop app config", () => {
     );
 
     assert.equal(config.localWorkspace.repositories.length, 0);
+    assert.equal(config.localWorkspace.sidebarCollapsed, true);
   });
 
   it("reuses an existing local repository identity without probing an unavailable remote", async () => {

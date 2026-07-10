@@ -28,6 +28,7 @@ import {
   type AppConfigEncoded as AppConfigState,
   type AgentProviderPreference,
   type InterfaceDensity,
+  type LocalWorkspacePreferencesPatch,
   type ProfileConfig,
   type RepositoryRecord as AppRepositoryRecord,
   type ThemePreference,
@@ -1209,6 +1210,11 @@ export const cycleApiClient = {
 
   setInterfaceDensity: (density: InterfaceDensity): Promise<AppConfigState> =>
     resource("PATCH", "/v1/appearance/density", AppConfigStateSchema, { density }),
+
+  updateLocalWorkspacePreferences: (
+    preferences: LocalWorkspacePreferencesPatch,
+  ): Promise<AppConfigState> =>
+    resource("PATCH", "/v1/workspace/preferences", AppConfigStateSchema, { preferences }),
 
   syncRepository: (repositoryId: string): Promise<RepositoryStatus> =>
     resource("POST", `${repositoryPath(repositoryId)}/sync`, ContractSchemas.RepositoryStatus),

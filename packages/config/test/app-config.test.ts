@@ -120,7 +120,10 @@ describe("@cycle/config AppConfig", () => {
     const token = appConfigStaticToken(first);
     assertGeneratedToken(token);
     assert.equal(appConfigStaticToken(second), token);
-    assert.equal((await readPersistedConfig(homeDirectory)).api.staticToken, token);
+    assert.equal(first.localWorkspace.sidebarCollapsed, false);
+    const persisted = await readPersistedConfig(homeDirectory);
+    assert.equal(persisted.api.staticToken, token);
+    assert.equal(persisted.localWorkspace.sidebarCollapsed, false);
   });
 
   it("preserves explicitly configured auto API ports", async () => {

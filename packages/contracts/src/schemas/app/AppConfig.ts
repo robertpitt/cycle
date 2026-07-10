@@ -102,6 +102,7 @@ export type RepositoryRecord = typeof RepositoryRecord.Type;
 
 export const LocalWorkspaceConfig = Schema.Struct({
   repositories: Schema.Array(RepositoryRecord),
+  sidebarCollapsed: Schema.Boolean,
 });
 export type LocalWorkspaceConfig = typeof LocalWorkspaceConfig.Type;
 
@@ -123,6 +124,7 @@ export const defaultAppConfig = (): AppConfigState => ({
   api: defaultApiConfig(),
   localWorkspace: {
     repositories: [],
+    sidebarCollapsed: false,
   },
   onboarding: {
     completed: false,
@@ -165,6 +167,11 @@ export const RepositoryPreferencesPatch = Schema.Struct({
   sidebarExpanded: Schema.optional(Schema.Boolean),
 });
 export type RepositoryPreferencesPatch = typeof RepositoryPreferencesPatch.Type;
+
+export const LocalWorkspacePreferencesPatch = Schema.Struct({
+  sidebarCollapsed: Schema.optional(Schema.Boolean),
+});
+export type LocalWorkspacePreferencesPatch = typeof LocalWorkspacePreferencesPatch.Type;
 
 export const UpdateRepositoryPreferencesInput = Schema.Struct({
   id: Schema.String,

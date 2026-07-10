@@ -6,6 +6,7 @@ import {
   type AgentProviderPreference,
   type AppConfigEncoded as AppConfigState,
   type InterfaceDensity,
+  type LocalWorkspacePreferencesPatch,
   type ProfileConfig,
   type ThemePreference,
 } from "@cycle/config";
@@ -67,6 +68,18 @@ export const useSetInterfaceDensityMutation = () => {
 
       return cycleApiClient.setInterfaceDensity(density);
     },
+    onSuccess: (next) => {
+      queryClient.setQueryData(appConfigQueryKey, next);
+    },
+  });
+};
+
+export const useUpdateLocalWorkspacePreferencesMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (preferences: LocalWorkspacePreferencesPatch): Promise<AppConfigState> =>
+      cycleApiClient.updateLocalWorkspacePreferences(preferences),
     onSuccess: (next) => {
       queryClient.setQueryData(appConfigQueryKey, next);
     },

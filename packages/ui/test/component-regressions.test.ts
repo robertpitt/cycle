@@ -22,6 +22,11 @@ import { NavigationItem } from "../src/molecules/navigation-item/index.ts";
 import { PanelState } from "../src/molecules/panel-state/index.ts";
 import { PropertyPicker } from "../src/molecules/property-picker/index.ts";
 import { SettingRow } from "../src/molecules/setting-row/index.ts";
+import {
+  AppShellFrame,
+  AppShellHeader,
+  AppShellSidebar,
+} from "../src/organisms/app-shell/index.ts";
 import { ViewIssue } from "../src/organisms/view-issue/index.ts";
 
 describe("component regressions", () => {
@@ -150,6 +155,49 @@ describe("component regressions", () => {
     expect(markup).toContain("<button");
     expect(markup).toContain('disabled=""');
     expect(markup).toContain('type="button"');
+  });
+
+  it("renders accessible sidebar controls and adaptive shell widths", () => {
+    const expandedHeader = renderToStaticMarkup(
+      createElement(AppShellHeader, {
+        collapsed: false,
+        onToggleSidebar: () => undefined,
+        title: "Issues",
+      }),
+    );
+    const collapsedHeader = renderToStaticMarkup(
+      createElement(AppShellHeader, {
+        collapsed: true,
+        onToggleSidebar: () => undefined,
+        title: "Issues",
+      }),
+    );
+    const expandedFrame = renderToStaticMarkup(createElement(AppShellFrame));
+    const collapsedFrame = renderToStaticMarkup(createElement(AppShellFrame, { collapsed: true }));
+    const collapsedSidebar = renderToStaticMarkup(
+      createElement(AppShellSidebar, {
+        collapsed: true,
+        navSections: [
+          {
+            id: "workspace",
+            items: [{ id: "issues", label: "Issues" }],
+            title: "Workspace",
+          },
+        ],
+      }),
+    );
+
+    expect(expandedHeader).toContain('aria-label="Collapse sidebar"');
+    expect(expandedHeader).toContain('aria-expanded="true"');
+    expect(expandedHeader).toContain('title="Collapse sidebar (S then B)"');
+    expect(collapsedHeader).toContain('aria-label="Expand sidebar"');
+    expect(collapsedHeader).toContain('aria-expanded="false"');
+    expect(collapsedHeader).toContain('aria-pressed="true"');
+    expect(collapsedHeader).toContain('title="Expand sidebar (S then B)"');
+    expect(expandedFrame).toContain("grid-cols-[280px_minmax(0,1fr)]");
+    expect(collapsedFrame).toContain("grid-cols-[72px_minmax(0,1fr)]");
+    expect(collapsedSidebar).toContain('title="Issues"');
+    expect(collapsedSidebar).toContain(">Issues</span>");
   });
 
   it("uses button-compatible selected semantics for interactive rows", () => {

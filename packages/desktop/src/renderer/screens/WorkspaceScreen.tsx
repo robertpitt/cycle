@@ -40,6 +40,7 @@ import {
   useCompleteOnboardingMutation,
   useCreateIssueMutation,
   useInitialiseRepositoryMutation,
+  useUpdateLocalWorkspacePreferencesMutation,
   useUpdateRepositoryPreferencesMutation,
 } from "../mutations/index.ts";
 import {
@@ -170,7 +171,6 @@ const workspaceLocationForNavItemId = (itemId: string): WorkspaceLocation | unde
 };
 
 export const WorkspaceScreen = () => {
-  const collapsed = false;
   const location = useLocation();
   const navigate = useNavigate();
   const workspaceLocation =
@@ -224,6 +224,7 @@ export const WorkspaceScreen = () => {
   const bootstrapStatusQuery = useBootstrapStatusQuery();
   const appConfigQuery = useAppConfigQuery();
   const agentProvidersQuery = useAgentProvidersQuery();
+  const collapsed = appConfigQuery.data?.localWorkspace.sidebarCollapsed ?? false;
   const repositories = appConfigQuery.data?.localWorkspace.repositories ?? [];
   const repositoryIds = React.useMemo(
     () => repositories.map((repository) => repository.id),
@@ -312,6 +313,7 @@ export const WorkspaceScreen = () => {
   const updateRepositoryPreferences = useUpdateRepositoryPreferencesMutation({
     appConfig: appConfigQuery.data,
   });
+  const updateLocalWorkspacePreferences = useUpdateLocalWorkspacePreferencesMutation();
 
   const createIssue = useCreateIssueMutation({
     repositoryId: createIssueRepository?.id,
@@ -641,6 +643,12 @@ export const WorkspaceScreen = () => {
   const navigationShortcutsDisabled =
     !onboardingCompleted || createIssueForm.open || repositoryInitialiseRequest !== null;
 
+  const toggleSidebar = React.useCallback(() => {
+    updateLocalWorkspacePreferences.mutate({
+      sidebarCollapsed: !collapsed,
+    });
+  }, [collapsed, updateLocalWorkspacePreferences]);
+
   const navigateToParent = React.useCallback(() => {
     const parentPath = parentWorkspacePath(workspaceLocation);
     if (!parentPath || parentPath === currentWorkspacePath) return;
@@ -676,6 +684,19 @@ export const WorkspaceScreen = () => {
     onNavigateBack: navigateBackFromHistory,
     onNavigateForward: navigateForwardFromHistory,
   });
+
+  useShortcutAction(
+    React.useMemo(
+      () => ({
+        bindings: [["s", "b"]],
+        disabled: navigationShortcutsDisabled,
+        id: "layout.toggleSidebar",
+        label: "Toggle sidebar",
+        run: toggleSidebar,
+      }),
+      [navigationShortcutsDisabled, toggleSidebar],
+    ),
+  );
 
   useShortcutAction(
     React.useMemo(
@@ -1158,6 +1179,7 @@ export const WorkspaceScreen = () => {
           {isSettingsPage ? (
             <SettingsSidebar
               activeItemId={activeSettingsItemId}
+              collapsed={collapsed}
               navSections={settingsNavSections}
               onBack={navigateToParent}
               onNavItemSelect={handleSettingsNavItemSelect}
@@ -1180,7 +1202,12 @@ export const WorkspaceScreen = () => {
           )}
           {/* add rounded corners */}
           <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-surface">
-            <AppShellHeader title={activePageTitle} actions={pageHeaderActions} />
+            <AppShellHeader
+              actions={pageHeaderActions}
+              collapsed={collapsed}
+              onToggleSidebar={toggleSidebar}
+              title={activePageTitle}
+            />
             <AppShellMain
               className={
                 isIssueDetailPage

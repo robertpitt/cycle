@@ -778,6 +778,7 @@ describe("@cycle/api", () => {
             },
           },
         ],
+        sidebarCollapsed: false,
       },
       onboarding: {
         completed: true,
@@ -799,9 +800,20 @@ describe("@cycle/api", () => {
           appConfig = {
             ...appConfig,
             localWorkspace: {
+              ...appConfig.localWorkspace,
               repositories: appConfig.localWorkspace.repositories.filter(
                 (repository) => repository.id !== repositoryId,
               ),
+            },
+          };
+          return appConfig;
+        },
+        updateLocalWorkspacePreferences: async (preferences) => {
+          appConfig = {
+            ...appConfig,
+            localWorkspace: {
+              ...appConfig.localWorkspace,
+              ...preferences,
             },
           };
           return appConfig;
@@ -916,6 +928,22 @@ describe("@cycle/api", () => {
       assert.equal(density.status, 200);
       assert.equal(densityBody.data?.theme?.density, "spacious");
 
+      const sidebar = await api.fetch(
+        new Request("http://cycle.test/v1/workspace/preferences", {
+          ...authed({
+            preferences: {
+              sidebarCollapsed: true,
+            },
+          }),
+          method: "PATCH",
+        }),
+      );
+      const sidebarBody = (await sidebar.json()) as {
+        data?: { localWorkspace?: { sidebarCollapsed?: boolean } };
+      };
+      assert.equal(sidebar.status, 200);
+      assert.equal(sidebarBody.data?.localWorkspace?.sidebarCollapsed, true);
+
       const providerPreference = await api.fetch(
         new Request("http://cycle.test/v1/agents/providers/claude-code/preferences", {
           ...authed({
@@ -969,7 +997,7 @@ describe("@cycle/api", () => {
       const after = await api.fetch(new Request("http://cycle.test/v1/app-config", authed()));
       const afterBody = (await after.json()) as {
         data?: {
-          localWorkspace?: { repositories?: readonly unknown[] };
+          localWorkspace?: { repositories?: readonly unknown[]; sidebarCollapsed?: boolean };
           profile?: { email?: string };
           theme?: { density?: string };
         };
@@ -977,6 +1005,7 @@ describe("@cycle/api", () => {
       assert.equal(afterBody.data?.profile?.email, "web@example.com");
       assert.equal(afterBody.data?.theme?.density, "spacious");
       assert.equal(afterBody.data?.localWorkspace?.repositories?.length, 0);
+      assert.equal(afterBody.data?.localWorkspace?.sidebarCollapsed, true);
     } finally {
       await api.dispose();
     }

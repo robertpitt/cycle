@@ -92,6 +92,7 @@ const makeLayer = (opened: Array<RepositoryInput>) => {
       listRepositories: Effect.succeed([repository]),
       markRepositoryOpened: () => Effect.succeed(repository),
       removeRepository: () => Effect.succeed([]),
+      updatePreferences: () => Effect.void,
       updateRepositoryPreferences: () => Effect.succeed(repository),
       upsertRepositoryPath: () => Effect.succeed(repository),
     }),

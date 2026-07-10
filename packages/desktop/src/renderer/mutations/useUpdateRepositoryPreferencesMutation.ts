@@ -25,6 +25,7 @@ export const useUpdateRepositoryPreferencesMutation = ({
         return {
           ...state,
           localWorkspace: {
+            ...state.localWorkspace,
             repositories: state.localWorkspace.repositories.map((candidate) =>
               candidate.id === input.id ? repository : candidate,
             ),

@@ -12,6 +12,7 @@ import type { AppConfigError } from "@cycle/config";
 import type {
   AppConfigState,
   InterfaceDensity,
+  LocalWorkspacePreferencesPatch,
   ProfileConfig,
   RepositoryRecord,
   ThemePreference,
@@ -43,6 +44,9 @@ export type ElectronPreferencesService = {
   readonly updateProfile: (
     input: ProfileUpdateInput,
   ) => Effect.Effect<ProfileConfig, AppConfigError>;
+  readonly updateLocalWorkspacePreferences: (
+    preferences: LocalWorkspacePreferencesPatch,
+  ) => Effect.Effect<AppConfigState, AppConfigError>;
   readonly updateRepositoryPreferences: (
     input: UpdateRepositoryPreferencesInput,
   ) => Effect.Effect<RepositoryRecord | null, AppConfigError>;
@@ -102,6 +106,8 @@ export class ElectronPreferences extends Context.Service<
         syncThemePreference,
         themeState: electronTheme.current,
         updateProfile: (input) => settings.updateProfile(input),
+        updateLocalWorkspacePreferences: (preferences) =>
+          settings.updateLocalWorkspacePreferences(preferences),
         updateRepositoryPreferences: (input) => settings.updateRepositoryPreferences(input),
         updateAgentProviderPreference: (input) => settings.updateAgentProviderPreference(input),
       };
