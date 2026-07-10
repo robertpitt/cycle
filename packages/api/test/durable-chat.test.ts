@@ -23,7 +23,10 @@ type SocketMessage = {
 const token = "durable-chat-test-token";
 const timestamp = "2026-07-09T12:00:00.000Z";
 
-const makeChat = (onCreate?: (input: AgentChatCreateInput) => void): AgentChatShape => {
+const makeChat = (
+  onCreate?: (input: AgentChatCreateInput) => void,
+  onSend?: (input: AgentChatSendInput) => void,
+): AgentChatShape => {
   let view: AgentChatView | undefined;
   const unsupported = Effect.die(new Error("Unexpected durable chat test operation."));
   return {
@@ -58,6 +61,7 @@ const makeChat = (onCreate?: (input: AgentChatCreateInput) => void): AgentChatSh
     respond: () => unsupported,
     send: (input) =>
       Effect.sync(() => {
+        onSend?.(input);
         if (view === undefined || view.thread.threadId !== input.threadId) {
           throw new Error("Thread was not created before its first message.");
         }
@@ -185,6 +189,7 @@ describe("durable chat WebSocket", () => {
 
   it("accepts the first message in a newly created canonical chat", async () => {
     let createdModel: string | undefined;
+    let sentInput: AgentChatSendInput | undefined;
     const providerProfiles: readonly AgentProviderProfile[] = [
       {
         capabilities: defaultAgentCapabilities("codex"),
@@ -199,9 +204,14 @@ describe("durable chat WebSocket", () => {
       },
     ];
     const handle = await startCycleApiServer({
-      agentChat: makeChat((input) => {
-        createdModel = input.model;
-      }),
+      agentChat: makeChat(
+        (input) => {
+          createdModel = input.model;
+        },
+        (input) => {
+          sentInput = input;
+        },
+      ),
       agentProviderProfiles: async () => providerProfiles,
       staticToken: token,
     });
@@ -230,6 +240,7 @@ describe("durable chat WebSocket", () => {
         readonly result: { readonly turn: { readonly id: string } };
       };
       assert.equal(sendPayload.result.turn.id, "agent_task_websocket_regression");
+      assert.equal(sentInput?.idempotencyKey, "ws-turn:agent_thread_websocket_regression:chat_3");
     } finally {
       client.socket.close();
       await handle.close();

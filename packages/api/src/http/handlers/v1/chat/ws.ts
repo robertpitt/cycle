@@ -691,7 +691,10 @@ const makeChatGateway = (runtime: CycleApiRuntimeShape): ChatGateway => {
           command,
           chat.send(
             new AgentChatSendInput({
-              idempotencyKey: command.commandId ?? `ws-turn-${crypto.randomUUID()}`,
+              idempotencyKey:
+                command.commandId === undefined
+                  ? `ws-turn-${crypto.randomUUID()}`
+                  : `ws-turn:${threadId}:${command.commandId}`,
               message: stringValue(payload.message) ?? "",
               threadId,
             }),

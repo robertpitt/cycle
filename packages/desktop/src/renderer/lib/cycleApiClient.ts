@@ -390,6 +390,7 @@ const startAgentChatThread = async (
   const connection = await discoverCycleApiConnection();
 
   return new Promise((resolve, reject) => {
+    const commandScope = crypto.randomUUID();
     const pendingCommands = new Map<string, (message: ChatSocketMessage) => void>();
     const socket = new WebSocket(chatWebSocketUrlForConnection(connection));
     let commandSequence = 0;
@@ -425,7 +426,7 @@ const startAgentChatThread = async (
       payload: Readonly<Record<string, unknown>>,
       onResponse?: (message: ChatSocketMessage) => void,
     ) => {
-      const commandId = `${input.commandPrefix}_${++commandSequence}`;
+      const commandId = `${input.commandPrefix}_${commandScope}_${++commandSequence}`;
       if (onResponse !== undefined) pendingCommands.set(commandId, onResponse);
       socket.send(
         JSON.stringify({

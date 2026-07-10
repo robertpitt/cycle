@@ -545,6 +545,27 @@ describe("renderer cycle API client", () => {
     assert.match(workSendTurn?.payload.message, /dedicated git worktree/u);
     assert.match(workSendTurn?.payload.message, /Do not create a pull request/u);
     assert.match(workSendTurn?.payload.message, /Implement this with tests/u);
+
+    await cycleApiClient.startIssueAgentChat({
+      issue: {
+        id: "CYC-123",
+        status: "todo",
+        title: "Fix login redirect",
+        type: "bug",
+      },
+      providerId: "codex",
+      repository: {
+        displayName: "Cycle",
+        id: "repo-cycle",
+        path: "/tmp/cycle",
+      },
+    });
+    const repeatedWorkSent = sockets[2]?.sent.map((raw) => JSON.parse(raw) as any) ?? [];
+    const repeatedWorkSendTurn = repeatedWorkSent.find((message) => message.type === "turn.send");
+
+    assert.match(workSendTurn?.commandId, /^ticket_work_[0-9a-f-]+_2$/u);
+    assert.match(repeatedWorkSendTurn?.commandId, /^ticket_work_[0-9a-f-]+_2$/u);
+    assert.notEqual(repeatedWorkSendTurn?.commandId, workSendTurn?.commandId);
   });
 });
 
