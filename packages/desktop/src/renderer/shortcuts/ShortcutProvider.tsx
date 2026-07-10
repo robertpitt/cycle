@@ -2,12 +2,20 @@ import * as React from "react";
 
 type ShortcutBinding = readonly string[];
 
+export type ShortcutModifiers = {
+  readonly altKey?: boolean;
+  readonly ctrlKey?: boolean;
+  readonly metaKey?: boolean;
+  readonly shiftKey?: boolean;
+};
+
 export type ShortcutAction = {
   readonly allowInEditable?: boolean;
   readonly bindings: readonly ShortcutBinding[];
   readonly disabled?: boolean;
   readonly id: string;
   readonly label: string;
+  readonly modifiers?: ShortcutModifiers;
   readonly run: () => void;
 };
 
@@ -45,6 +53,19 @@ const bindingMatches = (binding: readonly string[], sequence: readonly string[])
 
 const bindingStartsWith = (binding: readonly string[], sequence: readonly string[]): boolean =>
   binding.length > sequence.length && sequence.every((key, index) => key === binding[index]);
+
+const modifiersMatch = (action: ShortcutAction, input: ShortcutDispatchInput): boolean => {
+  if (action.modifiers === undefined) {
+    return !input.altKey && !input.ctrlKey && !input.metaKey;
+  }
+
+  return (
+    Boolean(action.modifiers.altKey) === Boolean(input.altKey) &&
+    Boolean(action.modifiers.ctrlKey) === Boolean(input.ctrlKey) &&
+    Boolean(action.modifiers.metaKey) === Boolean(input.metaKey) &&
+    Boolean(action.modifiers.shiftKey) === Boolean(input.shiftKey)
+  );
+};
 
 const latestEntry = (entries: readonly ShortcutEntry[]): ShortcutEntry | undefined =>
   entries.reduce<ShortcutEntry | undefined>(
@@ -103,11 +124,6 @@ export class ShortcutRegistry {
   }
 
   dispatch(input: ShortcutDispatchInput): string | undefined {
-    if (input.altKey || input.ctrlKey || input.metaKey) {
-      this.resetSequence();
-      return undefined;
-    }
-
     const key = normalizeShortcutKey(input.key);
     if (!key) return undefined;
 
@@ -117,7 +133,7 @@ export class ShortcutRegistry {
     }
 
     const editable = isEditableShortcutTarget(input.target);
-    const candidates = this.activeEntries(editable);
+    const candidates = this.activeEntries(editable, input);
     const attemptedSequence = [...this.sequence, key];
     const resolved = this.resolveSequence(candidates, attemptedSequence);
 
@@ -154,10 +170,12 @@ export class ShortcutRegistry {
     return undefined;
   }
 
-  private activeEntries(editable: boolean): readonly ShortcutEntry[] {
+  private activeEntries(editable: boolean, input: ShortcutDispatchInput): readonly ShortcutEntry[] {
     return Array.from(this.entries.values()).filter(
       (entry) =>
-        entry.action.disabled !== true && (!editable || entry.action.allowInEditable === true),
+        entry.action.disabled !== true &&
+        (!editable || entry.action.allowInEditable === true) &&
+        modifiersMatch(entry.action, input),
     );
   }
 

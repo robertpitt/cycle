@@ -688,10 +688,11 @@ export const WorkspaceScreen = () => {
   useShortcutAction(
     React.useMemo(
       () => ({
-        bindings: [["s", "b"]],
+        bindings: [["b"]],
         disabled: navigationShortcutsDisabled,
         id: "layout.toggleSidebar",
         label: "Toggle sidebar",
+        modifiers: { metaKey: true },
         run: toggleSidebar,
       }),
       [navigationShortcutsDisabled, toggleSidebar],

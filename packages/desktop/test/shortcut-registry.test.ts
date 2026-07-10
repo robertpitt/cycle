@@ -56,9 +56,10 @@ describe("ShortcutRegistry", () => {
     expect(destination).toBe("history");
   });
 
-  it("toggles the sidebar with S then B without conflicting with navigation shortcuts", () => {
+  it("toggles the sidebar with Cmd+B only without conflicting with navigation shortcuts", () => {
     const registry = new ShortcutRegistry();
     const runs: string[] = [];
+    let prevented = 0;
 
     registry.register({
       bindings: [["g", "i"]],
@@ -67,18 +68,41 @@ describe("ShortcutRegistry", () => {
       run: () => runs.push("issues"),
     });
     registry.register({
-      bindings: [["s", "b"]],
+      bindings: [["b"]],
       id: "layout.toggleSidebar",
       label: "Toggle sidebar",
+      modifiers: { metaKey: true },
       run: () => runs.push("sidebar"),
     });
 
-    expect(registry.dispatch({ key: "s", now: 1 })).toBeUndefined();
-    expect(registry.dispatch({ key: "b", now: 2 })).toBe("layout.toggleSidebar");
+    expect(registry.dispatch({ key: "b" })).toBeUndefined();
+    expect(registry.dispatch({ ctrlKey: true, key: "b" })).toBeUndefined();
+    expect(registry.dispatch({ key: "b", metaKey: true, shiftKey: true })).toBeUndefined();
+    expect(registry.dispatch({ key: "s" })).toBeUndefined();
+    expect(registry.dispatch({ key: "b" })).toBeUndefined();
+    expect(
+      registry.dispatch({
+        key: "b",
+        metaKey: true,
+        preventDefault: () => {
+          prevented += 1;
+        },
+      }),
+    ).toBe("layout.toggleSidebar");
+    expect(runs).toEqual(["sidebar"]);
+    expect(prevented).toBe(1);
+
+    expect(
+      registry.dispatch({
+        key: "b",
+        metaKey: true,
+        target: editableTarget("textarea"),
+      }),
+    ).toBeUndefined();
     expect(runs).toEqual(["sidebar"]);
 
-    registry.dispatch({ key: "g", now: 3 });
-    expect(registry.dispatch({ key: "i", now: 4 })).toBe("navigation.issues");
+    registry.dispatch({ key: "g" });
+    expect(registry.dispatch({ key: "i" })).toBe("navigation.issues");
     expect(runs).toEqual(["sidebar", "issues"]);
   });
 

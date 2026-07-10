@@ -517,7 +517,7 @@ Implemented workspace navigation shortcuts include:
 
 ```text
 Escape    Go back or parent route
-s b       Toggle the application sidebar
+⌘B        Toggle the application sidebar
 g n       Inbox
 g i       Issues
 g p       Initiatives

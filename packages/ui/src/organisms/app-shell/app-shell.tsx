@@ -280,7 +280,7 @@ export const AppShellHeader = React.forwardRef<HTMLElement, AppShellHeaderProps>
               label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
               onClick={onToggleSidebar}
               size="sm"
-              title={collapsed ? "Expand sidebar (S then B)" : "Collapse sidebar (S then B)"}
+              title={collapsed ? "Expand sidebar (⌘B)" : "Collapse sidebar (⌘B)"}
               variant="outline"
             />
           ) : null}

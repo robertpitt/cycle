@@ -189,11 +189,11 @@ describe("component regressions", () => {
 
     expect(expandedHeader).toContain('aria-label="Collapse sidebar"');
     expect(expandedHeader).toContain('aria-expanded="true"');
-    expect(expandedHeader).toContain('title="Collapse sidebar (S then B)"');
+    expect(expandedHeader).toContain('title="Collapse sidebar (⌘B)"');
     expect(collapsedHeader).toContain('aria-label="Expand sidebar"');
     expect(collapsedHeader).toContain('aria-expanded="false"');
     expect(collapsedHeader).toContain('aria-pressed="true"');
-    expect(collapsedHeader).toContain('title="Expand sidebar (S then B)"');
+    expect(collapsedHeader).toContain('title="Expand sidebar (⌘B)"');
     expect(expandedFrame).toContain("grid-cols-[280px_minmax(0,1fr)]");
     expect(collapsedFrame).toContain("grid-cols-[72px_minmax(0,1fr)]");
     expect(collapsedSidebar).toContain('title="Issues"');
