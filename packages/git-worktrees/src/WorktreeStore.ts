@@ -16,8 +16,12 @@ import {
   RepositoryId,
   TicketId,
   WorktreeHandoverId,
+  WorktreeHandoverChangedFile,
+  type WorktreeHandoverPushStatus,
   WorktreeHandoverRecord,
+  type WorktreeHandoverReviewState,
   WorktreeHandoverStep,
+  WorktreeHandoverTest,
   WorktreeId,
   WorktreeLastError,
   WorktreeLease,
@@ -148,23 +152,30 @@ export type WorktreeStoreShape = {
     | WorktreeLeaseConflictError
   >;
   readonly updateHandoverStep: (input: {
+    readonly artifacts?: ReadonlyArray<string> | undefined;
     readonly backupBranchName?: string | undefined;
     readonly branchAssociationId?: BranchAssociationId | undefined;
     readonly branchName?: string | undefined;
     readonly commentId?: string | undefined;
     readonly commits?: ReadonlyArray<ObjectId> | undefined;
+    readonly changedFiles?: ReadonlyArray<WorktreeHandoverChangedFile> | undefined;
     readonly completedStep?: WorktreeHandoverStep | undefined;
     readonly currentStep?: WorktreeHandoverStep | undefined;
     readonly fencingToken?: number | undefined;
     readonly handoverId: WorktreeHandoverId;
     readonly lastError?: WorktreeLastError | undefined;
+    readonly knownLimitations?: ReadonlyArray<string> | undefined;
     readonly pullRequestUrl?: string | undefined;
+    readonly pushError?: string | undefined;
+    readonly pushStatus?: WorktreeHandoverPushStatus | undefined;
     readonly remoteName?: string | undefined;
     readonly remoteRef?: string | undefined;
     readonly remoteUrl?: string | undefined;
+    readonly reviewState?: WorktreeHandoverReviewState | undefined;
     readonly status?: "in_progress" | "completed" | "failed" | undefined;
     readonly summary?: string | undefined;
     readonly targetStatus?: string | undefined;
+    readonly tests?: ReadonlyArray<WorktreeHandoverTest> | undefined;
     readonly validation?: string | undefined;
     readonly worktreeId: WorktreeId;
   }) => Effect.Effect<
@@ -270,11 +281,14 @@ type SetupRunRow = {
 };
 
 type HandoverRow = {
+  readonly artifacts_json: string;
   readonly backup_branch_name: string | null;
+  readonly base_ref: string;
   readonly branch_association_id: string | null;
   readonly branch_name: string | null;
   readonly comment_id: string | null;
   readonly commits_json: string;
+  readonly changed_files_json: string;
   readonly completed_at: string | null;
   readonly completed_steps_json: string;
   readonly created_at: string;
@@ -282,14 +296,19 @@ type HandoverRow = {
   readonly handover_id: string;
   readonly job_id: string;
   readonly last_error_json: string | null;
+  readonly known_limitations_json: string;
   readonly pull_request_url: string | null;
+  readonly push_error: string | null;
+  readonly push_status: WorktreeHandoverPushStatus;
   readonly remote_name: string | null;
   readonly remote_ref: string | null;
   readonly remote_url: string | null;
   readonly repository_id: string;
+  readonly review_state: WorktreeHandoverReviewState;
   readonly status: "in_progress" | "completed" | "failed";
   readonly summary: string | null;
   readonly target_status: string | null;
+  readonly tests_json: string;
   readonly ticket_id: string | null;
   readonly updated_at: string;
   readonly validation: string | null;
@@ -498,11 +517,14 @@ const setupRunToRow = (run: WorktreeSetupRun): SetupRunRow => ({
 });
 
 const handoverToRow = (record: WorktreeHandoverRecord): HandoverRow => ({
+  artifacts_json: JSON.stringify(record.artifacts),
   backup_branch_name: record.backupBranchName ?? null,
+  base_ref: record.baseRef,
   branch_association_id: record.branchAssociationId ?? null,
   branch_name: record.branchName ?? null,
   comment_id: record.commentId ?? null,
   commits_json: JSON.stringify(record.commits),
+  changed_files_json: JSON.stringify(record.changedFiles),
   completed_at: record.completedAt ?? null,
   completed_steps_json: JSON.stringify(record.completedSteps),
   created_at: record.createdAt,
@@ -510,14 +532,19 @@ const handoverToRow = (record: WorktreeHandoverRecord): HandoverRow => ({
   handover_id: record.handoverId,
   job_id: record.jobId,
   last_error_json: stringifyJson(record.lastError),
+  known_limitations_json: JSON.stringify(record.knownLimitations),
   pull_request_url: record.pullRequestUrl ?? null,
+  push_error: record.pushError ?? null,
+  push_status: record.pushStatus,
   remote_name: record.remoteName ?? null,
   remote_ref: record.remoteRef ?? null,
   remote_url: record.remoteUrl ?? null,
   repository_id: record.repositoryId,
+  review_state: record.reviewState,
   status: record.status,
   summary: record.summary ?? null,
   target_status: record.targetStatus ?? null,
+  tests_json: JSON.stringify(record.tests),
   ticket_id: record.ticketId ?? null,
   updated_at: record.updatedAt,
   validation: record.validation ?? null,
@@ -526,6 +553,13 @@ const handoverToRow = (record: WorktreeHandoverRecord): HandoverRow => ({
 
 const rowToHandover = (row: HandoverRow): WorktreeHandoverRecord =>
   WorktreeHandoverRecord.make({
+    artifacts: Schema.decodeUnknownSync(Schema.Array(Schema.String))(
+      JSON.parse(row.artifacts_json),
+    ),
+    baseRef: row.base_ref,
+    changedFiles: Schema.decodeUnknownSync(Schema.Array(WorktreeHandoverChangedFile))(
+      JSON.parse(row.changed_files_json),
+    ),
     commits: Schema.decodeUnknownSync(Schema.Array(Schema.String))(
       JSON.parse(row.commits_json),
     ) as ReadonlyArray<ObjectId>,
@@ -535,8 +569,14 @@ const rowToHandover = (row: HandoverRow): WorktreeHandoverRecord =>
     createdAt: row.created_at,
     handoverId: row.handover_id as WorktreeHandoverId,
     jobId: row.job_id as JobId,
+    knownLimitations: Schema.decodeUnknownSync(Schema.Array(Schema.String))(
+      JSON.parse(row.known_limitations_json),
+    ),
+    pushStatus: row.push_status,
     repositoryId: row.repository_id as RepositoryId,
+    reviewState: row.review_state,
     status: row.status,
+    tests: Schema.decodeUnknownSync(Schema.Array(WorktreeHandoverTest))(JSON.parse(row.tests_json)),
     updatedAt: row.updated_at,
     worktreeId: row.worktree_id as WorktreeId,
     ...(row.backup_branch_name === null ? {} : { backupBranchName: row.backup_branch_name }),
@@ -553,6 +593,7 @@ const rowToHandover = (row: HandoverRow): WorktreeHandoverRecord =>
           lastError: Schema.decodeUnknownSync(WorktreeLastError)(JSON.parse(row.last_error_json)),
         }),
     ...(row.pull_request_url === null ? {} : { pullRequestUrl: row.pull_request_url }),
+    ...(row.push_error === null ? {} : { pushError: row.push_error }),
     ...(row.remote_name === null ? {} : { remoteName: row.remote_name }),
     ...(row.remote_ref === null ? {} : { remoteRef: row.remote_ref }),
     ...(row.remote_url === null ? {} : { remoteUrl: row.remote_url }),
@@ -1055,7 +1096,9 @@ export const WorktreeStoreSqliteLive = Layer.effect(
           handover_id, worktree_id, repository_id, job_id, ticket_id, status, current_step,
           completed_steps_json, summary, validation, commits_json, branch_association_id,
           branch_name, remote_name, remote_ref, remote_url, backup_branch_name, target_status,
-          comment_id, pull_request_url, created_at, updated_at, completed_at, last_error_json
+          comment_id, pull_request_url, created_at, updated_at, completed_at, last_error_json,
+          artifacts_json, base_ref, changed_files_json, tests_json, known_limitations_json,
+          push_status, push_error, review_state
         ) VALUES (
           ${row.handover_id}, ${row.worktree_id}, ${row.repository_id}, ${row.job_id},
           ${row.ticket_id}, ${row.status}, ${row.current_step}, ${row.completed_steps_json},
@@ -1063,7 +1106,9 @@ export const WorktreeStoreSqliteLive = Layer.effect(
           ${row.branch_name}, ${row.remote_name}, ${row.remote_ref}, ${row.remote_url},
           ${row.backup_branch_name}, ${row.target_status}, ${row.comment_id},
           ${row.pull_request_url}, ${row.created_at}, ${row.updated_at}, ${row.completed_at},
-          ${row.last_error_json}
+          ${row.last_error_json}, ${row.artifacts_json}, ${row.base_ref},
+          ${row.changed_files_json}, ${row.tests_json}, ${row.known_limitations_json},
+          ${row.push_status}, ${row.push_error}, ${row.review_state}
         )
         ON CONFLICT(handover_id) DO NOTHING
       `.pipe(Effect.mapError((cause) => mapSqlError("createHandover", cause)));
@@ -1096,23 +1141,30 @@ export const WorktreeStoreSqliteLive = Layer.effect(
     });
 
     const updateHandoverStep = Effect.fn("WorktreeStore.updateHandoverStep")(function* (input: {
+      readonly artifacts?: ReadonlyArray<string> | undefined;
       readonly backupBranchName?: string | undefined;
       readonly branchAssociationId?: BranchAssociationId | undefined;
       readonly branchName?: string | undefined;
       readonly commentId?: string | undefined;
       readonly commits?: ReadonlyArray<ObjectId> | undefined;
+      readonly changedFiles?: ReadonlyArray<WorktreeHandoverChangedFile> | undefined;
       readonly completedStep?: WorktreeHandoverStep | undefined;
       readonly currentStep?: WorktreeHandoverStep | undefined;
       readonly fencingToken?: number | undefined;
       readonly handoverId: WorktreeHandoverId;
       readonly lastError?: WorktreeLastError | undefined;
+      readonly knownLimitations?: ReadonlyArray<string> | undefined;
       readonly pullRequestUrl?: string | undefined;
+      readonly pushError?: string | undefined;
+      readonly pushStatus?: WorktreeHandoverPushStatus | undefined;
       readonly remoteName?: string | undefined;
       readonly remoteRef?: string | undefined;
       readonly remoteUrl?: string | undefined;
+      readonly reviewState?: WorktreeHandoverReviewState | undefined;
       readonly status?: "in_progress" | "completed" | "failed" | undefined;
       readonly summary?: string | undefined;
       readonly targetStatus?: string | undefined;
+      readonly tests?: ReadonlyArray<WorktreeHandoverTest> | undefined;
       readonly validation?: string | undefined;
       readonly worktreeId: WorktreeId;
     }) {
@@ -1133,6 +1185,7 @@ export const WorktreeStoreSqliteLive = Layer.effect(
               ...current,
               completedSteps,
               updatedAt: now,
+              ...(input.artifacts === undefined ? {} : { artifacts: input.artifacts }),
               ...(input.backupBranchName === undefined
                 ? {}
                 : { backupBranchName: input.backupBranchName }),
@@ -1142,17 +1195,25 @@ export const WorktreeStoreSqliteLive = Layer.effect(
               ...(input.branchName === undefined ? {} : { branchName: input.branchName }),
               ...(input.commentId === undefined ? {} : { commentId: input.commentId }),
               ...(input.commits === undefined ? {} : { commits: input.commits }),
+              ...(input.changedFiles === undefined ? {} : { changedFiles: input.changedFiles }),
               ...(input.currentStep === undefined ? {} : { currentStep: input.currentStep }),
               ...(input.lastError === undefined ? {} : { lastError: input.lastError }),
+              ...(input.knownLimitations === undefined
+                ? {}
+                : { knownLimitations: input.knownLimitations }),
               ...(input.pullRequestUrl === undefined
                 ? {}
                 : { pullRequestUrl: input.pullRequestUrl }),
+              ...(input.pushError === undefined ? {} : { pushError: input.pushError }),
+              ...(input.pushStatus === undefined ? {} : { pushStatus: input.pushStatus }),
               ...(input.remoteName === undefined ? {} : { remoteName: input.remoteName }),
               ...(input.remoteRef === undefined ? {} : { remoteRef: input.remoteRef }),
               ...(input.remoteUrl === undefined ? {} : { remoteUrl: input.remoteUrl }),
+              ...(input.reviewState === undefined ? {} : { reviewState: input.reviewState }),
               ...(input.status === undefined ? {} : { status: input.status }),
               ...(input.summary === undefined ? {} : { summary: input.summary }),
               ...(input.targetStatus === undefined ? {} : { targetStatus: input.targetStatus }),
+              ...(input.tests === undefined ? {} : { tests: input.tests }),
               ...(input.validation === undefined ? {} : { validation: input.validation }),
               ...(input.status === "completed" ? { completedAt: now } : {}),
             });
@@ -1161,12 +1222,18 @@ export const WorktreeStoreSqliteLive = Layer.effect(
             UPDATE worktree_handovers
             SET status = ${row.status}, current_step = ${row.current_step},
                 completed_steps_json = ${row.completed_steps_json},
+                artifacts_json = ${row.artifacts_json}, base_ref = ${row.base_ref},
+                changed_files_json = ${row.changed_files_json},
                 summary = ${row.summary}, validation = ${row.validation},
                 commits_json = ${row.commits_json},
                 branch_association_id = ${row.branch_association_id},
                 branch_name = ${row.branch_name},
                 remote_name = ${row.remote_name}, remote_ref = ${row.remote_ref},
                 remote_url = ${row.remote_url},
+                push_status = ${row.push_status}, push_error = ${row.push_error},
+                review_state = ${row.review_state},
+                tests_json = ${row.tests_json},
+                known_limitations_json = ${row.known_limitations_json},
                 backup_branch_name = ${row.backup_branch_name},
                 target_status = ${row.target_status},
                 comment_id = ${row.comment_id},
@@ -1356,6 +1423,17 @@ export const worktreeStoreMigrations = {
         FOREIGN KEY(worktree_id) REFERENCES worktree_records(worktree_id)
       )
     `;
+  }),
+  "0002_add_merge_handoff_evidence": Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`ALTER TABLE worktree_handovers ADD COLUMN artifacts_json TEXT NOT NULL DEFAULT '[]'`;
+    yield* sql`ALTER TABLE worktree_handovers ADD COLUMN base_ref TEXT NOT NULL DEFAULT 'HEAD'`;
+    yield* sql`ALTER TABLE worktree_handovers ADD COLUMN changed_files_json TEXT NOT NULL DEFAULT '[]'`;
+    yield* sql`ALTER TABLE worktree_handovers ADD COLUMN tests_json TEXT NOT NULL DEFAULT '[]'`;
+    yield* sql`ALTER TABLE worktree_handovers ADD COLUMN known_limitations_json TEXT NOT NULL DEFAULT '[]'`;
+    yield* sql`ALTER TABLE worktree_handovers ADD COLUMN push_status TEXT NOT NULL DEFAULT 'pending'`;
+    yield* sql`ALTER TABLE worktree_handovers ADD COLUMN push_error TEXT`;
+    yield* sql`ALTER TABLE worktree_handovers ADD COLUMN review_state TEXT NOT NULL DEFAULT 'needs_user_input'`;
   }),
 } satisfies Record<string, Effect.Effect<void, unknown, SqlClient.SqlClient>>;
 

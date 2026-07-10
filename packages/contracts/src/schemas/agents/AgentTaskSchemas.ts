@@ -70,6 +70,58 @@ export const AgentTaskError = Schema.Struct({
 });
 export type AgentTaskError = typeof AgentTaskError.Type;
 
+export const AgentTaskHandoffState = Schema.Literals([
+  "merge_ready",
+  "needs_user_input",
+  "failed",
+  "abandoned",
+]);
+export type AgentTaskHandoffState = typeof AgentTaskHandoffState.Type;
+
+export const AgentTaskHandoffPushStatus = Schema.Literals([
+  "pending",
+  "pushed",
+  "failed",
+  "not_pushed",
+]);
+export type AgentTaskHandoffPushStatus = typeof AgentTaskHandoffPushStatus.Type;
+
+export const AgentTaskHandoffChangedFile = Schema.Struct({
+  path: Schema.String,
+  status: Schema.String,
+});
+export type AgentTaskHandoffChangedFile = typeof AgentTaskHandoffChangedFile.Type;
+
+export const AgentTaskHandoffTest = Schema.Struct({
+  command: Schema.optional(Schema.String),
+  result: Schema.String,
+  status: Schema.Literals(["passed", "failed", "not_run"]),
+});
+export type AgentTaskHandoffTest = typeof AgentTaskHandoffTest.Type;
+
+export const AgentTaskHandoff = Schema.Struct({
+  artifacts: Schema.Array(Schema.String),
+  baseRef: Schema.String,
+  branchName: Schema.optional(Schema.String),
+  branchUrl: Schema.optional(Schema.String),
+  changedFiles: Schema.Array(AgentTaskHandoffChangedFile),
+  commits: Schema.Array(Schema.String),
+  failure: Schema.optional(AgentTaskError),
+  handoffId: Schema.String,
+  knownLimitations: Schema.Array(Schema.String),
+  mergeCommands: Schema.Array(Schema.String),
+  pushError: Schema.optional(Schema.String),
+  pushStatus: AgentTaskHandoffPushStatus,
+  remoteName: Schema.optional(Schema.String),
+  remoteRef: Schema.optional(Schema.String),
+  remoteUrl: Schema.optional(Schema.String),
+  state: AgentTaskHandoffState,
+  summary: Schema.optional(Schema.String),
+  tests: Schema.Array(AgentTaskHandoffTest),
+  updatedAt: Schema.String,
+});
+export type AgentTaskHandoff = typeof AgentTaskHandoff.Type;
+
 export const AgentTaskRequest = Schema.Struct({
   agentId: Schema.String,
   authority: AgentTaskAuthority,
@@ -109,6 +161,7 @@ export const AgentTask = Schema.Struct({
   completedAt: Schema.optional(Schema.String),
   createdAt: Schema.String,
   idempotencyKey: Schema.optional(Schema.String),
+  handoff: Schema.optional(AgentTaskHandoff),
   lastError: Schema.optional(AgentTaskError),
   lastHeartbeatAt: Schema.optional(Schema.String),
   maxAttempts: PositiveInteger,

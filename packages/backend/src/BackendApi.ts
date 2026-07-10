@@ -45,6 +45,7 @@ import { BackendRepositoryOpenServiceLive } from "./BackendRepositoryOpen.ts";
 import { LocalSettings } from "./LocalSettings.ts";
 import { LocalWorkspace } from "./LocalWorkspace.ts";
 import { RepositoryBootstrap } from "./RepositoryBootstrap.ts";
+import { mergeHandoffEvidenceFromSummary } from "./internal/merge-handoff-evidence.ts";
 
 export type BackendApiHandle = {
   readonly baseUrl?: string;
@@ -429,26 +430,39 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
                       new Error(`Ticket was not found: ${ticketId}`),
                     );
                   }
+                  const evidence = mergeHandoffEvidenceFromSummary(summary);
+                  const repositoryMetadata = yield* gitRepository.metadata(repository.path);
                   const handover = yield* worktrees.handover(
                     { repositoryId, repositoryPath: repository.path },
                     {
                       actor: "cycle-agent-runtime",
+                      artifacts: evidence.artifacts,
                       handoverId: `worktree_handover_${task.taskId}`,
+                      knownLimitations: evidence.knownLimitations,
                       message: `${ticketId}: ${ticket.title}`,
                       pushPolicy: "required",
+                      remoteUrl: repositoryMetadata.defaultRemoteUrl,
                       summary,
                       targetStatus: "needs-review",
+                      tests: evidence.tests,
+                      validation: evidence.validation,
                       worktreeId,
                     },
                   );
-                  const handoverId =
-                    typeof handover === "object" && handover !== null && "handoverId" in handover
-                      ? String(handover.handoverId)
-                      : `worktree_handover_${task.taskId}`;
+                  const handoverId = handover.handoverId;
                   const commentBody = [
-                    "Agent implementation completed and the managed branch was pushed.",
+                    "## Merge-ready handoff",
                     "",
                     summary,
+                    "",
+                    `State: ${handover.reviewState}`,
+                    `Branch: ${handover.branchName ?? "Not published"}`,
+                    `Push: ${handover.pushStatus}${handover.remoteName ? ` (${handover.remoteName})` : ""}`,
+                    `Commits: ${handover.commits.length === 0 ? "None" : handover.commits.join(", ")}`,
+                    `Changed files: ${handover.changedFiles.length === 0 ? "None" : handover.changedFiles.map((file) => `${file.status} ${file.path}`).join(", ")}`,
+                    `Tests: ${handover.tests.length === 0 ? "None reported" : handover.tests.map((test) => `${test.status}: ${test.result}`).join("; ")}`,
+                    `Artifacts: ${handover.artifacts.length === 0 ? "None" : handover.artifacts.join(", ")}`,
+                    `Risks, limitations, and follow-ups: ${handover.knownLimitations.length === 0 ? "None reported" : handover.knownLimitations.join("; ")}`,
                     "",
                     `Task: ${task.taskId}`,
                     `Worktree: ${worktreeId}`,
@@ -488,6 +502,19 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
                   const repositoryId = task.metadata.repositoryId;
                   const ticketId = task.metadata.ticketId;
                   if (typeof repositoryId !== "string" || typeof ticketId !== "string") return;
+                  const repositories = yield* localWorkspace.listRepositories;
+                  const repository = repositories.find(
+                    (candidate) => candidate.id === repositoryId,
+                  );
+                  const partialHandoff =
+                    repository === undefined
+                      ? null
+                      : yield* worktrees
+                          .findHandover(
+                            { repositoryId, repositoryPath: repository.path },
+                            `worktree_handover_${task.taskId}`,
+                          )
+                          .pipe(Effect.catch(() => Effect.succeed(null)));
                   const marker = `Agent blocker: ${task.taskId}:${error.code}`;
                   const comments = yield* database.ticketRecords(repositoryId, ticketId, {
                     limit: 500,
@@ -517,6 +544,15 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
                         ...(typeof branchName === "string" && branchName.length > 0
                           ? [`Branch: ${branchName}`]
                           : []),
+                        ...(partialHandoff === null
+                          ? []
+                          : [
+                              `Handoff: ${partialHandoff.handoverId}`,
+                              `Handoff state: ${partialHandoff.reviewState}`,
+                              `Push: ${partialHandoff.pushStatus}${partialHandoff.pushError ? ` — ${partialHandoff.pushError}` : ""}`,
+                              `Commits: ${partialHandoff.commits.length === 0 ? "None" : partialHandoff.commits.join(", ")}`,
+                              `Changed files: ${partialHandoff.changedFiles.length === 0 ? "None" : partialHandoff.changedFiles.map((file) => `${file.status} ${file.path}`).join(", ")}`,
+                            ]),
                         "No worktree cleanup was performed. Resolve the error, then retry from the original Cycle chat.",
                         "",
                         marker,

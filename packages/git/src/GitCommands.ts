@@ -108,6 +108,11 @@ export type GitPushCommandInput = {
   readonly remote: string;
 };
 
+export type GitChangedFile = {
+  readonly path: string;
+  readonly status: string;
+};
+
 export type GitCommandsShape = {
   readonly absoluteGitDir: (cwd: string) => Effect.Effect<string, GitRepositoryError>;
   readonly addAll: (cwd: string) => Effect.Effect<void, GitIndexError>;
@@ -116,6 +121,10 @@ export type GitCommandsShape = {
     cwd: string,
     branchName: string,
   ) => Effect.Effect<string, GitBranchNameError>;
+  readonly changedFiles: (
+    cwd: string,
+    input: { readonly fromExclusive: string; readonly toInclusive: string },
+  ) => Effect.Effect<ReadonlyArray<GitChangedFile>, GitRevisionError>;
   readonly commit: (
     cwd: string,
     input: GitCommitCommandInput,
@@ -327,6 +336,29 @@ export const layer = Layer.effect(
       const branchName = stripTrailingLineEndings(bytesToString(result.stdout)).trim();
 
       return branchName.length === 0 ? null : branchName;
+    });
+
+    const changedFiles = Effect.fn("GitCommands.changedFiles")(function* (
+      cwd: string,
+      input: { readonly fromExclusive: string; readonly toInclusive: string },
+    ) {
+      const result = yield* runRevision(cwd, [
+        "diff",
+        "--name-status",
+        "--find-renames",
+        `${input.fromExclusive}..${input.toInclusive}`,
+      ]);
+
+      return stripTrailingLineEndings(bytesToString(result.stdout))
+        .split("\n")
+        .filter(Boolean)
+        .flatMap((line): ReadonlyArray<GitChangedFile> => {
+          const fields = line.split("\t");
+          const status = fields[0];
+          const path =
+            status?.startsWith("R") || status?.startsWith("C") ? fields[2] : fields[1];
+          return status === undefined || path === undefined ? [] : [{ path, status }];
+        });
     });
 
     const statusPorcelain = Effect.fn("GitCommands.statusPorcelain")(function* (
@@ -692,6 +724,7 @@ export const layer = Layer.effect(
       addAll,
       branchRef,
       checkBranchName,
+      changedFiles,
       commit,
       commonGitDir,
       currentBranch,

@@ -148,4 +148,61 @@ describe("@cycle/git-worktrees primitives", () => {
     assert.strictEqual("remoteName" in record, false);
     assert.strictEqual("setupProfileId" in record, false);
   });
+
+  it.effect("persists complete and failed partial merge handoffs", () =>
+    withTempDir((dir) =>
+      Effect.gen(function* () {
+        const store = yield* WorktreeStore;
+        const worktree = yield* store.createWorktreeRecord(makeRecord(dir));
+        const handoff = yield* store.createHandover({
+          artifacts: ["artifacts/ui.png"],
+          baseRef: "main",
+          branchName: "cycle/task/CYC-1-work",
+          changedFiles: [{ path: "src/index.ts", status: "M" }],
+          commits: ["abcdefabcdefabcdefabcdefabcdefabcdefabcd" as never],
+          completedSteps: ["prepare_output", "publish_branch"],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          currentStep: "push_branch",
+          handoverId: "worktree_handover_task_1" as never,
+          jobId: worktree.jobId,
+          knownLimitations: ["Manual browser validation remains."],
+          pushStatus: "pending",
+          repositoryId: worktree.repositoryId,
+          reviewState: "needs_user_input",
+          status: "in_progress",
+          tests: [{ command: "pnpm test", result: "12 passed", status: "passed" }],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          worktreeId: worktree.worktreeId,
+        });
+
+        assert.deepEqual(yield* store.findHandover(handoff.handoverId), handoff);
+
+        const lease = yield* store.acquireLease({
+          actor: "test",
+          heartbeatDeadline: "2026-01-01T00:05:00.000Z",
+          ownerId: "handoff-test",
+          purpose: "handover",
+          worktreeId: worktree.worktreeId,
+        });
+        const failed = yield* store.updateHandoverStep({
+          fencingToken: lease.fencingToken,
+          handoverId: handoff.handoverId,
+          lastError: { message: "Authentication failed", tag: "RemotePushError" },
+          pushError: "Authentication failed",
+          pushStatus: "failed",
+          reviewState: "failed",
+          status: "failed",
+          worktreeId: worktree.worktreeId,
+        });
+
+        assert.strictEqual(failed.reviewState, "failed");
+        assert.strictEqual(failed.pushStatus, "failed");
+        assert.strictEqual(failed.branchName, "cycle/task/CYC-1-work");
+        assert.deepEqual(failed.changedFiles, [{ path: "src/index.ts", status: "M" }]);
+        assert.deepEqual(failed.tests, [
+          { command: "pnpm test", result: "12 passed", status: "passed" },
+        ]);
+      }).pipe(Effect.provide(makeWorktreeStoreSqliteTestLayer())),
+    ),
+  );
 });

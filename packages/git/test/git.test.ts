@@ -148,6 +148,13 @@ describe("@cycle/git", () => {
           }),
           [commit.sha],
         );
+        assert.deepStrictEqual(
+          yield* service.changedFiles(repo, {
+            fromExclusive: firstHead,
+            toInclusive: commit.sha,
+          }),
+          [{ path: "source.txt", status: "M" }],
+        );
         assert.strictEqual(yield* service.isAncestor(repo, firstHead, commit.sha), true);
         assert.strictEqual(yield* service.isAncestor(repo, commit.sha, firstHead), false);
 

@@ -111,6 +111,35 @@ export type WorktreeHandoverStep = typeof WorktreeHandoverStep.Type;
 export const WorktreePushPolicy = Schema.Literals(["disabled", "best_effort", "required"]);
 export type WorktreePushPolicy = typeof WorktreePushPolicy.Type;
 
+export const WorktreeHandoverReviewState = Schema.Literals([
+  "merge_ready",
+  "needs_user_input",
+  "failed",
+  "abandoned",
+]);
+export type WorktreeHandoverReviewState = typeof WorktreeHandoverReviewState.Type;
+
+export const WorktreeHandoverPushStatus = Schema.Literals([
+  "pending",
+  "pushed",
+  "failed",
+  "not_pushed",
+]);
+export type WorktreeHandoverPushStatus = typeof WorktreeHandoverPushStatus.Type;
+
+export const WorktreeHandoverChangedFile = Schema.Struct({
+  path: Schema.String,
+  status: Schema.String,
+});
+export type WorktreeHandoverChangedFile = typeof WorktreeHandoverChangedFile.Type;
+
+export const WorktreeHandoverTest = Schema.Struct({
+  command: Schema.optionalKey(Schema.String),
+  result: Schema.String,
+  status: Schema.Literals(["passed", "failed", "not_run"]),
+});
+export type WorktreeHandoverTest = typeof WorktreeHandoverTest.Type;
+
 export const WorktreeCleanupPolicy = Schema.Literals([
   "delete_after_handover",
   "retain_until",
@@ -254,11 +283,14 @@ export const WorktreeSetupRun = Schema.Struct({
 export type WorktreeSetupRun = typeof WorktreeSetupRun.Type;
 
 export const WorktreeHandoverRecord = Schema.Struct({
+  artifacts: Schema.Array(Schema.String),
   backupBranchName: Schema.optionalKey(Schema.String),
+  baseRef: Schema.String,
   branchAssociationId: Schema.optionalKey(BranchAssociationId),
   branchName: Schema.optionalKey(Schema.String),
   commentId: Schema.optionalKey(Schema.String),
   commits: Schema.Array(ObjectId),
+  changedFiles: Schema.Array(WorktreeHandoverChangedFile),
   completedAt: Schema.optionalKey(Schema.String),
   completedSteps: Schema.Array(WorktreeHandoverStep),
   createdAt: Schema.String,
@@ -266,14 +298,19 @@ export const WorktreeHandoverRecord = Schema.Struct({
   handoverId: WorktreeHandoverId,
   jobId: JobId,
   lastError: Schema.optionalKey(WorktreeLastError),
+  knownLimitations: Schema.Array(Schema.String),
   pullRequestUrl: Schema.optionalKey(Schema.String),
+  pushError: Schema.optionalKey(Schema.String),
+  pushStatus: WorktreeHandoverPushStatus,
   remoteName: Schema.optionalKey(Schema.String),
   remoteRef: Schema.optionalKey(Schema.String),
   remoteUrl: Schema.optionalKey(Schema.String),
   repositoryId: RepositoryId,
+  reviewState: WorktreeHandoverReviewState,
   status: WorktreeHandoverStatus,
   summary: Schema.optionalKey(Schema.String),
   targetStatus: Schema.optionalKey(Schema.String),
+  tests: Schema.Array(WorktreeHandoverTest),
   ticketId: Schema.optionalKey(TicketId),
   updatedAt: Schema.String,
   validation: Schema.optionalKey(Schema.String),

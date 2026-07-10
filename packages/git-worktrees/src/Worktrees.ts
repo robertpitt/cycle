@@ -8,7 +8,7 @@ import {
   type WorktreeLifecycleShape,
 } from "./WorktreeLifecycle.ts";
 import { WorktreeReconciler, type WorktreeReconciliationResult } from "./WorktreeReconciler.ts";
-import type { RepositoryId, WorktreeRecord } from "./WorktreeSchemas.ts";
+import type { RepositoryId, WorktreeHandoverRecord, WorktreeRecord } from "./WorktreeSchemas.ts";
 import { WorktreeStore } from "./WorktreeStore.ts";
 import type { WorktreeHandoverShape } from "./WorktreeHandover.ts";
 import {
@@ -34,11 +34,15 @@ export type WorktreesShape = {
   readonly handover: (
     descriptor: WorktreeRepositoryInstanceDescriptor,
     input: Parameters<WorktreeHandoverShape["handover"]>[0],
-  ) => Effect.Effect<unknown, WorktreeError>;
+  ) => Effect.Effect<WorktreeHandoverRecord, WorktreeError>;
   readonly get: (
     descriptor: WorktreeRepositoryInstanceDescriptor,
     worktreeId: string,
   ) => Effect.Effect<WorktreeRecord, WorktreeError>;
+  readonly findHandover: (
+    descriptor: WorktreeRepositoryInstanceDescriptor,
+    handoverId: string,
+  ) => Effect.Effect<WorktreeHandoverRecord | null, WorktreeError>;
   readonly reconcileRepository: (
     descriptor: WorktreeRepositoryInstanceDescriptor,
     repositoryId: RepositoryId,
@@ -143,6 +147,17 @@ export const WorktreesLive = Layer.effect(
       );
     });
 
+    const findHandover = Effect.fn("Worktrees.findHandover")(function* (
+      descriptor: WorktreeRepositoryInstanceDescriptor,
+      handoverId: string,
+    ) {
+      return yield* withRepositoryLayer(
+        descriptor,
+        "findHandover",
+        Effect.flatMap(WorktreeStore, (store) => store.findHandover(handoverId as never)),
+      );
+    });
+
     const reconcileRepository = Effect.fn("Worktrees.reconcileRepository")(function* (
       descriptor: WorktreeRepositoryInstanceDescriptor,
       repositoryId: RepositoryId,
@@ -160,6 +175,7 @@ export const WorktreesLive = Layer.effect(
       acquireForAgentRun,
       cleanup,
       create,
+      findHandover,
       get,
       handover,
       reconcileRepository,

@@ -1,4 +1,7 @@
-import type { AgentTaskStatus } from "@cycle/contracts/schemas/agents/agent-task-schemas";
+import type {
+  AgentTask,
+  AgentTaskStatus,
+} from "@cycle/contracts/schemas/agents/agent-task-schemas";
 import { AgentTaskFailure, AgentTaskUsecases, type AgentTaskUsecasesShape } from "@cycle/usecases";
 import { Effect, Result } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
@@ -7,6 +10,7 @@ import { CycleRequestContext } from "../../middleware/CycleRequestContextMiddlew
 import { positiveIntegerParam, urlFromRequest } from "../query.ts";
 import { collectionResponse, errorResponse, resourceResponse } from "../responses.ts";
 import type { V1Request } from "./types.ts";
+import { mergeHandoffProjection } from "./mergeHandoff.ts";
 
 type AgentTaskUsecaseRequirements = Effect.Services<
   ReturnType<AgentTaskUsecasesShape["createGenericTask"]>
@@ -76,8 +80,9 @@ export const listAgentTasks = ({ query, request }: V1Request<"listAgentTasks">) 
       }),
     );
     if (HttpServerResponse.isHttpServerResponse(page)) return page;
+    const entries = yield* attachMergeHandoffs(page.entries);
 
-    return collectionResponse(requestId, url, page.entries, limit, page.nextCursor ?? null);
+    return collectionResponse(requestId, url, entries, limit, page.nextCursor ?? null);
   });
 
 export const getAgentTask = ({ params, request }: V1Request<"getAgentTask">) =>
@@ -118,7 +123,7 @@ export const retryAgentTask = ({ params, payload, request }: V1Request<"retryAge
 const taskResponse = (
   request: HttpServerRequest.HttpServerRequest,
   status: number,
-  operation: AgentTaskOperation<unknown>,
+  operation: AgentTaskOperation<AgentTask | undefined>,
 ) =>
   Effect.gen(function* () {
     const { requestId } = yield* CycleRequestContext;
@@ -127,7 +132,45 @@ const taskResponse = (
     if (result === undefined)
       return errorResponse(requestId, 404, "NOT_FOUND", "Agent task not found.");
 
-    return resourceResponse(requestId, status, result);
+    return resourceResponse(requestId, status, yield* attachMergeHandoff(result));
+  });
+
+const attachMergeHandoff = (task: AgentTask) =>
+  attachMergeHandoffs([task]).pipe(Effect.map((tasks) => tasks[0] ?? task));
+
+const attachMergeHandoffs = (tasks: ReadonlyArray<AgentTask>) =>
+  Effect.gen(function* () {
+    const runtime = yield* CycleApiRuntime;
+    const worktrees = runtime.worktrees;
+    if (worktrees === undefined || runtime.listRepositories === undefined) {
+      return tasks;
+    }
+    const repositories = yield* Effect.tryPromise({
+      try: runtime.listRepositories,
+      catch: (cause) => cause,
+    }).pipe(Effect.catch(() => Effect.succeed(undefined)));
+    if (repositories === undefined) return tasks;
+    return yield* Effect.forEach(
+      tasks,
+      (task) => {
+        const repositoryId = task.metadata.repositoryId;
+        if (typeof repositoryId !== "string") return Effect.succeed(task);
+        const repository = repositories.find((candidate) => candidate.id === repositoryId);
+        if (repository === undefined) return Effect.succeed(task);
+        return worktrees
+          .findHandover(
+            { repositoryId, repositoryPath: repository.path },
+            `worktree_handover_${task.taskId}`,
+          )
+          .pipe(
+            Effect.catch(() => Effect.succeed(null)),
+            Effect.map((handoff) =>
+              handoff === null ? task : { ...task, handoff: mergeHandoffProjection(handoff) },
+            ),
+          );
+      },
+      { concurrency: 4 },
+    );
   });
 
 const runTaskUsecase = <A>(

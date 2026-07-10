@@ -1,10 +1,16 @@
+import { Git } from "@cycle/git";
 import { Context, Effect, Layer } from "effect";
 import {
   HandoverTargetError,
+  WorktreeFinalizeError,
   WorktreeStateConflictError,
   type WorktreeError,
 } from "./WorktreeErrors.ts";
-import type { WorktreeHandoverRecord, WorktreePushPolicy } from "./WorktreeSchemas.ts";
+import type {
+  WorktreeHandoverRecord,
+  WorktreeHandoverTest,
+  WorktreePushPolicy,
+} from "./WorktreeSchemas.ts";
 import { WorktreeBranchPublisher } from "./WorktreeBranchPublisher.ts";
 import { WorktreeConfig } from "./WorktreeConfig.ts";
 import { WorktreeFinalizer } from "./WorktreeFinalizer.ts";
@@ -65,11 +71,15 @@ export type WorktreeHandoverShape = {
   readonly handover: (input: {
     readonly allowEmpty?: boolean | undefined;
     readonly actor: string;
+    readonly artifacts?: ReadonlyArray<string> | undefined;
     readonly handoverId?: string | undefined;
+    readonly knownLimitations?: ReadonlyArray<string> | undefined;
     readonly message: string;
     readonly pushPolicy?: WorktreePushPolicy | undefined;
+    readonly remoteUrl?: string | undefined;
     readonly summary?: string | undefined;
     readonly targetStatus?: string | undefined;
+    readonly tests?: ReadonlyArray<WorktreeHandoverTest> | undefined;
     readonly validation?: string | undefined;
     readonly worktreeId: string;
   }) => Effect.Effect<WorktreeHandoverRecord, WorktreeError>;
@@ -88,6 +98,7 @@ export const WorktreeHandoverLive = Layer.effect(
     const branchPublisher = yield* WorktreeBranchPublisher;
     const config = yield* WorktreeConfig;
     const finalizer = yield* WorktreeFinalizer;
+    const git = yield* Git;
     const lifecycle = yield* WorktreeLifecycle;
     const remotePublisher = yield* WorktreeRemotePublisher;
     const store = yield* WorktreeStore;
@@ -96,11 +107,15 @@ export const WorktreeHandoverLive = Layer.effect(
     const handover = Effect.fn("WorktreeHandover.handover")(function* (input: {
       readonly allowEmpty?: boolean | undefined;
       readonly actor: string;
+      readonly artifacts?: ReadonlyArray<string> | undefined;
       readonly handoverId?: string | undefined;
+      readonly knownLimitations?: ReadonlyArray<string> | undefined;
       readonly message: string;
       readonly pushPolicy?: WorktreePushPolicy | undefined;
+      readonly remoteUrl?: string | undefined;
       readonly summary?: string | undefined;
       readonly targetStatus?: string | undefined;
+      readonly tests?: ReadonlyArray<WorktreeHandoverTest> | undefined;
       readonly validation?: string | undefined;
       readonly worktreeId: string;
     }) {
@@ -133,16 +148,24 @@ export const WorktreeHandoverLive = Layer.effect(
           Effect.gen(function* () {
             const now = new Date().toISOString();
             let handoverRecord = yield* store.createHandover({
+              artifacts: input.artifacts ?? [],
+              baseRef: record.baseRef,
+              changedFiles: [],
               commits: [],
               completedSteps: [],
               createdAt: now,
               currentStep: "prepare_output",
               handoverId,
               jobId: record.jobId,
+              knownLimitations: input.knownLimitations ?? [],
+              pushStatus: "pending",
+              remoteUrl: input.remoteUrl,
               repositoryId: record.repositoryId,
+              reviewState: "needs_user_input",
               status: "in_progress",
               summary: input.summary,
               targetStatus: input.targetStatus,
+              tests: input.tests ?? [],
               ticketId: record.ticketId,
               updatedAt: now,
               validation: input.validation,
@@ -154,7 +177,26 @@ export const WorktreeHandoverLive = Layer.effect(
               message: input.message,
               record,
             });
+            const changedFiles = yield* git
+              .changedFiles(record.repositoryPath, {
+                fromExclusive: record.baseSha,
+                toInclusive: finalized.headSha,
+              })
+              .pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new WorktreeFinalizeError({
+                      cause,
+                      message: "Unable to summarize changed files for handoff.",
+                      operation: "git diff --name-status",
+                      path: record.repositoryPath,
+                      repositoryId: record.repositoryId,
+                      worktreeId: record.worktreeId,
+                    }),
+                ),
+              );
             handoverRecord = yield* store.updateHandoverStep({
+              changedFiles,
               commits: finalized.commits,
               completedStep: "prepare_output",
               currentStep: "publish_branch",
@@ -192,11 +234,18 @@ export const WorktreeHandoverLive = Layer.effect(
                   });
             const pushedRemoteName = "remoteName" in push ? push.remoteName : undefined;
             const pushedRemoteRef = "remoteRef" in push ? push.remoteRef : undefined;
+            const pushError = "error" in push ? push.error.message : undefined;
             handoverRecord = yield* store.updateHandoverStep({
               completedStep: "push_branch",
               currentStep: "deliver_handover",
               fencingToken: lease.fencingToken,
               handoverId,
+              pushError,
+              pushStatus: push.pushed
+                ? "pushed"
+                : push.policy === "disabled"
+                  ? "not_pushed"
+                  : "failed",
               remoteName: pushedRemoteName,
               remoteRef: pushedRemoteRef,
               worktreeId: record.worktreeId,
@@ -219,7 +268,6 @@ export const WorktreeHandoverLive = Layer.effect(
             yield* target.attachBranch(targetInput);
             const comment = yield* target.publishComment(targetInput);
             yield* target.transitionTicket(targetInput);
-            const pullRequest = yield* target.createPullRequest(targetInput);
 
             handoverRecord = yield* store.updateHandoverStep({
               commentId: comment.commentId,
@@ -227,7 +275,6 @@ export const WorktreeHandoverLive = Layer.effect(
               currentStep: "remove_worktree",
               fencingToken: lease.fencingToken,
               handoverId,
-              pullRequestUrl: pullRequest.pullRequestUrl,
               worktreeId: record.worktreeId,
             });
 
@@ -243,30 +290,37 @@ export const WorktreeHandoverLive = Layer.effect(
               completedStep: cleanupAfterHandover ? "remove_worktree" : "retain_worktree",
               fencingToken: lease.fencingToken,
               handoverId,
+              reviewState: push.pushed ? "merge_ready" : "needs_user_input",
               status: "completed",
               worktreeId: record.worktreeId,
             });
             return handoverRecord;
           }).pipe(
             Effect.catch((error) =>
-              store
-                .updateHandoverStep({
-                  fencingToken: lease.fencingToken,
-                  handoverId,
-                  lastError: {
-                    message: error instanceof Error ? error.message : String(error),
-                    tag:
-                      typeof error === "object" && error !== null && "_tag" in error
-                        ? String(error._tag)
-                        : undefined,
-                  },
-                  status: "failed",
-                  worktreeId: record.worktreeId,
-                })
-                .pipe(
-                  Effect.catch(() => Effect.void),
-                  Effect.andThen(Effect.fail(error)),
-                ),
+              Effect.gen(function* () {
+                const current = yield* store
+                  .findHandover(handoverId)
+                  .pipe(Effect.catch(() => Effect.succeed(null)));
+                yield* store
+                  .updateHandoverStep({
+                    fencingToken: lease.fencingToken,
+                    handoverId,
+                    lastError: {
+                      message: error instanceof Error ? error.message : String(error),
+                      tag:
+                        typeof error === "object" && error !== null && "_tag" in error
+                          ? String(error._tag)
+                          : undefined,
+                    },
+                    pushStatus:
+                      current?.currentStep === "push_branch" ? "failed" : current?.pushStatus,
+                    reviewState: "failed",
+                    status: "failed",
+                    worktreeId: record.worktreeId,
+                  })
+                  .pipe(Effect.catch(() => Effect.void));
+                return yield* Effect.fail(error);
+              }),
             ),
           ),
         (lease) =>

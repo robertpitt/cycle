@@ -57,6 +57,7 @@ import {
   type AgentTask,
 } from "../lib/agentTasks.ts";
 import { mapTicketDependencies, mapTicketSubIssues } from "../lib/ticketDependencies.ts";
+import { MergeHandoffCard } from "./MergeHandoffCard.tsx";
 
 type ViewIssuePanelProps = {
   readonly agentProviders?: readonly DetectedAgentProvider[];
@@ -445,6 +446,7 @@ const AgentTaskSidebar = ({
               <span className="break-all text-xs text-foreground">{worktreePath}</span>
             </div>
           ) : null}
+          {currentTask.handoff ? <MergeHandoffCard handoff={currentTask.handoff} /> : null}
           {canCancel || canRetry ? (
             <div className="flex flex-wrap items-center gap-2 pt-1">
               {canCancel ? (
