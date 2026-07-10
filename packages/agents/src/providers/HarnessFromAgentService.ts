@@ -2,6 +2,8 @@ import { DateTime, Effect, Stream } from "effect";
 import type {
   AgentApprovalDecision,
   AgentEvent,
+  AgentMcpAttachment,
+  AgentSession,
   AgentService,
   AgentUserInputAnswer,
   JsonObject,
@@ -17,9 +19,14 @@ import {
   type AgentHarnessSession,
 } from "../AgentHarness.ts";
 
+export type AgentHarnessMcpResolver = (
+  input: AgentHarnessOpenInput,
+) => Effect.Effect<AgentMcpAttachment>;
+
 export type HarnessFromAgentServiceOptions = {
   readonly capabilities: AgentHarnessCapabilities;
   readonly harnessId: string;
+  readonly mcp?: AgentMcpAttachment | AgentHarnessMcpResolver;
   readonly providerId: string;
   readonly service: AgentService;
 };
@@ -39,7 +46,51 @@ const harnessError = (
 
 const taskPrompt = (input: AgentHarnessOpenInput): string => {
   const message = input.task.input.message;
-  return typeof message === "string" ? message : JSON.stringify(input.task.input);
+  const current = typeof message === "string" ? message : JSON.stringify(input.task.input);
+  const conversation = input.messages
+    .filter(
+      (entry) =>
+        entry.visibility === "public" &&
+        entry.status === "completed" &&
+        entry.taskId !== input.task.taskId &&
+        (entry.role === "user" || entry.role === "assistant"),
+    )
+    .map((entry) => {
+      const text = entry.parts
+        .filter((part) => part._tag === "text" || part._tag === "reasoning-summary")
+        .map((part) => part.text)
+        .join("");
+      return text.length === 0
+        ? undefined
+        : `${entry.role === "user" ? "User" : "Assistant"}: ${text}`;
+    })
+    .filter((entry): entry is string => entry !== undefined)
+    .join("\n\n");
+
+  return conversation.length === 0
+    ? current
+    : `Conversation so far:\n${conversation}\n\nCurrent user message:\n${current}`;
+};
+
+const providerSessionId = (input: AgentHarnessOpenInput): string =>
+  `agent_session_${input.task.threadId.replace("agent_thread_", "")}`;
+
+const nativeThreadId = (session: AgentSession): string | undefined => {
+  const id = session.native?.threadId ?? session.native?.sessionId;
+  return typeof id === "string" && id.length > 0 ? id : undefined;
+};
+
+const harnessBinding = (
+  options: HarnessFromAgentServiceOptions,
+  session: AgentSession,
+): AgentHarnessBinding => {
+  const threadId = nativeThreadId(session);
+  return new AgentHarnessBinding({
+    adapterVersion: "1",
+    capabilities: options.capabilities,
+    providerSessionId: session.id,
+    ...(threadId === undefined ? {} : { providerThreadId: threadId }),
+  });
 };
 
 const runtimeMode = (input: AgentHarnessOpenInput) => {
@@ -54,6 +105,14 @@ const runtimeMode = (input: AgentHarnessOpenInput) => {
       return "full-access" as const;
   }
 };
+
+const resolveMcp = Effect.fn("AgentHarness.resolveMcp")(function* (
+  resolver: HarnessFromAgentServiceOptions["mcp"],
+  input: AgentHarnessOpenInput,
+) {
+  if (resolver === undefined) return undefined;
+  return typeof resolver === "function" ? yield* resolver(input) : resolver;
+});
 
 const jsonValue = (value: unknown): JsonValue | undefined => {
   if (
@@ -202,10 +261,26 @@ const mapEvent = (event: AgentEvent): AgentHarnessEvent => {
 export const makeHarnessFromAgentService = (
   options: HarnessFromAgentServiceOptions,
 ): AgentHarness => {
-  const open = Effect.fn("AgentHarness.open")(function* (input: AgentHarnessOpenInput) {
-    const sessionId = `agent_session_${input.run.runId.replace("agent_run_", "")}`;
+  const openWithBinding = Effect.fn("AgentHarness.openWithBinding")(function* (
+    input: AgentHarnessOpenInput,
+    previous?: AgentHarnessBinding,
+  ) {
+    const mcp = yield* resolveMcp(options.mcp, input);
+    const sessionId = previous?.providerSessionId ?? providerSessionId(input);
     const providerSession = yield* Effect.tryPromise({
-      try: () => options.service.resumeSession(sessionId),
+      try: () =>
+        options.service.resumeSession(
+          sessionId,
+          previous?.providerThreadId === undefined
+            ? undefined
+            : {
+                native: {
+                  initialized: true,
+                  sessionId: previous.providerThreadId,
+                  threadId: previous.providerThreadId,
+                },
+              },
+        ),
       catch: (cause) => harnessError(options.harnessId, "TransportFailed", cause),
     });
     yield* Effect.addFinalizer(() =>
@@ -231,6 +306,7 @@ export const makeHarnessFromAgentService = (
           workspacePath: input.task.authority.workspacePath,
         }),
         input: taskPrompt(input),
+        ...(mcp === undefined ? {} : { mcp }),
         ...(input.task.model === undefined ? {} : { model: { id: input.task.model } }),
         runtimeMode: runtimeMode(input),
         metadata: jsonObject({
@@ -243,15 +319,12 @@ export const makeHarnessFromAgentService = (
     ).pipe(Stream.map(mapEvent));
 
     const session: AgentHarnessSession = {
-      binding: new AgentHarnessBinding({
-        adapterVersion: "1",
-        capabilities: options.capabilities,
-        providerSessionId: providerSession.id,
-        ...(providerSession.native?.threadId === undefined
-          ? {}
-          : { providerThreadId: providerSession.native.threadId }),
-      }),
+      binding: harnessBinding(options, providerSession),
       events,
+      refreshBinding: Effect.tryPromise({
+        try: () => options.service.resumeSession(sessionId),
+        catch: (cause) => harnessError(options.harnessId, "TransportFailed", cause),
+      }).pipe(Effect.map((current) => harnessBinding(options, current))),
       interrupt: () =>
         Effect.tryPromise({
           try: () => options.service.abortTurn(sessionId),
@@ -291,12 +364,14 @@ export const makeHarnessFromAgentService = (
     return session;
   });
 
+  const open = (input: AgentHarnessOpenInput) => openWithBinding(input);
+
   return {
     capabilities: options.capabilities,
     detect: Effect.succeed({ available: true }),
     id: options.harnessId,
     open,
     providerId: options.providerId,
-    reattach: (input) => open(input),
+    reattach: (input) => openWithBinding(input, input.binding),
   };
 };

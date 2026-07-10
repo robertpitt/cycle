@@ -3,6 +3,7 @@ import type { AgentAttempt } from "./AgentAttempt.ts";
 import { AgentHarnessError } from "./AgentErrors.ts";
 import { AgentJson, AgentJsonObject, AgentTimestamp } from "./AgentCommon.ts";
 import type { AgentInteractionResponseInput } from "./AgentInteraction.ts";
+import type { AgentMessage } from "./AgentMessage.ts";
 import type { AgentRun } from "./AgentRun.ts";
 import type { AgentTask } from "./AgentTask.ts";
 
@@ -76,6 +77,7 @@ export class AgentHarnessBinding extends Schema.Class<AgentHarnessBinding>(
 
 export type AgentHarnessOpenInput = {
   readonly attempt: AgentAttempt;
+  readonly messages: ReadonlyArray<AgentMessage>;
   readonly run: AgentRun;
   readonly task: AgentTask;
 };
@@ -83,6 +85,7 @@ export type AgentHarnessOpenInput = {
 export type AgentHarnessSession = {
   readonly binding: AgentHarnessBinding;
   readonly events: Stream.Stream<AgentHarnessEvent, AgentHarnessError>;
+  readonly refreshBinding: Effect.Effect<AgentHarnessBinding, AgentHarnessError>;
   readonly interrupt: (reason?: string) => Effect.Effect<void, AgentHarnessError>;
   readonly respond: (
     input: AgentInteractionResponseInput,

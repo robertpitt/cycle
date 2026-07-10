@@ -54,6 +54,11 @@ export type AgentExecutionStoreShape = {
   readonly markRunning: (
     lease: AgentExecutionLease,
   ) => Effect.Effect<AgentExecutionLease, AgentStorageError | AgentStateConflictError>;
+  readonly refreshSessionBinding: (
+    lease: AgentExecutionLease,
+    sessionId: AgentSessionId,
+    binding: AgentHarnessBinding,
+  ) => Effect.Effect<AgentSessionBinding, AgentStorageError | AgentStateConflictError>;
   readonly resolveInteraction: (input: {
     readonly interactionId: AgentInteractionId;
     readonly responderId: string;
@@ -181,6 +186,67 @@ export const AgentExecutionStoreLive = Layer.effect(
         );
       yield* hub.publish({ sequence: event.sequence, threadId: lease.task.threadId });
       return session;
+    });
+
+    const refreshSessionBinding = Effect.fn("AgentExecutionStore.refreshSessionBinding")(function* (
+      lease: AgentExecutionLease,
+      sessionId: AgentSessionId,
+      binding: AgentHarnessBinding,
+    ) {
+      const rows = yield* sql<RecordRow>`
+          SELECT record_json FROM agent_session_bindings WHERE session_id = ${sessionId}
+        `.pipe(
+        Effect.mapError((cause) => agentStorageError("session-binding.refresh.read", cause)),
+      );
+      if (rows[0] === undefined) {
+        return yield* new AgentStateConflictError({
+          code: "agent_session_binding_not_found",
+          entityId: sessionId,
+          message: `Agent session binding not found: ${sessionId}`,
+          retryable: false,
+        });
+      }
+      const current = yield* decodeRecord(
+        "session-binding.decode",
+        AgentSessionBinding,
+        rows[0].record_json,
+      );
+      const timestamp = yield* now;
+      const updated = new AgentSessionBinding({
+        ...current,
+        status: "closed",
+        updatedAt: timestamp,
+        ...(binding.providerSessionId === undefined
+          ? {}
+          : { providerSessionId: binding.providerSessionId }),
+        ...(binding.providerThreadId === undefined
+          ? {}
+          : { providerThreadId: binding.providerThreadId }),
+        ...(binding.replayCursor === undefined ? {} : { replayCursor: binding.replayCursor }),
+      });
+      const encoded = yield* encodeRecord("session-binding.encode", AgentSessionBinding, updated);
+      yield* sql
+        .withTransaction(
+          Effect.gen(function* () {
+            yield* verifyLease(lease.attempt.attemptId, lease.attempt.fencingToken);
+            yield* sql`
+                UPDATE agent_session_bindings
+                SET provider_session_id = ${updated.providerSessionId ?? null},
+                    provider_thread_id = ${updated.providerThreadId ?? null},
+                    status = ${updated.status}, updated_at = ${DateTime.formatIso(timestamp)},
+                    record_json = ${encoded}
+                WHERE session_id = ${sessionId}
+              `;
+          }),
+        )
+        .pipe(
+          Effect.mapError((cause) =>
+            cause instanceof AgentStateConflictError
+              ? cause
+              : agentStorageError("session-binding.refresh.transaction", cause),
+          ),
+        );
+      return updated;
     });
 
     const append = Effect.fn("AgentExecutionStore.append")(function* (
@@ -731,6 +797,7 @@ export const AgentExecutionStoreLive = Layer.effect(
       bindSession,
       finish,
       markRunning,
+      refreshSessionBinding,
       resolveInteraction,
       scheduleRetry,
       suspendForInteraction,

@@ -37,7 +37,7 @@ import { GitStores } from "@cycle/git-store";
 import { Worktrees } from "@cycle/git-worktrees";
 import { logError } from "@cycle/logging";
 import { repositoryIdFromInput } from "@cycle/usecases";
-import { Context, DateTime, Effect, Layer, Option, Path, Scope, Stream } from "effect";
+import { Context, DateTime, Deferred, Effect, Layer, Option, Path, Scope, Stream } from "effect";
 import { backendPaths, type BackendStartOptions } from "./BackendConfig.ts";
 import { BackendApiError, errorMessage } from "./BackendErrors.ts";
 import { BackendRepositoryOpenServiceLive } from "./BackendRepositoryOpen.ts";
@@ -311,6 +311,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
 
   const codexPreference = preferenceForProvider(config, "codex");
   const claudeCodePreference = preferenceForProvider(config, "claude-code");
+  const cycleMcpUrl = yield* Deferred.make<string>();
   const scope = yield* Effect.scope;
   const agentChatContext = yield* Layer.buildWithScope(
     AgentChatLive.pipe(
@@ -332,6 +333,14 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
             env: environment,
             executablePath: claudeCodePreference.executablePath ?? null,
           },
+          mcp: () =>
+            Deferred.await(cycleMcpUrl).pipe(
+              Effect.map((url) => ({
+                headers: { authorization: `Bearer ${staticToken}` },
+                mode: "http" as const,
+                url,
+              })),
+            ),
           workflows: [
             {
               id: "ticket-implementation",
@@ -733,7 +742,7 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
           message: cause instanceof Error ? cause.message : "start api server failed",
           operation: "BackendApi.start",
         }),
-    }),
+    }).pipe(Effect.tap(({ handle }) => Deferred.succeed(cycleMcpUrl, `${handle.baseUrl}/mcp`))),
     ({ handle }) =>
       Effect.tryPromise({
         try: async () => {

@@ -12,6 +12,7 @@ import type {
   AgentTurnResult,
   AgentUserInputAnswer,
   CreateAgentSessionInput,
+  ResumeAgentSessionInput,
 } from "../../types.ts";
 import {
   interactionKey,
@@ -83,7 +84,10 @@ export const makeCodexAgentService = (options: CodexAgentServiceOptions = {}): A
     });
   };
 
-  const resumeSession = async (sessionId: string): Promise<AgentSession> => {
+  const resumeSession = async (
+    sessionId: string,
+    input?: ResumeAgentSessionInput,
+  ): Promise<AgentSession> => {
     const existing = sessions.get(sessionId);
     if (existing !== undefined) return existing;
 
@@ -92,6 +96,7 @@ export const makeCodexAgentService = (options: CodexAgentServiceOptions = {}): A
       createdAt: timestamp,
       harnessId: codexProviderId,
       id: sessionId,
+      native: input?.native,
       provider: codexProviderId,
       updatedAt: timestamp,
     };

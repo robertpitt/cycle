@@ -2,7 +2,11 @@ import { Context, Effect, Layer, Option, Ref, Stream } from "effect";
 import type { AgentInteractionResponseInput } from "./AgentInteraction.ts";
 import { AgentConfig } from "./AgentConfig.ts";
 import { AgentHarnessError, AgentStateConflictError, AgentStorageError } from "./AgentErrors.ts";
-import type { AgentHarnessEvent, AgentHarnessSession } from "./AgentHarness.ts";
+import {
+  AgentHarnessBinding,
+  type AgentHarnessEvent,
+  type AgentHarnessSession,
+} from "./AgentHarness.ts";
 import { AgentHarnessCatalog } from "./AgentHarnessCatalog.ts";
 import {
   AgentExecutionStore,
@@ -11,6 +15,7 @@ import {
 } from "./AgentExecutionStore.ts";
 import type { AgentTaskId } from "./AgentIds.ts";
 import { AgentQueueStore } from "./AgentQueueStore.ts";
+import { AgentReadStore } from "./AgentReadStore.ts";
 import { AgentWorkflowRegistry } from "./AgentWorkflow.ts";
 
 type ActiveExecution = {
@@ -98,6 +103,7 @@ export const AgentSupervisorLive = Layer.effect(
     const config = yield* AgentConfig;
     const executions = yield* AgentExecutionStore;
     const queue = yield* AgentQueueStore;
+    const reads = yield* AgentReadStore;
     const workflows = yield* AgentWorkflowRegistry;
     const active = yield* Ref.make(new Map<AgentTaskId, ActiveExecution>());
 
@@ -128,9 +134,45 @@ export const AgentSupervisorLive = Layer.effect(
       const harness = yield* catalog.get(lease.task.harnessId);
       const exit = yield* Effect.scoped(
         Effect.gen(function* () {
-          const session = yield* harness.open(lease);
+          const thread = yield* reads.threadSnapshot(lease.task.threadId);
+          const previousSession = yield* reads.latestSessionBinding({
+            harnessId: lease.task.harnessId,
+            threadId: lease.task.threadId,
+          });
+          const openInput = {
+            ...lease,
+            messages: Option.isSome(thread) ? thread.value.messages : [],
+          };
+          const session = yield* Option.match(previousSession, {
+            onNone: () => harness.open(openInput),
+            onSome: (previous) =>
+              harness.reattach({
+                ...openInput,
+                binding: new AgentHarnessBinding({
+                  adapterVersion: previous.adapterVersion,
+                  capabilities: harness.capabilities,
+                  ...(previous.providerSessionId === undefined
+                    ? {}
+                    : { providerSessionId: previous.providerSessionId }),
+                  ...(previous.providerThreadId === undefined
+                    ? {}
+                    : { providerThreadId: previous.providerThreadId }),
+                  ...(previous.replayCursor === undefined
+                    ? {}
+                    : { replayCursor: previous.replayCursor }),
+                }),
+              }),
+          });
           const running = yield* executions.markRunning(lease);
-          yield* executions.bindSession(running, session.binding);
+          const durableSession = yield* executions.bindSession(running, session.binding);
+          yield* Effect.addFinalizer(() =>
+            session.refreshBinding.pipe(
+              Effect.flatMap((binding) =>
+                executions.refreshSessionBinding(running, durableSession.sessionId, binding),
+              ),
+              Effect.catch(() => Effect.void),
+            ),
+          );
           yield* Ref.update(active, (entries) =>
             new Map(entries).set(lease.task.taskId, { lease: running, session }),
           );

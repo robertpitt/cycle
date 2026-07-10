@@ -4,6 +4,7 @@ import {
   type Options,
   type Query,
 } from "@anthropic-ai/claude-agent-sdk";
+import { randomUUID } from "node:crypto";
 import type {
   AbortTurnResult,
   AgentCapabilities,
@@ -20,6 +21,7 @@ import type {
   AgentTurnResult,
   CreateAgentSessionInput,
   JsonObject,
+  ResumeAgentSessionInput,
 } from "../../types.ts";
 import { claudeCodeAgentCapabilities } from "./capabilities.ts";
 import { decodeClaudeCodeProviderConfig, type ClaudeCodeProviderConfig } from "./config.ts";
@@ -40,6 +42,11 @@ type ActiveClaudeCodeTurn = {
   readonly abortController: AbortController;
   readonly query?: Query;
   readonly turnId: string;
+};
+
+type NativeClaudeCodeSession = {
+  readonly id: string;
+  readonly resume: boolean;
 };
 
 const cycleMcpToolPattern = "mcp__cycle__*";
@@ -89,7 +96,9 @@ export const makeClaudeCodeAgentService = (
       id: newClaudeCodeId("claude_session"),
       metadata: input?.metadata,
       native: {
+        initialized: false,
         runtimeMode: input?.runtimeMode,
+        sessionId: randomUUID(),
       },
       provider: claudeCodeProviderId,
       title: input?.title,
@@ -102,7 +111,10 @@ export const makeClaudeCodeAgentService = (
     });
   };
 
-  const resumeSession = async (sessionId: string): Promise<AgentSession> => {
+  const resumeSession = async (
+    sessionId: string,
+    input?: ResumeAgentSessionInput,
+  ): Promise<AgentSession> => {
     const existing = sessions.get(sessionId);
     if (existing !== undefined) return existing;
 
@@ -111,10 +123,48 @@ export const makeClaudeCodeAgentService = (
       createdAt: timestamp,
       harnessId: claudeCodeProviderId,
       id: sessionId,
+      native:
+        input?.native ??
+        ({
+          initialized: false,
+          sessionId: randomUUID(),
+        } as const),
       provider: claudeCodeProviderId,
       updatedAt: timestamp,
     };
     return saveSession(session, "idle");
+  };
+
+  const streamTurn = <TStructured = unknown>(
+    sessionId: string,
+    request: AgentTurnRequest<TStructured>,
+  ): AsyncIterable<AgentEvent<TStructured>> => {
+    const session = sessions.get(sessionId);
+    const nativeSession = nativeClaudeCodeSession(session);
+    return streamClaudeCodeTurn({
+      activeTurns,
+      env: options.env,
+      executablePath,
+      nativeSession,
+      onSessionInitialized: async (nativeSessionId) => {
+        const current = sessions.get(sessionId);
+        if (current === undefined) return;
+        await saveSession(
+          {
+            ...current,
+            native: {
+              ...current.native,
+              initialized: true,
+              sessionId: nativeSessionId,
+            },
+          },
+          "running",
+        );
+      },
+      providerConfig,
+      request,
+      sessionId,
+    }) as AsyncIterable<AgentEvent<TStructured>>;
   };
 
   return {
@@ -167,14 +217,7 @@ export const makeClaudeCodeAgentService = (
       let text = "";
       let error: ReturnType<typeof claudeCodeError> | undefined;
 
-      for await (const event of streamClaudeCodeTurn({
-        activeTurns,
-        env: options.env,
-        executablePath,
-        providerConfig,
-        request,
-        sessionId,
-      })) {
+      for await (const event of streamTurn(sessionId, request)) {
         if (event.type === "text.delta") {
           text = event.snapshot ?? `${text}${event.delta}`;
         }
@@ -208,15 +251,18 @@ export const makeClaudeCodeAgentService = (
     stream: <TStructured = unknown>(
       sessionId: string,
       request: AgentTurnRequest<TStructured>,
-    ): AsyncIterable<AgentEvent<TStructured>> =>
-      streamClaudeCodeTurn({
-        activeTurns,
-        env: options.env,
-        executablePath,
-        providerConfig,
-        request,
-        sessionId,
-      }) as AsyncIterable<AgentEvent<TStructured>>,
+    ): AsyncIterable<AgentEvent<TStructured>> => streamTurn(sessionId, request),
+  };
+};
+
+const nativeClaudeCodeSession = (
+  session: StoredClaudeCodeSession | undefined,
+): NativeClaudeCodeSession | undefined => {
+  const sessionId = session?.native?.sessionId;
+  if (typeof sessionId !== "string" || sessionId.length === 0) return undefined;
+  return {
+    id: sessionId,
+    resume: session?.native?.initialized === true,
   };
 };
 
@@ -224,6 +270,8 @@ const streamClaudeCodeTurn = async function* (input: {
   readonly activeTurns: Map<string, ActiveClaudeCodeTurn>;
   readonly env?: NodeJS.ProcessEnv;
   readonly executablePath?: string | null;
+  readonly nativeSession?: NativeClaudeCodeSession;
+  readonly onSessionInitialized?: (sessionId: string) => Promise<void>;
   readonly providerConfig: ClaudeCodeProviderConfig;
   readonly request: AgentTurnRequest;
   readonly sessionId: string;
@@ -251,6 +299,7 @@ const streamClaudeCodeTurn = async function* (input: {
         abortController,
         env: input.env,
         executablePath: input.executablePath,
+        nativeSession: input.nativeSession,
         providerConfig: input.providerConfig,
         request: input.request,
       }),
@@ -259,6 +308,9 @@ const streamClaudeCodeTurn = async function* (input: {
     Object.assign(active, { query: sdkQuery });
 
     for await (const message of sdkQuery) {
+      if (message.type === "system" && message.subtype === "init") {
+        await input.onSessionInitialized?.(message.session_id);
+      }
       for (const event of mapClaudeCodeSdkMessage({
         message,
         provider: claudeCodeProviderId,
@@ -287,6 +339,7 @@ export const claudeCodeSdkOptionsFromTurn = (input: {
   readonly abortController: AbortController;
   readonly env?: NodeJS.ProcessEnv;
   readonly executablePath?: string | null;
+  readonly nativeSession?: NativeClaudeCodeSession;
   readonly providerConfig: ClaudeCodeProviderConfig;
   readonly request: AgentTurnRequest;
 }): Options => {
@@ -321,6 +374,11 @@ export const claudeCodeSdkOptionsFromTurn = (input: {
       : { maxTurns: input.providerConfig.maxTurns }),
     ...(input.request.model?.id === undefined ? {} : { model: input.request.model.id }),
     ...(mcpServers === undefined ? {} : { mcpServers }),
+    ...(input.nativeSession === undefined
+      ? {}
+      : input.nativeSession.resume
+        ? { resume: input.nativeSession.id }
+        : { sessionId: input.nativeSession.id }),
     ...(outputFormat === undefined ? {} : { outputFormat }),
     ...(input.executablePath === null || input.executablePath === undefined
       ? {}

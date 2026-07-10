@@ -59,6 +59,27 @@ describe("@cycle/agents Claude Code provider", () => {
     });
   });
 
+  it("starts and then resumes the same native Claude Code session", () => {
+    const nativeSessionId = "eb9f4f29-cf7d-4bf1-8f6f-8cc1e0f08f5e";
+    const first = claudeCodeSdkOptionsFromTurn({
+      abortController: new AbortController(),
+      nativeSession: { id: nativeSessionId, resume: false },
+      providerConfig: defaultClaudeCodeProviderConfig(),
+      request: { input: "First turn" },
+    });
+    const followUp = claudeCodeSdkOptionsFromTurn({
+      abortController: new AbortController(),
+      nativeSession: { id: nativeSessionId, resume: true },
+      providerConfig: defaultClaudeCodeProviderConfig(),
+      request: { input: "Follow-up turn" },
+    });
+
+    assert.equal(first.sessionId, nativeSessionId);
+    assert.equal(first.resume, undefined);
+    assert.equal(followUp.sessionId, undefined);
+    assert.equal(followUp.resume, nativeSessionId);
+  });
+
   it("maps assistant SDK text blocks to content deltas", () => {
     const at = new Date("2026-06-20T00:00:00.000Z");
     const events = mapClaudeCodeSdkMessage({

@@ -350,6 +350,77 @@ describe("@cycle/agents codex app-server adapter", () => {
     assert.equal(events.at(-1)?.type, "turn.completed");
   });
 
+  it("resumes the native Codex thread for a follow-up turn", async () => {
+    const peer = makeMockPeer();
+    const service = makeCodexAgentService({ appServerClient: peer.client });
+    const session = await service.resumeSession("agent_session_conversation");
+    const firstEvents = collect(service.stream(session.id, { input: "Find closable tickets" }));
+
+    await completeStartup(peer);
+    await startTurn(peer);
+    peer.notify("turn/completed", {
+      threadId: "native_thread",
+      turn: { id: "native_turn", status: "completed" },
+    });
+    await firstEvents;
+
+    const followUpEvents = collect(service.stream(session.id, { input: "Close them" }));
+    const resume = await peer.expectRequest("thread/resume");
+    assert.equal((resume.params as Record<string, unknown>).threadId, "native_thread");
+    peer.respond(resume.id, {
+      cwd: "/tmp/cycle",
+      model: "gpt-test",
+      thread: { id: "native_thread", turns: [] },
+    });
+    await startTurn(peer);
+    peer.notify("turn/completed", {
+      threadId: "native_thread",
+      turn: { id: "native_turn", status: "completed" },
+    });
+
+    const events = await followUpEvents;
+    assert.equal(events.at(-1)?.type, "turn.completed");
+  });
+
+  it("resumes a native Codex thread restored from a durable binding", async () => {
+    const peer = makeMockPeer();
+    const service = makeCodexAgentService({ appServerClient: peer.client });
+    const session = await service.resumeSession("agent_session_conversation", {
+      native: { threadId: "persisted_native_thread" },
+    });
+    const eventsPromise = collect(
+      service.stream(session.id, { input: "Continue the conversation" }),
+    );
+
+    const initialize = await peer.expectRequest("initialize");
+    peer.respond(initialize.id, {
+      platformFamily: "unix",
+      platformOs: "macos",
+      userAgent: "mock-codex",
+    });
+    await peer.expectNotification("initialized");
+    const resume = await peer.expectRequest("thread/resume");
+    assert.equal((resume.params as Record<string, unknown>).threadId, "persisted_native_thread");
+    peer.respond(resume.id, {
+      cwd: "/tmp/cycle",
+      model: "gpt-test",
+      thread: { id: "persisted_native_thread", turns: [] },
+    });
+    const turnStart = await peer.expectRequest("turn/start");
+    peer.respond(turnStart.id, { turn: { id: "native_turn", status: "inProgress" } });
+    peer.notify("turn/started", {
+      threadId: "persisted_native_thread",
+      turn: { id: "native_turn", status: "inProgress" },
+    });
+    peer.notify("turn/completed", {
+      threadId: "persisted_native_thread",
+      turn: { id: "native_turn", status: "completed" },
+    });
+
+    const events = await eventsPromise;
+    assert.equal(events.at(-1)?.type, "turn.completed");
+  });
+
   it("streams normalized app-server events", async () => {
     const peer = makeMockPeer();
     const service = makeCodexAgentService({

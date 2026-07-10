@@ -196,6 +196,10 @@ export type AgentSession = {
   readonly metadata?: JsonObject;
 };
 
+export type ResumeAgentSessionInput = {
+  readonly native?: AgentSession["native"];
+};
+
 export type AgentSessionBindingStatus =
   | "idle"
   | "starting"
@@ -620,7 +624,7 @@ export type AgentService = {
   capabilities(): AgentCapabilities;
   listModels(request?: AgentListModelsRequest): Promise<AgentModelCatalog>;
   createSession(input?: CreateAgentSessionInput): Promise<AgentSession>;
-  resumeSession(sessionId: string): Promise<AgentSession>;
+  resumeSession(sessionId: string, input?: ResumeAgentSessionInput): Promise<AgentSession>;
   run<TStructured = unknown>(
     sessionId: string,
     request: AgentTurnRequest<TStructured>,

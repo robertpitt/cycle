@@ -7,6 +7,7 @@ import { describe, it } from "vitest";
 import { AgentConfig, AgentRuntimeConfigValue } from "../src/AgentConfig.ts";
 import { AgentEventJournal, AgentEventJournalLive } from "../src/AgentEventJournal.ts";
 import { AgentExecutionStore, AgentExecutionStoreLive } from "../src/AgentExecutionStore.ts";
+import { AgentHarnessBinding } from "../src/AgentHarness.ts";
 import { AgentQueueStore, AgentQueueStoreLive } from "../src/AgentQueueStore.ts";
 import { AgentReadStore, AgentReadStoreLive } from "../src/AgentReadStore.ts";
 import { AgentTaskSubmitInput } from "../src/AgentTask.ts";
@@ -62,6 +63,29 @@ const authority = {
   allowedOperations: [] as ReadonlyArray<string>,
   mode: "conversation-read" as const,
 };
+
+const harnessCapabilities = {
+  approvalRequests: true,
+  artifactEvents: true,
+  commandEvents: true,
+  fileChangeEvents: true,
+  historyReplay: true,
+  httpMcp: true,
+  interruption: true,
+  liveReattachment: true,
+  modelListing: true,
+  nativeSessions: true,
+  providerCodeTools: true,
+  readOnlySandbox: true,
+  reasoningSummaryEvents: true,
+  stdioMcp: false,
+  steering: false,
+  streaming: true,
+  structuredOutput: true,
+  usageReporting: true,
+  userInputRequests: true,
+  workspaceWriteSandbox: true,
+} as const;
 
 const makeThread = () =>
   new AgentThreadCreateInput({
@@ -211,6 +235,65 @@ describe("durable agent runtime store", () => {
     if (Option.isSome(result.resumed)) {
       assert.equal(result.resumed.value.task.status, "running");
       assert.equal(result.resumed.value.interactions[0]?.status, "answered");
+    }
+  });
+
+  it("refreshes and reloads the latest native provider thread binding", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const threads = yield* AgentThreadStore;
+        const tasks = yield* AgentQueueStore;
+        const executions = yield* AgentExecutionStore;
+        const reads = yield* AgentReadStore;
+        const thread = yield* threads.create(makeThread());
+        yield* tasks.submit(
+          new AgentTaskSubmitInput({
+            agentId: "default",
+            authority,
+            harnessId: "test",
+            idempotencyKey: "provider-binding-task",
+            input: { message: "Remember this conversation" },
+            kind: "interactive-turn",
+            priorityLane: "interactive",
+            providerId: "test",
+            threadId: thread.threadId,
+            workflowId: "interactive-chat",
+          }),
+        );
+        const claim = yield* tasks.claimNext;
+        assert.equal(Option.isSome(claim), true);
+        if (Option.isNone(claim)) return Option.none();
+        const running = yield* executions.markRunning(claim.value);
+        const session = yield* executions.bindSession(
+          running,
+          new AgentHarnessBinding({
+            adapterVersion: "1",
+            capabilities: harnessCapabilities,
+            providerSessionId: "provider-session",
+          }),
+        );
+        yield* executions.refreshSessionBinding(
+          running,
+          session.sessionId,
+          new AgentHarnessBinding({
+            adapterVersion: "1",
+            capabilities: harnessCapabilities,
+            providerSessionId: "provider-session",
+            providerThreadId: "native-thread",
+          }),
+        );
+        return yield* reads.latestSessionBinding({
+          harnessId: "test",
+          threadId: thread.threadId,
+        });
+      }).pipe(Effect.provide(testLayer)),
+    );
+
+    assert.equal(Option.isSome(result), true);
+    if (Option.isSome(result)) {
+      assert.equal(result.value.providerSessionId, "provider-session");
+      assert.equal(result.value.providerThreadId, "native-thread");
+      assert.equal(result.value.status, "closed");
     }
   });
 

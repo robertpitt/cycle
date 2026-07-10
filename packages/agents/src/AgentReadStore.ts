@@ -7,6 +7,7 @@ import type { AgentTaskId, AgentThreadId } from "./AgentIds.ts";
 import { AgentInteraction } from "./AgentInteraction.ts";
 import { AgentMessage } from "./AgentMessage.ts";
 import { AgentRun } from "./AgentRun.ts";
+import { AgentSessionBinding } from "./AgentSessionBinding.ts";
 import { AgentTask } from "./AgentTask.ts";
 import { AgentTaskSnapshot, AgentThreadSnapshot } from "./AgentSnapshots.ts";
 import { AgentThread } from "./AgentThread.ts";
@@ -23,6 +24,10 @@ const decodeRows = <S extends Schema.Top>(
 ) => Effect.forEach(rows, (row) => decodeRecord(operation, schema, row.record_json));
 
 export type AgentReadStoreShape = {
+  readonly latestSessionBinding: (input: {
+    readonly harnessId: string;
+    readonly threadId: AgentThreadId;
+  }) => Effect.Effect<Option.Option<AgentSessionBinding>, AgentStorageError>;
   readonly taskSnapshot: (
     taskId: AgentTaskId,
   ) => Effect.Effect<Option.Option<AgentTaskSnapshot>, AgentStorageError>;
@@ -39,6 +44,20 @@ export const AgentReadStoreLive = Layer.effect(
   AgentReadStore,
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
+
+    const latestSessionBinding = Effect.fn("AgentReadStore.latestSessionBinding")(
+      function* (input: { readonly harnessId: string; readonly threadId: AgentThreadId }) {
+        const rows = yield* sql<RecordRow>`
+        SELECT record_json FROM agent_session_bindings
+        WHERE thread_id = ${input.threadId} AND harness_id = ${input.harnessId}
+        ORDER BY updated_at DESC, created_at DESC LIMIT 1
+      `.pipe(Effect.mapError((cause) => agentStorageError("snapshot.session-binding", cause)));
+        if (rows[0] === undefined) return Option.none();
+        return Option.some(
+          yield* decodeRecord("session-binding.decode", AgentSessionBinding, rows[0].record_json),
+        );
+      },
+    );
 
     const threadSnapshot = Effect.fn("AgentReadStore.threadSnapshot")(function* (
       threadId: AgentThreadId,
@@ -148,6 +167,6 @@ export const AgentReadStoreLive = Layer.effect(
       );
     });
 
-    return AgentReadStore.of({ taskSnapshot, threadSnapshot });
+    return AgentReadStore.of({ latestSessionBinding, taskSnapshot, threadSnapshot });
   }),
 );

@@ -3,7 +3,10 @@ import type { CodexAgentServiceOptions } from "./providers/codex/types.ts";
 import type { ClaudeCodeAgentServiceOptions } from "./providers/claude-code/service.ts";
 import { makeCodexAgentService } from "./providers/codex/service.ts";
 import { makeClaudeCodeAgentService } from "./providers/claude-code/service.ts";
-import { makeHarnessFromAgentService } from "./providers/HarnessFromAgentService.ts";
+import {
+  makeHarnessFromAgentService,
+  type HarnessFromAgentServiceOptions,
+} from "./providers/HarnessFromAgentService.ts";
 import { AgentCommandStoreLive } from "./AgentCommandStore.ts";
 import { AgentConfig } from "./AgentConfig.ts";
 import { AgentDatabaseLive } from "./AgentDatabase.ts";
@@ -24,6 +27,7 @@ export type AgentRuntimeSystemOptions = {
   readonly claude?: ClaudeCodeAgentServiceOptions;
   readonly codex?: CodexAgentServiceOptions;
   readonly databasePath: string;
+  readonly mcp?: HarnessFromAgentServiceOptions["mcp"];
   readonly workflows?: ReadonlyArray<AgentWorkflowDefinition>;
 };
 
@@ -68,12 +72,14 @@ const AgentHarnessCatalogDefault = (options: AgentRuntimeSystemOptions) =>
         makeHarnessFromAgentService({
           capabilities: { ...capabilities, stdioMcp: false },
           harnessId: "codex",
+          ...(options.mcp === undefined ? {} : { mcp: options.mcp }),
           providerId: "codex",
           service: codex,
         }),
         makeHarnessFromAgentService({
           capabilities: { ...capabilities, historyReplay: false, liveReattachment: false },
           harnessId: "claude-code",
+          ...(options.mcp === undefined ? {} : { mcp: options.mcp }),
           providerId: "claude-code",
           service: claude,
         }),
