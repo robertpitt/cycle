@@ -1042,8 +1042,9 @@ describe("@cycle/database", () => {
       });
       const related = yield* database.addIssueRelation("metadata-repo", source.id, {
         issueId: target.id,
-        type: "blocking",
+        type: "blocks",
       });
+      const listedRelations = yield* database.listIssueRelations("metadata-repo", source.id);
       const targetAfterRelation = yield* database.getTicket("metadata-repo", target.id);
       const dueBefore = yield* database.listTickets({
         dueBefore: "2026-07-01",
@@ -1054,8 +1055,12 @@ describe("@cycle/database", () => {
       const blocking = yield* database.listTickets({
         relation: {
           issueId: target.id,
-          type: "blocking",
+          type: "blocks",
         },
+        repositoryIds: ["metadata-repo"],
+      });
+      const blocked = yield* database.listTickets({
+        blocked: true,
         repositoryIds: ["metadata-repo"],
       });
 
@@ -1064,13 +1069,14 @@ describe("@cycle/database", () => {
       assert.deepStrictEqual(related.frontmatter.relations, [
         {
           issueId: target.id,
-          type: "blocking",
+          type: "blocks",
         },
       ]);
+      assert.deepStrictEqual(listedRelations, related.frontmatter.relations);
       assert.deepStrictEqual(targetAfterRelation?.frontmatter.relations, [
         {
           issueId: source.id,
-          type: "blocked-by",
+          type: "depends_on",
         },
       ]);
       assert.deepStrictEqual(
@@ -1078,12 +1084,47 @@ describe("@cycle/database", () => {
         [source.id],
       );
       assert.deepStrictEqual(
+        blocked.entries.map((ticket) => ticket.id),
+        [target.id],
+      );
+
+      const cycle = yield* database
+        .addIssueRelation("metadata-repo", target.id, {
+          issueId: source.id,
+          type: "blocks",
+        })
+        .pipe(Effect.flip);
+      assert.ok(cycle instanceof DatabaseValidationError);
+      assert.match(cycle.message, /circular dependency/u);
+      assert.deepStrictEqual(
         blocking.entries.map((ticket) => ticket.id),
         [source.id],
       );
 
+      const otherStore = yield* makeStore("other-metadata-repo");
+      yield* database.openRepository({
+        repositoryId: "other-metadata-repo",
+        store: otherStore,
+      });
+      const otherRepositoryTicket = yield* database.createTicket("other-metadata-repo", {
+        title: "Other repository ticket",
+        type: "task",
+      });
+      const crossRepository = yield* database
+        .addIssueRelation("metadata-repo", source.id, {
+          issueId: otherRepositoryTicket.id,
+          type: "related",
+        })
+        .pipe(Effect.flip);
+      assert.ok(crossRepository instanceof DatabaseValidationError);
+      assert.equal(crossRepository.field, "relation.issueId");
+
       yield* database.archiveTicket("metadata-repo", source.id, {
         reason: "done for now",
+      });
+      const blockedAfterPrerequisiteArchive = yield* database.listTickets({
+        blocked: true,
+        repositoryIds: ["metadata-repo"],
       });
       const activeAfterArchive = yield* database.listTickets({
         repositoryIds: ["metadata-repo"],
@@ -1097,6 +1138,7 @@ describe("@cycle/database", () => {
         activeAfterArchive.entries.map((ticket) => ticket.id),
         [target.id],
       );
+      assert.deepStrictEqual(blockedAfterPrerequisiteArchive.entries, []);
       assert.deepStrictEqual(
         archived.entries.map((ticket) => ticket.id),
         [source.id],

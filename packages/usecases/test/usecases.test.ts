@@ -18,6 +18,7 @@ import {
   IssueGet,
   IssueList,
   IssueRelationAdd,
+  IssueRelationList,
   IssueTransition,
   IssueUpdate,
   RepositoryStatusGet,
@@ -397,6 +398,26 @@ describe("@cycle/usecases", () => {
       if (Result.isFailure(result)) {
         assert.equal(result.failure._tag, "InvalidInputFailure");
       }
+    }),
+  );
+
+  it.effect("lists repository-scoped dependency edges", () =>
+    Effect.gen(function* () {
+      const relations = [{ issueId: "CYC-00002", type: "depends_on" as const }];
+      const result = yield* IssueRelationList.run({
+        input: { id: "CYC-00001" },
+        repository,
+      }).pipe(
+        provideStub({
+          listIssueRelations: (repositoryId, ticketId) => {
+            assert.equal(repositoryId, repository.id);
+            assert.equal(ticketId, "CYC-00001");
+            return Effect.succeed(relations);
+          },
+        }),
+      );
+
+      assert.deepEqual(result, relations);
     }),
   );
 

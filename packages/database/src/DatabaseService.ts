@@ -156,6 +156,10 @@ export type DatabaseServiceShape = {
     query?: IssueTemplateQuery,
   ) => Effect.Effect<IssueTemplatePage, DatabaseFailure>;
   readonly listInbox: (query: InboxQuery) => Effect.Effect<InboxPage, DatabaseFailure>;
+  readonly listIssueRelations: (
+    repositoryId: string,
+    ticketId: string,
+  ) => Effect.Effect<ReadonlyArray<IssueRelation>, DatabaseFailure>;
   readonly listTickets: (query?: TicketQuery) => Effect.Effect<TicketPage, DatabaseFailure>;
   readonly listUsers: (
     repositoryId: string,

@@ -54,6 +54,7 @@ import {
   resumableAgentTaskStatuses,
   type AgentTask,
 } from "../lib/agentTasks.ts";
+import { mapTicketDependencies } from "../lib/ticketDependencies.ts";
 
 type ViewIssuePanelProps = {
   readonly agentProviders?: readonly DetectedAgentProvider[];
@@ -690,7 +691,7 @@ export const ViewIssuePanel = ({
   const issueHistoryQuery = useIssueHistoryQuery(repositoryId, issueId, {
     limit: issueHistoryPageLimit,
   });
-  const issueListQuery = useIssueListQuery(repositoryId);
+  const issueListQuery = useIssueListQuery(repositoryId, { limit: 250 });
   const recordsQuery = useIssueRecordsQuery(repositoryId, issueId);
   const usersQuery = useUserListQuery(repositoryId, {
     disabled: false,
@@ -1003,6 +1004,7 @@ export const ViewIssuePanel = ({
         comments={(recordsQuery.data?.entries ?? []).map(commentFromRecord)}
         defaultDescription={issue.body}
         defaultTitle={issue.frontmatter.title}
+        dependencyState={mapTicketDependencies(issue, issueListQuery.data?.entries ?? [])}
         descriptionDefaultPreviewOpen
         dueDate={formatDate(
           typeof issue.frontmatter.dueDate === "string" ? issue.frontmatter.dueDate : undefined,

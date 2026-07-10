@@ -46,6 +46,7 @@ import {
   AutomationEvaluation,
   HistoryPage,
   InitiativeProgress,
+  IssueRelation,
   IssueTemplateDocument,
   IssueTemplatePage,
   LabelDefinitionDocument,
@@ -382,7 +383,7 @@ export const UseCaseContracts = {
     successSchema: TicketRevisionDiff,
   }),
   IssueRelationAdd: contract({
-    aliases: ["ticket.issue.relation.add"],
+    aliases: ["ticket.issue.relation.add", "ticket.issue.dependency.add"],
     category: "issue",
     description: "Add an issue relation.",
     idempotency: "not-supported",
@@ -393,7 +394,7 @@ export const UseCaseContracts = {
     successSchema: TicketDocument,
   }),
   IssueRelationRemove: contract({
-    aliases: ["ticket.issue.relation.remove"],
+    aliases: ["ticket.issue.relation.remove", "ticket.issue.dependency.remove"],
     category: "issue",
     description: "Remove an issue relation.",
     idempotency: "not-supported",
@@ -402,6 +403,17 @@ export const UseCaseContracts = {
     repositoryScope: "single",
     sideEffect: "write",
     successSchema: TicketDocument,
+  }),
+  IssueRelationList: contract({
+    aliases: ["ticket.issue.relation.list", "ticket.issue.dependency.list"],
+    category: "issue",
+    description: "List an issue's dependency and related-ticket edges.",
+    idempotency: "read-only",
+    inputSchema: RepositoryScoped(IssueIdInput),
+    name: "IssueRelationList",
+    repositoryScope: "single",
+    sideEffect: "read",
+    successSchema: Schema.Array(IssueRelation),
   }),
   DraftCreate: contract({
     aliases: ["ticket.draft.create"],

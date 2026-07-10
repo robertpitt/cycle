@@ -99,6 +99,7 @@ import {
   validateTicket,
   validateTicketId,
 } from "./internals/DatabaseHelpers.ts";
+import { createsDependencyCycle, dependencyEdge } from "./internals/TicketDependencies.ts";
 import type {
   DatabaseEventPayload,
   DatabaseTransaction,
@@ -1157,6 +1158,18 @@ export const makeDatabaseServiceWithProjection = (
           message: "related ticket not found",
         });
 
+      const edge = dependencyEdge(ticketId, relation);
+      if (
+        action === "add" &&
+        edge !== undefined &&
+        createsDependencyCycle(edge, (id) => projection.getTicket(repositoryId, id))
+      ) {
+        return yield* new DatabaseValidationError({
+          field: "relation",
+          message: "dependency relation would create a circular dependency",
+        });
+      }
+
       const actor = yield* identity.currentActor;
       const now = nowIso();
       const normalizedRelation = {
@@ -1236,6 +1249,23 @@ export const makeDatabaseServiceWithProjection = (
           relationMessage(actor, action, normalizedRelation.type, current, related),
         () => projection.ticketVisible(repositoryId, ticketId),
       );
+    });
+
+  const listIssueRelations = (
+    repositoryId: string,
+    ticketId: string,
+  ): Effect.Effect<ReadonlyArray<IssueRelation>, DatabaseFailure> =>
+    Effect.gen(function* () {
+      validateTicketId("ticket id", ticketId);
+      const ticket = projection.getTicket(repositoryId, ticketId);
+      if (ticket === null) {
+        return yield* new DatabaseValidationError({
+          field: "ticketId",
+          message: "ticket not found",
+        });
+      }
+
+      return ticket.frontmatter.relations ?? [];
     });
 
   const addRecord = <TPayload = unknown>(
@@ -2223,6 +2253,7 @@ export const makeDatabaseServiceWithProjection = (
     inboxSummary,
     initiativeProgress,
     listInbox,
+    listIssueRelations,
     listLabels: (repositoryId, query = {}) =>
       sqlite("list labels", () => projection.listLabels(repositoryId, query)),
     listRepositories: sqlite("list repositories", () => projection.listRepositories()),

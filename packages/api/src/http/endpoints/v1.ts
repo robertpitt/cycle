@@ -65,6 +65,7 @@ import {
 } from "../schemas/HttpTemplateResourceEnvelope.ts";
 import {
   HttpHistoryCollectionEnvelope,
+  HttpIssueRelationCollectionEnvelope,
   HttpRecordCollectionEnvelope,
   HttpRecordCreatedEnvelope,
   HttpTicketCollectionEnvelope,
@@ -351,6 +352,14 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
         params: IssueParams,
         payload: IssueRelationPayload,
         success: HttpTicketResourceEnvelope,
+      },
+    ),
+    HttpApiEndpoint.get(
+      "listIssueRelations",
+      "/v1/repositories/:repositoryId/issues/:issueId/relations",
+      {
+        params: IssueParams,
+        success: HttpIssueRelationCollectionEnvelope,
       },
     ),
     HttpApiEndpoint.post(

@@ -271,6 +271,10 @@ export const IssueRelationRemove = defineContractUseCase("IssueRelationRemove", 
   ),
 );
 
+export const IssueRelationList = defineContractUseCase("IssueRelationList", (input, context) =>
+  database(context, (db) => db.listIssueRelations(input.repository.id, input.input.id)),
+);
+
 export const DraftCreate = defineContractUseCase("DraftCreate", (input, context) =>
   database(context, (db) => db.createDraft(input.repository.id, input.input)),
 );

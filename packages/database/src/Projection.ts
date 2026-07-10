@@ -256,7 +256,14 @@ const ExternalLinkJson = Schema.Struct({
   title: Schema.optional(Schema.String),
   url: Schema.String,
 });
-const IssueRelationTypeJson = Schema.Literals(["blocked-by", "blocking", "duplicate", "related"]);
+const IssueRelationTypeJson = Schema.Literals([
+  "depends_on",
+  "blocks",
+  "related",
+  "blocked-by",
+  "blocking",
+  "duplicate",
+]);
 const IssueRelationJson = Schema.Struct({
   issueId: Schema.String,
   type: IssueRelationTypeJson,
@@ -1846,18 +1853,30 @@ export class Projection {
       filters.push(
         `EXISTS (
           SELECT 1 FROM ticket_relations r
+          JOIN tickets prerequisite
+            ON prerequisite.repository_id = r.repository_id
+           AND prerequisite.ticket_id = r.related_issue_id
           WHERE r.repository_id = t.repository_id
             AND r.ticket_id = t.ticket_id
-            AND r.relation_type = 'blocked-by'
+            AND r.relation_type IN ('depends_on', 'blocked-by')
+            AND prerequisite.status NOT IN ('done', 'closed', 'completed')
+            AND prerequisite.archived_at IS NULL
+            AND prerequisite.deleted_at IS NULL
         )`,
       );
     } else if (query.blocked === false) {
       filters.push(
         `NOT EXISTS (
           SELECT 1 FROM ticket_relations r
+          JOIN tickets prerequisite
+            ON prerequisite.repository_id = r.repository_id
+           AND prerequisite.ticket_id = r.related_issue_id
           WHERE r.repository_id = t.repository_id
             AND r.ticket_id = t.ticket_id
-            AND r.relation_type = 'blocked-by'
+            AND r.relation_type IN ('depends_on', 'blocked-by')
+            AND prerequisite.status NOT IN ('done', 'closed', 'completed')
+            AND prerequisite.archived_at IS NULL
+            AND prerequisite.deleted_at IS NULL
         )`,
       );
     }

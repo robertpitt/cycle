@@ -489,6 +489,36 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
           }
         }
 
+        const prerequisiteIds = [
+          ...new Set(
+            (ticket.frontmatter.relations ?? []).flatMap((relation) =>
+              relation.type === "depends_on" || relation.type === "blocked-by"
+                ? [relation.issueId]
+                : [],
+            ),
+          ),
+        ];
+        const prerequisites = yield* Effect.forEach(prerequisiteIds, (prerequisiteId) =>
+          database.getTicket(repositoryId, prerequisiteId).pipe(Effect.mapError(toBackendApiError)),
+        );
+        const unfinishedPrerequisiteIds = prerequisites.flatMap((prerequisite, index) =>
+          prerequisite === null ||
+          (prerequisite.status !== "done" &&
+            prerequisite.status !== "closed" &&
+            prerequisite.status !== "completed" &&
+            prerequisite.archivedAt === undefined &&
+            prerequisite.deletedAt === undefined)
+            ? [prerequisite?.id ?? prerequisiteIds[index]!]
+            : [],
+        );
+        if (unfinishedPrerequisiteIds.length > 0) {
+          return yield* new BackendApiError({
+            message: `Ticket ${ticketId} is blocked by unfinished prerequisite tickets: ${unfinishedPrerequisiteIds.join(", ")}`,
+            operation: "BackendApi.assignTicket.blocked",
+            repositoryId,
+          });
+        }
+
         const rootRunId = yield* Effect.sync(
           () => `agent_run_${crypto.randomUUID().replaceAll("-", "")}` as DurableAgentRunId,
         );

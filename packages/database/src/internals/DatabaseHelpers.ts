@@ -296,7 +296,14 @@ export const statusChangeRecord = (
     now,
   );
 
-export const issueRelationTypes = new Set(["blocked-by", "blocking", "duplicate", "related"]);
+export const issueRelationTypes = new Set([
+  "depends_on",
+  "blocks",
+  "related",
+  "blocked-by",
+  "blocking",
+  "duplicate",
+]);
 
 export const isIssueRelationType = (value: string): value is IssueRelation["type"] =>
   issueRelationTypes.has(value);
@@ -304,11 +311,15 @@ export const isIssueRelationType = (value: string): value is IssueRelation["type
 export const inverseRelation = (relation: IssueRelation, issueId: string): IssueRelation => ({
   issueId,
   type:
-    relation.type === "blocking"
-      ? "blocked-by"
-      : relation.type === "blocked-by"
-        ? "blocking"
-        : relation.type,
+    relation.type === "blocks"
+      ? "depends_on"
+      : relation.type === "depends_on"
+        ? "blocks"
+        : relation.type === "blocking"
+          ? "blocked-by"
+          : relation.type === "blocked-by"
+            ? "blocking"
+            : relation.type,
 });
 
 export const relationKey = (relation: IssueRelation): string =>

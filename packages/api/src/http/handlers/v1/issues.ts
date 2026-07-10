@@ -7,6 +7,7 @@ import {
   IssueHistoryList,
   IssueList,
   IssueRelationAdd,
+  IssueRelationList,
   IssueRelationRemove,
   IssueRestore,
   IssueRevisionGet,
@@ -325,6 +326,27 @@ export const addIssueRelation = ({ params, payload }: V1Request<"addIssueRelatio
     if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
     return resourceResponse(requestId, 200, result);
+  });
+
+export const listIssueRelations = ({ params, request }: V1Request<"listIssueRelations">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+    const result = yield* runUseCase(
+      IssueRelationList,
+      scoped(params.repositoryId, { id: params.issueId }),
+      meta(requestId),
+    );
+    if (HttpServerResponse.isHttpServerResponse(result)) return result;
+    if (!Array.isArray(result)) {
+      return errorResponse(
+        requestId,
+        500,
+        "INVALID_ISSUE_RELATION_RESULT",
+        "Issue relation list returned an invalid result.",
+      );
+    }
+
+    return collectionResponse(requestId, urlFromRequest(request), result, result.length, null);
   });
 
 export const removeIssueRelation = ({ params, payload }: V1Request<"removeIssueRelation">) =>

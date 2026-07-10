@@ -1,6 +1,8 @@
 import { Schema } from "effect";
 
 export const IssueRelationType = Schema.Literals([
+  "depends_on",
+  "blocks",
   "related",
   "blocked-by",
   "blocking",

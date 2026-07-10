@@ -81,6 +81,19 @@ export type ViewIssueComment = {
   readonly timestamp?: React.ReactNode;
 };
 
+export type ViewIssueDependencyTicket = {
+  readonly id: string;
+  readonly status: string;
+  readonly title: string;
+};
+
+export type ViewIssueDependencyState = {
+  readonly blocked: boolean;
+  readonly blockingTickets: readonly ViewIssueDependencyTicket[];
+  readonly downstreamBlockedTickets: readonly ViewIssueDependencyTicket[];
+  readonly warnings: readonly string[];
+};
+
 export type ViewIssueProps = Omit<React.HTMLAttributes<HTMLDivElement>, "title"> &
   MarkdownReferenceHandlers & {
     readonly activityEvents?: readonly ViewIssueActivityEvent[];
@@ -97,6 +110,7 @@ export type ViewIssueProps = Omit<React.HTMLAttributes<HTMLDivElement>, "title">
     readonly description?: string;
     readonly descriptionSlashMenuOpen?: boolean;
     readonly descriptionToolbarOpen?: boolean;
+    readonly dependencyState?: ViewIssueDependencyState;
     readonly dueDate?: React.ReactNode;
     readonly labels?: readonly ViewIssueLabel[];
     readonly onCommentCreate?: (comment: string) => void;
@@ -355,6 +369,7 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
     description,
     descriptionSlashMenuOpen,
     descriptionToolbarOpen,
+    dependencyState,
     dueDate,
     labels = [
       {
@@ -545,6 +560,50 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
             value={description}
           />
         </div>
+
+        {dependencyState !== undefined &&
+        (dependencyState.blocked ||
+          dependencyState.downstreamBlockedTickets.length > 0 ||
+          dependencyState.warnings.length > 0) ? (
+          <section
+            aria-label="Dependencies"
+            className="grid gap-3 rounded-lg border border-border bg-subtle p-4"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <h2 className={typography.sectionTitle}>Dependencies</h2>
+              {dependencyState.blocked ? (
+                <span className="rounded-full bg-warning/15 px-2 py-1 text-xs font-medium text-warning">
+                  Blocked
+                </span>
+              ) : null}
+            </div>
+            {dependencyState.blockingTickets.length > 0 ? (
+              <div className="grid gap-1 text-sm">
+                <div className="font-medium text-foreground">Blocking tickets</div>
+                {dependencyState.blockingTickets.map((ticket) => (
+                  <div className="text-muted-foreground" key={ticket.id}>
+                    {ticket.id} · {ticket.title} · {ticket.status}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {dependencyState.downstreamBlockedTickets.length > 0 ? (
+              <div className="grid gap-1 text-sm">
+                <div className="font-medium text-foreground">Downstream blocked tickets</div>
+                {dependencyState.downstreamBlockedTickets.map((ticket) => (
+                  <div className="text-muted-foreground" key={ticket.id}>
+                    {ticket.id} · {ticket.title} · {ticket.status}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {dependencyState.warnings.map((warning) => (
+              <div className="text-sm text-warning" key={warning}>
+                {warning}
+              </div>
+            ))}
+          </section>
+        ) : null}
 
         <section className="grid gap-4" aria-label="Sub-issues">
           <button

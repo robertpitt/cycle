@@ -228,7 +228,13 @@ export type InitiativeProgress = {
   readonly statusCounts: Readonly<Record<string, number>>;
 };
 
-export type IssueRelationType = "blocked-by" | "blocking" | "duplicate" | "related";
+export type IssueRelationType =
+  | "depends_on"
+  | "blocks"
+  | "related"
+  | "blocked-by"
+  | "blocking"
+  | "duplicate";
 
 export type IssueRelation = {
   readonly issueId: string;

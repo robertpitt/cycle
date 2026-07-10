@@ -26,6 +26,9 @@ export const HttpHistoryCollectionEnvelope = CollectionEnvelopeOf(ContractSchema
 export const HttpRecordCollectionEnvelope = CollectionEnvelopeOf(ContractSchemas.LinkedRecord);
 export const HttpRecordResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.LinkedRecord);
 export const HttpRecordCreatedEnvelope = CreatedResourceEnvelopeOf(ContractSchemas.LinkedRecord);
+export const HttpIssueRelationCollectionEnvelope = CollectionEnvelopeOf(
+  ContractSchemas.IssueRelation,
+);
 
 export const IssueListQueryParams = {
   "filter[archived]": OptionalBooleanStringParam("Archived-state filter for issues."),

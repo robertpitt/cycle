@@ -142,10 +142,41 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
         comments.push(record);
         return record;
       }),
+    addIssueRelation: (_repositoryId, issueId, relation) =>
+      Effect.sync(() => {
+        calls.push("IssueRelationAdd");
+        const sourceIndex = issues.findIndex((issue) => issue.id === issueId);
+        const targetIndex = issues.findIndex((issue) => issue.id === relation.issueId);
+        const source = issues[sourceIndex];
+        const target = issues[targetIndex];
+        if (source === undefined || target === undefined) throw new Error("Missing relation issue");
+        const inverseType =
+          relation.type === "depends_on"
+            ? "blocks"
+            : relation.type === "blocks"
+              ? "depends_on"
+              : relation.type;
+        const updatedSource = {
+          ...source,
+          frontmatter: {
+            ...source.frontmatter,
+            relations: [...(source.frontmatter.relations ?? []), relation],
+          },
+        } as TicketDocument;
+        issues[sourceIndex] = updatedSource;
+        issues[targetIndex] = {
+          ...target,
+          frontmatter: {
+            ...target.frontmatter,
+            relations: [...(target.frontmatter.relations ?? []), { issueId, type: inverseType }],
+          },
+        } as TicketDocument;
+        return updatedSource;
+      }),
     createTicket: (_repositoryId, input) =>
       Effect.sync(() => {
         calls.push("IssueCreate");
-        const issue = makeIssue("ISSUE-1", input.title, input.body ?? "");
+        const issue = makeIssue(`ISSUE-${issues.length + 1}`, input.title, input.body ?? "");
         issues.push(issue);
         return issue;
       }),
@@ -158,6 +189,11 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
       calls.push("RepositoryList");
       return [makeRepositoryStatus()];
     }),
+    listIssueRelations: (_repositoryId, issueId) =>
+      Effect.sync(() => {
+        calls.push("IssueRelationList");
+        return issues.find((issue) => issue.id === issueId)?.frontmatter.relations ?? [];
+      }),
     listTickets: () =>
       Effect.sync(() => {
         calls.push("IssueList");
@@ -182,6 +218,25 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
       Effect.sync(() => {
         calls.push("RepositoryStatusGet");
         return makeRepositoryStatus();
+      }),
+    removeIssueRelation: (_repositoryId, issueId, relation) =>
+      Effect.sync(() => {
+        calls.push("IssueRelationRemove");
+        const sourceIndex = issues.findIndex((issue) => issue.id === issueId);
+        const source = issues[sourceIndex];
+        const target = issues.find((issue) => issue.id === relation.issueId);
+        if (source === undefined || target === undefined) throw new Error("Missing relation issue");
+        const updatedSource = {
+          ...source,
+          frontmatter: {
+            ...source.frontmatter,
+            relations: (source.frontmatter.relations ?? []).filter(
+              (entry) => entry.issueId !== relation.issueId || entry.type !== relation.type,
+            ),
+          },
+        } as TicketDocument;
+        issues[sourceIndex] = updatedSource;
+        return updatedSource;
       }),
     searchTickets: () =>
       Effect.sync(() => {
@@ -243,6 +298,7 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
     }),
     calls,
     comments,
+    issues,
   };
 };
 
@@ -507,6 +563,75 @@ describe("@cycle/api", () => {
       assert.equal(body.error?.requestId, "req_test");
       assert.equal(body.error?.retryable, false);
       assert.equal(calls.includes("IssueCreate"), false);
+    } finally {
+      await api.dispose();
+    }
+  });
+
+  it("adds, lists, removes, and validates dependency relations", async () => {
+    const { api, issues } = makeTestApi();
+    issues.push(makeIssue("ISSUE-1", "Dependent", ""), makeIssue("ISSUE-2", "Prerequisite", ""));
+
+    try {
+      const relationUrl =
+        "http://cycle.test/v1/repositories/test-repository/issues/ISSUE-1/relations";
+      const added = await api.fetch(
+        new Request(relationUrl, {
+          ...authed({ issueId: "ISSUE-2", type: "depends_on" }),
+          method: "POST",
+        }),
+      );
+      assert.equal(added.status, 200);
+
+      const listed = await api.fetch(new Request(relationUrl, authed()));
+      const listedBody = (await listed.json()) as { readonly data: readonly unknown[] };
+      assert.equal(listed.status, 200);
+      assert.deepEqual(listedBody.data, [{ issueId: "ISSUE-2", type: "depends_on" }]);
+
+      const removed = await api.fetch(
+        new Request(`${relationUrl}/remove`, {
+          ...authed({ issueId: "ISSUE-2", type: "depends_on" }),
+          method: "POST",
+        }),
+      );
+      assert.equal(removed.status, 200);
+
+      const invalid = await api.fetch(
+        new Request(relationUrl, {
+          ...authed({ issueId: "ISSUE-2", type: "parent" }),
+          method: "POST",
+        }),
+      );
+      assert.equal(invalid.status, 400);
+    } finally {
+      await api.dispose();
+    }
+  });
+
+  it("rejects agent assignment when unfinished prerequisites block a ticket", async () => {
+    const { api } = makeTestApi({
+      assignTicketToAgent: async () => {
+        throw new Error("Ticket ISSUE-1 is blocked by unfinished prerequisite tickets: ISSUE-2");
+      },
+    });
+
+    try {
+      const response = await api.fetch(
+        new Request(
+          "http://cycle.test/v1/repositories/test-repository/issues/ISSUE-1/agent-tasks",
+          {
+            ...authed({ providerId: "codex" }),
+            method: "POST",
+          },
+        ),
+      );
+      const body = (await response.json()) as {
+        readonly error?: { readonly code?: string; readonly retryable?: boolean };
+      };
+
+      assert.equal(response.status, 409);
+      assert.equal(body.error?.code, "AGENT_TASK_CONFLICT");
+      assert.equal(body.error?.retryable, false);
     } finally {
       await api.dispose();
     }

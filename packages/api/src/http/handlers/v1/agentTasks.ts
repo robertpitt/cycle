@@ -36,13 +36,16 @@ export const createIssueAgentTask = ({ params, payload }: V1Request<"createIssue
     const assigned = yield* Effect.result(
       Effect.tryPromise({
         try: () => runtime.assignTicketToAgent!(params.repositoryId, params.issueId, payload),
-        catch: (cause) =>
-          new AgentTaskFailure({
+        catch: (cause) => {
+          const message = cause instanceof Error ? cause.message : "Ticket assignment failed.";
+          const blocked = message.includes("blocked by unfinished prerequisite tickets");
+          return new AgentTaskFailure({
             cause,
-            code: "storage_failed",
-            message: cause instanceof Error ? cause.message : "Ticket assignment failed.",
-            retryable: true,
-          }),
+            code: blocked ? "conflict" : "storage_failed",
+            message,
+            retryable: !blocked,
+          });
+        },
       }),
     );
     if (Result.isFailure(assigned)) return failureResponse(requestId, assigned.failure);
