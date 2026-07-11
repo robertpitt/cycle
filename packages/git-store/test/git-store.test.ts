@@ -691,6 +691,54 @@ describe("@cycle/git-store", () => {
     assert.strictEqual(parseEventMetadataPath("tickets/UKN-A7ABC.json"), null);
   });
 
+  it.effect("uses canonical SHA-256 shards for UUIDv7 Page events", () =>
+    withTempRepo((repo) =>
+      Effect.gen(function* () {
+        const stores = yield* GitStores;
+        const options = withTestIdentity({ cwd: repo, database: "cycle" });
+        const pageIds = [
+          ["0198f6d4-90a2-7a2a-9f0f-04d232812d31", "1d"],
+          ["00000000-0000-7000-8000-000000000000", "1e"],
+          ["ffffffff-ffff-7fff-bfff-ffffffffffff", "71"],
+        ] as const;
+
+        yield* (stores.withStore(options, () =>
+          Effect.gen(function* () {
+            const events = yield* EventStore;
+
+            for (const [pageId, shard] of pageIds) {
+              const eventId = `evt_${shard}`;
+              const expected = `collections/events/page/${shard}/${pageId}/${eventId}.json`;
+              const actual = yield* events.path({
+                aggregateId: pageId,
+                aggregateType: "page",
+                eventId,
+              });
+
+              assert.strictEqual(actual, expected);
+              assert.deepStrictEqual(yield* events.parsePath(actual), {
+                aggregateId: pageId,
+                aggregateType: "page",
+                eventId,
+                path: actual,
+              });
+              assert.strictEqual(
+                yield* events.parsePath(
+                  `collections/events/page/00/${pageId}/${eventId}.json`,
+                ),
+                null,
+              );
+              assert.strictEqual(
+                parseEventMetadataPath(`collections/events/page/${pageId}/${eventId}.json`),
+                null,
+              );
+            }
+          }),
+        ) as Effect.Effect<void, unknown>);
+      }).pipe(Effect.provide(GitStoresTestLive)),
+    ),
+  );
+
   it.effect("initializes and resolves repository identity from the Cycle GitDB root commit", () =>
     withTempRepo((repo) =>
       Effect.gen(function* () {

@@ -29,6 +29,21 @@ import {
   IssueUpdateInput,
   LabelCollectionEnvelope,
   LabelListInput,
+  PageArchiveInput,
+  PageCollectionEnvelope,
+  PageCommentAddInput,
+  PageCommentCollectionEnvelope,
+  PageCommentResourceEnvelope,
+  PageCommentsListInput,
+  PageCreateInput,
+  PageGetInput,
+  PageHistoryCollectionEnvelope,
+  PageHistoryInput,
+  PageListInput,
+  PageResourceEnvelope,
+  PageRestoreInput,
+  PageRevisionGetInput,
+  PageUpdateInput,
   PlanApplyEnvelope,
   PlanApplyInput,
   RecordCollectionEnvelope,
@@ -69,6 +84,16 @@ import type {
   IssueTransitionInput as IssueTransitionInputType,
   IssueUpdateInput as IssueUpdateInputType,
   LabelListInput as LabelListInputType,
+  PageArchiveInput as PageArchiveInputType,
+  PageCommentAddInput as PageCommentAddInputType,
+  PageCommentsListInput as PageCommentsListInputType,
+  PageCreateInput as PageCreateInputType,
+  PageGetInput as PageGetInputType,
+  PageHistoryInput as PageHistoryInputType,
+  PageListInput as PageListInputType,
+  PageRestoreInput as PageRestoreInputType,
+  PageRevisionGetInput as PageRevisionGetInputType,
+  PageUpdateInput as PageUpdateInputType,
   PlanApplyInput as PlanApplyInputType,
   PlanApplyIssueInput as PlanApplyIssueInputType,
   PlanApplyRelationInput as PlanApplyRelationInputType,
@@ -103,6 +128,16 @@ export type CycleMcpToolName =
   | "cycle_issue_history"
   | "cycle_issue_relation_add"
   | "cycle_issue_relation_remove"
+  | "cycle_page_list"
+  | "cycle_page_get"
+  | "cycle_page_create"
+  | "cycle_page_update"
+  | "cycle_page_archive"
+  | "cycle_page_restore"
+  | "cycle_page_history"
+  | "cycle_page_revision_get"
+  | "cycle_page_comments_list"
+  | "cycle_page_comment_add"
   | "cycle_label_list"
   | "cycle_user_list"
   | "cycle_template_list"
@@ -162,6 +197,16 @@ export const cycleMcpToolNames: ReadonlyArray<CycleMcpToolName> = [
   "cycle_issue_history",
   "cycle_issue_relation_add",
   "cycle_issue_relation_remove",
+  "cycle_page_list",
+  "cycle_page_get",
+  "cycle_page_create",
+  "cycle_page_update",
+  "cycle_page_archive",
+  "cycle_page_restore",
+  "cycle_page_history",
+  "cycle_page_revision_get",
+  "cycle_page_comments_list",
+  "cycle_page_comment_add",
   "cycle_label_list",
   "cycle_user_list",
   "cycle_template_list",
@@ -351,6 +396,96 @@ export const cycleMcpTools: ReadonlyArray<CycleMcpToolDefinition<any>> = [
     name: "cycle_issue_relation_remove",
     outputSchema: TicketResourceEnvelope,
     title: "Remove issue relation",
+  },
+  {
+    annotations: readOnlyAnnotations("List Pages"),
+    description: "List repository Pages by directory without full-text search.",
+    handle: pageList,
+    inputSchema: PageListInput,
+    name: "cycle_page_list",
+    outputSchema: PageCollectionEnvelope,
+    title: "List Pages",
+  },
+  {
+    annotations: readOnlyAnnotations("Get Page"),
+    description: "Read one Cycle Page by stable Page id.",
+    handle: pageGet,
+    inputSchema: PageGetInput,
+    name: "cycle_page_get",
+    outputSchema: PageResourceEnvelope,
+    title: "Get Page",
+  },
+  {
+    annotations: writeAnnotations("Create Page"),
+    description: "Create a durable Markdown Page in a repository.",
+    handle: pageCreate,
+    inputSchema: PageCreateInput,
+    name: "cycle_page_create",
+    outputSchema: PageResourceEnvelope,
+    title: "Create Page",
+  },
+  {
+    annotations: writeAnnotations("Update Page"),
+    description: "Explicitly save or move a Page at an expected Page revision.",
+    handle: pageUpdate,
+    inputSchema: PageUpdateInput,
+    name: "cycle_page_update",
+    outputSchema: PageResourceEnvelope,
+    title: "Update Page",
+  },
+  {
+    annotations: writeAnnotations("Archive Page"),
+    description: "Archive an active Page at an expected Page revision.",
+    handle: pageArchive,
+    inputSchema: PageArchiveInput,
+    name: "cycle_page_archive",
+    outputSchema: PageResourceEnvelope,
+    title: "Archive Page",
+  },
+  {
+    annotations: writeAnnotations("Restore Page"),
+    description: "Restore an archived Page at an expected Page revision.",
+    handle: pageRestore,
+    inputSchema: PageRestoreInput,
+    name: "cycle_page_restore",
+    outputSchema: PageResourceEnvelope,
+    title: "Restore Page",
+  },
+  {
+    annotations: readOnlyAnnotations("Page history"),
+    description: "List Page lifecycle history across moves and renames.",
+    handle: pageHistory,
+    inputSchema: PageHistoryInput,
+    name: "cycle_page_history",
+    outputSchema: PageHistoryCollectionEnvelope,
+    title: "Page history",
+  },
+  {
+    annotations: readOnlyAnnotations("Get Page revision"),
+    description: "Read one Page at a reachable repository snapshot.",
+    handle: pageRevisionGet,
+    inputSchema: PageRevisionGetInput,
+    name: "cycle_page_revision_get",
+    outputSchema: PageResourceEnvelope,
+    title: "Get Page revision",
+  },
+  {
+    annotations: readOnlyAnnotations("List Page comments"),
+    description: "List comments targeting one Cycle Page.",
+    handle: pageCommentsList,
+    inputSchema: PageCommentsListInput,
+    name: "cycle_page_comments_list",
+    outputSchema: PageCommentCollectionEnvelope,
+    title: "List Page comments",
+  },
+  {
+    annotations: writeAnnotations("Add Page comment"),
+    description: "Add a Markdown comment to one Cycle Page.",
+    handle: pageCommentAdd,
+    inputSchema: PageCommentAddInput,
+    name: "cycle_page_comment_add",
+    outputSchema: PageCommentResourceEnvelope,
+    title: "Add Page comment",
   },
   {
     annotations: readOnlyAnnotations("List labels"),
@@ -763,6 +898,138 @@ function issueRelationRemove(input: IssueRelationRemoveInputType, context: Cycle
   );
 }
 
+function pageList(input: PageListInputType, context: CycleMcpToolContext) {
+  const query = new URLSearchParams();
+  setParam(query, "archived", input.archived);
+  setParam(query, "directory", input.directory);
+  setParam(query, "recursive", input.recursive);
+  setParam(query, "page[cursor]", input.cursor);
+  setParam(query, "page[limit]", input.limit);
+  return apiCollection(
+    context,
+    input,
+    "GET",
+    withQuery(`/v1/repositories/${segment(input.repositoryId)}/pages`, query),
+    undefined,
+    PageCollectionEnvelope,
+  );
+}
+
+function pageGet(input: PageGetInputType, context: CycleMcpToolContext) {
+  const query = new URLSearchParams();
+  setParam(query, "includeArchived", input.includeArchived);
+  return apiResource(
+    context,
+    input,
+    "GET",
+    withQuery(pagePath(input), query),
+    undefined,
+    PageResourceEnvelope,
+  );
+}
+
+function pageCreate(input: PageCreateInputType, context: CycleMcpToolContext) {
+  return apiResource(
+    context,
+    input,
+    "POST",
+    `/v1/repositories/${segment(input.repositoryId)}/pages`,
+    pageMutationBody(input),
+    PageResourceEnvelope,
+  );
+}
+
+function pageUpdate(input: PageUpdateInputType, context: CycleMcpToolContext) {
+  return apiResource(
+    context,
+    input,
+    "PATCH",
+    pagePath(input),
+    pageMutationBody(input),
+    PageResourceEnvelope,
+  );
+}
+
+function pageArchive(input: PageArchiveInputType, context: CycleMcpToolContext) {
+  return apiResource(
+    context,
+    input,
+    "POST",
+    `${pagePath(input)}/archive`,
+    pageMutationBody(input),
+    PageResourceEnvelope,
+  );
+}
+
+function pageRestore(input: PageRestoreInputType, context: CycleMcpToolContext) {
+  return apiResource(
+    context,
+    input,
+    "POST",
+    `${pagePath(input)}/restore`,
+    pageMutationBody(input),
+    PageResourceEnvelope,
+  );
+}
+
+function pageHistory(input: PageHistoryInputType, context: CycleMcpToolContext) {
+  return apiCollection(
+    context,
+    input,
+    "GET",
+    withQuery(`${pagePath(input)}/history`, pageSearchParams(input)),
+    undefined,
+    PageHistoryCollectionEnvelope,
+  );
+}
+
+function pageRevisionGet(input: PageRevisionGetInputType, context: CycleMcpToolContext) {
+  return apiResource(
+    context,
+    input,
+    "GET",
+    `${pagePath(input)}/revisions/${segment(input.snapshotId)}`,
+    undefined,
+    PageResourceEnvelope,
+  );
+}
+
+function pageCommentsList(input: PageCommentsListInputType, context: CycleMcpToolContext) {
+  return apiCollection(
+    context,
+    input,
+    "GET",
+    withQuery(`${pagePath(input)}/comments`, pageSearchParams(input)),
+    undefined,
+    PageCommentCollectionEnvelope,
+  );
+}
+
+function pageCommentAdd(input: PageCommentAddInputType, context: CycleMcpToolContext) {
+  return apiResource(
+    context,
+    input,
+    "POST",
+    `${pagePath(input)}/comments`,
+    pageMutationBody(input),
+    PageCommentResourceEnvelope,
+  );
+}
+
+const pagePath = (input: { readonly pageId: string; readonly repositoryId: string }): string =>
+  `/v1/repositories/${segment(input.repositoryId)}/pages/${segment(input.pageId)}`;
+
+const pageMutationBody = (
+  input: Readonly<Record<string, unknown>> & {
+    readonly pageId?: string;
+    readonly repositoryId: string;
+    readonly requestId?: string;
+  },
+): Readonly<Record<string, unknown>> => {
+  const { pageId: _pageId, repositoryId: _repositoryId, requestId: _requestId, ...body } = input;
+  return body;
+};
+
 function labelList(input: LabelListInputType, context: CycleMcpToolContext) {
   return apiCollection(
     context,
@@ -1050,6 +1317,7 @@ const apiRequest = <Input extends ToolContextInput, A extends Schema.Decoder<unk
       return toolError({
         ...response.failure,
         issueId: input.issueId,
+        pageId: input.pageId,
         repositoryId: input.repositoryId,
         requestId: response.failure.requestId ?? requestId,
       });
@@ -1072,6 +1340,7 @@ const apiRequest = <Input extends ToolContextInput, A extends Schema.Decoder<unk
       return toolError({
         ...decoded.failure,
         issueId: input.issueId,
+        pageId: input.pageId,
         repositoryId: input.repositoryId,
         requestId,
       });
@@ -1082,6 +1351,7 @@ const apiRequest = <Input extends ToolContextInput, A extends Schema.Decoder<unk
 
 type ToolContextInput = {
   readonly issueId?: string;
+  readonly pageId?: string;
   readonly repositoryId?: string;
   readonly requestId?: string;
   readonly targetIssueId?: string;
@@ -1101,6 +1371,7 @@ type ToolErrorInput = {
   readonly details?: unknown;
   readonly issueId?: string;
   readonly message: string;
+  readonly pageId?: string;
   readonly repositoryId?: string;
   readonly requestId?: string;
   readonly retryable: boolean;
@@ -1125,6 +1396,7 @@ const toolError = (
     },
     meta: {
       ...(error.issueId === undefined ? {} : { issueId: error.issueId }),
+      ...(error.pageId === undefined ? {} : { pageId: error.pageId }),
       ...(error.repositoryId === undefined ? {} : { repositoryId: error.repositoryId }),
     },
   } satisfies typeof ToolErrorOutput.Type,
@@ -1139,6 +1411,7 @@ const withToolMeta = (
   meta: {
     ...envelope.meta,
     ...(input.issueId === undefined ? {} : { issueId: input.issueId }),
+    ...(input.pageId === undefined ? {} : { pageId: input.pageId }),
     ...(input.repositoryId === undefined ? {} : { repositoryId: input.repositoryId }),
     requestId,
   },
@@ -1223,6 +1496,19 @@ const mcpScopeError = (
   return undefined;
 };
 
+const pageToolNames = [
+  "cycle_page_list",
+  "cycle_page_get",
+  "cycle_page_create",
+  "cycle_page_update",
+  "cycle_page_archive",
+  "cycle_page_restore",
+  "cycle_page_history",
+  "cycle_page_revision_get",
+  "cycle_page_comments_list",
+  "cycle_page_comment_add",
+] as const satisfies ReadonlyArray<CycleMcpToolName>;
+
 const defaultAllowedToolsFor = (
   authorityMode: CycleMcpToolContext["authorityMode"],
 ): ReadonlyArray<CycleMcpToolName> => {
@@ -1241,6 +1527,7 @@ const defaultAllowedToolsFor = (
         "cycle_issue_records_list",
         "cycle_issue_history",
         "cycle_automation_evaluate",
+        ...pageToolNames,
       ];
     case "disposable-worktree":
       return [
@@ -1256,6 +1543,7 @@ const defaultAllowedToolsFor = (
         "cycle_issue_records_list",
         "cycle_issue_history",
         "cycle_automation_evaluate",
+        ...pageToolNames,
       ];
     case "implementation-worktree":
       return [
@@ -1270,6 +1558,7 @@ const defaultAllowedToolsFor = (
         "cycle_issue_records_list",
         "cycle_issue_history",
         "cycle_automation_evaluate",
+        ...pageToolNames,
       ];
     default:
       return cycleMcpToolNames;

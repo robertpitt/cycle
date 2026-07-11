@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Crypto, Effect, Layer, Schema } from "effect";
 import {
   EventAppendConflictError,
   InvalidJsonDocumentError,
@@ -9,8 +9,11 @@ import { Document } from "./Document.ts";
 import { GitStore, type GitStoreTransaction } from "./GitStore.ts";
 import {
   aggregatePath,
+  canonicalAggregatePath,
+  parseCanonicalEventPath,
   parseEventPath,
   validateEventSegment,
+  validatePageAggregateId,
   type ParsedEventPath,
 } from "./internal/event-path.ts";
 import { normalizeStorePath } from "./internal/refs.ts";
@@ -55,7 +58,13 @@ export const aggregateEventPath = (
 export const parseEventMetadataPath = (path: string): ParsedEventPath | null =>
   parseEventPath(path, EVENT_ROOT);
 
+export const parseCanonicalEventMetadataPath = (path: string) =>
+  parseCanonicalEventPath(path, EVENT_ROOT);
+
 export type EventStoreShape = {
+  readonly aggregatePath: (
+    input: Pick<EventPathInput, "aggregateId" | "aggregateType">,
+  ) => Effect.Effect<string, GitStoreError>;
   readonly append: <TPayload>(
     tx: GitStoreTransaction,
     input: AppendEventInput<TPayload>,
@@ -69,6 +78,7 @@ export type EventStoreShape = {
     readonly payloadSchema?: Schema.Top;
     readonly root?: string;
   }) => Effect.Effect<ReadonlyArray<EventDocument<TPayload>>, GitStoreError>;
+  readonly parsePath: (path: string) => Effect.Effect<ParsedEventPath | null, GitStoreError>;
   readonly path: (input: EventPathInput) => Effect.Effect<string, GitStoreError>;
 };
 
@@ -80,13 +90,32 @@ export const EventStoreLive = Layer.effect(
   EventStore,
   Effect.gen(function* () {
     const store = yield* GitStore;
+    const crypto = yield* Crypto.Crypto;
+    const provideCrypto = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>) =>
+      effect.pipe(Effect.provideService(Crypto.Crypto, crypto));
 
-    const path = Effect.fn("EventStore.path")(function* (input: EventPathInput) {
+    const eventAggregatePath = Effect.fn("EventStore.aggregatePath")(function* (
+      input: Pick<EventPathInput, "aggregateId" | "aggregateType">,
+    ) {
       const aggregateType = yield* validateEventSegment("aggregate type", input.aggregateType);
       const aggregateId = yield* validateEventSegment("aggregate id", input.aggregateId);
-      const eventId = yield* validateEventSegment("event id", input.eventId);
 
-      return `${aggregatePath({ aggregateId, aggregateType, root: EVENT_ROOT })}/${eventId}.json`;
+      if (aggregateType === "page") yield* validatePageAggregateId(aggregateId);
+
+      return yield* provideCrypto(
+        canonicalAggregatePath({ aggregateId, aggregateType, root: EVENT_ROOT }),
+      );
+    });
+
+    const parsePath = Effect.fn("EventStore.parsePath")(function* (path: string) {
+      return yield* provideCrypto(parseCanonicalEventPath(path, EVENT_ROOT));
+    });
+
+    const path = Effect.fn("EventStore.path")(function* (input: EventPathInput) {
+      const eventId = yield* validateEventSegment("event id", input.eventId);
+      const aggregate = yield* eventAggregatePath(input);
+
+      return `${aggregate}/${eventId}.json`;
     });
 
     const append = Effect.fn("EventStore.append")(function* <TPayload>(
@@ -134,7 +163,7 @@ export const EventStoreLive = Layer.effect(
       const events: Array<EventDocument<TPayload>> = [];
 
       for (const document of documents) {
-        const parsed = parseEventPath(document.path, root);
+        const parsed = yield* provideCrypto(parseCanonicalEventPath(document.path, root));
 
         if (parsed === null) continue;
 
@@ -178,7 +207,7 @@ export const EventStoreLive = Layer.effect(
         const diff = yield* store.diff(parent, snapshot.id);
 
         for (const change of [...diff.added, ...diff.modified, ...diff.deleted]) {
-          const parsed = parseEventPath(change.path, root);
+          const parsed = yield* provideCrypto(parseCanonicalEventPath(change.path, root));
 
           if (parsed !== null) {
             changes.push({
@@ -193,9 +222,11 @@ export const EventStoreLive = Layer.effect(
     });
 
     return EventStore.of({
+      aggregatePath: eventAggregatePath,
       append,
       introduced,
       list,
+      parsePath,
       path,
     });
   }),

@@ -1,4 +1,5 @@
 import { Data, Schema } from "effect";
+import type { PagesFailure } from "@cycle/contracts/schemas";
 
 export class DatabaseConsistencyError extends Schema.TaggedErrorClass<DatabaseConsistencyError>(
   "@cycle/database/DatabaseConsistencyError",
@@ -63,6 +64,7 @@ export class DatabaseWorkflowError extends Schema.TaggedErrorClass<DatabaseWorkf
 }) {}
 
 export type DatabaseFailure =
+  | PagesFailure
   | DatabaseConsistencyError
   | DatabaseMaterializationError
   | DatabaseRepositoryNotFoundError

@@ -39,6 +39,22 @@ describe("MarkdownRenderer", () => {
     expect(markup).not.toContain("(cycle-agent:codex)");
   });
 
+  it("renders canonical repository, ticket, and Page links as internal controls", () => {
+    const markup = renderToStaticMarkup(
+      createElement(MarkdownRenderer, {
+        markdown: [
+          "[Cycle](cycle://repository/cycle)",
+          "[#CYC-10001](cycle://repository/cycle/tickets/CYC-10001)",
+          "[Payments](cycle://repository/cycle/pages/0198f6d4-90a2-7a2a-9f0f-04d232812d31)",
+        ].join(" "),
+      }),
+    );
+
+    expect(markup.match(/<button/g)).toHaveLength(3);
+    expect(markup).toContain(">Payments</button>");
+    expect(markup).not.toContain('href="cycle:');
+  });
+
   it("keeps unsafe links inert", () => {
     const markup = renderToStaticMarkup(
       createElement(MarkdownRenderer, {

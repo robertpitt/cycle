@@ -15,6 +15,7 @@ import {
   updateTicketDocument,
   validateNewTicketType,
   type Actor,
+  type AddCommentInput,
   type AddRecordInput,
   type ArchiveTicketInput,
   type CommitOptions,
@@ -105,6 +106,7 @@ import type {
   DatabaseTransaction,
   RepositoryRuntime,
 } from "./internals/DatabaseRuntime.ts";
+import { makePageOperations } from "./PageOperations.ts";
 
 export const makeDatabaseServiceWithProjection = (
   identity: DatabaseIdentityShape,
@@ -210,6 +212,8 @@ export const makeDatabaseServiceWithProjection = (
         deletedTickets: materialization.deletedTickets.length,
         fullRebuild: materialization.fullRebuild,
         inboxItems: materialization.inboxItems.length,
+        comments: materialization.comments.length,
+        pages: materialization.pages.length,
         previousSnapshotId,
         records: materialization.records.length,
         snapshotId: currentSnapshotId,
@@ -278,6 +282,9 @@ export const makeDatabaseServiceWithProjection = (
               template: template.value,
             });
           }
+          for (const page of materialization.pages) {
+            projection.pages.upsertPage(page);
+          }
           for (const record of materialization.records) {
             if (projection.ticketVisible(repositoryId, record.value.issueId)) {
               projection.upsertRecord({
@@ -286,6 +293,12 @@ export const makeDatabaseServiceWithProjection = (
                 snapshotId: currentSnapshotId,
               });
             }
+          }
+          for (const comment of materialization.comments) {
+            projection.pages.upsertComment(comment);
+          }
+          for (const entry of materialization.pageHistory) {
+            projection.pages.upsertHistory(entry);
           }
           for (const commit of materialization.commits) {
             projection.upsertCommit(commit);
@@ -2209,17 +2222,56 @@ export const makeDatabaseServiceWithProjection = (
       );
     });
 
+  const pageOperations = makePageOperations({
+    appendEvent,
+    beginWriteTransaction,
+    ensureActorUserProfile,
+    getRepository,
+    ids,
+    identity,
+    projection,
+    writeAndSync,
+  });
+
+  const addTicketComment = (
+    repositoryId: string,
+    ticketId: string,
+    input: AddCommentInput,
+    options?: CommitOptions,
+  ) =>
+    addRecord(
+      repositoryId,
+      ticketId,
+      {
+        payload: { body: input.body },
+        recordType: "comment",
+      },
+      options,
+    );
+
+  const addComment: DatabaseServiceShape["addComment"] = ((
+    targetOrRepositoryId: Parameters<typeof pageOperations.addComment>[0] | string,
+    inputOrTicketId: Parameters<typeof pageOperations.addComment>[1] | string,
+    optionsOrInput?: CommitOptions | AddCommentInput,
+    legacyOptions?: CommitOptions,
+  ) =>
+    typeof targetOrRepositoryId === "string" && typeof inputOrTicketId === "string"
+      ? addTicketComment(
+          targetOrRepositoryId,
+          inputOrTicketId,
+          optionsOrInput as AddCommentInput,
+          legacyOptions,
+        )
+      : pageOperations.addComment(
+          targetOrRepositoryId as Parameters<typeof pageOperations.addComment>[0],
+          inputOrTicketId as Parameters<typeof pageOperations.addComment>[1],
+          optionsOrInput as CommitOptions | undefined,
+        )) as DatabaseServiceShape["addComment"];
+
   return {
-    addComment: (repositoryId, ticketId, input, options) =>
-      addRecord(
-        repositoryId,
-        ticketId,
-        {
-          payload: { body: input.body },
-          recordType: "comment",
-        },
-        options,
-      ),
+    ...pageOperations,
+    addComment,
+    addTicketComment,
     addIssueRelation: (repositoryId, ticketId, relation, options) =>
       mutateIssueRelation(repositoryId, ticketId, relation, "add", options),
     addInitiativeUpdate,

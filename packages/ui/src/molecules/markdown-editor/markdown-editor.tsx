@@ -5,6 +5,7 @@ import {
   CheckSquare,
   ChevronDown,
   Code2,
+  FileText,
   GitBranch,
   GitCommit,
   Heading,
@@ -62,8 +63,8 @@ import { MarkdownRenderer, type MarkdownReferenceHandlers } from "../markdown-re
 import { cn } from "../../lib/cn.ts";
 import {
   getCycleReferenceHref,
-  isSameCycleReference,
   parseCycleReferenceMarkdownLink,
+  parseCycleReferenceHref,
   type CycleReferenceKind,
 } from "../../lib/markdown-references.ts";
 import { focusRing, typography } from "../../lib/styles.ts";
@@ -107,6 +108,7 @@ export type MarkdownEditorMode = "comment" | "ticket";
 
 export type MarkdownEditorTagSuggestion = {
   readonly description?: React.ReactNode;
+  readonly href?: string;
   readonly id: string;
   readonly insertLabel?: string;
   readonly kind: CycleReferenceKind;
@@ -623,6 +625,7 @@ const tagKindLabels = {
   agent: "Agent",
   commit: "Commit",
   issue: "Issue",
+  page: "Page",
   repository: "Repository",
   user: "User",
 } as const satisfies Record<CycleReferenceKind, string>;
@@ -631,6 +634,7 @@ const tagKindIcons = {
   agent: <Bot aria-hidden className="size-4" />,
   commit: <GitCommit aria-hidden className="size-4" />,
   issue: <Ticket aria-hidden className="size-4" />,
+  page: <FileText aria-hidden className="size-4" />,
   repository: <GitBranch aria-hidden className="size-4" />,
   user: <UserRound aria-hidden className="size-4" />,
 } as const satisfies Record<CycleReferenceKind, React.ReactNode>;
@@ -642,9 +646,11 @@ export const getMarkdownEditorTagSuggestionInsertLabel = (
 ): string => {
   if (suggestion.insertLabel) {
     const parsedInsertLabel = parseCycleReferenceMarkdownLink(suggestion.insertLabel);
-    const expectedReference = { id: suggestion.id, kind: suggestion.kind };
-
-    if (parsedInsertLabel && isSameCycleReference(parsedInsertLabel.reference, expectedReference)) {
+    if (
+      parsedInsertLabel &&
+      parsedInsertLabel.reference.id === suggestion.id &&
+      parsedInsertLabel.reference.kind === suggestion.kind
+    ) {
       return parsedInsertLabel.label;
     }
 
@@ -660,6 +666,8 @@ export const getMarkdownEditorTagSuggestionInsertLabel = (
       return label || `commit:${suggestion.id.slice(0, 7)}`;
     case "issue":
       return label.startsWith("#") ? label : `#${suggestion.id}`;
+    case "page":
+      return label || suggestion.id;
     case "repository":
       return label.startsWith("repo:") ? label : `repo:${label || suggestion.id}`;
   }
@@ -839,13 +847,37 @@ const insertTagSuggestion = (
     if (!activeQuery || !$isRangeSelection(selection)) return;
 
     const label = getMarkdownEditorTagSuggestionInsertLabel(suggestion);
-    const linkNode = $createLinkNode(
-      getCycleReferenceHref({ id: suggestion.id, kind: suggestion.kind }),
-    );
-    linkNode.append($createTextNode(label));
-
     selection.anchor.set(activeQuery.nodeKey, activeQuery.startOffset, "text");
     selection.focus.set(activeQuery.nodeKey, activeQuery.endOffset, "text");
+    const fallbackHref = (() => {
+      switch (suggestion.kind) {
+        case "issue":
+        case "page":
+          return undefined;
+        case "agent":
+          return getCycleReferenceHref({ id: suggestion.id, kind: "agent" });
+        case "commit":
+          return getCycleReferenceHref({ id: suggestion.id, kind: "commit" });
+        case "repository":
+          return getCycleReferenceHref({ id: suggestion.id, kind: "repository" });
+        case "user":
+          return getCycleReferenceHref({ id: suggestion.id, kind: "user" });
+      }
+    })();
+    const href = suggestion.href ?? fallbackHref;
+    const reference = href === undefined ? null : parseCycleReferenceHref(href);
+
+    if (
+      reference === null ||
+      reference.id !== suggestion.id ||
+      reference.kind !== suggestion.kind
+    ) {
+      selection.insertNodes([$createTextNode(label), $createTextNode(" ")]);
+      return;
+    }
+
+    const linkNode = $createLinkNode(href);
+    linkNode.append($createTextNode(label));
     selection.insertNodes([linkNode, $createTextNode(" ")]);
   });
 };
@@ -1193,6 +1225,7 @@ export const MarkdownEditor = React.forwardRef<HTMLDivElement, MarkdownEditorPro
       onExternalLinkClick,
       onFormatSelect,
       onIssueReferenceClick,
+      onPageReferenceClick,
       onRepositoryReferenceClick,
       onSubmit,
       onTagQueryChange,
@@ -1359,6 +1392,7 @@ export const MarkdownEditor = React.forwardRef<HTMLDivElement, MarkdownEditorPro
             onCycleReferenceClick={onCycleReferenceClick}
             onExternalLinkClick={onExternalLinkClick}
             onIssueReferenceClick={onIssueReferenceClick}
+            onPageReferenceClick={onPageReferenceClick}
             onRepositoryReferenceClick={onRepositoryReferenceClick}
             onUserReferenceClick={onUserReferenceClick}
           />

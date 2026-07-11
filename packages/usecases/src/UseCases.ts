@@ -17,6 +17,7 @@ import {
 import {
   WorkflowPolicy,
   defineContractUseCase,
+  pageIdFromInput,
   ticketIdFromInput,
   type UseCaseContext,
   type WorkflowPolicyShape,
@@ -297,13 +298,73 @@ export const DraftCommit = defineContractUseCase("DraftCommit", (input, context)
   ),
 );
 
+export const PageCreate = defineContractUseCase("PageCreate", (input, context) =>
+  database(context, (db) => db.createPage(input.repository.id, input.input)),
+);
+
+export const PageGet = defineContractUseCase("PageGet", (input, context) =>
+  database(context, (db) =>
+    db.getPage(input.repository.id, input.input.pageId, {
+      includeArchived: input.input.includeArchived,
+    }),
+  ),
+);
+
+export const PageList = defineContractUseCase("PageList", (input, context) =>
+  database(context, (db) => db.listPages(input.repository.id, input.input)),
+);
+
+export const PageHierarchyList = defineContractUseCase("PageHierarchyList", (input, context) =>
+  database(context, (db) => db.listPageHierarchy(input.repository.id, input.input)),
+);
+
+export const PageUpdate = defineContractUseCase("PageUpdate", (input, context) =>
+  database(context, (db) =>
+    db.updatePage(input.repository.id, input.input.pageId, input.input),
+  ),
+);
+
+export const PageArchive = defineContractUseCase("PageArchive", (input, context) =>
+  database(context, (db) =>
+    db.archivePage(input.repository.id, input.input.pageId, input.input),
+  ),
+);
+
+export const PageRestore = defineContractUseCase("PageRestore", (input, context) =>
+  database(context, (db) =>
+    db.restorePage(input.repository.id, input.input.pageId, input.input),
+  ),
+);
+
+export const PageHistoryList = defineContractUseCase("PageHistoryList", (input, context) =>
+  database(context, (db) =>
+    db.pageHistory(input.repository.id, input.input.pageId, input.input),
+  ),
+);
+
+export const PageRevisionGet = defineContractUseCase("PageRevisionGet", (input, context) =>
+  database(context, (db) =>
+    db.pageRevision(
+      input.repository.id,
+      input.input.pageId,
+      input.input.snapshotId,
+    ),
+  ),
+);
+
+export const CommentList = defineContractUseCase("CommentList", (input, context) =>
+  Effect.gen(function* () {
+    yield* requireTargetRepository(context, input.repository.id, input.input.target.repositoryId);
+    return yield* database(context, (db) =>
+      db.listComments(input.input.target, input.input.query),
+    );
+  }),
+);
+
 export const CommentAdd = defineContractUseCase("CommentAdd", (input, context) =>
   Effect.gen(function* () {
-    const db = yield* DatabaseService;
-
-    return yield* db
-      .addComment(input.repository.id, input.input.issueId, { body: input.input.body })
-      .pipe(Effect.mapError(mapFailure(context)));
+    yield* requireTargetRepository(context, input.repository.id, input.input.target.repositoryId);
+    return yield* database(context, (db) => db.addComment(input.input.target, input.input));
   }),
 );
 
@@ -425,6 +486,7 @@ const mapFailure =
   (error: unknown): UseCaseFailure => {
     const failure = mapDatabaseFailure(error, {
       requestId: context.requestId,
+      pageId: pageIdFromInput(context.input),
       repositoryId: context.repositoryId,
       ticketId: ticketIdFromInput(context.input),
       useCase: context.name,
@@ -439,6 +501,23 @@ const mapFailure =
         }
       : failure;
   };
+
+const requireTargetRepository = (
+  context: UseCaseContext,
+  repositoryId: string,
+  targetRepositoryId: string,
+): Effect.Effect<void, UseCaseFailure> =>
+  repositoryId === targetRepositoryId
+    ? Effect.void
+    : Effect.fail(
+        invalidInputFailure({
+          details: { repositoryId, targetRepositoryId },
+          field: "target.repositoryId",
+          message: "Comment target must belong to the scoped repository.",
+          requestId: context.requestId,
+          useCase: context.name,
+        }),
+      );
 
 const readRequiredTicket = (
   db: DatabaseServiceShape,

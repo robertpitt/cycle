@@ -1,5 +1,23 @@
 import { Context, Effect } from "effect";
 import type {
+  ArchivePageInput,
+  CommentAddInput as GenericCommentAddInput,
+  CommentDocument,
+  CommentPage,
+  CommentQuery,
+  CreatePageInput,
+  CycleResourceRef,
+  PageDocument,
+  PageHierarchy,
+  PageHierarchyQuery,
+  PageHistoryInput,
+  PageHistoryPage,
+  PagePage,
+  PageQuery,
+  RestorePageInput,
+  UpdatePageInput,
+} from "@cycle/contracts/schemas";
+import type {
   AddCommentInput,
   AddRecordInput,
   ArchiveTicketInput,
@@ -61,7 +79,20 @@ export type DatabaseServiceOptions = {
 };
 
 export type DatabaseServiceShape = {
-  readonly addComment: (
+  readonly addComment: {
+    (
+      target: CycleResourceRef,
+      input: GenericCommentAddInput,
+      options?: CommitOptions,
+    ): Effect.Effect<CommentDocument, DatabaseFailure>;
+    (
+      repositoryId: string,
+      ticketId: string,
+      input: AddCommentInput,
+      options?: CommitOptions,
+    ): Effect.Effect<LinkedRecord, DatabaseFailure>;
+  };
+  readonly addTicketComment: (
     repositoryId: string,
     ticketId: string,
     input: AddCommentInput,
@@ -101,6 +132,11 @@ export type DatabaseServiceShape = {
     input: CreateTicketInput,
     options?: CommitOptions,
   ) => Effect.Effect<TicketDocument, DatabaseFailure>;
+  readonly createPage: (
+    repositoryId: string,
+    input: CreatePageInput,
+    options?: CommitOptions,
+  ) => Effect.Effect<PageDocument, DatabaseFailure>;
   readonly deleteTicket: (
     repositoryId: string,
     ticketId: string,
@@ -111,7 +147,24 @@ export type DatabaseServiceShape = {
     repositoryId: string,
     ticketId: string,
   ) => Effect.Effect<TicketDocument | null, DatabaseFailure>;
+  readonly getPage: (
+    repositoryId: string,
+    pageId: string,
+    options?: { readonly includeArchived?: boolean },
+  ) => Effect.Effect<PageDocument, DatabaseFailure>;
   readonly listRepositories: Effect.Effect<ReadonlyArray<RepositoryStatus>, DatabaseFailure>;
+  readonly listComments: (
+    target: CycleResourceRef,
+    query?: CommentQuery,
+  ) => Effect.Effect<CommentPage, DatabaseFailure>;
+  readonly listPageHierarchy: (
+    repositoryId: string,
+    query?: PageHierarchyQuery,
+  ) => Effect.Effect<PageHierarchy, DatabaseFailure>;
+  readonly listPages: (
+    repositoryId: string,
+    query?: PageQuery,
+  ) => Effect.Effect<PagePage, DatabaseFailure>;
   readonly createInitiative: (
     repositoryId: string,
     input: CreateTicketInput,
@@ -185,6 +238,21 @@ export type DatabaseServiceShape = {
     repositoryId: string,
     query?: RepositoryHistoryQuery,
   ) => Effect.Effect<HistoryPage, DatabaseFailure>;
+  readonly pageHistory: (
+    repositoryId: string,
+    pageId: string,
+    input?: PageHistoryInput,
+  ) => Effect.Effect<PageHistoryPage, DatabaseFailure>;
+  readonly pageRevision: (
+    repositoryId: string,
+    pageId: string,
+    snapshotId: string,
+  ) => Effect.Effect<PageDocument, DatabaseFailure>;
+  readonly resolvePagePath: (
+    repositoryId: string,
+    path: string,
+    options?: { readonly includeArchived?: boolean },
+  ) => Effect.Effect<PageDocument | null, DatabaseFailure>;
   readonly pushRepository: (
     repositoryId: string,
   ) => Effect.Effect<RepositorySyncResult, DatabaseFailure>;
@@ -203,6 +271,18 @@ export type DatabaseServiceShape = {
     input?: RestoreTicketInput,
     options?: CommitOptions,
   ) => Effect.Effect<TicketDocument, DatabaseFailure>;
+  readonly archivePage: (
+    repositoryId: string,
+    pageId: string,
+    input: ArchivePageInput,
+    options?: CommitOptions,
+  ) => Effect.Effect<PageDocument, DatabaseFailure>;
+  readonly restorePage: (
+    repositoryId: string,
+    pageId: string,
+    input: RestorePageInput,
+    options?: CommitOptions,
+  ) => Effect.Effect<PageDocument, DatabaseFailure>;
   readonly searchTickets: (
     query: SearchTicketsQuery,
   ) => Effect.Effect<TicketSearchPage, DatabaseFailure>;
@@ -252,6 +332,12 @@ export type DatabaseServiceShape = {
     ticketId: string,
     patch: UpdateTicketPatch,
   ) => Effect.Effect<TicketDocument, DatabaseFailure>;
+  readonly updatePage: (
+    repositoryId: string,
+    pageId: string,
+    input: UpdatePageInput,
+    options?: CommitOptions,
+  ) => Effect.Effect<PageDocument, DatabaseFailure>;
   readonly addInitiativeUpdate: (
     repositoryId: string,
     initiativeId: string,

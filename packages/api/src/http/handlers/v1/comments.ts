@@ -1,6 +1,6 @@
 import * as ContractSchemas from "@cycle/contracts/schemas";
-import { CommentAdd, RecordListForIssue } from "@cycle/usecases";
-import { contractFor } from "@cycle/usecases/contracts";
+import { CommentAdd, CommentList } from "@cycle/usecases";
+import type { CommentDocument, LinkedRecord } from "@cycle/contracts";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import { CycleRequestContext } from "../../middleware/CycleRequestContextMiddleware.ts";
@@ -16,21 +16,20 @@ export const listIssueComments = ({ params, request }: V1Request<"listIssueComme
     const { requestId } = yield* CycleRequestContext;
     const url = urlFromRequest(request);
     const input = yield* decodeHttpValue(
-      ContractSchemas.RecordsForIssueInput,
+      ContractSchemas.CommentListInput,
       {
-        issueId: params.issueId,
         query: {
           cursor: url.searchParams.get("page[cursor]") ?? undefined,
           limit: pageLimitFrom(url.searchParams),
-          recordType: "comment",
         },
+        target: ticketTarget(params.repositoryId, params.issueId),
       },
       requestId,
       { code: "INVALID_COMMENT_QUERY", message: "Invalid issue comment query." },
     );
     if (HttpServerResponse.isHttpServerResponse(input)) return input;
     const pageValue = yield* runUseCase(
-      RecordListForIssue,
+      CommentList,
       scoped(params.repositoryId, input),
       meta(requestId),
     );
@@ -40,7 +39,7 @@ export const listIssueComments = ({ params, request }: V1Request<"listIssueComme
     return collectionResponse(
       requestId,
       url,
-      result.entries,
+      result.entries.map((comment) => legacyTicketComment(comment as CommentDocument)),
       pageLimitFrom(url.searchParams),
       result.nextCursor,
     );
@@ -50,26 +49,48 @@ export const addIssueComment = ({ params, payload, request }: V1Request<"addIssu
   Effect.gen(function* () {
     const { requestId } = yield* CycleRequestContext;
     const input = yield* decodeHttpValue(
-      contractFor("CommentAdd").inputSchema,
-      scoped(params.repositoryId, {
+      ContractSchemas.CommentAddInput,
+      {
         body: payload.body,
-        issueId: params.issueId,
-      }),
+        target: ticketTarget(params.repositoryId, params.issueId),
+      },
       requestId,
       { code: "INVALID_COMMENT_PAYLOAD", message: "Invalid issue comment payload." },
     );
     if (HttpServerResponse.isHttpServerResponse(input)) return input;
-    const result = yield* runUseCase(CommentAdd, input, meta(requestId));
+    const result = yield* runUseCase(
+      CommentAdd,
+      scoped(params.repositoryId, input),
+      meta(requestId, request.headers),
+    );
     if (HttpServerResponse.isHttpServerResponse(result)) return result;
+    const legacy = legacyTicketComment(result as CommentDocument);
     yield* handleSuccessfulCommentMentions({
-      body: input.input.body,
-      comment: result,
-      commentId: idFromResult(result, requestId),
+      body: input.body,
+      comment: legacy,
+      commentId: idFromResult(legacy, requestId),
       repositoryId: params.repositoryId,
       request,
       requestId,
       ticketId: params.issueId,
     });
 
-    return resourceResponse(requestId, 201, result);
+    return resourceResponse(requestId, 201, legacy);
   });
+
+const ticketTarget = (repositoryId: string, ticketId: string) => ({
+  repositoryId,
+  resourceId: ticketId,
+  resourceKind: "ticket" as const,
+});
+
+const legacyTicketComment = (comment: CommentDocument): LinkedRecord => ({
+  createdAt: comment.createdAt,
+  createdBy: comment.createdBy,
+  createdDate: comment.createdAt.slice(0, 10),
+  id: comment.id,
+  issueId: comment.target.resourceId,
+  payload: { body: comment.body },
+  recordType: "comment",
+  schemaVersion: 1,
+});

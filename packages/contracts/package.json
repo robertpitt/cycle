@@ -20,9 +20,14 @@
   },
   "scripts": {
     "lint": "oxlint --deny-warnings .",
+    "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "effect": "4.0.0-beta.78"
+    "effect": "4.0.0-beta.78",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.8"
   }
 }

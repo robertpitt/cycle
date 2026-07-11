@@ -21,6 +21,15 @@ const TargetIssueFields = {
   targetIssueId: Schema.optional(Schema.String),
 };
 
+const PageContextFields = {
+  ...RepositoryFields,
+  pageId: ContractSchemas.PageId,
+};
+
+const HumanApproval = {
+  humanApproved: Schema.Boolean,
+};
+
 const EstimateInput = Schema.Union([Schema.Finite, Schema.String]);
 const NullableEstimateInput = Schema.NullOr(EstimateInput);
 const PageLimit = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
@@ -144,6 +153,74 @@ export const IssueHistoryInput = Schema.Struct({
   limit: Schema.optional(PageLimit),
 });
 export type IssueHistoryInput = typeof IssueHistoryInput.Type;
+
+export const PageListInput = Schema.Struct({
+  ...RepositoryFields,
+  ...ContractSchemas.PageQuery.fields,
+  limit: Schema.optional(PageLimit),
+});
+export type PageListInput = typeof PageListInput.Type;
+
+export const PageGetInput = Schema.Struct({
+  ...PageContextFields,
+  includeArchived: Schema.optional(Schema.Boolean),
+});
+export type PageGetInput = typeof PageGetInput.Type;
+
+export const PageCreateInput = Schema.Struct({
+  ...RepositoryFields,
+  ...ContractSchemas.CreatePageInput.fields,
+  ...HumanApproval,
+});
+export type PageCreateInput = typeof PageCreateInput.Type;
+
+export const PageUpdateInput = Schema.Struct({
+  ...PageContextFields,
+  ...ContractSchemas.UpdatePageInput.fields,
+  ...HumanApproval,
+});
+export type PageUpdateInput = typeof PageUpdateInput.Type;
+
+export const PageArchiveInput = Schema.Struct({
+  ...PageContextFields,
+  ...ContractSchemas.ArchivePageInput.fields,
+  ...HumanApproval,
+});
+export type PageArchiveInput = typeof PageArchiveInput.Type;
+
+export const PageRestoreInput = Schema.Struct({
+  ...PageContextFields,
+  ...ContractSchemas.RestorePageInput.fields,
+  ...HumanApproval,
+});
+export type PageRestoreInput = typeof PageRestoreInput.Type;
+
+export const PageHistoryInput = Schema.Struct({
+  ...PageContextFields,
+  cursor: Schema.optional(Schema.String),
+  limit: Schema.optional(PageLimit),
+});
+export type PageHistoryInput = typeof PageHistoryInput.Type;
+
+export const PageRevisionGetInput = Schema.Struct({
+  ...PageContextFields,
+  snapshotId: Schema.String,
+});
+export type PageRevisionGetInput = typeof PageRevisionGetInput.Type;
+
+export const PageCommentsListInput = Schema.Struct({
+  ...PageContextFields,
+  cursor: Schema.optional(Schema.String),
+  limit: Schema.optional(PageLimit),
+});
+export type PageCommentsListInput = typeof PageCommentsListInput.Type;
+
+export const PageCommentAddInput = Schema.Struct({
+  ...PageContextFields,
+  body: ContractSchemas.CommentAddInput.fields.body,
+  ...HumanApproval,
+});
+export type PageCommentAddInput = typeof PageCommentAddInput.Type;
 
 export const IssueRecordsListInput = Schema.Struct({
   ...IssueContextFields,
@@ -282,6 +359,11 @@ export const CommentResourceEnvelope = ApiResourceEnvelope(ContractSchemas.Linke
 export const RecordCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.LinkedRecord);
 export const RecordResourceEnvelope = ApiResourceEnvelope(ContractSchemas.LinkedRecord);
 export const HistoryCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.HistoryCommit);
+export const PageResourceEnvelope = ApiResourceEnvelope(ContractSchemas.PageDocument);
+export const PageCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.PageDocument);
+export const PageHistoryCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.PageHistoryEntry);
+export const PageCommentCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.CommentDocument);
+export const PageCommentResourceEnvelope = ApiResourceEnvelope(ContractSchemas.CommentDocument);
 export const LabelCollectionEnvelope = ApiCollectionEnvelope(
   ContractSchemas.LabelDefinitionDocument,
 );
@@ -322,6 +404,7 @@ export const ToolErrorOutput = Schema.Struct({
   }),
   meta: Schema.Struct({
     issueId: Schema.optional(Schema.String),
+    pageId: Schema.optional(ContractSchemas.PageId),
     repositoryId: Schema.optional(Schema.String),
   }),
 });

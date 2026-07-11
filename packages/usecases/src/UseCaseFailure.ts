@@ -9,6 +9,7 @@ type FailureInput = {
   readonly details?: Readonly<Record<string, unknown>>;
   readonly field?: string;
   readonly message: string;
+  readonly pageId?: string;
   readonly repositoryId?: string;
   readonly requestId: string;
   readonly retryable?: boolean;
@@ -26,6 +27,7 @@ export const useCaseFailure = (input: FailureInput): UseCaseFailure => ({
   ...(input.details === undefined ? {} : { details: redactDetails(input.details) }),
   ...(input.field === undefined ? {} : { field: input.field }),
   message: input.message,
+  ...(input.pageId === undefined ? {} : { pageId: input.pageId }),
   ...(input.repositoryId === undefined ? {} : { repositoryId: input.repositoryId }),
   requestId: input.requestId,
   retryable: input.retryable ?? false,
@@ -65,6 +67,7 @@ export const mapDatabaseFailure = (
   error: DatabaseFailure | unknown,
   context: {
     readonly requestId: string;
+    readonly pageId?: string;
     readonly repositoryId?: string;
     readonly ticketId?: string;
     readonly useCase: UseCaseName;
@@ -83,6 +86,7 @@ export const mapDatabaseFailure = (
   const message = typeof error["message"] === "string" ? error["message"] : "Request failed.";
   const repositoryId =
     typeof error["repositoryId"] === "string" ? error["repositoryId"] : context.repositoryId;
+  const pageId = typeof error["pageId"] === "string" ? error["pageId"] : context.pageId;
   const ticketId = typeof error["ticketId"] === "string" ? error["ticketId"] : context.ticketId;
   const field = typeof error["field"] === "string" ? error["field"] : undefined;
   const details = detailsFrom(error);
@@ -93,10 +97,73 @@ export const mapDatabaseFailure = (
         code: "REPOSITORY_NOT_OPEN",
         details,
         message,
+        pageId,
         repositoryId,
         requestId: context.requestId,
         retryable: false,
         tag: "RepositoryNotOpenFailure",
+        ticketId,
+        useCase: context.useCase,
+      });
+    case "PageNotFound":
+    case "PageRevisionNotFound":
+    case "CommentTargetNotFound":
+      return useCaseFailure({
+        code: sourceTag === "PageNotFound"
+          ? "PAGE_NOT_FOUND"
+          : sourceTag === "PageRevisionNotFound"
+            ? "PAGE_REVISION_NOT_FOUND"
+            : "COMMENT_TARGET_NOT_FOUND",
+        details,
+        message,
+        pageId,
+        repositoryId,
+        requestId: context.requestId,
+        tag: "NotFoundFailure",
+        ticketId,
+        useCase: context.useCase,
+      });
+    case "PagePathConflict":
+    case "PageRevisionConflict":
+    case "PageInvalidState":
+      return useCaseFailure({
+        code: sourceTag === "PagePathConflict"
+          ? "PAGE_PATH_CONFLICT"
+          : sourceTag === "PageRevisionConflict"
+            ? "PAGE_REVISION_CONFLICT"
+            : "PAGE_INVALID_STATE",
+        details,
+        message,
+        pageId,
+        repositoryId,
+        requestId: context.requestId,
+        tag: "ConflictFailure",
+        ticketId,
+        useCase: context.useCase,
+      });
+    case "PagePathInvalid":
+    case "PageDocumentInvalid":
+      return useCaseFailure({
+        code: sourceTag === "PagePathInvalid" ? "PAGE_PATH_INVALID" : "PAGE_DOCUMENT_INVALID",
+        details,
+        field,
+        message,
+        pageId,
+        repositoryId,
+        requestId: context.requestId,
+        tag: "InvalidInputFailure",
+        ticketId,
+        useCase: context.useCase,
+      });
+    case "CommentTargetUnsupported":
+      return useCaseFailure({
+        code: "COMMENT_TARGET_UNSUPPORTED",
+        details,
+        message,
+        pageId,
+        repositoryId,
+        requestId: context.requestId,
+        tag: "InvalidInputFailure",
         ticketId,
         useCase: context.useCase,
       });
