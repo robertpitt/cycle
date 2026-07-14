@@ -12,16 +12,18 @@ import {
 
 export const HttpPageResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.PageDocument);
 export const HttpPageCreatedEnvelope = CreatedResourceEnvelopeOf(ContractSchemas.PageDocument);
-export const HttpPageCollectionEnvelope = CollectionEnvelopeOf(ContractSchemas.PageDocument);
+export const HttpPageCollectionEnvelope = CollectionEnvelopeOf(ContractSchemas.PageSummary);
 export const HttpPageHierarchyEnvelope = ResourceEnvelopeOf(ContractSchemas.PageHierarchy);
 export const HttpPageHistoryCollectionEnvelope = CollectionEnvelopeOf(
   ContractSchemas.PageHistoryEntry,
 );
 export const HttpCommentCollectionEnvelope = CollectionEnvelopeOf(ContractSchemas.CommentDocument);
-export const HttpCommentCreatedEnvelope = CreatedResourceEnvelopeOf(ContractSchemas.CommentDocument);
+export const HttpCommentCreatedEnvelope = CreatedResourceEnvelopeOf(
+  ContractSchemas.CommentDocument,
+);
 
 export const PageListQueryParams = {
-  archived: OptionalBooleanStringParam("Whether archived Pages are included."),
+  archived: ContractSchemas.PageQuery.fields.archived,
   directory: OptionalStringParam("Exact Page directory to list; empty means repository root."),
   recursive: OptionalBooleanStringParam("Whether descendants are included recursively."),
   ...CollectionPaginationQueryParams,

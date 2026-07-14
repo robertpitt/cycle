@@ -109,11 +109,12 @@ export const mapDatabaseFailure = (
     case "PageRevisionNotFound":
     case "CommentTargetNotFound":
       return useCaseFailure({
-        code: sourceTag === "PageNotFound"
-          ? "PAGE_NOT_FOUND"
-          : sourceTag === "PageRevisionNotFound"
-            ? "PAGE_REVISION_NOT_FOUND"
-            : "COMMENT_TARGET_NOT_FOUND",
+        code:
+          sourceTag === "PageNotFound"
+            ? "PAGE_NOT_FOUND"
+            : sourceTag === "PageRevisionNotFound"
+              ? "PAGE_REVISION_NOT_FOUND"
+              : "COMMENT_TARGET_NOT_FOUND",
         details,
         message,
         pageId,
@@ -127,11 +128,12 @@ export const mapDatabaseFailure = (
     case "PageRevisionConflict":
     case "PageInvalidState":
       return useCaseFailure({
-        code: sourceTag === "PagePathConflict"
-          ? "PAGE_PATH_CONFLICT"
-          : sourceTag === "PageRevisionConflict"
-            ? "PAGE_REVISION_CONFLICT"
-            : "PAGE_INVALID_STATE",
+        code:
+          sourceTag === "PagePathConflict"
+            ? "PAGE_PATH_CONFLICT"
+            : sourceTag === "PageRevisionConflict"
+              ? "PAGE_REVISION_CONFLICT"
+              : "PAGE_INVALID_STATE",
         details,
         message,
         pageId,
@@ -237,18 +239,39 @@ const detailsFrom = (error: Readonly<Record<string, unknown>>): Record<string, u
 
   for (const [key, value] of Object.entries(error)) {
     if (unsafeDetailKeys.has(key) || secretPattern.test(key)) continue;
-    if (
-      value === null ||
-      typeof value === "boolean" ||
-      typeof value === "number" ||
-      typeof value === "string" ||
-      Array.isArray(value)
-    ) {
-      details[key] = value;
-    }
+    const safeValue = safeDetailValue(value);
+    if (safeValue !== undefined) details[key] = safeValue;
   }
 
   return details;
+};
+
+const safeDetailValue = (value: unknown): unknown => {
+  if (
+    value === null ||
+    typeof value === "boolean" ||
+    typeof value === "number" ||
+    typeof value === "string"
+  ) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => {
+      const safeEntry = safeDetailValue(entry);
+      return safeEntry === undefined ? [] : [safeEntry];
+    });
+  }
+
+  if (!isRecord(value)) return undefined;
+
+  const record: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (unsafeDetailKeys.has(key) || secretPattern.test(key)) continue;
+    const safeEntry = safeDetailValue(entry);
+    if (safeEntry !== undefined) record[key] = safeEntry;
+  }
+  return record;
 };
 
 const redactDetails = (

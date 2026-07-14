@@ -21,6 +21,7 @@ import {
   IssueRelationList,
   IssueTransition,
   IssueUpdate,
+  mapDatabaseFailure,
   RepositoryStatusGet,
   UseCaseServicesLive,
   type WorkflowPolicy,
@@ -52,6 +53,31 @@ const provideStub =
     effect: Effect.Effect<A, E, R>,
   ): Effect.Effect<A, E, Exclude<R, DatabaseService | WorkflowPolicy>> =>
     effect.pipe(Effect.provide(StubLayer(overrides))) as never;
+
+it("preserves safe nested Page conflict metadata", () => {
+  const failure = mapDatabaseFailure(
+    {
+      _tag: "PageRevisionConflict",
+      actualRevisionId: "revision-current",
+      current: {
+        path: "architecture/index.md",
+        secretToken: "must-not-leak",
+        title: "Architecture",
+      },
+      expectedRevisionId: "revision-stale",
+      message: "Page revision does not match",
+      pageId: "018f0f9d-7b2a-7a35-9f6d-b6419e987abc",
+      repositoryId: repository.id,
+    },
+    { requestId: "request-conflict", useCase: "PageUpdate" },
+  );
+
+  assert.equal(failure.code, "PAGE_REVISION_CONFLICT");
+  assert.deepEqual(failure.details?.current, {
+    path: "architecture/index.md",
+    title: "Architecture",
+  });
+});
 
 const withOpenRepository = <A, E>(
   effect: Effect.Effect<A, E, DatabaseService | WorkflowPolicy>,
@@ -389,7 +415,11 @@ describe("@cycle/usecases", () => {
       const result = yield* CommentAdd.run({
         input: {
           body: "   ",
-          issueId: "CYC-00001",
+          target: {
+            repositoryId: repository.id,
+            resourceId: "CYC-00001",
+            resourceKind: "ticket",
+          },
         },
         repository,
       }).pipe(Effect.result, provideStub({}));

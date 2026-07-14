@@ -95,6 +95,30 @@ describe("workspace route helpers", () => {
     );
   });
 
+  it("round-trips repository Page paths", () => {
+    const location = parseWorkspacePath(
+      "/repositories/repo%3Aone/pages/018f0f9d-7b2a-7a35-9f6d-b6419e987abc",
+    );
+
+    expect(location).toEqual({
+      page: "pages",
+      pageId: "018f0f9d-7b2a-7a35-9f6d-b6419e987abc",
+      repositoryId: "repo:one",
+      scope: "repository",
+    });
+    expect(location ? toWorkspacePath(location) : undefined).toBe(
+      "/repositories/repo%3Aone/pages/018f0f9d-7b2a-7a35-9f6d-b6419e987abc",
+    );
+    expect(
+      parentWorkspacePath({
+        page: "pages",
+        pageId: "018f0f9d-7b2a-7a35-9f6d-b6419e987abc",
+        repositoryId: "repo:one",
+        scope: "repository",
+      }),
+    ).toBe("/repositories/repo%3Aone/pages");
+  });
+
   it("round-trips repository saved view paths", () => {
     expect(parseWorkspacePath("/repositories/repo-a/views/view-1/issues/ticket-2")).toEqual({
       issueId: "ticket-2",

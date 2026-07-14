@@ -35,6 +35,20 @@ type MutablePagesTreeDirectory = {
 const compareText = (left: string, right: string): number =>
   left === right ? 0 : left < right ? -1 : 1;
 
+export const pageFileNameFromTitle = (title: string): string => {
+  const slug = title
+    .normalize("NFC")
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[^\p{Letter}\p{Number}]+/gu, "-")
+    .replace(/^-+|-+$/gu, "");
+
+  return `${slug || "untitled"}.md`;
+};
+
+export const pagePathFromTitle = (directoryPath: string, title: string): string =>
+  `${directoryPath.length > 0 ? `${directoryPath}/` : ""}${pageFileNameFromTitle(title)}`;
+
 const mutableDirectory = (name: string, path: string): MutablePagesTreeDirectory => ({
   directories: new Map(),
   name,

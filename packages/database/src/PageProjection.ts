@@ -15,8 +15,6 @@ import {
 } from "@cycle/contracts/schemas";
 import { Schema } from "effect";
 
-type SqlValue = null | number | string;
-
 export type PageProjectionDatabase = {
   readonly all: <A extends object = Record<string, unknown>>(
     source: string,
@@ -95,9 +93,7 @@ const pageFromRow = (row: PageRow): typeof PageDocument.Type =>
 
 export const pageSummary = (page: typeof PageDocument.Type): PageSummary => ({
   archived: page.frontmatter.archivedAt !== undefined,
-  ...(page.frontmatter.archivedAt === undefined
-    ? {}
-    : { archivedAt: page.frontmatter.archivedAt }),
+  ...(page.frontmatter.archivedAt === undefined ? {} : { archivedAt: page.frontmatter.archivedAt }),
   createdAt: page.frontmatter.createdAt,
   id: page.id,
   path: page.path,
@@ -222,10 +218,10 @@ export class PageProjection {
   }
 
   resolvePath(repositoryId: string, path: string): typeof PageDocument.Type | null {
-    const row = this.db.get<PageRow>(
-      "SELECT * FROM pages WHERE repository_id = ? AND path = ?",
-      [repositoryId, path],
-    );
+    const row = this.db.get<PageRow>("SELECT * FROM pages WHERE repository_id = ? AND path = ?", [
+      repositoryId,
+      path,
+    ]);
 
     return row === undefined ? null : pageFromRow(row);
   }
@@ -329,9 +325,7 @@ export class PageProjection {
     );
 
     return {
-      entries: rows
-        .slice(0, limit)
-        .map((row) => commentFromJson(row.comment_json)),
+      entries: rows.slice(0, limit).map((row) => commentFromJson(row.comment_json)),
       ...(rows.length > limit ? { nextCursor: encodeCursor(offset + limit) } : {}),
     };
   }

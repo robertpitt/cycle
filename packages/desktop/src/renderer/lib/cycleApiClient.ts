@@ -9,7 +9,15 @@ import { InboxPageResourceEnvelope } from "@cycle/api/schemas/InboxPageResourceE
 import { CollectionEnvelopeOf, ResourceEnvelopeOf } from "@cycle/api/schemas/shared";
 import * as ContractSchemas from "@cycle/contracts/schemas";
 import type {
+  CommentDocument,
+  CommentPage,
+  CommentQuery,
+  HistoryOptions,
   InboxPage,
+  PageDocument,
+  PageHistoryPage,
+  PagePage,
+  PageQuery,
   RepositoryStatus,
   TicketDocument,
   TicketPage,
@@ -109,6 +117,10 @@ type ApiAgentProviderProfile = (typeof AgentProvidersOutputSchema.Type)["provide
 
 export type AutocompleteEntityType = ApiAutocompleteEntityType;
 export type AutocompleteResult = ApiAutocompleteResult;
+export type CreatePageRequest = typeof ContractSchemas.CreatePageInput.Encoded;
+export type UpdatePageRequest = typeof ContractSchemas.UpdatePageInput.Encoded;
+export type ArchivePageRequest = typeof ContractSchemas.ArchivePageInput.Encoded;
+export type RestorePageRequest = typeof ContractSchemas.RestorePageInput.Encoded;
 
 export type OpenRepositoryPathInput = {
   readonly displayName?: string;
@@ -782,6 +794,24 @@ const withQuery = (path: string, query: QueryInput = {}): string => {
   return encoded.length === 0 ? path : `${path}?${encoded}`;
 };
 
+const withPageQuery = (
+  path: string,
+  query: PageQuery | CommentQuery | Readonly<Record<string, unknown>> = {},
+): string => {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined) continue;
+    params.set(
+      key === "cursor" ? "page[cursor]" : key === "limit" ? "page[limit]" : key,
+      String(value),
+    );
+  }
+
+  const encoded = params.toString();
+  return encoded.length === 0 ? path : `${path}?${encoded}`;
+};
+
 const appendQueryParam = (params: URLSearchParams, key: string, value: unknown): void => {
   if (value === undefined || value === null) return;
 
@@ -1113,6 +1143,106 @@ export const cycleApiClient = {
 
   getAppConfig: (): Promise<AppConfigState> =>
     resource("GET", "/v1/app-config", AppConfigStateSchema),
+
+  listPages: (repositoryId: string, query: PageQuery = {}): Promise<PagePage> =>
+    page(
+      "GET",
+      withPageQuery(`${repositoryPath(repositoryId)}/pages`, query),
+      ContractSchemas.PageSummary,
+    ),
+
+  getPage: (
+    repositoryId: string,
+    pageId: string,
+    includeArchived = false,
+  ): Promise<PageDocument | null> =>
+    resourceOrNull(
+      "GET",
+      withPageQuery(`${repositoryPath(repositoryId)}/pages/${encodeSegment(pageId)}`, {
+        includeArchived,
+      }),
+      ContractSchemas.PageDocument,
+    ),
+
+  createPage: (repositoryId: string, input: CreatePageRequest): Promise<PageDocument> =>
+    resource("POST", `${repositoryPath(repositoryId)}/pages`, ContractSchemas.PageDocument, input),
+
+  updatePage: (repositoryId: string, input: UpdatePageRequest): Promise<PageDocument> => {
+    const { pageId, ...body } = input;
+    return resource(
+      "PATCH",
+      `${repositoryPath(repositoryId)}/pages/${encodeSegment(pageId)}`,
+      ContractSchemas.PageDocument,
+      body,
+    );
+  },
+
+  archivePage: (repositoryId: string, input: ArchivePageRequest): Promise<PageDocument> => {
+    const { pageId, ...body } = input;
+    return resource(
+      "POST",
+      `${repositoryPath(repositoryId)}/pages/${encodeSegment(pageId)}/archive`,
+      ContractSchemas.PageDocument,
+      body,
+    );
+  },
+
+  restorePage: (repositoryId: string, input: RestorePageRequest): Promise<PageDocument> => {
+    const { pageId, ...body } = input;
+    return resource(
+      "POST",
+      `${repositoryPath(repositoryId)}/pages/${encodeSegment(pageId)}/restore`,
+      ContractSchemas.PageDocument,
+      body,
+    );
+  },
+
+  listPageHistory: (
+    repositoryId: string,
+    pageId: string,
+    query: HistoryOptions = {},
+  ): Promise<PageHistoryPage> =>
+    page(
+      "GET",
+      withPageQuery(
+        `${repositoryPath(repositoryId)}/pages/${encodeSegment(pageId)}/history`,
+        query,
+      ),
+      ContractSchemas.PageHistoryEntry,
+    ),
+
+  getPageRevision: (
+    repositoryId: string,
+    pageId: string,
+    snapshotId: string,
+  ): Promise<PageDocument> =>
+    resource(
+      "GET",
+      `${repositoryPath(repositoryId)}/pages/${encodeSegment(pageId)}/revisions/${encodeSegment(snapshotId)}`,
+      ContractSchemas.PageDocument,
+    ),
+
+  listPageComments: (
+    repositoryId: string,
+    pageId: string,
+    query: CommentQuery = {},
+  ): Promise<CommentPage> =>
+    page(
+      "GET",
+      withPageQuery(
+        `${repositoryPath(repositoryId)}/pages/${encodeSegment(pageId)}/comments`,
+        query,
+      ),
+      ContractSchemas.CommentDocument,
+    ),
+
+  addPageComment: (repositoryId: string, pageId: string, body: string): Promise<CommentDocument> =>
+    resource(
+      "POST",
+      `${repositoryPath(repositoryId)}/pages/${encodeSegment(pageId)}/comments`,
+      ContractSchemas.CommentDocument,
+      { body },
+    ),
 
   updateAgentProviderPreference: (
     providerId: AgentProviderId,

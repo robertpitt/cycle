@@ -119,6 +119,23 @@ export const Editing: Story = {
   },
 };
 
+export const Creating: Story = {
+  args: {
+    creation: {
+      directoryPath: "payments/providers",
+      draft: {
+        body: "## Recovery steps\n\nStart documenting the provider recovery workflow.",
+        path: "payments/providers/provider-recovery.md",
+        title: "Provider recovery",
+      },
+      onCancel: () => undefined,
+      onDraftChange: () => undefined,
+      onSave: () => undefined,
+    },
+    defaultSelectedPageId: undefined,
+  },
+};
+
 export const Archived: Story = {
   args: {
     defaultIncludeArchived: true,

@@ -14,6 +14,7 @@ import {
   Plus,
   RotateCcw,
   Save,
+  Search,
   X,
 } from "lucide-react";
 import * as React from "react";
@@ -22,8 +23,8 @@ import { Button } from "../../atoms/button/index.ts";
 import { DateTime } from "../../atoms/date-time/index.ts";
 import { IconButton } from "../../atoms/icon-button/index.ts";
 import { Input } from "../../atoms/input/index.ts";
+import { Select } from "../../atoms/select/index.ts";
 import { Switch } from "../../atoms/switch/index.ts";
-import { Textarea } from "../../atoms/textarea/index.ts";
 import { Alert, AlertDescription, AlertTitle } from "../../molecules/alert/index.ts";
 import {
   CommentCard,
@@ -43,19 +44,25 @@ import {
   DialogViewport,
 } from "../../molecules/dialog/index.ts";
 import {
+  MarkdownEditor,
+  type MarkdownEditorTagSuggestion,
+} from "../../molecules/markdown-editor/index.ts";
+import {
   MarkdownRenderer,
   type MarkdownReferenceHandlers,
 } from "../../molecules/markdown-renderer/index.ts";
 import { PanelState } from "../../molecules/panel-state/index.ts";
 import { ViewTab } from "../../molecules/view-tab/index.ts";
 import { cn } from "../../lib/cn.ts";
-import { typography } from "../../lib/styles.ts";
+import { focusRing, typography } from "../../lib/styles.ts";
 import { CommitHistory, type CommitHistoryItem } from "../commit-history/index.ts";
 import {
   buildPagesTree,
   findPagesTreeDirectory,
   isPageDraftDirty,
+  pageFileNameFromTitle,
   pageDraftFrom,
+  pagePathFromTitle,
   type PagesAreaDraft,
   type PagesAreaPage,
   type PagesTreeDirectory,
@@ -91,6 +98,16 @@ export type PagesAreaHistory = {
   readonly onSelect?: (item: CommitHistoryItem) => void;
 };
 
+export type PagesAreaCreation = {
+  readonly directoryPath: string;
+  readonly draft: PagesAreaDraft;
+  readonly error?: React.ReactNode;
+  readonly onCancel: () => void;
+  readonly onDraftChange: (draft: PagesAreaDraft) => void;
+  readonly onSave: (draft: PagesAreaDraft) => void;
+  readonly saving?: boolean;
+};
+
 export type PagesAreaRevisionConflict = {
   readonly actualRevisionId: string;
   readonly currentPath?: string;
@@ -105,6 +122,8 @@ export type PagesAreaNavigationTarget =
 export type PagesAreaLabels = {
   readonly addComment: string;
   readonly archive: string;
+  readonly archiveConfirmDescription: string;
+  readonly archiveConfirmTitle: string;
   readonly archived: string;
   readonly archivedDescription: string;
   readonly archivedFilter: string;
@@ -115,7 +134,11 @@ export type PagesAreaLabels = {
   readonly conflictTitle: string;
   readonly copyLink: string;
   readonly copyUnsaved: string;
+  readonly createDescription: string;
+  readonly createFirst: string;
+  readonly createTitle: string;
   readonly create: string;
+  readonly directoryDescription: string;
   readonly directoryEmpty: string;
   readonly discard: string;
   readonly document: string;
@@ -124,15 +147,25 @@ export type PagesAreaLabels = {
   readonly emptyComments: string;
   readonly emptyHistory: string;
   readonly emptyPages: string;
+  readonly emptyPagesDescription: string;
+  readonly fileName: string;
+  readonly findPages: string;
   readonly history: string;
   readonly loading: string;
+  readonly location: string;
+  readonly move: string;
+  readonly moveDescription: string;
+  readonly noMatchingPages: string;
   readonly pages: string;
+  readonly pageTitlePlaceholder: string;
   readonly preview: string;
   readonly reloadCurrent: string;
   readonly restore: string;
   readonly save: string;
   readonly source: string;
   readonly unsaved: string;
+  readonly updated: string;
+  readonly writePlaceholder: string;
 };
 
 export type PagesAreaProps = Omit<
@@ -142,11 +175,13 @@ export type PagesAreaProps = Omit<
   MarkdownReferenceHandlers & {
     readonly activeSection?: PagesAreaSection;
     readonly comments?: PagesAreaComments;
+    readonly creation?: PagesAreaCreation;
     readonly defaultActiveSection?: PagesAreaSection;
     readonly defaultEditing?: boolean;
     readonly defaultExpandedDirectoryPaths?: readonly string[];
     readonly defaultIncludeArchived?: boolean;
     readonly defaultSelectedPageId?: string;
+    readonly defaultViewedDirectoryPath?: string;
     readonly draft?: PagesAreaDraft;
     readonly editing?: boolean;
     readonly error?: React.ReactNode;
@@ -177,11 +212,15 @@ export type PagesAreaProps = Omit<
     readonly revisionConflict?: PagesAreaRevisionConflict;
     readonly saveError?: React.ReactNode;
     readonly selectedPageId?: string;
+    readonly tagSuggestions?: readonly MarkdownEditorTagSuggestion[];
   };
 
 const defaultLabels: PagesAreaLabels = {
   addComment: "Send comment",
   archive: "Archive page",
+  archiveConfirmDescription:
+    "This page will leave the active hierarchy. Its history and comments will remain available.",
+  archiveConfirmTitle: "Archive this page?",
   archived: "Archived",
   archivedDescription:
     "This page is archived. Restore it before editing; comments remain available.",
@@ -194,7 +233,11 @@ const defaultLabels: PagesAreaLabels = {
   conflictTitle: "Page changed",
   copyLink: "Copy page link",
   copyUnsaved: "Copy unsaved source",
+  createDescription: "Start writing now. Cycle will choose a safe Markdown filename for you.",
+  createFirst: "Create your first page",
+  createTitle: "New page",
   create: "Create page",
+  directoryDescription: "Choose a page or create one in this section.",
   directoryEmpty: "This directory has no visible pages.",
   discard: "Discard changes",
   document: "Document",
@@ -203,15 +246,26 @@ const defaultLabels: PagesAreaLabels = {
   emptyComments: "No comments yet.",
   emptyHistory: "No page history yet.",
   emptyPages: "No pages yet.",
+  emptyPagesDescription:
+    "Create a home for architecture notes, plans, runbooks, and shared repository knowledge.",
+  fileName: "File name",
+  findPages: "Find pages",
   history: "History",
   loading: "Loading pages",
+  location: "Location",
+  move: "Change location",
+  moveDescription: "Choose where this page belongs. The Markdown filename remains stable.",
+  noMatchingPages: "No matching pages.",
   pages: "Pages",
+  pageTitlePlaceholder: "Untitled page",
   preview: "Preview",
   reloadCurrent: "Reload current",
   restore: "Restore page",
   save: "Save",
   source: "Markdown source",
   unsaved: "Unsaved",
+  updated: "Updated",
+  writePlaceholder: "Start writing, or type / for commands…",
 };
 
 const emptyDraft: PagesAreaDraft = { body: "", path: "", title: "" };
@@ -263,6 +317,7 @@ const PageTreeRow = ({
       active && "bg-subtle text-foreground",
     )}
     onClick={onSelect}
+    role="treeitem"
     style={{ paddingLeft: `${8 + depth * 16}px` }}
     type="button"
   >
@@ -423,15 +478,251 @@ const Breadcrumbs = ({
   );
 };
 
+const PageEmptyState = ({
+  description,
+  label,
+  onCreate,
+  title,
+}: {
+  readonly description: React.ReactNode;
+  readonly label: string;
+  readonly onCreate?: () => void;
+  readonly title: React.ReactNode;
+}) => (
+  <div className="grid min-h-full place-items-center px-6 py-12">
+    <div className="grid max-w-md justify-items-center gap-4 text-center">
+      <span className="grid size-11 place-items-center rounded-xl border border-border bg-surface text-muted-foreground shadow-sm">
+        <BookOpen aria-hidden className="size-5" />
+      </span>
+      <div className="grid gap-1.5">
+        <h2 className="text-base font-semibold text-foreground">{title}</h2>
+        <p className="text-sm leading-6 text-muted-foreground">{description}</p>
+      </div>
+      {onCreate ? (
+        <Button leftIcon={<Plus aria-hidden className="size-4" />} onClick={onCreate}>
+          {label}
+        </Button>
+      ) : null}
+    </div>
+  </div>
+);
+
+const PageLocation = ({
+  labels,
+  path,
+}: {
+  readonly labels: PagesAreaLabels;
+  readonly path: string;
+}) => (
+  <div className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+    <Folder aria-hidden className="size-4 shrink-0" />
+    <span className="shrink-0">{labels.pages}</span>
+    {path
+      .split("/")
+      .filter(Boolean)
+      .map((segment, index, segments) => (
+        <React.Fragment key={segments.slice(0, index + 1).join("/")}>
+          <ChevronRight aria-hidden className="size-3.5 shrink-0" />
+          <span className="min-w-0 truncate">{segment}</span>
+        </React.Fragment>
+      ))}
+  </div>
+);
+
+const PageCreationView = ({
+  creation,
+  labels,
+  referenceHandlers,
+  tagSuggestions,
+}: {
+  readonly creation: PagesAreaCreation;
+  readonly labels: PagesAreaLabels;
+  readonly referenceHandlers: MarkdownReferenceHandlers;
+  readonly tagSuggestions?: readonly MarkdownEditorTagSuggestion[];
+}) => {
+  const editorRef = React.useRef<HTMLDivElement>(null);
+  const canSave = creation.draft.title.trim().length > 0 && !creation.saving;
+  const save = () => {
+    if (canSave) creation.onSave(creation.draft);
+  };
+
+  return (
+    <section
+      className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]"
+      onKeyDown={(event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "s") {
+          event.preventDefault();
+          save();
+        }
+      }}
+    >
+      <header className="flex min-h-14 items-center justify-between gap-4 border-b border-border px-6 py-2">
+        <PageLocation labels={labels} path={creation.directoryPath} />
+        <div className="flex items-center gap-2">
+          <Button disabled={creation.saving} onClick={creation.onCancel} size="sm" variant="ghost">
+            Cancel
+          </Button>
+          <Button
+            disabled={!canSave}
+            leftIcon={<Save aria-hidden className="size-4" />}
+            loading={creation.saving}
+            onClick={save}
+            size="sm"
+          >
+            {labels.create}
+          </Button>
+        </div>
+      </header>
+      <div className="min-h-0 overflow-y-auto">
+        <div className="mx-auto grid w-full max-w-4xl gap-6 px-8 py-10">
+          <div className="grid gap-2">
+            <input
+              aria-label="Page title"
+              autoFocus
+              className={cn(
+                "-mx-2 w-[calc(100%+1rem)] rounded-md bg-transparent px-2 py-1 text-3xl font-semibold leading-tight tracking-tight text-foreground placeholder:text-muted-foreground/55",
+                focusRing,
+              )}
+              onChange={(event) => {
+                const title = event.currentTarget.value;
+                creation.onDraftChange({
+                  ...creation.draft,
+                  path: pagePathFromTitle(creation.directoryPath, title),
+                  title,
+                });
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                editorRef.current?.querySelector<HTMLElement>('[contenteditable="true"]')?.focus();
+              }}
+              placeholder={labels.pageTitlePlaceholder}
+              value={creation.draft.title}
+            />
+            <PageLocation labels={labels} path={creation.directoryPath} />
+          </div>
+          {creation.error ? (
+            <Alert tone="danger">
+              <AlertTitle>{labels.create}</AlertTitle>
+              <AlertDescription>{creation.error}</AlertDescription>
+            </Alert>
+          ) : null}
+          <MarkdownEditor
+            {...referenceHandlers}
+            aria-label="Page content"
+            contentClassName="px-0 py-2"
+            editorClassName="rounded-none"
+            minHeightClassName="min-h-[440px]"
+            mode="page"
+            onValueChange={(body) => creation.onDraftChange({ ...creation.draft, body })}
+            placeholder={labels.writePlaceholder}
+            ref={editorRef}
+            tagSuggestions={tagSuggestions}
+            value={creation.draft.body}
+          />
+        </div>
+      </div>
+    </section>
+  );
+};
+
+const PageLocationDialog = ({
+  directoryOptions,
+  draft,
+  labels,
+  onCancel,
+  onChange,
+}: {
+  readonly directoryOptions: readonly string[];
+  readonly draft: PagesAreaDraft;
+  readonly labels: PagesAreaLabels;
+  readonly onCancel: () => void;
+  readonly onChange: (path: string) => void;
+}) => {
+  const pathSegments = draft.path.split("/");
+  const initialFileName = pathSegments.pop() ?? pageFileNameFromTitle(draft.title);
+  const initialDirectory = pathSegments.join("/");
+  const [directoryPath, setDirectoryPath] = React.useState(initialDirectory);
+  const [fileName, setFileName] = React.useState(initialFileName);
+  const rootLocationValue = "__pages_root__";
+  const normalizedFileName = fileName.trim();
+  const valid =
+    normalizedFileName.length > 3 &&
+    normalizedFileName.endsWith(".md") &&
+    !normalizedFileName.includes("/") &&
+    !normalizedFileName.includes("\\");
+
+  return (
+    <DialogRoot onOpenChange={(open) => !open && onCancel()} open>
+      <DialogPortal>
+        <DialogBackdrop />
+        <DialogViewport>
+          <DialogPanel width="sm">
+            <DialogHeader>
+              <div>
+                <DialogTitle>{labels.move}</DialogTitle>
+                <DialogDescription>{labels.moveDescription}</DialogDescription>
+              </div>
+            </DialogHeader>
+            <DialogBody className="grid gap-4">
+              <label className="grid gap-1.5 text-sm font-medium text-foreground">
+                {labels.location}
+                <Select
+                  items={directoryOptions.map((path) => ({
+                    label: path.length === 0 ? labels.pages : `${labels.pages} / ${path}`,
+                    value: path.length === 0 ? rootLocationValue : path,
+                  }))}
+                  onValueChange={(value) => {
+                    if (value !== null) {
+                      setDirectoryPath(value === rootLocationValue ? "" : value);
+                    }
+                  }}
+                  value={directoryPath.length === 0 ? rootLocationValue : directoryPath}
+                />
+              </label>
+              <label className="grid gap-1.5 text-sm font-medium text-foreground">
+                {labels.fileName}
+                <Input
+                  aria-invalid={!valid || undefined}
+                  className="font-mono"
+                  onChange={(event) => setFileName(event.currentTarget.value)}
+                  value={fileName}
+                />
+              </label>
+            </DialogBody>
+            <DialogFooter>
+              <Button onClick={onCancel} variant="outline">
+                Cancel
+              </Button>
+              <Button
+                disabled={!valid}
+                onClick={() =>
+                  onChange(
+                    `${directoryPath.length > 0 ? `${directoryPath}/` : ""}${normalizedFileName}`,
+                  )
+                }
+              >
+                {labels.move}
+              </Button>
+            </DialogFooter>
+          </DialogPanel>
+        </DialogViewport>
+      </DialogPortal>
+    </DialogRoot>
+  );
+};
+
 const DirectoryView = ({
   directory,
   labels,
+  onCreate,
   onDirectoryPathSelect,
   onDirectorySelect,
   onPageSelect,
 }: {
   readonly directory: PagesTreeDirectory;
   readonly labels: PagesAreaLabels;
+  readonly onCreate?: (path: string) => void;
   readonly onDirectoryPathSelect: (path: string) => void;
   readonly onDirectorySelect: (directory: PagesTreeDirectory) => void;
   readonly onPageSelect: (page: PagesAreaPage) => void;
@@ -455,7 +746,12 @@ const DirectoryView = ({
         <h2 className={cn("mt-2", typography.pageTitle)}>{directory.name || labels.pages}</h2>
       </header>
       {empty ? (
-        <PanelState message={labels.directoryEmpty} />
+        <PageEmptyState
+          description={labels.directoryDescription}
+          label={labels.create}
+          onCreate={onCreate ? () => onCreate(directory.path) : undefined}
+          title={labels.directoryEmpty}
+        />
       ) : (
         <div className="min-h-0 overflow-y-auto p-4">
           <div className="grid gap-1">
@@ -579,11 +875,13 @@ export const PagesArea = React.forwardRef<HTMLDivElement, PagesAreaProps>(functi
     activeSection,
     className,
     comments = { entries: [] },
+    creation,
     defaultActiveSection = "document",
     defaultEditing = false,
     defaultExpandedDirectoryPaths,
     defaultIncludeArchived = false,
     defaultSelectedPageId,
+    defaultViewedDirectoryPath = "",
     draft: controlledDraft,
     editing,
     error,
@@ -622,6 +920,7 @@ export const PagesArea = React.forwardRef<HTMLDivElement, PagesAreaProps>(functi
     revisionConflict,
     saveError,
     selectedPageId,
+    tagSuggestions,
     ...props
   },
   ref,
@@ -636,6 +935,21 @@ export const PagesArea = React.forwardRef<HTMLDivElement, PagesAreaProps>(functi
     () => buildPagesTree(pages, currentIncludeArchived),
     [currentIncludeArchived, pages],
   );
+  const [navigationQuery, setNavigationQuery] = React.useState("");
+  const navigationPages = React.useMemo(() => {
+    const query = navigationQuery.trim().toLocaleLowerCase();
+    if (query.length === 0) return pages;
+    return pages.filter(
+      (page) =>
+        page.title.toLocaleLowerCase().includes(query) ||
+        page.path.toLocaleLowerCase().includes(query),
+    );
+  }, [navigationQuery, pages]);
+  const navigationTree = React.useMemo(
+    () => buildPagesTree(navigationPages, currentIncludeArchived),
+    [currentIncludeArchived, navigationPages],
+  );
+  const hasArchivedPages = pages.some((page) => page.archived);
   const [currentSelectedPageId, setSelectedPageId] = useControllableState<string | undefined>({
     defaultValue: defaultSelectedPageId,
     onValueChange: (pageId) => {
@@ -663,13 +977,18 @@ export const PagesArea = React.forwardRef<HTMLDivElement, PagesAreaProps>(functi
   draftRef.current = draft;
   const previousPageRef = React.useRef(selectedPage);
   const dirty = isPageDraftDirty(draft, selectedPage);
+  const creationHasChanges =
+    creation !== undefined &&
+    (creation.draft.title.trim().length > 0 || creation.draft.body.trim().length > 0);
   const [viewedDirectoryPath, setViewedDirectoryPath] = React.useState<string | null>(() =>
-    selectedPage ? null : "",
+    selectedPage ? null : defaultViewedDirectoryPath,
   );
   const [uncontrolledExpandedPaths, setUncontrolledExpandedPaths] =
     React.useState<Set<string> | null>(() =>
       defaultExpandedDirectoryPaths === undefined ? null : new Set(defaultExpandedDirectoryPaths),
     );
+  const [locationDialogOpen, setLocationDialogOpen] = React.useState(false);
+  const [archiveCandidate, setArchiveCandidate] = React.useState<PagesAreaPage>();
 
   React.useEffect(() => {
     const previousPage = previousPageRef.current;
@@ -725,26 +1044,36 @@ export const PagesArea = React.forwardRef<HTMLDivElement, PagesAreaProps>(functi
 
   const selectPage = React.useCallback(
     (page: PagesAreaPage) => {
-      if (dirty && page.id !== selectedPage?.id) {
+      if ((dirty || creationHasChanges) && page.id !== selectedPage?.id) {
         onUnsavedNavigationAttempt?.({ kind: "page", page });
         return;
       }
+      if (creation !== undefined) creation.onCancel();
       setViewedDirectoryPath(null);
       setSelectedPageId(page.id);
       setSection("document");
     },
-    [dirty, onUnsavedNavigationAttempt, selectedPage?.id, setSection, setSelectedPageId],
+    [
+      creation,
+      creationHasChanges,
+      dirty,
+      onUnsavedNavigationAttempt,
+      selectedPage?.id,
+      setSection,
+      setSelectedPageId,
+    ],
   );
   const selectDirectoryPath = React.useCallback(
     (path: string) => {
-      if (dirty) {
+      if (dirty || creationHasChanges) {
         onUnsavedNavigationAttempt?.({ kind: "directory", path });
         return;
       }
+      if (creation !== undefined) creation.onCancel();
       setViewedDirectoryPath(path);
       onDirectorySelect?.(path);
     },
-    [dirty, onDirectorySelect, onUnsavedNavigationAttempt],
+    [creation, creationHasChanges, dirty, onDirectorySelect, onUnsavedNavigationAttempt],
   );
   const selectDirectory = React.useCallback(
     (directory: PagesTreeDirectory) => {
@@ -777,26 +1106,30 @@ export const PagesArea = React.forwardRef<HTMLDivElement, PagesAreaProps>(functi
     onRepositoryReferenceClick,
     onUserReferenceClick,
   } satisfies MarkdownReferenceHandlers;
+  const availableDirectoryPaths = React.useMemo(
+    () => [...new Set(["", ...directoryPaths(tree)])],
+    [tree],
+  );
 
   return (
     <div
       {...props}
       ref={ref}
       className={cn(
-        "grid h-full min-h-0 overflow-hidden border border-border bg-background md:grid-cols-[280px_minmax(0,1fr)]",
+        "grid h-full min-h-0 overflow-hidden border border-border bg-background md:grid-cols-[292px_minmax(0,1fr)]",
         className,
       )}
     >
-      <aside className="grid min-h-48 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] border-b border-border bg-sidebar md:min-h-0 md:border-b-0 md:border-r">
+      <aside className="grid min-h-48 min-w-0 grid-rows-[auto_auto_auto_minmax(0,1fr)] border-b border-border bg-sidebar md:min-h-0 md:border-b-0 md:border-r">
         <div className="flex h-12 items-center gap-2 border-b border-border px-3">
           <BookOpen aria-hidden className="size-4 text-muted-foreground" />
           <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
             {labels.pages}
           </h2>
           {onCreate ? (
-            <IconButton
-              icon={<Plus aria-hidden className="size-4" />}
-              label={labels.create}
+            <Button
+              disabled={creation !== undefined}
+              leftIcon={<Plus aria-hidden className="size-4" />}
               onClick={() =>
                 onCreate(
                   viewedDirectoryPath ?? selectedPage?.path.split("/").slice(0, -1).join("/") ?? "",
@@ -804,13 +1137,32 @@ export const PagesArea = React.forwardRef<HTMLDivElement, PagesAreaProps>(functi
               }
               size="sm"
               variant="outline"
-            />
+            >
+              {labels.createTitle}
+            </Button>
           ) : null}
         </div>
-        <label className="flex h-10 items-center justify-between gap-3 border-b border-border px-3 text-xs text-muted-foreground">
-          <span>{labels.archivedFilter}</span>
-          <Switch checked={currentIncludeArchived} onCheckedChange={setIncludeArchived} />
-        </label>
+        <div className="border-b border-border p-2">
+          <div className="relative">
+            <Search
+              aria-hidden
+              className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              aria-label={labels.findPages}
+              className="h-8 bg-background pl-8 text-xs shadow-none"
+              onChange={(event) => setNavigationQuery(event.currentTarget.value)}
+              placeholder={labels.findPages}
+              value={navigationQuery}
+            />
+          </div>
+        </div>
+        {hasArchivedPages ? (
+          <label className="flex h-10 items-center justify-between gap-3 border-b border-border px-3 text-xs text-muted-foreground">
+            <span>{labels.archivedFilter}</span>
+            <Switch checked={currentIncludeArchived} onCheckedChange={setIncludeArchived} />
+          </label>
+        ) : null}
         <div className="min-h-0 overflow-y-auto p-2" role="tree" aria-label={labels.pages}>
           {loading ? (
             <PanelState className="min-h-32 p-2" kind="loading" message={labels.loading} />
@@ -821,22 +1173,24 @@ export const PagesArea = React.forwardRef<HTMLDivElement, PagesAreaProps>(functi
               kind="error"
               message={labels.pages}
             />
-          ) : tree.directories.length === 0 &&
-            tree.pages.length === 0 &&
-            tree.cover === undefined ? (
-            <PanelState className="min-h-32 p-2" message={labels.emptyPages} />
+          ) : navigationTree.directories.length === 0 &&
+            navigationTree.pages.length === 0 &&
+            navigationTree.cover === undefined ? (
+            <p className="px-2 py-6 text-center text-xs leading-5 text-muted-foreground">
+              {navigationQuery.trim().length > 0 ? labels.noMatchingPages : labels.emptyPages}
+            </p>
           ) : (
             <>
-              {tree.cover ? (
+              {navigationTree.cover ? (
                 <PageTreeRow
-                  active={tree.cover.id === selectedPage?.id}
+                  active={navigationTree.cover.id === selectedPage?.id}
                   depth={0}
-                  entry={{ fileName: "index.md", page: tree.cover }}
+                  entry={{ fileName: "index.md", page: navigationTree.cover }}
                   labels={labels}
-                  onSelect={() => selectPage(tree.cover!)}
+                  onSelect={() => selectPage(navigationTree.cover!)}
                 />
               ) : null}
-              {tree.directories.map((directory) => (
+              {navigationTree.directories.map((directory) => (
                 <PageTreeDirectoryRows
                   depth={0}
                   directory={directory}
@@ -849,7 +1203,7 @@ export const PagesArea = React.forwardRef<HTMLDivElement, PagesAreaProps>(functi
                   selectedPageId={selectedPage?.id}
                 />
               ))}
-              {tree.pages.map((entry) => (
+              {navigationTree.pages.map((entry) => (
                 <PageTreeRow
                   active={entry.page.id === selectedPage?.id}
                   depth={0}
@@ -868,27 +1222,32 @@ export const PagesArea = React.forwardRef<HTMLDivElement, PagesAreaProps>(functi
         <PanelState kind="loading" message={labels.loading} />
       ) : error ? (
         <PanelState description={error} kind="error" message={labels.pages} />
+      ) : creation ? (
+        <PageCreationView
+          creation={creation}
+          labels={labels}
+          referenceHandlers={referenceHandlers}
+          tagSuggestions={tagSuggestions}
+        />
       ) : viewedDirectory ? (
         <DirectoryView
           directory={viewedDirectory}
           labels={labels}
+          onCreate={onCreate}
           onDirectoryPathSelect={selectDirectoryPath}
           onDirectorySelect={selectDirectory}
           onPageSelect={selectPage}
         />
       ) : selectedPage ? (
         <section className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)]">
-          <header className="grid gap-3 border-b border-border px-6 py-4">
+          <header className="flex min-h-14 items-center gap-4 border-b border-border px-6 py-2">
             <Breadcrumbs
               labels={labels}
               onDirectorySelect={selectDirectoryPath}
               page={selectedPage}
               path=""
             />
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <h1 className={cn("min-w-0 flex-1 truncate", typography.pageTitle)}>
-                {selectedPage.title}
-              </h1>
+            <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
               {dirty ? <Badge tone="warning">{labels.unsaved}</Badge> : null}
               {selectedPage.archived ? <Badge tone="neutral">{labels.archived}</Badge> : null}
               {onCopyLink ? (
@@ -958,21 +1317,14 @@ export const PagesArea = React.forwardRef<HTMLDivElement, PagesAreaProps>(functi
                       icon={<Archive aria-hidden className="size-4" />}
                       label={labels.archive}
                       loading={pendingAction === "archive"}
-                      onClick={() => onArchive(selectedPage)}
+                      onClick={() => setArchiveCandidate(selectedPage)}
                       size="sm"
-                      tone="danger"
+                      tone="neutral"
                       variant="outline"
                     />
                   ) : null}
                 </>
               )}
-            </div>
-            <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-              <code className="min-w-0 truncate">{selectedPage.path}</code>
-              <span aria-hidden>·</span>
-              <span className="shrink-0" title={selectedPage.revisionId}>
-                {shortRevision(selectedPage.revisionId)}
-              </span>
             </div>
           </header>
           <div className="flex items-center gap-2 border-b border-border px-6 py-2" role="tablist">
@@ -1002,7 +1354,7 @@ export const PagesArea = React.forwardRef<HTMLDivElement, PagesAreaProps>(functi
           </div>
           <div className="min-h-0 overflow-y-auto">
             {currentSection === "document" ? (
-              <div className="mx-auto grid w-full max-w-6xl gap-5 p-6">
+              <div className="mx-auto grid w-full max-w-4xl gap-6 px-8 py-10">
                 {selectedPage.archived ? (
                   <Alert tone="warning">
                     <AlertTitle>{labels.archived}</AlertTitle>
@@ -1016,67 +1368,81 @@ export const PagesArea = React.forwardRef<HTMLDivElement, PagesAreaProps>(functi
                   </Alert>
                 ) : null}
                 {currentEditing && !selectedPage.archived ? (
-                  <div className="grid gap-4">
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <label className="grid gap-1.5 text-sm font-medium text-foreground">
-                        Title
-                        <Input
-                          aria-invalid={draft.title.trim().length === 0 || undefined}
-                          onChange={(event) =>
-                            setDraft({ ...draft, title: event.currentTarget.value })
-                          }
-                          value={draft.title}
+                  <div
+                    className="grid gap-6"
+                    onKeyDown={(event) => {
+                      if (
+                        (event.metaKey || event.ctrlKey) &&
+                        event.key.toLocaleLowerCase() === "s"
+                      ) {
+                        event.preventDefault();
+                        if (canSave) onSave?.(draft, selectedPage);
+                      }
+                    }}
+                  >
+                    <div className="grid gap-2">
+                      <input
+                        aria-label="Page title"
+                        aria-invalid={draft.title.trim().length === 0 || undefined}
+                        className={cn(
+                          "-mx-2 w-[calc(100%+1rem)] rounded-md bg-transparent px-2 py-1 text-3xl font-semibold leading-tight tracking-tight text-foreground",
+                          focusRing,
+                        )}
+                        onChange={(event) =>
+                          setDraft({ ...draft, title: event.currentTarget.value })
+                        }
+                        value={draft.title}
+                      />
+                      <button
+                        className={cn(
+                          "-mx-2 flex w-fit max-w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-subtle",
+                          focusRing,
+                        )}
+                        onClick={() => setLocationDialogOpen(true)}
+                        type="button"
+                      >
+                        <PageLocation
+                          labels={labels}
+                          path={draft.path.split("/").slice(0, -1).join("/")}
                         />
-                      </label>
-                      <label className="grid gap-1.5 text-sm font-medium text-foreground">
-                        Path
-                        <Input
-                          aria-invalid={draft.path.trim().length === 0 || undefined}
-                          className="font-mono"
-                          onChange={(event) =>
-                            setDraft({ ...draft, path: event.currentTarget.value })
-                          }
-                          value={draft.path}
-                        />
-                      </label>
+                        <span className="text-xs font-medium text-primary">{labels.move}</span>
+                      </button>
                     </div>
-                    <div className="grid min-h-[420px] gap-4 xl:grid-cols-2">
-                      <label className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-1.5 text-sm font-medium text-foreground">
-                        {labels.source}
-                        <Textarea
-                          className="h-full min-h-[360px] resize-none font-mono text-[13px] leading-6"
-                          onChange={(event) =>
-                            setDraft({ ...draft, body: event.currentTarget.value })
-                          }
-                          onKeyDown={(event) => {
-                            if (
-                              (event.metaKey || event.ctrlKey) &&
-                              event.key.toLowerCase() === "s"
-                            ) {
-                              event.preventDefault();
-                              if (canSave) onSave?.(draft, selectedPage);
-                            }
-                          }}
-                          spellCheck={false}
-                          value={draft.body}
-                        />
-                      </label>
-                      <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-1.5">
-                        <h2 className="text-sm font-medium text-foreground">{labels.preview}</h2>
-                        <div className="min-h-[360px] overflow-y-auto rounded-md border border-border bg-surface p-4">
-                          {draft.body.length === 0 ? (
-                            <p className="text-sm text-muted-foreground">{labels.emptyBody}</p>
-                          ) : (
-                            <MarkdownRenderer {...referenceHandlers} markdown={draft.body} />
-                          )}
-                        </div>
-                      </section>
-                    </div>
+                    <MarkdownEditor
+                      {...referenceHandlers}
+                      aria-label="Page content"
+                      contentClassName="px-0 py-2"
+                      editorClassName="rounded-none"
+                      minHeightClassName="min-h-[440px]"
+                      mode="page"
+                      onValueChange={(body) => setDraft({ ...draft, body })}
+                      placeholder={labels.writePlaceholder}
+                      tagSuggestions={tagSuggestions}
+                      value={draft.body}
+                    />
                   </div>
-                ) : selectedPage.body.length === 0 ? (
-                  <PanelState className="min-h-64" message={labels.emptyBody} />
                 ) : (
-                  <MarkdownRenderer {...referenceHandlers} markdown={selectedPage.body} />
+                  <article className="grid gap-6">
+                    <div className="grid gap-2">
+                      <h1 className="text-3xl font-semibold leading-tight tracking-tight text-foreground">
+                        {selectedPage.title}
+                      </h1>
+                      {selectedPage.updatedAt || selectedPage.updatedBy ? (
+                        <p className="text-xs text-muted-foreground">
+                          {labels.updated}{" "}
+                          {selectedPage.updatedAt ? (
+                            <DateTime format="relative" value={selectedPage.updatedAt} />
+                          ) : null}
+                          {selectedPage.updatedBy ? ` by ${selectedPage.updatedBy}` : null}
+                        </p>
+                      ) : null}
+                    </div>
+                    {selectedPage.body.length === 0 ? (
+                      <p className="py-8 text-sm text-muted-foreground">{labels.emptyBody}</p>
+                    ) : (
+                      <MarkdownRenderer {...referenceHandlers} markdown={selectedPage.body} />
+                    )}
+                  </article>
                 )}
               </div>
             ) : currentSection === "comments" ? (
@@ -1165,8 +1531,56 @@ export const PagesArea = React.forwardRef<HTMLDivElement, PagesAreaProps>(functi
           ) : null}
         </section>
       ) : (
-        <PanelState message={labels.emptyPages} />
+        <PageEmptyState
+          description={labels.emptyPagesDescription}
+          label={labels.createFirst}
+          onCreate={onCreate ? () => onCreate("") : undefined}
+          title={labels.emptyPages}
+        />
       )}
+      {locationDialogOpen && selectedPage ? (
+        <PageLocationDialog
+          directoryOptions={availableDirectoryPaths}
+          draft={draft}
+          labels={labels}
+          onCancel={() => setLocationDialogOpen(false)}
+          onChange={(path) => {
+            setDraft({ ...draft, path });
+            setLocationDialogOpen(false);
+          }}
+        />
+      ) : null}
+      {archiveCandidate ? (
+        <DialogRoot onOpenChange={(open) => !open && setArchiveCandidate(undefined)} open>
+          <DialogPortal>
+            <DialogBackdrop />
+            <DialogViewport>
+              <DialogPanel width="sm">
+                <DialogHeader>
+                  <div>
+                    <DialogTitle>{labels.archiveConfirmTitle}</DialogTitle>
+                    <DialogDescription>{labels.archiveConfirmDescription}</DialogDescription>
+                  </div>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button onClick={() => setArchiveCandidate(undefined)} variant="outline">
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      onArchive?.(archiveCandidate);
+                      setArchiveCandidate(undefined);
+                    }}
+                    tone="danger"
+                  >
+                    {labels.archive}
+                  </Button>
+                </DialogFooter>
+              </DialogPanel>
+            </DialogViewport>
+          </DialogPortal>
+        </DialogRoot>
+      ) : null}
     </div>
   );
 });

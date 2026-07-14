@@ -1,6 +1,5 @@
-import { Context, Effect, Layer } from "effect";
-import { Schema } from "effect";
 import * as ContractSchemas from "@cycle/contracts/schemas";
+import { Context, Effect, Layer, Schema } from "effect";
 import * as McpServer from "effect/unstable/ai/McpServer";
 import { CycleMcpApiClient } from "../client.ts";
 import {
@@ -30,12 +29,6 @@ export const registerCycleMcpTools: Effect.Effect<
     });
   }
 });
-
-export const CycleMcpToolsLive: Layer.Layer<never, never, McpServer.McpServer | CycleMcpApiClient> =
-  Layer.mergeAll(
-    Layer.effectDiscard(registerCycleMcpTools),
-    Layer.effectDiscard(registerCycleMcpResources),
-  );
 
 export const registerCycleMcpResources: Effect.Effect<
   void,
@@ -76,6 +69,12 @@ export const registerCycleMcpResources: Effect.Effect<
     },
   );
 });
+
+export const CycleMcpToolsLive: Layer.Layer<never, never, McpServer.McpServer | CycleMcpApiClient> =
+  Layer.mergeAll(
+    Layer.effectDiscard(registerCycleMcpTools),
+    Layer.effectDiscard(registerCycleMcpResources),
+  );
 
 const makeRequestId = (): string => {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {

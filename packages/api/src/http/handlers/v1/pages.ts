@@ -12,7 +12,7 @@ import {
   PageUpdate,
 } from "@cycle/usecases";
 import { Effect } from "effect";
-import { HttpServerResponse } from "effect/unstable/http";
+import { Headers, HttpServerResponse } from "effect/unstable/http";
 import { CycleRequestContext } from "../../middleware/CycleRequestContextMiddleware.ts";
 import { asPage, pageLimitFrom, urlFromRequest } from "../query.ts";
 import { collectionResponse, resourceResponse } from "../responses.ts";
@@ -26,7 +26,7 @@ export const listPages = ({ params, request }: V1Request<"listPages">) =>
     const input = yield* decodeHttpValue(
       ContractSchemas.PageQuery,
       {
-        archived: booleanValue(url.searchParams.get("archived")),
+        archived: archiveSelection(url.searchParams.get("archived")),
         cursor: url.searchParams.get("page[cursor]") ?? undefined,
         directory: url.searchParams.get("directory") ?? undefined,
         limit: pageLimitFrom(url.searchParams),
@@ -56,12 +56,10 @@ export const listPages = ({ params, request }: V1Request<"listPages">) =>
 export const createPage = ({ params, payload, request }: V1Request<"createPage">) =>
   Effect.gen(function* () {
     const { requestId } = yield* CycleRequestContext;
-    const input = yield* decodeHttpValue(
-      ContractSchemas.CreatePageInput,
-      payload,
-      requestId,
-      { code: "INVALID_PAGE_PAYLOAD", message: "Invalid Page create payload." },
-    );
+    const input = yield* decodeHttpValue(ContractSchemas.CreatePageInput, payload, requestId, {
+      code: "INVALID_PAGE_PAYLOAD",
+      message: "Invalid Page create payload.",
+    });
     if (HttpServerResponse.isHttpServerResponse(input)) return input;
     const result = yield* runUseCase(
       PageCreate,
@@ -141,8 +139,10 @@ export const listPageHistory = ({ params, request }: V1Request<"listPageHistory"
     const input = yield* decodeHttpValue(
       ContractSchemas.PageHistoryInput,
       {
-        cursor: url.searchParams.get("page[cursor]") ?? undefined,
-        limit: pageLimitFrom(url.searchParams),
+        options: {
+          cursor: url.searchParams.get("page[cursor]") ?? undefined,
+          limit: pageLimitFrom(url.searchParams),
+        },
         pageId: params.pageId,
       },
       requestId,
@@ -241,17 +241,15 @@ const pageStateMutation = (
   schema: typeof ContractSchemas.ArchivePageInput | typeof ContractSchemas.RestorePageInput,
   params: { readonly pageId: string; readonly repositoryId: string },
   payload: Readonly<Record<string, unknown>>,
-  request: { readonly headers: Readonly<Record<string, string | undefined>> },
+  request: { readonly headers: Headers.Headers },
   operation: "archive" | "restore",
 ) =>
   Effect.gen(function* () {
     const { requestId } = yield* CycleRequestContext;
-    const input = yield* decodeHttpValue(
-      schema,
-      { ...payload, pageId: params.pageId },
-      requestId,
-      { code: `INVALID_PAGE_${operation.toUpperCase()}`, message: `Invalid Page ${operation} payload.` },
-    );
+    const input = yield* decodeHttpValue(schema, { ...payload, pageId: params.pageId }, requestId, {
+      code: `INVALID_PAGE_${operation.toUpperCase()}`,
+      message: `Invalid Page ${operation} payload.`,
+    });
     if (HttpServerResponse.isHttpServerResponse(input)) return input;
     const result = yield* runUseCase(
       useCase as never,
@@ -270,3 +268,6 @@ const pageTarget = (repositoryId: string, pageId: string) => ({
 
 const booleanValue = (value: string | null): boolean | undefined =>
   value === "true" ? true : value === "false" ? false : undefined;
+
+const archiveSelection = (value: string | null): "exclude" | "include" | "only" | undefined =>
+  value === "exclude" || value === "include" || value === "only" ? value : undefined;

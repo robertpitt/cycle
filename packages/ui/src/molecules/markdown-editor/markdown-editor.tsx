@@ -104,7 +104,7 @@ export type MarkdownEditorFormatAction =
   | "task-list"
   | "unordered-list";
 
-export type MarkdownEditorMode = "comment" | "ticket";
+export type MarkdownEditorMode = "comment" | "page" | "ticket";
 
 export type MarkdownEditorTagSuggestion = {
   readonly description?: React.ReactNode;

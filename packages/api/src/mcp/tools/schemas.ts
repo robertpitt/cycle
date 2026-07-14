@@ -361,7 +361,9 @@ export const RecordResourceEnvelope = ApiResourceEnvelope(ContractSchemas.Linked
 export const HistoryCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.HistoryCommit);
 export const PageResourceEnvelope = ApiResourceEnvelope(ContractSchemas.PageDocument);
 export const PageCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.PageDocument);
-export const PageHistoryCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.PageHistoryEntry);
+export const PageHistoryCollectionEnvelope = ApiCollectionEnvelope(
+  ContractSchemas.PageHistoryEntry,
+);
 export const PageCommentCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.CommentDocument);
 export const PageCommentResourceEnvelope = ApiResourceEnvelope(ContractSchemas.CommentDocument);
 export const LabelCollectionEnvelope = ApiCollectionEnvelope(
@@ -404,7 +406,7 @@ export const ToolErrorOutput = Schema.Struct({
   }),
   meta: Schema.Struct({
     issueId: Schema.optional(Schema.String),
-    pageId: Schema.optional(ContractSchemas.PageId),
+    pageId: Schema.optional(Schema.String),
     repositoryId: Schema.optional(Schema.String),
   }),
 });

@@ -1,6 +1,6 @@
 import * as ContractSchemas from "@cycle/contracts/schemas";
 import { CommentAdd, CommentList } from "@cycle/usecases";
-import type { CommentDocument, LinkedRecord } from "@cycle/contracts";
+import type { CommentDocument, LinkedRecord } from "@cycle/contracts/schemas";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import { CycleRequestContext } from "../../middleware/CycleRequestContextMiddleware.ts";

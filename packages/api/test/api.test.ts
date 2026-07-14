@@ -5,6 +5,7 @@ import {
   type AgentProviderProfile,
 } from "@cycle/agents";
 import { DatabaseService, type DatabaseServiceShape } from "@cycle/database";
+import type { CommentAddInput, CommentDocument, CycleResourceRef } from "@cycle/contracts/schemas";
 import { type TicketDocument } from "@cycle/contracts";
 import { Crypto, Effect, Layer, PlatformError, Tracer } from "effect";
 import { NodeServices } from "@effect/platform-node";
@@ -104,25 +105,25 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
   const issues: Array<TicketDocument> = [];
   const comments: Array<unknown> = [];
   const database = databaseStub({
-    addComment: (_repositoryId, issueId, input) =>
+    addComment: ((target: CycleResourceRef, input: CommentAddInput) =>
       Effect.sync(() => {
         calls.push("CommentAdd");
-        const comment = {
+        const comment: CommentDocument = {
+          body: input.body,
+          bodyFormat: "markdown",
           createdAt: "2026-06-12T00:00:00.000Z",
           createdBy: {
             name: "Test",
-            type: "agent" as const,
+            type: "agent",
           },
-          createdDate: "2026-06-12",
           id: "COMMENT-1",
-          issueId,
-          payload: { body: input.body },
-          recordType: "comment",
-          schemaVersion: 1 as const,
+          repositoryId: target.repositoryId,
+          schemaVersion: 1,
+          target,
         };
         comments.push(comment);
         return comment;
-      }),
+      })) as unknown as DatabaseServiceShape["addComment"],
     addRecord: (_repositoryId, issueId, input) =>
       Effect.sync(() => {
         calls.push("RecordAdd");
