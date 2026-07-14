@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@cycle/contracts": "workspace:*",
     "effect": "4.0.0-beta.78"
   },
   "devDependencies": {

@@ -1,4 +1,5 @@
 import { NodeHttpServer, NodeServices } from "@effect/platform-node";
+import { DEFAULT_API_HOST, isApiHost, type ApiHost } from "@cycle/contracts/schemas/app";
 import {
   defaultLayer as CycleLoggingLive,
   logInfo,
@@ -16,7 +17,7 @@ import type {
 } from "./http/runtime/CycleApiRuntime.ts";
 
 export type CycleApiServerOptions = CycleApiOptions & {
-  readonly host?: "127.0.0.1" | "localhost";
+  readonly host?: ApiHost;
   readonly logging?: CycleLogConfigInput;
   readonly port?: number;
   readonly runtimeFile?: string;
@@ -48,7 +49,7 @@ export const startCycleApiServerEffect = (
   options: CycleApiServerOptions,
 ): Effect.Effect<CycleApiServerHandle, unknown, NodeServices.NodeServices> =>
   Effect.gen(function* () {
-    const host = options.host ?? "127.0.0.1";
+    const host = options.host ?? DEFAULT_API_HOST;
     const logging = apiLogging(options.logging);
     assertLoopback(host);
     const configuredBaseUrl =
@@ -213,7 +214,7 @@ const withRuntimeDiscovery = <A, E>(
   );
 
 const assertLoopback = (host: string): void => {
-  if (host !== "127.0.0.1" && host !== "localhost") {
+  if (!isApiHost(host)) {
     throw new Error("Cycle API server can only bind to a loopback host.");
   }
 };

@@ -1,13 +1,15 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  defaultAppConfig,
   isInterfaceDensity,
   isThemePreference,
+  type InterfaceDensity,
+  type ThemePreference,
+} from "@cycle/contracts/schemas/app";
+import {
+  defaultAppConfig,
   type AgentProviderPreference,
   type AppConfigEncoded as AppConfigState,
-  type InterfaceDensity,
   type ProfileConfig,
-  type ThemePreference,
 } from "@cycle/config";
 import type { ProfileUpdateInput } from "../../shared/Profile.ts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";

@@ -1,4 +1,5 @@
 import { NodeHttpServer, NodeRuntime, NodeServices } from "@effect/platform-node";
+import { DEFAULT_API_HOST, isApiHost, type ApiHost } from "@cycle/contracts/schemas/app";
 import { defaultLayer as CycleLoggingLive, logInfo, logWarning } from "@cycle/logging";
 import { Context, Effect, Exit, Layer, Redacted, Scope } from "effect";
 import {
@@ -23,7 +24,7 @@ export type CycleMcpOptions = CycleMcpApiClientOptions & CycleMcpServerInfo;
 
 export type CycleMcpHttpOptions = CycleMcpOptions & {
   readonly auth?: false | { readonly token: string };
-  readonly host?: "127.0.0.1" | "localhost";
+  readonly host?: ApiHost;
   readonly path?: string;
   readonly port?: number;
 };
@@ -91,7 +92,7 @@ export const startCycleMcpHttpServerEffect = (
   options: CycleMcpHttpOptions,
 ): Effect.Effect<CycleMcpHttpServerHandle, unknown, NodeServices.NodeServices> =>
   Effect.gen(function* () {
-    const host = options.host ?? "127.0.0.1";
+    const host = options.host ?? DEFAULT_API_HOST;
     assertLoopback(host);
 
     const scope = yield* Scope.make("sequential");
@@ -322,7 +323,7 @@ const mcpHttpToken = (options: CycleMcpHttpOptions): string | undefined => {
 };
 
 const assertLoopback = (host: string): void => {
-  if (host !== "127.0.0.1" && host !== "localhost") {
+  if (!isApiHost(host)) {
     throw new Error("Cycle MCP server can only bind to a loopback host.");
   }
 };

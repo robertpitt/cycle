@@ -1,5 +1,11 @@
 import type { AgentChatShape } from "@cycle/agent-chat";
 import type {
+  ApiHost,
+  InterfaceDensity,
+  RepositoryCommitStyle,
+  ThemePreference,
+} from "@cycle/contracts/schemas/app";
+import type {
   UseCaseInput,
   UseCaseMeta,
   UseCaseName,
@@ -12,7 +18,7 @@ import { Context, Layer } from "effect";
 
 export type ApiConfig = {
   readonly enabled: boolean;
-  readonly host: "127.0.0.1" | "localhost";
+  readonly host: ApiHost;
   readonly port: number | "auto";
   readonly staticToken: string;
 };
@@ -22,12 +28,9 @@ export type LocalSettingsProfileUpdateInput = {
   readonly email?: string;
 };
 
-export type LocalSettingsThemePreference = "light" | "dark" | "system";
-export type LocalSettingsInterfaceDensity = "compact" | "spacious";
-export type LocalSettingsRepositoryCommitStyle = "descriptive" | "compact";
 export type LocalSettingsRepositoryPreferences = {
   readonly autoSync?: boolean;
-  readonly commitStyle?: LocalSettingsRepositoryCommitStyle;
+  readonly commitStyle?: RepositoryCommitStyle;
   readonly sidebarExpanded?: boolean;
 };
 
@@ -35,7 +38,7 @@ export type LocalSettingsOnboardingInput = {
   readonly displayName: string;
   readonly email: string;
   readonly enabledAgentProviderIds?: ReadonlyArray<AgentProviderId>;
-  readonly themePreference: LocalSettingsThemePreference;
+  readonly themePreference: ThemePreference;
 };
 
 export type LocalSettingsRepositoryPreferencesInput = {
@@ -60,8 +63,8 @@ export type LocalSettingsProviderShape = {
   readonly completeOnboarding?: (input: LocalSettingsOnboardingInput) => Promise<unknown>;
   readonly read: () => Promise<unknown>;
   readonly removeRepository?: (repositoryId: string) => Promise<unknown>;
-  readonly setInterfaceDensity?: (density: LocalSettingsInterfaceDensity) => Promise<unknown>;
-  readonly setThemePreference?: (preference: LocalSettingsThemePreference) => Promise<unknown>;
+  readonly setInterfaceDensity?: (density: InterfaceDensity) => Promise<unknown>;
+  readonly setThemePreference?: (preference: ThemePreference) => Promise<unknown>;
   readonly updateProfile?: (input: LocalSettingsProfileUpdateInput) => Promise<unknown>;
   readonly updateRepositoryPreferences?: (
     input: LocalSettingsRepositoryPreferencesInput,

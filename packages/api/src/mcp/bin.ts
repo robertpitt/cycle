@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isApiHost, type ApiHost } from "@cycle/contracts/schemas/app";
 import { defaultLayer as CycleLoggingLive } from "@cycle/logging";
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { Effect } from "effect";
@@ -83,9 +84,8 @@ function parseFlags(args: ReadonlyArray<string>): Record<string, string | undefi
   return out;
 }
 
-function hostFrom(value: string | undefined): "127.0.0.1" | "localhost" | undefined {
-  if (value === "127.0.0.1" || value === "localhost") return value;
-  return undefined;
+function hostFrom(value: string | undefined): ApiHost | undefined {
+  return isApiHost(value) ? value : undefined;
 }
 
 function numberFrom(value: string | undefined): number | undefined {

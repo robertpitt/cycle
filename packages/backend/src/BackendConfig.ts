@@ -1,4 +1,5 @@
 import { defaultRuntimeDiscoveryPath, RuntimeDiscoveryFile } from "@cycle/config";
+import type { ApiHost } from "@cycle/contracts/schemas/app";
 import { Config, Effect, Path, Schema } from "effect";
 
 export type BackendPaths = {
@@ -10,7 +11,7 @@ export type BackendPaths = {
 };
 
 export type BackendStartOptions = {
-  readonly host?: "127.0.0.1" | "localhost";
+  readonly host?: ApiHost;
   readonly port?: number | "auto";
   readonly runtimeFile?: string;
 };

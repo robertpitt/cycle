@@ -3,15 +3,17 @@ import {
   supportedAgentProviders,
   type AgentProviderId as AgentProviderIdType,
 } from "@cycle/contracts/schemas/agents";
+import {
+  ThemePreference,
+  type InterfaceDensity,
+  type ThemePreference as ThemePreferenceType,
+} from "@cycle/contracts/schemas/app";
 import { AppConfig, AppConfigError } from "@cycle/config";
 import {
   defaultAgentProviderPreference,
-  ThemePreference,
   type AppConfigState,
-  type InterfaceDensity,
   type ProfileConfig,
   type RepositoryRecord,
-  type ThemePreference as ThemePreferenceType,
 } from "@cycle/config";
 import { Context, Effect, Layer, Schema } from "effect";
 import {

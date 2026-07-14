@@ -1,4 +1,10 @@
 import { AppConfigEncoded } from "@cycle/config";
+import {
+  ApiHost,
+  InterfaceDensity,
+  RepositoryCommitStyle,
+  ThemePreference,
+} from "@cycle/contracts/schemas/app";
 import { Schema } from "effect";
 import { AgentProviderId } from "./AgentProvidersResourceEnvelope.ts";
 import {
@@ -8,11 +14,6 @@ import {
   ResourceEnvelopeOf,
   strictSchema,
 } from "./shared.ts";
-
-export const ThemePreference = Schema.Literals(["light", "dark", "system"]);
-export type ThemePreference = typeof ThemePreference.Type;
-export const InterfaceDensity = Schema.Literals(["compact", "spacious"]);
-export type InterfaceDensity = typeof InterfaceDensity.Type;
 
 export const ProfileOutput = Schema.Struct({
   displayName: Schema.String,
@@ -79,11 +80,10 @@ export const ThemeConfigOutput = Schema.Struct({
 });
 export const LocalApiConfigOutput = Schema.Struct({
   enabled: Schema.Boolean,
-  host: Schema.Literals(["127.0.0.1", "localhost"]),
+  host: ApiHost,
   port: Schema.Union([ApiPort, Schema.Literal("auto")]),
   staticToken: Schema.String,
 });
-export const RepositoryCommitStyle = Schema.Literals(["descriptive", "compact"]);
 export const RepositoryPreferencesOutput = Schema.Struct({
   autoSync: Schema.Boolean,
   commitStyle: RepositoryCommitStyle,

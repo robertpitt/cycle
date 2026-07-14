@@ -1,10 +1,16 @@
+import {
+  ApiHost,
+  DEFAULT_API_HOST,
+  InterfaceDensity,
+  RepositoryCommitStyle,
+  ThemePreference,
+} from "@cycle/contracts/schemas/app";
 import { Effect, Option, Schema, SchemaIssue } from "effect";
 import { AppConfigError } from "./ConfigErrors.ts";
 import { generateStaticToken, makeRedactedToken, redactedTokenValue } from "./internal/token.ts";
 
 export const CURRENT_APP_CONFIG_SCHEMA_VERSION = 4;
 export const DEFAULT_API_PORT = 4738;
-export const DEFAULT_API_HOST = "127.0.0.1";
 export const DEFAULT_STATIC_TOKEN = "cycle-default-static-token";
 
 export const AgentProviderId = Schema.Literals(["codex", "claude-code"]).annotate({
@@ -12,19 +18,6 @@ export const AgentProviderId = Schema.Literals(["codex", "claude-code"]).annotat
   title: "AgentProviderId",
 });
 export type AgentProviderId = typeof AgentProviderId.Type;
-
-export const ThemePreference = Schema.Literals(["light", "dark", "system"]);
-export type ThemePreference = typeof ThemePreference.Type;
-
-export const InterfaceDensity = Schema.Literals(["compact", "spacious"]);
-export type InterfaceDensity = typeof InterfaceDensity.Type;
-
-export const RepositoryCommitStyle = Schema.Literals(["descriptive", "compact"]);
-export type RepositoryCommitStyle = typeof RepositoryCommitStyle.Type;
-
-export const isThemePreference = Schema.is(ThemePreference);
-export const isInterfaceDensity = Schema.is(InterfaceDensity);
-export const isRepositoryCommitStyle = Schema.is(RepositoryCommitStyle);
 
 export const JsonValue = Schema.Json;
 export type JsonValue = typeof JsonValue.Type;
@@ -149,9 +142,7 @@ export const ApiConfig = Schema.Struct({
   enabled: Schema.Boolean.pipe(
     Schema.withDecodingDefaultTypeKey(Effect.succeed(apiDefaults.enabled)),
   ),
-  host: Schema.Literals([DEFAULT_API_HOST, "localhost"]).pipe(
-    Schema.withDecodingDefaultTypeKey(Effect.succeed(apiDefaults.host)),
-  ),
+  host: ApiHost.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(apiDefaults.host))),
   port: Schema.Union([ApiPort, Schema.Literal("auto")]).pipe(
     Schema.withDecodingDefaultTypeKey(Effect.succeed(apiDefaults.port)),
   ),
@@ -163,7 +154,7 @@ export type ApiConfig = typeof ApiConfig.Type;
 
 export const ApiConfigEncoded = Schema.Struct({
   enabled: Schema.Boolean,
-  host: Schema.Literals([DEFAULT_API_HOST, "localhost"]),
+  host: ApiHost,
   port: Schema.Union([ApiPort, Schema.Literal("auto")]),
   staticToken: Schema.NonEmptyString,
 });

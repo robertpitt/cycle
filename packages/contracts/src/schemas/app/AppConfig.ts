@@ -1,6 +1,13 @@
 import { Schema } from "effect";
 import { AgentProviderId } from "../agents/AgentProviderId.ts";
 import { JsonObject } from "../components/JsonObject.ts";
+import {
+  ApiHost,
+  DEFAULT_API_HOST,
+  InterfaceDensity,
+  RepositoryCommitStyle,
+  ThemePreference,
+} from "./AppSettings.ts";
 
 export const DEFAULT_API_PORT = 4738;
 
@@ -9,18 +16,6 @@ const ApiPort = Schema.Int.check(
   Schema.isLessThanOrEqualTo(65535),
 );
 const PositiveInteger = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
-
-export const ThemePreference = Schema.Literals(["light", "dark", "system"]);
-export type ThemePreference = typeof ThemePreference.Type;
-
-export const isThemePreference = (value: unknown): value is ThemePreference =>
-  value === "light" || value === "dark" || value === "system";
-
-export const InterfaceDensity = Schema.Literals(["compact", "spacious"]);
-export type InterfaceDensity = typeof InterfaceDensity.Type;
-
-export const isInterfaceDensity = (value: unknown): value is InterfaceDensity =>
-  value === "compact" || value === "spacious";
 
 export const OnboardingConfig = Schema.Struct({
   completed: Schema.Boolean,
@@ -57,7 +52,7 @@ export type ThemeConfig = typeof ThemeConfig.Type;
 
 export const ApiConfig = Schema.Struct({
   enabled: Schema.Boolean,
-  host: Schema.Literals(["127.0.0.1", "localhost"]),
+  host: ApiHost,
   port: Schema.Union([ApiPort, Schema.Literal("auto")]),
   staticToken: Schema.String,
 });
@@ -65,16 +60,10 @@ export type ApiConfig = typeof ApiConfig.Type;
 
 export const defaultApiConfig = (): ApiConfig => ({
   enabled: true,
-  host: "127.0.0.1",
+  host: DEFAULT_API_HOST,
   port: DEFAULT_API_PORT,
   staticToken: "",
 });
-
-export const RepositoryCommitStyle = Schema.Literals(["descriptive", "compact"]);
-export type RepositoryCommitStyle = typeof RepositoryCommitStyle.Type;
-
-export const isRepositoryCommitStyle = (value: unknown): value is RepositoryCommitStyle =>
-  value === "descriptive" || value === "compact";
 
 export const RepositoryPreferences = Schema.Struct({
   autoSync: Schema.Boolean,

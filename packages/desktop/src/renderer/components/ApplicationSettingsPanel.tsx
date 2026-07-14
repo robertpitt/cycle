@@ -5,12 +5,12 @@ import {
 } from "@cycle/ui/organisms";
 import * as React from "react";
 import {
-  isThemePreference,
   isInterfaceDensity,
-  type AppConfigEncoded as AppConfigState,
+  isThemePreference,
   type InterfaceDensity,
   type ThemePreference,
-} from "@cycle/config";
+} from "@cycle/contracts/schemas/app";
+import type { AppConfigEncoded as AppConfigState } from "@cycle/config";
 import {
   useClearCacheMutation,
   useSetInterfaceDensityMutation,

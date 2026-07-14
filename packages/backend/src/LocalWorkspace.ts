@@ -1,4 +1,5 @@
-import { RepositoryCommitStyle, RepositoryRecord } from "@cycle/config";
+import { RepositoryCommitStyle } from "@cycle/contracts/schemas/app";
+import { RepositoryRecord } from "@cycle/config";
 import { AppConfig, AppConfigError } from "@cycle/config";
 import {
   defaultRepositoryPreferences,

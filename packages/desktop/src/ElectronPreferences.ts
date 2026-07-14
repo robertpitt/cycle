@@ -1,4 +1,5 @@
 import type { AgentProviderId } from "@cycle/contracts/schemas/agents";
+import type { InterfaceDensity, ThemePreference } from "@cycle/contracts/schemas/app";
 import { LocalSettings } from "@cycle/backend/settings";
 import { session } from "electron";
 import { Context, Effect, Layer, Scope } from "effect";
@@ -11,10 +12,8 @@ import {
 import type { AppConfigError } from "@cycle/config";
 import type {
   AppConfigState,
-  InterfaceDensity,
   ProfileConfig,
   RepositoryRecord,
-  ThemePreference,
   UpdateRepositoryPreferencesInput,
 } from "@cycle/config";
 import { type CompleteOnboardingInput, type ProfileUpdateInput } from "./shared/Profile.ts";

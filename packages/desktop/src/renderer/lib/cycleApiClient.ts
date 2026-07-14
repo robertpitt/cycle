@@ -14,6 +14,7 @@ import type {
   TicketDocument,
   TicketPage,
 } from "@cycle/contracts/schemas";
+import type { InterfaceDensity, ThemePreference } from "@cycle/contracts/schemas/app";
 import type {
   UseCaseAlias,
   UseCasePayloadsByAlias,
@@ -27,10 +28,8 @@ import {
   RepositoryRecord as AppRepositoryRecordSchema,
   type AppConfigEncoded as AppConfigState,
   type AgentProviderPreference,
-  type InterfaceDensity,
   type ProfileConfig,
   type RepositoryRecord as AppRepositoryRecord,
-  type ThemePreference,
 } from "@cycle/config";
 import type { AgentProviderId, DetectedAgentProvider } from "@cycle/contracts/schemas/agents";
 import type { UpdateRepositoryPreferencesInput } from "@cycle/config";

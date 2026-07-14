@@ -178,6 +178,9 @@ importers:
 
   packages/config:
     dependencies:
+      '@cycle/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       effect:
         specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78

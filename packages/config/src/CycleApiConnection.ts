@@ -1,6 +1,7 @@
+import { DEFAULT_API_HOST } from "@cycle/contracts/schemas/app";
 import { Config, ConfigProvider, Context, Effect, Layer, Option, Redacted, Schema } from "effect";
 import { AppConfig, AppConfigLive } from "./AppConfig.ts";
-import { DEFAULT_API_HOST, DEFAULT_API_PORT } from "./AppConfigSchemas.ts";
+import { DEFAULT_API_PORT } from "./AppConfigSchemas.ts";
 import { CycleApiConnectionError } from "./ConfigErrors.ts";
 import {
   type CycleApiConnectionInput,
