@@ -20,10 +20,12 @@ export const DatabaseIdentityTest = (
   );
 
 export const makeDeterministicIdGenerator = (prefix = "test"): DatabaseIdGeneratorShape => {
+  let comment = 0;
   let ticket = 0;
   let draft = 0;
   let event = 0;
   let label = 0;
+  let page = 0;
   let record = 0;
   let template = 0;
   let view = 0;
@@ -36,11 +38,15 @@ export const makeDeterministicIdGenerator = (prefix = "test"): DatabaseIdGenerat
 
     return `${base}${expansion}`;
   };
+  const nextPageId = (value: number): string =>
+    `01900000-0000-7000-8000-${value.toString(16).padStart(12, "0")}`;
 
   return {
+    commentId: Effect.sync(() => next("cmt", ++comment)),
     draftId: Effect.sync(() => next("drf", ++draft)),
     eventId: Effect.sync(() => next("evt", ++event)),
     labelId: Effect.sync(() => next("lbl", ++label)),
+    pageId: Effect.sync(() => nextPageId(++page)),
     recordId: Effect.sync(() => next("rec", ++record)),
     templateId: Effect.sync(() => next("tpl", ++template)),
     ticketId: Effect.sync(() => nextBase36(++ticket)),

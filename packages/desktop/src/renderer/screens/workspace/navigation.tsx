@@ -1,6 +1,7 @@
 import type { AppShellNavSection } from "@cycle/ui/organisms";
 import {
   Bot,
+  BookOpen,
   History,
   Inbox,
   ListTodo,
@@ -36,6 +37,13 @@ const createRepositoryNavItems = (repositories: readonly RepositoryRecord[]) =>
         icon: <ListTodo aria-hidden className="size-3.5" />,
         id: `repository:${repository.id}:issues`,
         label: "Issues",
+      },
+      {
+        className: "h-7 text-xs",
+        depth: 1 as const,
+        icon: <BookOpen aria-hidden className="size-3.5" />,
+        id: `repository:${repository.id}:pages`,
+        label: "Pages",
       },
       {
         className: "h-7 text-xs",
@@ -214,7 +222,7 @@ export const repositoryIdFromNavItem = (itemId: string): string | undefined => {
   return repositoryId;
 };
 
-type RepositoryPageKind = "history" | "issues" | "settings" | "views";
+type RepositoryPageKind = "history" | "issues" | "pages" | "settings" | "views";
 
 const repositoryPageFromNavItem = (
   itemId: string,
@@ -226,7 +234,7 @@ const repositoryPageFromNavItem = (
   const repository = repositories.find((candidate) => candidate.id === repositoryId);
   if (!repository) return undefined;
 
-  if (child === "history" || child === "settings" || child === "views") {
+  if (child === "history" || child === "pages" || child === "settings" || child === "views") {
     return {
       kind: child,
       repository,
@@ -242,6 +250,7 @@ const repositoryPageFromNavItem = (
 const repositoryPageLabel = {
   history: "History",
   issues: "Issues",
+  pages: "Pages",
   settings: "Settings",
   views: "Views",
 } satisfies Record<RepositoryPageKind, string>;

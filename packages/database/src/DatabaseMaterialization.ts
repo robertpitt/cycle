@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import type { CommentDocument } from "@cycle/contracts/schemas";
 import {
   CURRENT_SCHEMA_VERSION,
   deriveInboxItemId,
@@ -45,6 +46,7 @@ import type {
   RepositoryRuntime,
 } from "./internals/DatabaseRuntime.ts";
 import { Projection } from "./Projection.ts";
+import { applyCommentEvent, applyPageEvent } from "./PageEvent.ts";
 import type { RepositorySnapshot } from "./RepositoryStore.ts";
 
 export const buildMaterialization = (
@@ -102,6 +104,7 @@ export const buildMaterialization = (
         foldMs: elapsedMs(foldStartedAt),
         fullRebuild: history.fullRebuild,
         labels: folded.labels.size,
+        pages: folded.pages.size,
         replayedCommits: history.snapshots.length,
         records: folded.records.size,
         templates: folded.templates.size,
@@ -118,6 +121,12 @@ export const buildMaterialization = (
     const recordValues = history.fullRebuild
       ? [...folded.records.values()]
       : valuesForIds(folded.records, folded.changedRecords);
+    const pageValues = history.fullRebuild
+      ? [...folded.pages.values()]
+      : valuesForIds(folded.pages, folded.changedPages);
+    const commentValues = history.fullRebuild
+      ? [...folded.comments.values()]
+      : valuesForIds(folded.comments, folded.changedComments);
     const userValues = history.fullRebuild
       ? [...folded.users.values()]
       : valuesForIds(folded.users, folded.changedUsers);
@@ -138,6 +147,8 @@ export const buildMaterialization = (
       path: eventAggregatePath(repository, "record", record.id),
       value: record,
     }));
+    const pages = pageValues;
+    const comments = commentValues;
     const users = userValues.map((user) => ({
       path: eventAggregatePath(repository, "user", user.id),
       value: user,
@@ -180,6 +191,8 @@ export const buildMaterialization = (
       yield* trace("sync materialization documents assembled", {
         assembleMs: elapsedMs(assembleStartedAt),
         labels: labels.length,
+        pages: pages.length,
+        comments: comments.length,
         records: records.length,
         templates: templates.length,
         tickets: tickets.length,
@@ -225,6 +238,7 @@ export const buildMaterialization = (
     return {
       commitChanges,
       commits,
+      comments,
       cycleMetadata: folded.cycleMetadata,
       deletedRecords: history.fullRebuild ? [] : [...folded.deletedRecords],
       deletedTickets: history.fullRebuild ? [] : [...folded.deletedTickets],
@@ -235,6 +249,8 @@ export const buildMaterialization = (
       fullRebuild: history.fullRebuild,
       inboxItems,
       labels,
+      pageHistory: folded.pageHistory,
+      pages,
       records,
       templates,
       tickets,
@@ -384,13 +400,16 @@ export const valuesForIds = <A>(
   });
 
 export const emptyFoldedEvents = (): FoldedEvents => ({
+  changedComments: new Set(),
   changedLabels: new Set(),
+  changedPages: new Set(),
   changedRecords: new Set(),
   changedTemplates: new Set(),
   changedTickets: new Set(),
   changedUsers: new Set(),
   changedViews: new Set(),
   commitChanges: [],
+  comments: new Map(),
   deletedLabels: new Set(),
   deletedRecords: new Set(),
   deletedTemplates: new Set(),
@@ -399,8 +418,11 @@ export const emptyFoldedEvents = (): FoldedEvents => ({
   deletedViews: new Set(),
   drafts: new Map(),
   inboxSources: [],
+  invalidPages: new Set(),
   labels: new Map(),
   nonAdditiveEvents: [],
+  pageHistory: [],
+  pages: new Map(),
   records: new Map(),
   templates: new Map(),
   tickets: new Map(),
@@ -470,6 +492,7 @@ export const foldRepositoryEvents = (
 
       for (const event of introduced) {
         if (event.change.newObjectId === undefined) {
+          if (event.aggregateType === "page") folded.invalidPages.add(event.aggregateId);
           folded.nonAdditiveEvents.push({
             path: event.path,
             reason: "event-deleted",
@@ -491,6 +514,7 @@ export const foldRepositoryEvents = (
         }
 
         if (event.change.oldObjectId !== undefined) {
+          if (event.aggregateType === "page") folded.invalidPages.add(event.aggregateId);
           folded.nonAdditiveEvents.push({
             path: event.path,
             reason: "event-modified",
@@ -523,6 +547,8 @@ export const foldRepositoryEvents = (
           try: () => {
             const payload = document.json();
 
+            associateCommentCommitChange(folded, event.path, payload);
+
             if (options.seedFromProjection !== undefined) {
               seedFoldedEventFromProjection(
                 folded,
@@ -536,7 +562,10 @@ export const foldRepositoryEvents = (
 
             applyDatabaseEvent(folded, event.aggregateType, event.aggregateId, payload, {
               actor,
+              message: snapshot.message,
+              parentIds: snapshot.parents,
               path: event.path,
+              repositoryId: repository.repositoryId,
               snapshotId: snapshot.id,
               timestamp,
             });
@@ -545,6 +574,7 @@ export const foldRepositoryEvents = (
         }).pipe(
           Effect.catch((error) =>
             Effect.sync(() => {
+              if (event.aggregateType === "page") folded.invalidPages.add(event.aggregateId);
               warnings.push(
                 warning(
                   repository.repositoryId,
@@ -602,6 +632,34 @@ export const seedFoldedEventFromProjection = (
       folded.tickets.set(ticketId, ticket);
     }
   };
+  const seedPage = (pageId: string): void => {
+    if (folded.pages.has(pageId)) return;
+
+    const page = projection.pages.getPage(repositoryId, pageId);
+    if (page !== null) folded.pages.set(pageId, page);
+  };
+
+  if (
+    aggregateType === "page" &&
+    (event.op === "page.replace" || event.op === "page.archive" || event.op === "page.restore")
+  ) {
+    seedPage(aggregateId);
+    return;
+  }
+
+  if (event.op === "comment.add") {
+    const comment = event.value as
+      | { readonly target?: { readonly resourceId?: unknown; readonly resourceKind?: unknown } }
+      | undefined;
+    const target = comment?.target;
+
+    if (target?.resourceKind === "page" && typeof target.resourceId === "string") {
+      seedPage(target.resourceId);
+    } else if (target?.resourceKind === "ticket" && typeof target.resourceId === "string") {
+      seedTicket(target.resourceId);
+    }
+    return;
+  }
 
   if (
     aggregateType === "ticket" &&
@@ -631,6 +689,9 @@ export const applyDatabaseEvent = (
   payload: unknown,
   context: EventContext,
 ): void => {
+  if (applyPageEvent(folded, aggregateType, aggregateId, payload, context)) return;
+  if (applyCommentEvent(folded, aggregateType, aggregateId, payload, context)) return;
+
   if (payload === null || typeof payload !== "object") {
     throw new Error("event payload must be an object");
   }
@@ -738,6 +799,24 @@ export const applyDatabaseEvent = (
       folded.records.set(record.id, record);
       folded.deletedRecords.delete(record.id);
       folded.changedRecords.add(record.id);
+      if (normalizeKey(record.recordType) === "comment") {
+        const comment: CommentDocument = {
+          body: commentPayloadBody(record.payload),
+          bodyFormat: "markdown",
+          createdAt: record.createdAt,
+          createdBy: record.createdBy,
+          id: record.id,
+          repositoryId: context.repositoryId,
+          schemaVersion: 1,
+          target: {
+            repositoryId: context.repositoryId,
+            resourceId: record.issueId,
+            resourceKind: "ticket",
+          },
+        };
+        folded.comments.set(comment.id, comment);
+        folded.changedComments.add(comment.id);
+      }
       pushInboxSource(folded, {
         actor: context.actor,
         eventPath: context.path,
@@ -1234,5 +1313,38 @@ export const eventPathChange = (
         : event?.aggregateType === "record"
           ? ticketIdFromRecordId(event.aggregateId)
           : undefined,
+  };
+};
+
+export const associateCommentCommitChange = (
+  folded: FoldedEvents,
+  eventPath: string,
+  payload: unknown,
+): void => {
+  if (payload === null || typeof payload !== "object") return;
+
+  const event = payload as {
+    readonly op?: unknown;
+    readonly value?: {
+      readonly target?: { readonly resourceId?: unknown; readonly resourceKind?: unknown };
+    };
+  };
+  if (
+    event.op !== "comment.add" ||
+    event.value?.target?.resourceKind !== "ticket" ||
+    typeof event.value.target.resourceId !== "string"
+  ) {
+    return;
+  }
+
+  const index = folded.commitChanges.length - 1;
+  const commit = folded.commitChanges[index];
+  if (commit === undefined) return;
+
+  folded.commitChanges[index] = {
+    ...commit,
+    changes: commit.changes.map((change) =>
+      change.path === eventPath ? { ...change, ticketId: event.value?.target?.resourceId as string } : change,
+    ),
   };
 };

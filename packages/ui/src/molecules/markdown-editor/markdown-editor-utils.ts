@@ -29,7 +29,8 @@ import { $findMatchingParent } from "@lexical/utils";
 import {
   cycleReferenceProtocols,
   getCycleReferenceHref,
-  type CycleReferenceKind,
+  parseCycleReferenceHref,
+  type LegacyCycleReferenceKind,
   unwrapNestedCycleReferenceMarkdownLinks,
 } from "../../lib/markdown-references.ts";
 
@@ -44,6 +45,21 @@ export const markdownEditorNodes: InitialConfigType["nodes"] = [
   CodeHighlightNode,
 ];
 
+const referenceHref = (kind: LegacyCycleReferenceKind, id: string): string => {
+  switch (kind) {
+    case "agent":
+      return getCycleReferenceHref({ id, kind: "agent" });
+    case "commit":
+      return getCycleReferenceHref({ id, kind: "commit" });
+    case "issue":
+      return getCycleReferenceHref({ id, kind: "issue" });
+    case "repository":
+      return getCycleReferenceHref({ id, kind: "repository" });
+    case "user":
+      return getCycleReferenceHref({ id, kind: "user" });
+  }
+};
+
 const createCycleReferenceTransformer = ({
   importRegExp,
   kind,
@@ -52,7 +68,7 @@ const createCycleReferenceTransformer = ({
   regExp,
 }: {
   readonly importRegExp: RegExp;
-  readonly kind: CycleReferenceKind;
+  readonly kind: LegacyCycleReferenceKind;
   readonly label: (id: string) => string;
   readonly normalizeId?: (id: string) => string;
   readonly regExp: RegExp;
@@ -67,7 +83,7 @@ const createCycleReferenceTransformer = ({
     if (!rawId) return;
 
     const id = normalizeId(rawId);
-    const linkNode = $createLinkNode(getCycleReferenceHref({ id, kind }));
+    const linkNode = $createLinkNode(referenceHref(kind, id));
     const linkTextNode = $createTextNode(label(id));
     linkTextNode.setFormat(textNode.getFormat());
     linkNode.append(linkTextNode);
@@ -76,14 +92,6 @@ const createCycleReferenceTransformer = ({
     return linkTextNode;
   },
   type: "text-match",
-});
-
-const ISSUE_REFERENCE = createCycleReferenceTransformer({
-  importRegExp: /(?<![\w/-])#([A-Za-z0-9]{2,5}-[A-Za-z0-9]{5,})(?![\w-])/u,
-  kind: "issue",
-  label: (id) => `#${id}`,
-  normalizeId: (id) => id.toUpperCase(),
-  regExp: /(?<![\w/-])#([A-Za-z0-9]{2,5}-[A-Za-z0-9]{5,})(?![\w-])$/u,
 });
 
 const USER_REFERENCE = createCycleReferenceTransformer({
@@ -126,7 +134,6 @@ export const markdownEditorTransformers: Array<Transformer> = [
   STRIKETHROUGH,
   INLINE_CODE,
   LINK,
-  ISSUE_REFERENCE,
   USER_REFERENCE,
   REPOSITORY_REFERENCE,
   COMMIT_REFERENCE,
@@ -141,6 +148,7 @@ export const safeMarkdownProtocols = new Set([
 
 export const isSafeMarkdownUrl = (href: string): boolean => {
   if (href.trim().length === 0) return false;
+  if (parseCycleReferenceHref(href) !== null) return true;
   if (!URL.canParse(href, "https://cycle.local")) return false;
 
   const url = new URL(href, "https://cycle.local");

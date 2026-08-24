@@ -24,6 +24,7 @@ export type MarkdownRendererProps = {
   readonly onCycleReferenceClick?: (reference: CycleReference) => void;
   readonly onExternalLinkClick?: (url: string) => void;
   readonly onIssueReferenceClick?: (issueId: string) => void;
+  readonly onPageReferenceClick?: (pageId: string, repositoryId: string) => void;
   readonly onRepositoryReferenceClick?: (repositoryId: string) => void;
   readonly onUserReferenceClick?: (userId: string) => void;
 };
@@ -35,6 +36,7 @@ export type MarkdownReferenceHandlers = Pick<
   | "onCycleReferenceClick"
   | "onExternalLinkClick"
   | "onIssueReferenceClick"
+  | "onPageReferenceClick"
   | "onRepositoryReferenceClick"
   | "onUserReferenceClick"
 >;
@@ -70,6 +72,9 @@ const handleCycleReferenceClick = (
       return;
     case "issue":
       handlers.onIssueReferenceClick?.(reference.id);
+      return;
+    case "page":
+      handlers.onPageReferenceClick?.(reference.id, reference.repositoryId);
       return;
     case "repository":
       handlers.onRepositoryReferenceClick?.(reference.id);
@@ -186,6 +191,7 @@ export const MarkdownRenderer = ({
   onCycleReferenceClick,
   onExternalLinkClick,
   onIssueReferenceClick,
+  onPageReferenceClick,
   onRepositoryReferenceClick,
   onUserReferenceClick,
 }: MarkdownRendererProps) => (
@@ -203,6 +209,7 @@ export const MarkdownRenderer = ({
         onCycleReferenceClick,
         onExternalLinkClick,
         onIssueReferenceClick,
+        onPageReferenceClick,
         onRepositoryReferenceClick,
         onUserReferenceClick,
       })}

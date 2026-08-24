@@ -36,13 +36,17 @@ export type IssueCommentComposerProps = Omit<
 > & {
   readonly author?: IssueAuthor;
   readonly defaultValue?: string;
+  readonly disabled?: boolean;
   readonly onAttach?: React.MouseEventHandler<HTMLButtonElement>;
   readonly onSubmit?: (value: string) => void;
   readonly onTagQueryChange?: (query: string) => void;
   readonly onTagSelect?: (suggestion: MarkdownEditorTagSuggestion) => void;
+  readonly onValueChange?: (value: string) => void;
   readonly placeholder?: string;
   readonly submitLabel?: string;
+  readonly submitting?: boolean;
   readonly tagSuggestions?: readonly MarkdownEditorTagSuggestion[];
+  readonly value?: string;
 };
 
 const IssueAvatar = ({
@@ -102,6 +106,7 @@ export const IssueCommentCard = React.forwardRef<HTMLDivElement, IssueCommentCar
       onCycleReferenceClick,
       onExternalLinkClick,
       onIssueReferenceClick,
+      onPageReferenceClick,
       onRepositoryReferenceClick,
       onUserReferenceClick,
       replyAction,
@@ -140,6 +145,7 @@ export const IssueCommentCard = React.forwardRef<HTMLDivElement, IssueCommentCar
                   onCycleReferenceClick={onCycleReferenceClick}
                   onExternalLinkClick={onExternalLinkClick}
                   onIssueReferenceClick={onIssueReferenceClick}
+                  onPageReferenceClick={onPageReferenceClick}
                   onRepositoryReferenceClick={onRepositoryReferenceClick}
                   onUserReferenceClick={onUserReferenceClick}
                 />
@@ -168,29 +174,42 @@ export const IssueCommentComposer = React.forwardRef<HTMLFormElement, IssueComme
       author,
       className,
       defaultValue = "",
+      disabled = false,
       onAttach,
       onSubmit,
       onTagQueryChange,
       onTagSelect,
+      onValueChange,
       placeholder = "Leave a comment...",
       submitLabel = "Send comment",
+      submitting = false,
       tagSuggestions,
+      value: controlledValue,
       ...props
     },
     ref,
   ) {
-    const [value, setValue] = React.useState(defaultValue);
+    const [uncontrolledValue, setUncontrolledValue] = React.useState(defaultValue);
+    const value = controlledValue ?? uncontrolledValue;
+    const setValue = React.useCallback(
+      (nextValue: string) => {
+        if (controlledValue === undefined) setUncontrolledValue(nextValue);
+        onValueChange?.(nextValue);
+      },
+      [controlledValue, onValueChange],
+    );
     const submitCurrentValue = React.useCallback(() => {
       const trimmed = value.trim();
-      if (!trimmed || !onSubmit) return;
+      if (!trimmed || !onSubmit || disabled || submitting) return;
       onSubmit(trimmed);
       setValue("");
-    }, [onSubmit, value]);
+    }, [disabled, onSubmit, setValue, submitting, value]);
 
     return (
       <form
         {...props}
         ref={ref}
+        aria-disabled={disabled || submitting || undefined}
         className={cn(
           "relative grid min-h-28 overflow-visible rounded-lg border border-border bg-elevated text-elevated-foreground",
           className,
@@ -205,6 +224,7 @@ export const IssueCommentComposer = React.forwardRef<HTMLFormElement, IssueComme
           className="px-3 pt-3"
           contentClassName="px-1 py-1"
           defaultValue={defaultValue}
+          disabled={disabled || submitting}
           editorClassName="border-transparent hover:bg-transparent focus-within:border-transparent focus-within:bg-transparent"
           minHeightClassName="min-h-20"
           mode="comment"
@@ -230,9 +250,11 @@ export const IssueCommentComposer = React.forwardRef<HTMLFormElement, IssueComme
           ) : null}
           {onSubmit ? (
             <IconButton
-              disabled={value.trim().length === 0}
+              disabled={disabled || submitting || value.trim().length === 0}
               icon={<ArrowUp aria-hidden className="size-4" />}
               label={submitLabel}
+              loading={submitting}
+              loadingLabel={submitLabel}
               size="sm"
               title={submitLabel}
               type="submit"
@@ -243,3 +265,12 @@ export const IssueCommentComposer = React.forwardRef<HTMLFormElement, IssueComme
     );
   },
 );
+
+export type CommentAuthor = IssueAuthor;
+export type CommentActivityEventProps = IssueActivityEventProps;
+export type CommentCardProps = IssueCommentCardProps;
+export type CommentComposerProps = IssueCommentComposerProps;
+
+export const CommentActivityEvent = IssueActivityEvent;
+export const CommentCard = IssueCommentCard;
+export const CommentComposer = IssueCommentComposer;

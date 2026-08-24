@@ -44,6 +44,7 @@ import type {
 } from "./domain/index.ts";
 import { makeIssueFrontmatter, normalizeKey, ticketReferenceKey } from "./domain/index.ts";
 import { DatabaseSqliteError } from "./DatabaseErrors.ts";
+import { PageProjection, pageProjectionSchemaSql } from "./PageProjection.ts";
 
 type SqlValue = null | number | string;
 
@@ -235,7 +236,7 @@ type InboxListRow = InboxItemRow & {
 };
 
 const WATCHED_REF = "refs/gitdb/cycle/main";
-export const CURRENT_PROJECTION_SCHEMA_VERSION = 5;
+export const CURRENT_PROJECTION_SCHEMA_VERSION = 6;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 250;
 const StrictDecodeOptions = { onExcessProperty: "error" } as const;
@@ -729,6 +730,7 @@ const makeEffectSqliteDatabase = (filename: string): SqliteDatabaseLike => {
 
 export class Projection {
   readonly db: SqliteDatabaseLike;
+  readonly pages: PageProjection;
 
   constructor(pathOrDatabase: string | SqliteDatabaseLike = ":memory:") {
     this.db =
@@ -736,6 +738,7 @@ export class Projection {
         ? makeEffectSqliteDatabase(pathOrDatabase)
         : pathOrDatabase;
     this.initializeSchema();
+    this.pages = new PageProjection(this.db);
   }
 
   static fromSqlClient(sql: SqlClient.SqlClient): Projection {
@@ -767,6 +770,7 @@ export class Projection {
     this.ensureRepositoryMetadataColumns();
     this.ensureSharedMetadataTables();
     this.ensureInboxTables();
+    this.ensurePageProjectionTables();
     if (version < CURRENT_PROJECTION_SCHEMA_VERSION) {
       this.db.exec(`PRAGMA user_version = ${CURRENT_PROJECTION_SCHEMA_VERSION}`);
     }
@@ -817,6 +821,10 @@ export class Projection {
 
   private ensureInboxTables(): void {
     this.db.exec(inboxSchemaSql);
+  }
+
+  private ensurePageProjectionTables(): void {
+    this.db.exec(pageProjectionSchemaSql);
   }
 
   registerRepository(input: RepositoryInput): RepositoryStatus {
@@ -962,6 +970,7 @@ export class Projection {
   }
 
   clearRepositoryProjection(repositoryId: string): void {
+    this.pages.clearRepository(repositoryId);
     const tables = [
       "users",
       "labels",
@@ -1184,6 +1193,20 @@ export class Projection {
         sourceType: "comment",
         ticketId: record.issueId,
         title: "",
+      });
+      this.pages.upsertComment({
+        body,
+        bodyFormat: "markdown",
+        createdAt: record.createdAt,
+        createdBy: record.createdBy,
+        id: record.id,
+        repositoryId: input.repositoryId,
+        schemaVersion: 1,
+        target: {
+          repositoryId: input.repositoryId,
+          resourceId: record.issueId,
+          resourceKind: "ticket",
+        },
       });
     } else {
       this.db.run("DELETE FROM comments WHERE repository_id = ? AND record_id = ?", [
@@ -2827,6 +2850,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
 );
 
 ${inboxSchemaSql}
+${pageProjectionSchemaSql}
 `;
 
 export const sharedMetadataSchemaSql = `

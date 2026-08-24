@@ -10,6 +10,7 @@ import * as inbox from "./v1/inbox.ts";
 import * as initiatives from "./v1/initiatives.ts";
 import * as issues from "./v1/issues.ts";
 import * as labels from "./v1/labels.ts";
+import * as pages from "./v1/pages.ts";
 import * as repositories from "./v1/repositories.ts";
 import * as settings from "./v1/settings.ts";
 import * as templates from "./v1/templates.ts";
@@ -66,6 +67,16 @@ export const V1ApiHandlers = HttpApiBuilder.group(CycleHttpApi, "v1", (handlers)
     .handle("addIssueRecord", issues.addIssueRecord)
     .handle("listIssueComments", comments.listIssueComments)
     .handle("addIssueComment", comments.addIssueComment)
+    .handle("listPages", pages.listPages)
+    .handle("createPage", pages.createPage)
+    .handle("getPage", pages.getPage)
+    .handle("updatePage", pages.updatePage)
+    .handle("archivePage", pages.archivePage)
+    .handle("restorePage", pages.restorePage)
+    .handle("listPageHistory", pages.listPageHistory)
+    .handle("getPageRevision", pages.getPageRevision)
+    .handle("listPageComments", pages.listPageComments)
+    .handle("addPageComment", pages.addPageComment)
     .handle("createDraft", drafts.createDraft)
     .handle("updateDraft", drafts.updateDraft)
     .handle("commitDraft", drafts.commitDraft)

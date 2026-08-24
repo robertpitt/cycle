@@ -323,6 +323,7 @@ const useCaseAnnotations = <Name extends UseCaseName>(
   actorType: context.actor?.type ?? null,
   dryRun: context.dryRun,
   hasIdempotencyKey: context.idempotencyKey !== undefined,
+  pageId: pageIdFromInput(context.input) ?? null,
   requestId: context.requestId,
   repositoryId: context.repositoryId ?? null,
   service: "@cycle/usecases",
@@ -379,6 +380,21 @@ export const ticketIdFromInput = (input: unknown): string | undefined => {
   if (typeof id === "string") return id;
   const issueId = (inner as { readonly issueId?: unknown }).issueId;
   return typeof issueId === "string" ? issueId : undefined;
+};
+
+export const pageIdFromInput = (input: unknown): string | undefined => {
+  if (typeof input !== "object" || input === null) return undefined;
+  const inner = (input as { readonly input?: unknown }).input;
+  if (typeof inner !== "object" || inner === null) return undefined;
+  const pageId = (inner as { readonly pageId?: unknown }).pageId;
+  if (typeof pageId === "string") return pageId;
+  const id = (inner as { readonly id?: unknown }).id;
+  if (typeof id === "string") return id;
+  const target = (inner as { readonly target?: unknown }).target;
+  if (typeof target !== "object" || target === null) return undefined;
+  const resourceKind = (target as { readonly resourceKind?: unknown }).resourceKind;
+  const resourceId = (target as { readonly resourceId?: unknown }).resourceId;
+  return resourceKind === "page" && typeof resourceId === "string" ? resourceId : undefined;
 };
 
 export type UseCaseServices = DatabaseService | WorkflowPolicy;

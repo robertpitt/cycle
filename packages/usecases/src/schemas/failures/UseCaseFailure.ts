@@ -19,6 +19,9 @@ export const UseCaseFailure = Schema.Struct({
   message: Schema.String.pipe(
     Schema.annotateKey({ description: "Human-readable failure message." }),
   ),
+  pageId: Schema.optional(Schema.String).pipe(
+    Schema.annotateKey({ description: "Page id related to the failure." }),
+  ),
   repositoryId: Schema.optional(Schema.String).pipe(
     Schema.annotateKey({ description: "Repository id related to the failure." }),
   ),

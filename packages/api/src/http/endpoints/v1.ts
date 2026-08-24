@@ -55,6 +55,25 @@ import {
   LabelQueryParams,
 } from "../schemas/HttpLabelResourceEnvelope.ts";
 import {
+  HttpCommentCollectionEnvelope,
+  HttpCommentCreatedEnvelope,
+  HttpPageCollectionEnvelope,
+  HttpPageCreatedEnvelope,
+  HttpPageHistoryCollectionEnvelope,
+  HttpPageResourceEnvelope,
+  PageArchivePayload,
+  PageCommentAddPayload,
+  PageCommentListQueryParams,
+  PageCreatePayload,
+  PageGetQueryParams,
+  PageHistoryQueryParams,
+  PageListQueryParams,
+  PageParams,
+  PageRestorePayload,
+  PageRevisionParams,
+  PageUpdatePayload,
+} from "../schemas/HttpPageResourceEnvelope.ts";
+import {
   HttpTemplateCollectionEnvelope,
   HttpTemplateResourceEnvelope,
   TemplateCreatePayload,
@@ -407,6 +426,81 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
         params: IssueParams,
         payload: IssueCommentAddPayload,
         success: HttpRecordCreatedEnvelope,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("listPages", "/v1/repositories/:repositoryId/pages", {
+      params: RepositoryParams,
+      query: PageListQueryParams,
+      success: HttpPageCollectionEnvelope,
+    }),
+    HttpApiEndpoint.post("createPage", "/v1/repositories/:repositoryId/pages", {
+      params: RepositoryParams,
+      payload: PageCreatePayload,
+      success: HttpPageCreatedEnvelope,
+    }),
+    HttpApiEndpoint.get("getPage", "/v1/repositories/:repositoryId/pages/:pageId", {
+      params: PageParams,
+      query: PageGetQueryParams,
+      success: HttpPageResourceEnvelope,
+    }),
+    HttpApiEndpoint.patch("updatePage", "/v1/repositories/:repositoryId/pages/:pageId", {
+      params: PageParams,
+      payload: PageUpdatePayload,
+      success: HttpPageResourceEnvelope,
+    }),
+    HttpApiEndpoint.post(
+      "archivePage",
+      "/v1/repositories/:repositoryId/pages/:pageId/archive",
+      {
+        params: PageParams,
+        payload: PageArchivePayload,
+        success: HttpPageResourceEnvelope,
+      },
+    ),
+    HttpApiEndpoint.post(
+      "restorePage",
+      "/v1/repositories/:repositoryId/pages/:pageId/restore",
+      {
+        params: PageParams,
+        payload: PageRestorePayload,
+        success: HttpPageResourceEnvelope,
+      },
+    ),
+    HttpApiEndpoint.get(
+      "listPageHistory",
+      "/v1/repositories/:repositoryId/pages/:pageId/history",
+      {
+        params: PageParams,
+        query: PageHistoryQueryParams,
+        success: HttpPageHistoryCollectionEnvelope,
+      },
+    ),
+    HttpApiEndpoint.get(
+      "getPageRevision",
+      "/v1/repositories/:repositoryId/pages/:pageId/revisions/:snapshotId",
+      {
+        params: PageRevisionParams,
+        success: HttpPageResourceEnvelope,
+      },
+    ),
+    HttpApiEndpoint.get(
+      "listPageComments",
+      "/v1/repositories/:repositoryId/pages/:pageId/comments",
+      {
+        params: PageParams,
+        query: PageCommentListQueryParams,
+        success: HttpCommentCollectionEnvelope,
+      },
+    ),
+    HttpApiEndpoint.post(
+      "addPageComment",
+      "/v1/repositories/:repositoryId/pages/:pageId/comments",
+      {
+        params: PageParams,
+        payload: PageCommentAddPayload,
+        success: HttpCommentCreatedEnvelope,
       },
     ),
   )

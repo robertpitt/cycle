@@ -2,9 +2,11 @@ import { Context, Crypto, Effect, Layer } from "effect";
 import { DatabaseValidationError, type DatabaseFailure } from "./DatabaseErrors.ts";
 
 export type DatabaseIdGeneratorShape = {
+  readonly commentId: Effect.Effect<string, DatabaseFailure>;
   readonly draftId: Effect.Effect<string, DatabaseFailure>;
   readonly eventId: Effect.Effect<string, DatabaseFailure>;
   readonly labelId: Effect.Effect<string, DatabaseFailure>;
+  readonly pageId: Effect.Effect<string, DatabaseFailure>;
   readonly recordId: Effect.Effect<string, DatabaseFailure>;
   readonly templateId: Effect.Effect<string, DatabaseFailure>;
   readonly ticketId: Effect.Effect<string, DatabaseFailure>;
@@ -48,11 +50,23 @@ export const DatabaseIdGeneratorLive = Layer.effect(
           }),
       ),
     );
+    const makePageId = crypto.randomUUIDv7.pipe(
+      Effect.mapError(
+        (error): DatabaseFailure =>
+          new DatabaseValidationError({
+            field: "page.id",
+            message: "failed to generate Page id",
+            cause: error,
+          }),
+      ),
+    );
 
     return DatabaseIdGenerator.of({
+      commentId: makeId("cmt"),
       draftId: makeId("drf"),
       eventId: makeId("evt"),
       labelId: makeId("lbl"),
+      pageId: makePageId,
       recordId: makeId("rec"),
       templateId: makeId("tpl"),
       ticketId: makeTicketSeed,

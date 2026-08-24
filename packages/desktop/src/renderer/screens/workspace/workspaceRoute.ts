@@ -20,6 +20,12 @@ export type WorkspaceLocation =
       readonly scope: "repository";
     }
   | {
+      readonly page: "pages";
+      readonly pageId?: string;
+      readonly repositoryId: string;
+      readonly scope: "repository";
+    }
+  | {
       readonly issueId?: string;
       readonly page: "views";
       readonly repositoryId: string;
@@ -95,6 +101,12 @@ export const toWorkspacePath = (location: WorkspaceLocation): string => {
       : `${repositoryPath}/issues`;
   }
 
+  if (location.page === "pages") {
+    return location.pageId
+      ? `${repositoryPath}/pages/${encodeSegment(location.pageId)}`
+      : `${repositoryPath}/pages`;
+  }
+
   if (location.page === "views") {
     if (location.viewId && location.issueId) {
       return `${repositoryPath}/views/${encodeSegment(location.viewId)}/issues/${encodeSegment(
@@ -152,6 +164,15 @@ export const parseWorkspacePath = (path: string): WorkspaceLocation | undefined 
     return {
       issueId: segments[3],
       page,
+      repositoryId,
+      scope: "repository",
+    };
+  }
+
+  if (page === "pages" && (segments.length === 3 || segments.length === 4)) {
+    return {
+      page,
+      pageId: segments[3],
       repositoryId,
       scope: "repository",
     };
@@ -220,6 +241,14 @@ export const parentWorkspacePath = (location: WorkspaceLocation): string | undef
   if (location.page === "issues" && location.issueId) {
     return toWorkspacePath({
       page: "issues",
+      repositoryId: location.repositoryId,
+      scope: "repository",
+    });
+  }
+
+  if (location.page === "pages" && location.pageId) {
+    return toWorkspacePath({
+      page: "pages",
       repositoryId: location.repositoryId,
       scope: "repository",
     });

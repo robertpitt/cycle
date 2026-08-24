@@ -16,6 +16,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@cycle/contracts": "workspace:*",
     "@cycle/sqlite": "workspace:*",
     "effect": "4.0.0-beta.78",
     "@cycle/git-store": "workspace:*"

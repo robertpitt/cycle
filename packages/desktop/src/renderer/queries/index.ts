@@ -6,5 +6,6 @@ export * from "./inbox.ts";
 export * from "./issueHistory.ts";
 export * from "./issues.ts";
 export * from "./metadata.ts";
+export * from "./pages.ts";
 export * from "./repositories.ts";
 export * from "./settingsDiagnostics.ts";

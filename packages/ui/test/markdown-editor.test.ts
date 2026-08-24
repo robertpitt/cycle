@@ -67,11 +67,11 @@ describe("Markdown editor utilities", () => {
     expect(roundTripMarkdown(markdown)).toBe(markdown);
   });
 
-  it("upgrades Cycle reference shorthand to canonical Markdown links", () => {
+  it("does not invent repository scope for issue shorthand", () => {
     const markdown = "Coordinate #rob-10001 with @codex in repo:cycle and commit:ABCDEF1.";
 
     expect(roundTripMarkdown(markdown)).toBe(
-      "Coordinate [#ROB-10001](cycle-issue:ROB-10001) with [@codex](cycle-user:codex) in [repo:cycle](cycle-repository:cycle) and [commit:abcdef1](cycle-commit:abcdef1).",
+      "Coordinate #rob-10001 with [@codex](cycle-user:codex) in [repo:cycle](cycle://repository/cycle) and [commit:abcdef1](cycle-commit:abcdef1).",
     );
   });
 
@@ -116,6 +116,10 @@ describe("Markdown editor utilities", () => {
     expect(isSafeMarkdownUrl("/repositories/cycle")).toBe(true);
     expect(isSafeMarkdownUrl("#comment-1")).toBe(true);
     expect(isSafeMarkdownUrl("cycle-issue:ROB-10001")).toBe(true);
+    expect(
+      isSafeMarkdownUrl("cycle://repository/cycle/pages/0198f6d4-90a2-7a2a-9f0f-04d232812d31"),
+    ).toBe(true);
+    expect(isSafeMarkdownUrl("cycle://repository/cycle/pages/page?unsafe=true")).toBe(false);
     expect(isSafeMarkdownUrl("javascript:alert(1)")).toBe(false);
     expect(isSafeMarkdownUrl("")).toBe(false);
   });

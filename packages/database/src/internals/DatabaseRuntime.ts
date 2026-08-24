@@ -1,4 +1,10 @@
 import type { Effect } from "effect";
+import type {
+  CommentDocument,
+  PageDocument,
+  PageHistoryEntry,
+} from "@cycle/contracts/schemas";
+import type { CommentEventPayload, PageEventPayload } from "../PageEvent.ts";
 import {
   type Actor,
   type CycleRepositoryMetadata,
@@ -33,6 +39,8 @@ export type CommitChange = {
 };
 
 export type DatabaseEventPayload =
+  | PageEventPayload
+  | CommentEventPayload
   | {
       readonly op: "repository.metadata.set";
       readonly value: CycleRepositoryMetadata;
@@ -79,7 +87,9 @@ export type DatabaseEventPayload =
     };
 
 export type FoldedEvents = {
+  readonly changedComments: Set<string>;
   readonly changedLabels: Set<string>;
+  readonly changedPages: Set<string>;
   readonly changedRecords: Set<string>;
   readonly changedTemplates: Set<string>;
   readonly changedTickets: Set<string>;
@@ -91,6 +101,7 @@ export type FoldedEvents = {
     readonly snapshotId: string;
   }>;
   cycleMetadata?: CycleRepositoryMetadata;
+  readonly comments: Map<string, CommentDocument>;
   readonly deletedLabels: Set<string>;
   readonly deletedRecords: Set<string>;
   readonly deletedTemplates: Set<string>;
@@ -99,6 +110,7 @@ export type FoldedEvents = {
   readonly deletedViews: Set<string>;
   readonly drafts: Map<string, TicketDraftDocument>;
   readonly inboxSources: Array<InboxSourceEvent>;
+  readonly invalidPages: Set<string>;
   readonly labels: Map<string, LabelDefinitionDocument>;
   readonly nonAdditiveEvents: Array<{
     readonly path: string;
@@ -106,6 +118,8 @@ export type FoldedEvents = {
     readonly snapshotId: string;
   }>;
   readonly records: Map<string, LinkedRecord>;
+  readonly pageHistory: Array<PageHistoryProjection>;
+  readonly pages: Map<string, PageDocument>;
   readonly templates: Map<string, IssueTemplateDocument>;
   readonly tickets: Map<string, TicketDocument>;
   readonly users: Map<string, UserProfileDocument>;
@@ -115,9 +129,24 @@ export type FoldedEvents = {
 
 export type EventContext = {
   readonly actor?: Actor;
+  readonly message?: string;
+  readonly parentIds: ReadonlyArray<string>;
   readonly path: string;
+  readonly repositoryId: string;
   readonly snapshotId: string;
   readonly timestamp: string;
+};
+
+export type PageHistoryProjection = {
+  readonly actor: PageHistoryEntry["actor"];
+  readonly committedAt: string;
+  readonly message?: string;
+  readonly operation: PageHistoryEntry["operation"];
+  readonly pageId: string;
+  readonly parentIds: ReadonlyArray<string>;
+  readonly path: string;
+  readonly repositoryId: string;
+  readonly snapshotId: string;
 };
 
 export type InboxSourceEvent =

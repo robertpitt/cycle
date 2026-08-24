@@ -20,6 +20,8 @@ const workspaceRoutePaths = [
   "settings/repositories/:repositoryId",
   "repositories/:repositoryId/issues",
   "repositories/:repositoryId/issues/:issueId",
+  "repositories/:repositoryId/pages",
+  "repositories/:repositoryId/pages/:pageId",
   "repositories/:repositoryId/views",
   "repositories/:repositoryId/views/:viewId",
   "repositories/:repositoryId/views/:viewId/issues/:issueId",

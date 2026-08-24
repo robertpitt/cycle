@@ -22,6 +22,7 @@ import {
   InboxPanel,
   IssuesPanel,
   PageBodyPlaceholder,
+  PagesPanel,
   RepositoryHistoryPanel,
   RepositorySettingsIndexPanel,
   RepositorySettingsPanel,
@@ -157,7 +158,7 @@ const workspaceLocationForNavItemId = (itemId: string): WorkspaceLocation | unde
     };
   }
 
-  if (page === "history" || page === "issues" || page === "views") {
+  if (page === "history" || page === "issues" || page === "pages" || page === "views") {
     return {
       page,
       repositoryId,
@@ -278,6 +279,12 @@ export const WorkspaceScreen = () => {
   const isIssueDetailPage = isWorkItemsPage && selectedIssueId !== undefined;
   const isRepositoryHistoryPage =
     workspaceLocation.scope === "repository" && workspaceLocation.page === "history";
+  const isRepositoryPagesPage =
+    workspaceLocation.scope === "repository" && workspaceLocation.page === "pages";
+  const selectedPageId =
+    workspaceLocation.scope === "repository" && workspaceLocation.page === "pages"
+      ? workspaceLocation.pageId
+      : undefined;
   const isApplicationSettingsPage =
     workspaceLocation.scope === "workspace" && workspaceLocation.page === "settings";
   const isRepositorySettingsPage =
@@ -1228,7 +1235,7 @@ export const WorkspaceScreen = () => {
               className={
                 isIssueDetailPage
                   ? "relative overflow-hidden bg-background p-0"
-                  : isRepositoryHistoryPage
+                  : isRepositoryHistoryPage || isRepositoryPagesPage
                     ? "relative bg-background p-0"
                     : "relative bg-background/70 p-3"
               }
@@ -1388,6 +1395,31 @@ export const WorkspaceScreen = () => {
                   }}
                   repositoryId={activeRepository?.id}
                 />
+              ) : hasRepositories && isRepositoryPagesPage ? (
+                <PagesPanel
+                  onIssueSelect={(issueId, repositoryId) =>
+                    navigateWorkspace({
+                      issueId,
+                      page: "issues",
+                      repositoryId,
+                      scope: "repository",
+                    })
+                  }
+                  onPageSelect={(nextPageId, repositoryId) =>
+                    navigateWorkspace({
+                      page: "pages",
+                      pageId: nextPageId,
+                      repositoryId,
+                      scope: "repository",
+                    })
+                  }
+                  onPagesRootSelect={(repositoryId) =>
+                    navigateWorkspace({ page: "pages", repositoryId, scope: "repository" })
+                  }
+                  pageId={selectedPageId}
+                  profile={appConfigQuery.data?.profile}
+                  repositoryId={activeRepository?.id}
+                />
               ) : hasRepositories ? (
                 <PageBodyPlaceholder label={`${activePageTitle} content`} />
               ) : (
@@ -1400,6 +1432,7 @@ export const WorkspaceScreen = () => {
               {activeRepository &&
               !isIssueDetailPage &&
               !isRepositoryHistoryPage &&
+              !isRepositoryPagesPage &&
               !isRepositorySettingsPage ? (
                 <IconButton
                   className="absolute bottom-3 right-3 shadow-card"

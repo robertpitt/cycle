@@ -51,9 +51,20 @@ export const BackendDatabaseIdGeneratorLive = Layer.effect(
       randomUuid.pipe(Effect.map((uuid) => `${prefix}_${uuid.replaceAll("-", "")}`));
 
     return DatabaseIdGenerator.of({
+      commentId: makeId("cmt"),
       draftId: makeId("drf"),
       eventId: makeId("evt"),
       labelId: makeId("lbl"),
+      pageId: crypto.randomUUIDv7.pipe(
+        Effect.mapError(
+          (cause) =>
+            new DatabaseValidationError({
+              field: "page.id",
+              message: "failed to generate Page id",
+              cause,
+            }),
+        ),
+      ),
       recordId: makeId("rec"),
       templateId: makeId("tpl"),
       ticketId: randomUuid.pipe(
