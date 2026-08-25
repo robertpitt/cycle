@@ -381,11 +381,10 @@ describe("@cycle/api", () => {
       assert.equal(body.paths?.["/v1/chat/threads"], undefined);
       assert.equal(body.paths?.["/v1/chat/turns"], undefined);
       assert.equal(body.paths?.["/v1/chat/turns/stream"], undefined);
-      assert.equal(
+      assert.ok(
         body.paths?.[
           "/v1/repositories/{repositoryId}/issues/{issueId}/comments/{commentId}/archive"
         ],
-        undefined,
       );
       assert.ok(body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/transitions"]);
       assert.ok(body.paths?.["/v1/repositories/{repositoryId}/drafts"]);
@@ -605,6 +604,35 @@ describe("@cycle/api", () => {
         }),
       );
       assert.equal(invalid.status, 400);
+    } finally {
+      await api.dispose();
+    }
+  });
+
+  it("archives issue comments through the registered append-only record route", async () => {
+    const { api, calls } = makeTestApi();
+
+    try {
+      const response = await api.fetch(
+        new Request(
+          "http://cycle.test/v1/repositories/test-repository/issues/ISSUE-1/comments/COMMENT-1/archive",
+          {
+            ...authed({ reason: "Resolved" }),
+            method: "POST",
+          },
+        ),
+      );
+      const body = (await response.json()) as {
+        readonly data?: {
+          readonly payload?: unknown;
+          readonly recordType?: string;
+        };
+      };
+
+      assert.equal(response.status, 201);
+      assert.equal(body.data?.recordType, "comment.archive");
+      assert.deepEqual(body.data?.payload, { commentId: "COMMENT-1", reason: "Resolved" });
+      assert.deepEqual(calls, ["RecordAdd"]);
     } finally {
       await api.dispose();
     }

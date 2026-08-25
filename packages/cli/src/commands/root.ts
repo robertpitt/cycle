@@ -10,5 +10,5 @@ export const cycle = Command.make("cycle").pipe(
     requestId: optionalString("request-id"),
     token: optionalString("token"),
   }),
-  Command.withDescription("Manage Cycle repositories, issues, comments, and automation checks."),
+  Command.withDescription("Manage the complete local Cycle product surface."),
 );

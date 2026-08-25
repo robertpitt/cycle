@@ -125,6 +125,11 @@ export const IssueCommentAddPayload = strictSchema(
     body: Schema.String,
   }),
 );
+export const IssueCommentArchivePayload = strictSchema(
+  Schema.Struct({
+    reason: Schema.optional(Schema.String),
+  }),
+);
 
 export const IssueParams = { repositoryId: Schema.String, issueId: Schema.String };
 export const IssueRevisionParams = {

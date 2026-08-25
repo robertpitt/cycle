@@ -96,7 +96,9 @@ import {
   HttpTicketRevisionDiffEnvelope,
   HttpTicketSearchCollectionEnvelope,
   IssueCommentAddPayload,
+  IssueCommentArchivePayload,
   IssueCommentListQueryParams,
+  IssueCommentParams,
   IssueCreatePayload,
   IssueDiffQueryParams,
   IssueHistoryQueryParams,
@@ -452,6 +454,15 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
       {
         params: IssueParams,
         payload: IssueCommentAddPayload,
+        success: HttpRecordCreatedEnvelope,
+      },
+    ),
+    HttpApiEndpoint.post(
+      "archiveIssueComment",
+      "/v1/repositories/:repositoryId/issues/:issueId/comments/:commentId/archive",
+      {
+        params: IssueCommentParams,
+        payload: IssueCommentArchivePayload,
         success: HttpRecordCreatedEnvelope,
       },
     ),

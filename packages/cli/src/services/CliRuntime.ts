@@ -4,6 +4,7 @@ export type CliIo = {
   readonly cwd: string;
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly fetch?: typeof fetch;
+  readonly webSocketFactory?: CliWebSocketFactory;
   readonly setExitCode?: (exitCode: number) => void;
   readonly stderr: { readonly write: (chunk: string | Uint8Array) => unknown };
   readonly stdin: AsyncIterable<string | Uint8Array> & { readonly isTTY?: boolean };
@@ -15,6 +16,7 @@ export type CliRuntimeShape = {
   readonly cwd: string;
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly fetch?: typeof fetch;
+  readonly webSocketFactory: CliWebSocketFactory;
   readonly readStdin: () => Promise<string>;
   readonly setExitCode?: (exitCode: number) => void;
   readonly stdinIsTTY: boolean;
@@ -25,6 +27,19 @@ export type CliRuntimeShape = {
 export class CliRuntime extends Context.Service<CliRuntime, CliRuntimeShape>()(
   "@cycle/cli/CliRuntime",
 ) {}
+
+export type CliWebSocket = {
+  readonly addEventListener: (
+    type: "close" | "error" | "message" | "open",
+    listener: (event: { readonly data?: unknown }) => void,
+  ) => void;
+  readonly close: () => void;
+  readonly send: (data: string) => void;
+};
+
+export type CliWebSocketFactory = (url: string) => CliWebSocket;
+
+const defaultWebSocketFactory: CliWebSocketFactory = (url) => new WebSocket(url);
 
 export const exitCodes = {
   apiAuth: 3,
@@ -43,6 +58,7 @@ export const runtimeFromIo = (argv: ReadonlyArray<string>, io: CliIo): CliRuntim
   cwd: io.cwd,
   env: io.env,
   ...(io.fetch === undefined ? {} : { fetch: io.fetch }),
+  webSocketFactory: io.webSocketFactory ?? defaultWebSocketFactory,
   readStdin: () => readAsyncIterable(io.stdin),
   ...(io.setExitCode === undefined ? {} : { setExitCode: io.setExitCode }),
   stdinIsTTY: io.stdin.isTTY === true,
@@ -68,6 +84,7 @@ export const defaultCliRuntime = (
       argv: args,
       cwd: path.resolve("."),
       env,
+      webSocketFactory: defaultWebSocketFactory,
       readStdin: () =>
         Effect.runPromiseWith(services)(
           stdio.stdin.pipe(

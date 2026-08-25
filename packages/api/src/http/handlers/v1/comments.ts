@@ -1,5 +1,5 @@
 import * as ContractSchemas from "@cycle/contracts/schemas";
-import { CommentAdd, CommentList } from "@cycle/usecases";
+import { CommentAdd, CommentList, RecordAdd } from "@cycle/usecases";
 import type { CommentDocument, LinkedRecord } from "@cycle/contracts/schemas";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
@@ -76,6 +76,34 @@ export const addIssueComment = ({ params, payload, request }: V1Request<"addIssu
     });
 
     return resourceResponse(requestId, 201, legacy);
+  });
+
+export const archiveIssueComment = ({ params, payload }: V1Request<"archiveIssueComment">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+    const input = yield* decodeHttpValue(
+      ContractSchemas.AddLinkedRecordInput,
+      {
+        issueId: params.issueId,
+        payload: {
+          commentId: params.commentId,
+          ...(payload.reason === undefined ? {} : { reason: payload.reason }),
+        },
+        recordType: "comment.archive",
+        userVisible: true,
+      },
+      requestId,
+      { code: "INVALID_COMMENT_ARCHIVE_PAYLOAD", message: "Invalid comment archive payload." },
+    );
+    if (HttpServerResponse.isHttpServerResponse(input)) return input;
+    const result = yield* runUseCase(
+      RecordAdd,
+      scoped(params.repositoryId, input),
+      meta(requestId),
+    );
+    if (HttpServerResponse.isHttpServerResponse(result)) return result;
+
+    return resourceResponse(requestId, 201, result);
   });
 
 const ticketTarget = (repositoryId: string, ticketId: string) => ({
