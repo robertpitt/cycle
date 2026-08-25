@@ -43,6 +43,7 @@ import {
 } from "../schemas/AutomationEvaluationResourceEnvelope.ts";
 import {
   DraftCreatePayload,
+  DraftDocumentCollectionEnvelope,
   DraftDocumentCreatedEnvelope,
   DraftDocumentResourceEnvelope,
   DraftParams,
@@ -519,6 +520,10 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
     ),
   )
   .add(
+    HttpApiEndpoint.get("listDrafts", "/v1/repositories/:repositoryId/drafts", {
+      params: RepositoryParams,
+      success: DraftDocumentCollectionEnvelope,
+    }),
     HttpApiEndpoint.post("createDraft", "/v1/repositories/:repositoryId/drafts", {
       params: RepositoryParams,
       payload: DraftCreatePayload,

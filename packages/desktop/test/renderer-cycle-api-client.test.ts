@@ -328,6 +328,68 @@ describe("renderer cycle API client", () => {
     ]);
   });
 
+  it("lists, creates, updates, and commits durable ticket drafts", async () => {
+    const calls: Array<{
+      readonly body?: BodyInit | null;
+      readonly method?: string;
+      readonly url: string;
+    }> = [];
+    installRendererApiWindow();
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      calls.push({ body: init?.body, method: init?.method, url });
+      if (init?.method === "GET") return jsonResponse(collectionEnvelope([ticketDraftRecord()]));
+      if (url.endsWith("/commit")) {
+        return jsonResponse({ data: archivedIssueRecord("ISSUE-2"), meta: { requestId: "req" } });
+      }
+      return jsonResponse({ data: ticketDraftRecord(), meta: { requestId: "req" } });
+    };
+
+    const drafts = await cycleApiClient.listDrafts("repo-a");
+    await cycleApiClient.createDraft("repo-a", {
+      project: "project-alpha",
+      title: "Draft ticket",
+      type: "task",
+    });
+    await cycleApiClient.updateDraft("repo-a", {
+      body: "Updated body",
+      draftId: "draft-1",
+      frontmatter: { project: "project-beta" },
+    });
+    await cycleApiClient.commitDraft("repo-a", "draft-1");
+
+    assert.equal(drafts[0]?.input.project, "project-alpha");
+    assert.deepEqual(calls, [
+      {
+        body: undefined,
+        method: "GET",
+        url: "http://cycle.test/v1/repositories/repo-a/drafts",
+      },
+      {
+        body: JSON.stringify({
+          project: "project-alpha",
+          title: "Draft ticket",
+          type: "task",
+        }),
+        method: "POST",
+        url: "http://cycle.test/v1/repositories/repo-a/drafts",
+      },
+      {
+        body: JSON.stringify({
+          body: "Updated body",
+          frontmatter: { project: "project-beta" },
+        }),
+        method: "PATCH",
+        url: "http://cycle.test/v1/repositories/repo-a/drafts/draft-1",
+      },
+      {
+        body: "{}",
+        method: "POST",
+        url: "http://cycle.test/v1/repositories/repo-a/drafts/draft-1/commit",
+      },
+    ]);
+  });
+
   it("starts ticket implementation through the durable issue task endpoint", async () => {
     installRendererApiWindow();
     let request:
@@ -597,6 +659,20 @@ describe("renderer cycle API client", () => {
     globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
 
     const result = await cycleApiClient.startTicketDraftChat({
+      authoringOptions: {
+        assignee: null,
+        dueDate: null,
+        estimate: null,
+        externalLinks: [],
+        labels: ["product"],
+        parent: null,
+        priority: "high",
+        project: "repo-cycle",
+        status: "todo",
+        template: "template-feature",
+        type: "feature",
+      },
+      draftId: "draft-ticket",
       instructions: "Draft login bug",
       repository: {
         displayName: "Cycle",
@@ -614,12 +690,16 @@ describe("renderer cycle API client", () => {
 
     assert.deepEqual(sent[0]?.payload, { token: "test-token" });
     assert.equal(createThread?.payload.origin.repositoryId, "repo-cycle");
+    assert.equal(createThread?.payload.origin.draftId, "draft-ticket");
     assert.equal(createThread?.payload.runtimeMode, "workspace-write");
     assert.equal(sendTurn?.payload.threadId, "thread-draft");
     assert.match(
       sendTurn?.payload.message,
       /Target repository: cycle:\/\/repository\/repo-cycle \(Cycle\)/u,
     );
+    assert.match(sendTurn?.payload.message, /Target durable draft: draft-ticket/u);
+    assert.match(sendTurn?.payload.message, /cycle_draft_update/u);
+    assert.match(sendTurn?.payload.message, /"template": "template-feature"/u);
     assert.match(sendTurn?.payload.message, /Draft login bug/u);
   });
 });
@@ -711,5 +791,19 @@ const savedViewRecord = (id: string) => ({
   pinned: false,
   query: {},
   schemaVersion: 1,
+  updatedAt: "2026-07-01T10:00:00.000Z",
+});
+
+const ticketDraftRecord = () => ({
+  createdAt: "2026-07-01T10:00:00.000Z",
+  createdBy: { name: "Tester", type: "human" },
+  id: "draft-1",
+  input: {
+    project: "project-alpha",
+    title: "Draft ticket",
+    type: "task",
+  },
+  schemaVersion: 1,
+  status: "open",
   updatedAt: "2026-07-01T10:00:00.000Z",
 });

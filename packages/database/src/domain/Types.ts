@@ -262,6 +262,7 @@ export type IssueFrontmatter = {
   readonly planAcceptedBy?: Actor;
   readonly planningNotRequired?: boolean;
   readonly priority: string;
+  readonly project?: string | null;
   readonly relations?: ReadonlyArray<IssueRelation>;
   readonly repository?: string;
   readonly status: string;
@@ -285,6 +286,7 @@ export type TicketDocument = {
   readonly labels?: ReadonlyArray<string>;
   readonly parent: string;
   readonly priority: string;
+  readonly project?: string;
   readonly relations?: ReadonlyArray<IssueRelation>;
   readonly repository?: string;
   readonly repositoryId?: string;
@@ -363,6 +365,7 @@ export type CreateTicketInput = {
   readonly labels?: ReadonlyArray<string>;
   readonly parent?: string | null;
   readonly planningNotRequired?: boolean;
+  readonly project?: string | null;
   readonly priority?: string;
   readonly repository?: string;
   readonly status?: string;

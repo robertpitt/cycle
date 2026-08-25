@@ -40,6 +40,9 @@ export const TicketDocument = Schema.Struct({
     }),
   ),
   priority: Schema.String.pipe(Schema.annotateKey({ description: "Priority value." })),
+  project: Schema.optional(Schema.String).pipe(
+    Schema.annotateKey({ description: "Project id when the ticket belongs to a project." }),
+  ),
   relations: Schema.optional(Schema.Array(IssueRelation)).pipe(
     Schema.annotateKey({ description: "Relations from this ticket to other tickets." }),
   ),

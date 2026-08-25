@@ -61,6 +61,22 @@ const ticket = (id: string, title = `Ticket ${id}`) => ({
   updatedDate: "2026-01-01T00:00:00.000Z",
 });
 
+const draft = (id: string) => ({
+  createdAt: "2026-01-01T00:00:00.000Z",
+  createdBy: { name: "Agent", type: "agent" },
+  id,
+  input: {
+    body: "Draft body",
+    project: "project-a",
+    status: "todo",
+    title: "Draft ticket",
+    type: "feature",
+  },
+  schemaVersion: 1,
+  status: "open",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+});
+
 describe("@cycle/api/mcp", () => {
   it("registers only the curated v0.2 tool names", () => {
     assert.deepEqual(cycleMcpToolNames, [
@@ -75,6 +91,8 @@ describe("@cycle/api/mcp", () => {
       "cycle_issue_list",
       "cycle_issue_search",
       "cycle_issue_create",
+      "cycle_draft_update",
+      "cycle_draft_commit",
       "cycle_issue_update",
       "cycle_issue_transition",
       "cycle_issue_comments_list",
@@ -330,6 +348,7 @@ describe("@cycle/api/mcp", () => {
           body: "Implement the OAuth callback.",
           labels: ["feature"],
           priority: "high",
+          project: "project-alpha",
           repositoryId: "repo",
           title: "Build OAuth callback",
           type: "feature",
@@ -348,8 +367,59 @@ describe("@cycle/api/mcp", () => {
       body: "Implement the OAuth callback.",
       labels: ["feature"],
       priority: "high",
+      project: "project-alpha",
       title: "Build OAuth callback",
       type: "feature",
+    });
+  });
+
+  it("updates and commits the durable draft selected by agent ticket creation", async () => {
+    const updateRequests: Array<any> = [];
+    const updateResult = await Effect.runPromise(
+      callCycleMcpTool(
+        "cycle_draft_update",
+        {
+          body: "Refined ticket body",
+          draftId: "draft-1",
+          frontmatter: { project: "project-a", title: "Refined ticket" },
+          repositoryId: "repo",
+        },
+        context(updateRequests, {
+          data: draft("draft-1"),
+          meta: { requestId: "req-draft-update" },
+        }),
+      ),
+    );
+
+    assert.equal(updateResult.isError, false);
+    assert.deepEqual(updateRequests[0], {
+      body: {
+        body: "Refined ticket body",
+        frontmatter: { project: "project-a", title: "Refined ticket" },
+      },
+      method: "PATCH",
+      path: "/v1/repositories/repo/drafts/draft-1",
+      requestId: "req-test",
+    });
+
+    const commitRequests: Array<any> = [];
+    const commitResult = await Effect.runPromise(
+      callCycleMcpTool(
+        "cycle_draft_commit",
+        { draftId: "draft-1", repositoryId: "repo" },
+        context(commitRequests, {
+          data: ticket("CYC-1", "Refined ticket"),
+          meta: { requestId: "req-draft-commit" },
+        }),
+      ),
+    );
+
+    assert.equal(commitResult.isError, false);
+    assert.deepEqual(commitRequests[0], {
+      body: {},
+      method: "POST",
+      path: "/v1/repositories/repo/drafts/draft-1/commit",
+      requestId: "req-test",
     });
   });
 

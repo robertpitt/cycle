@@ -9,6 +9,9 @@ import {
   AutomationEvaluationEnvelope,
   CommentCollectionEnvelope,
   CommentResourceEnvelope,
+  DraftCommitInput,
+  DraftResourceEnvelope,
+  DraftUpdateInput,
   HistoryCollectionEnvelope,
   InboxListInput,
   InboxMutationEnvelope,
@@ -68,6 +71,8 @@ import {
 import type {
   AutocompleteInput as AutocompleteInputType,
   AutomationEvaluateInput as AutomationEvaluateInputType,
+  DraftCommitInput as DraftCommitInputType,
+  DraftUpdateInput as DraftUpdateInputType,
   InboxListInput as InboxListInputType,
   InboxMutationInput as InboxMutationInputType,
   IssueCommentAddInput as IssueCommentAddInputType,
@@ -119,6 +124,8 @@ export type CycleMcpToolName =
   | "cycle_issue_list"
   | "cycle_issue_search"
   | "cycle_issue_create"
+  | "cycle_draft_update"
+  | "cycle_draft_commit"
   | "cycle_issue_update"
   | "cycle_issue_transition"
   | "cycle_issue_comments_list"
@@ -188,6 +195,8 @@ export const cycleMcpToolNames: ReadonlyArray<CycleMcpToolName> = [
   "cycle_issue_list",
   "cycle_issue_search",
   "cycle_issue_create",
+  "cycle_draft_update",
+  "cycle_draft_commit",
   "cycle_issue_update",
   "cycle_issue_transition",
   "cycle_issue_comments_list",
@@ -315,6 +324,24 @@ export const cycleMcpTools: ReadonlyArray<CycleMcpToolDefinition<any>> = [
     name: "cycle_issue_create",
     outputSchema: TicketResourceEnvelope,
     title: "Create issue",
+  },
+  {
+    annotations: writeAnnotations("Update ticket draft"),
+    description: "Update the body or structured fields of an existing durable ticket draft.",
+    handle: draftUpdate,
+    inputSchema: DraftUpdateInput,
+    name: "cycle_draft_update",
+    outputSchema: DraftResourceEnvelope,
+    title: "Update ticket draft",
+  },
+  {
+    annotations: writeAnnotations("Commit ticket draft"),
+    description: "Commit an existing durable ticket draft as a Cycle issue.",
+    handle: draftCommit,
+    inputSchema: DraftCommitInput,
+    name: "cycle_draft_commit",
+    outputSchema: TicketResourceEnvelope,
+    title: "Commit ticket draft",
   },
   {
     annotations: writeAnnotations("Update issue"),
@@ -755,6 +782,47 @@ function issueCreate(input: IssueCreateInputType, context: CycleMcpToolContext) 
     "POST",
     `/v1/repositories/${segment(input.repositoryId)}/issues`,
     issueCreateBody(input),
+    TicketResourceEnvelope,
+  );
+}
+
+function draftUpdate(input: DraftUpdateInputType, context: CycleMcpToolContext) {
+  const body = stripUndefined({
+    body: input.body,
+    frontmatter: input.frontmatter,
+    status: input.status,
+  });
+
+  if (Object.keys(body).length === 0) {
+    return Effect.succeed(
+      toolError({
+        code: "INVALID_MCP_TOOL_INPUT",
+        message: "cycle_draft_update requires a body, status, or frontmatter patch.",
+        repositoryId: input.repositoryId,
+        requestId: requestIdFor(input, context),
+        retryable: false,
+        status: 400,
+      }),
+    );
+  }
+
+  return apiResource(
+    context,
+    input,
+    "PATCH",
+    `/v1/repositories/${segment(input.repositoryId)}/drafts/${segment(input.draftId)}`,
+    body,
+    DraftResourceEnvelope,
+  );
+}
+
+function draftCommit(input: DraftCommitInputType, context: CycleMcpToolContext) {
+  return apiResource(
+    context,
+    input,
+    "POST",
+    `/v1/repositories/${segment(input.repositoryId)}/drafts/${segment(input.draftId)}/commit`,
+    {},
     TicketResourceEnvelope,
   );
 }
@@ -1522,6 +1590,8 @@ const defaultAllowedToolsFor = (
         "cycle_issue_list",
         "cycle_issue_search",
         "cycle_issue_create",
+        "cycle_draft_update",
+        "cycle_draft_commit",
         "cycle_issue_comments_list",
         "cycle_issue_comment_add",
         "cycle_issue_records_list",
@@ -1538,6 +1608,8 @@ const defaultAllowedToolsFor = (
         "cycle_issue_list",
         "cycle_issue_search",
         "cycle_issue_create",
+        "cycle_draft_update",
+        "cycle_draft_commit",
         "cycle_issue_comments_list",
         "cycle_issue_comment_add",
         "cycle_issue_records_list",
@@ -1694,6 +1766,7 @@ const issueCreateBody = (input: IssueCreateInputType | PlanApplyIssueInputType) 
     parent: input.parent,
     planningNotRequired: input.planningNotRequired,
     priority: input.priority,
+    project: input.project,
     repository: input.repository,
     status: input.status,
     title: input.title,

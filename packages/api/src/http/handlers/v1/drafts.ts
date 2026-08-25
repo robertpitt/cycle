@@ -1,11 +1,22 @@
 import * as ContractSchemas from "@cycle/contracts/schemas";
-import { DraftCommit, DraftCreate, DraftUpdate } from "@cycle/usecases";
+import { DraftCommit, DraftCreate, DraftList, DraftUpdate } from "@cycle/usecases";
 import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import { CycleRequestContext } from "../../middleware/CycleRequestContextMiddleware.ts";
-import { resourceResponse } from "../responses.ts";
+import { collectionResponse, resourceResponse } from "../responses.ts";
+import { urlFromRequest } from "../query.ts";
 import { decodeHttpValue, meta, runUseCase, scoped } from "../usecases.ts";
 import type { V1Request } from "./types.ts";
+
+export const listDrafts = ({ params, request }: V1Request<"listDrafts">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+    const result = yield* runUseCase(DraftList, scoped(params.repositoryId, {}), meta(requestId));
+    if (HttpServerResponse.isHttpServerResponse(result)) return result;
+    const drafts = result as ReadonlyArray<ContractSchemas.TicketDraftDocument>;
+
+    return collectionResponse(requestId, urlFromRequest(request), drafts, drafts.length, null);
+  });
 
 export const createDraft = ({ params, payload }: V1Request<"createDraft">) =>
   Effect.gen(function* () {

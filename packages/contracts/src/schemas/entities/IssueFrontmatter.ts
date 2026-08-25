@@ -75,6 +75,9 @@ export const IssueFrontmatter = Schema.StructWithRest(
     planningNotRequired: Schema.optional(Schema.Boolean).pipe(
       Schema.annotateKey({ description: "Whether planning acceptance checks are not required." }),
     ),
+    project: Schema.optional(Schema.NullOr(Schema.String)).pipe(
+      Schema.annotateKey({ description: "Project id, or null when the issue has no project." }),
+    ),
     priority: Schema.String.pipe(Schema.annotateKey({ description: "Priority value." })),
     relations: Schema.optional(Schema.Array(IssueRelation)).pipe(
       Schema.annotateKey({ description: "Relations from this issue to other issues." }),

@@ -1,5 +1,10 @@
 import type { CreateIssueDialogPriority, CreateIssueDialogStatus } from "@cycle/ui/organisms";
-import type { ExternalLinkInput } from "@cycle/contracts/schemas";
+import type {
+  CreateDraftInput,
+  ExternalLinkInput,
+  TicketDraftDocument,
+  UpdateDraftInput,
+} from "@cycle/contracts/schemas";
 import * as React from "react";
 import {
   isTicketTypeSelection,
@@ -92,6 +97,127 @@ export const getCreateIssueFormDraft = (
     estimate: values.estimate.trim().length > 0 ? values.estimate.trim() : undefined,
     title,
     type: resolveManualTicketType(values.type),
+  };
+};
+
+const agentDraftTitle = (instructions: string): string => {
+  const firstLine = instructions
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  const title = firstLine ?? "Agent-authored ticket draft";
+  return title.length > 100 ? `${title.slice(0, 97).trimEnd()}...` : title;
+};
+
+const createDraftInput = (
+  values: CreateIssueFormValues,
+  title: string,
+  type: TicketTypeId,
+  body: string | undefined,
+  source: unknown,
+): CreateDraftInput => ({
+  assignee: values.assignee,
+  body,
+  dueDate: values.dueDate.length > 0 ? values.dueDate : undefined,
+  estimate: values.estimate.trim().length > 0 ? values.estimate.trim() : undefined,
+  externalLinks: [...values.externalLinks],
+  labels: [...values.labels],
+  parent: values.parent,
+  priority: values.priority,
+  project: values.project,
+  repository: values.repositoryId,
+  source,
+  status: values.status,
+  title,
+  type,
+});
+
+export const getManualCreateDraftInput = (
+  values: CreateIssueFormValues,
+): CreateDraftInput | undefined => {
+  const draft = getCreateIssueFormDraft(values);
+  if (!draft) return undefined;
+
+  return createDraftInput(values, draft.title, draft.type, draft.body, {
+    kind: "desktop-manual-draft",
+    templateId: values.template,
+  });
+};
+
+export const getAgentCreateDraftInput = (values: CreateIssueFormValues): CreateDraftInput => {
+  const instructions = values.draftInstructions.trim();
+  return createDraftInput(
+    values,
+    agentDraftTitle(instructions),
+    isTicketTypeSelection(values.type) ? resolveManualTicketType(values.type) : "task",
+    instructions,
+    {
+      authoringType: values.type || "auto",
+      instructions,
+      kind: "desktop-agent-draft",
+      templateId: values.template,
+    },
+  );
+};
+
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const recoveredStatus = (status: string | undefined): CreateIssueDialogStatus =>
+  status === "backlog" ||
+  status === "canceled" ||
+  status === "done" ||
+  status === "in-progress" ||
+  status === "todo"
+    ? status
+    : "todo";
+
+const recoveredPriority = (priority: string | undefined): CreateIssueDialogPriority =>
+  priority === "high" ||
+  priority === "low" ||
+  priority === "medium" ||
+  priority === "urgent" ||
+  priority === "none"
+    ? priority
+    : "none";
+
+export const createIssueFormPatchFromDraft = (
+  draft: TicketDraftDocument,
+): Partial<CreateIssueFormValues> => {
+  const source = isRecord(draft.input.source) ? draft.input.source : {};
+  const templateId = typeof source.templateId === "string" ? source.templateId : null;
+  const agentInstructions =
+    typeof source.instructions === "string" ? source.instructions : (draft.input.body ?? "");
+
+  return {
+    assignee: draft.input.assignee ?? null,
+    description: draft.input.body ?? "",
+    draftInstructions: agentInstructions,
+    dueDate: draft.input.dueDate ?? "",
+    estimate: draft.input.estimate === undefined ? "" : String(draft.input.estimate),
+    externalLinks: draft.input.externalLinks ?? [],
+    labels: draft.input.labels ?? [],
+    mode: "manual",
+    parent: draft.input.parent ?? null,
+    priority: recoveredPriority(draft.input.priority),
+    project: draft.input.project ?? null,
+    status: recoveredStatus(draft.input.status),
+    template: templateId,
+    title: draft.input.title,
+    type: draft.input.type,
+  };
+};
+
+export const createDraftUpdateInput = (
+  draftId: string,
+  input: CreateDraftInput,
+): UpdateDraftInput => {
+  const { body, status, ...frontmatter } = input;
+  return {
+    body,
+    draftId,
+    frontmatter,
+    status,
   };
 };
 

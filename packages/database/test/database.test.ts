@@ -622,13 +622,23 @@ describe("@cycle/database", () => {
       });
 
       const draft = yield* database.createDraft("draft-ticket-id-repo", {
+        project: "project-alpha",
         title: "Draft ticket id",
         type: "task",
       });
+      const openDrafts = yield* database.listDrafts("draft-ticket-id-repo");
       const ticket = yield* database.commitDraft("draft-ticket-id-repo", draft.id);
+      const committedDrafts = yield* database.listDrafts("draft-ticket-id-repo");
 
+      assert.deepStrictEqual(
+        openDrafts.map((entry) => entry.id),
+        [draft.id],
+      );
       assert.strictEqual(ticket.id, "UKN-00001");
       assert.strictEqual(ticket.frontmatter.id, "UKN-00001");
+      assert.strictEqual(ticket.frontmatter.project, "project-alpha");
+      assert.strictEqual(ticket.project, "project-alpha");
+      assert.strictEqual(committedDrafts[0]?.status, "committed");
     }).pipe(Effect.provide(DatabaseTest())),
   );
 

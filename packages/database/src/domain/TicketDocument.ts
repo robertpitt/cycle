@@ -72,6 +72,10 @@ export const makeTicketDocument = (frontmatter: IssueFrontmatter, body: string):
     labels: normalizedFrontmatter.labels?.map((label) => normalizeKey(label)),
     parent: ticketReferenceKey(normalizedFrontmatter.parent),
     priority: normalizeKey(normalizedFrontmatter.priority),
+    project:
+      normalizedFrontmatter.project === undefined || normalizedFrontmatter.project === null
+        ? undefined
+        : normalizeKey(normalizedFrontmatter.project),
     relations: normalizedFrontmatter.relations,
     repository:
       normalizedFrontmatter.repository === undefined
@@ -102,6 +106,7 @@ export const makeFrontmatter = (
     labels: input.labels,
     parent: input.parent,
     planningNotRequired: input.planningNotRequired,
+    project: input.project,
     priority: input.priority ?? "none",
     repository: input.repository,
     status: input.status ?? "backlog",

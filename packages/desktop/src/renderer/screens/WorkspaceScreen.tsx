@@ -40,14 +40,18 @@ import {
   useAddRepositoryMutation,
   useCompleteOnboardingMutation,
   useCloneRepositoryMutation,
+  useCommitDraftMutation,
+  useCreateDraftMutation,
   useCreateIssueMutation,
   useInitialiseRepositoryMutation,
+  useUpdateDraftMutation,
   useUpdateRepositoryPreferencesMutation,
 } from "../mutations/index.ts";
 import {
   useAgentProvidersQuery,
   useAppConfigQuery,
   useBootstrapStatusQuery,
+  useDraftListQuery,
   issueListQueryKey,
   issueListRootQueryKey,
   inboxRootQueryKey,
@@ -62,7 +66,14 @@ import {
   useUserListQuery,
 } from "../queries/index.ts";
 import { useShortcutAction } from "../shortcuts/ShortcutProvider.tsx";
-import { getCreateIssueFormDraft, useCreateIssueForm } from "./workspace/createIssueForm.ts";
+import {
+  createDraftUpdateInput,
+  createIssueFormPatchFromDraft,
+  getAgentCreateDraftInput,
+  getCreateIssueFormDraft,
+  getManualCreateDraftInput,
+  useCreateIssueForm,
+} from "./workspace/createIssueForm.ts";
 import {
   createIssueDialogOptionSections,
   defaultCreateIssueMoreActionMessage,
@@ -220,6 +231,7 @@ export const WorkspaceScreen = () => {
   );
   const hydratedProfile = React.useRef(false);
   const createIssueForm = useCreateIssueForm();
+  const [activeDraftId, setActiveDraftId] = React.useState<string>();
   const queryClient = useQueryClient();
   const navigateWorkspace = React.useCallback(
     (next: WorkspaceLocation | string, options?: NavigateOptions) => {
@@ -343,13 +355,25 @@ export const WorkspaceScreen = () => {
   const createIssue = useCreateIssueMutation({
     repositoryId: createIssueRepository?.id,
   });
+  const draftsQuery = useDraftListQuery(createIssueRepository?.id);
+  const createDraft = useCreateDraftMutation({ repositoryId: createIssueRepository?.id });
+  const updateDraft = useUpdateDraftMutation({ repositoryId: createIssueRepository?.id });
+  const commitDraft = useCommitDraftMutation({ repositoryId: createIssueRepository?.id });
   const createTicketDraftChat = useMutation({
-    mutationFn: (input: { readonly instructions: string }) => {
+    mutationFn: (input: {
+      readonly authoringOptions: Parameters<
+        typeof cycleApiClient.startTicketDraftChat
+      >[0]["authoringOptions"];
+      readonly draftId: string;
+      readonly instructions: string;
+    }) => {
       if (!createIssueRepository) {
         throw new Error("Choose a repository before drafting an issue.");
       }
 
       return cycleApiClient.startTicketDraftChat({
+        authoringOptions: input.authoringOptions,
+        draftId: input.draftId,
         instructions: input.instructions,
         repository: createIssueRepository,
       });
@@ -963,6 +987,7 @@ export const WorkspaceScreen = () => {
 
   const chooseRepositoryFolder = () => addRepository.mutate();
   const openCreateIssueDialog = () => {
+    setActiveDraftId(undefined);
     createIssueForm.openDialog({
       mode: "agent",
       repositoryId: issueRepository?.id ?? repositories[0]?.id ?? "",
@@ -970,11 +995,20 @@ export const WorkspaceScreen = () => {
     });
   };
   const closeCreateIssueDialog = () => {
-    if (createIssue.isPending || createTicketDraftChat.isPending) return;
+    if (
+      createIssue.isPending ||
+      createDraft.isPending ||
+      updateDraft.isPending ||
+      commitDraft.isPending ||
+      createTicketDraftChat.isPending
+    )
+      return;
 
+    setActiveDraftId(undefined);
     createIssueForm.closeDialog();
   };
   const selectCreateIssueRepository = (repositoryId: string | null) => {
+    setActiveDraftId(undefined);
     createIssueForm.selectRepository(repositoryId);
   };
   const submitCreateIssueDraft = (event: React.FormEvent<HTMLFormElement>) => {
@@ -992,23 +1026,99 @@ export const WorkspaceScreen = () => {
     }
 
     createIssueForm.setError(undefined);
-    createTicketDraftChat.mutate(
-      { instructions },
-      {
-        onError: (error) => {
-          createIssueForm.setError(
-            error instanceof Error ? error.message : "Unable to start ticket draft.",
-          );
-        },
-        onSuccess: () => {
-          createIssueForm.closeDialog();
-          navigateWorkspace({
-            page: "chat",
-            scope: "workspace",
-          });
-        },
+    createDraft.mutate(getAgentCreateDraftInput(createIssueForm.values), {
+      onError: (error) => {
+        createIssueForm.setError(
+          error instanceof Error ? error.message : "Unable to save the structured ticket draft.",
+        );
       },
-    );
+      onSuccess: (draft) => {
+        setActiveDraftId(draft.id);
+        createTicketDraftChat.mutate(
+          {
+            authoringOptions: {
+              assignee: createIssueForm.values.assignee,
+              dueDate: createIssueForm.values.dueDate || null,
+              estimate: createIssueForm.values.estimate.trim() || null,
+              externalLinks: createIssueForm.values.externalLinks,
+              labels: createIssueForm.values.labels,
+              parent: createIssueForm.values.parent,
+              priority: createIssueForm.values.priority,
+              project: createIssueForm.values.project,
+              status: createIssueForm.values.status,
+              template: createIssueForm.values.template,
+              type: createIssueForm.values.type || "auto",
+            },
+            draftId: draft.id,
+            instructions,
+          },
+          {
+            onError: (error) => {
+              createIssueForm.setError(
+                `Draft ${draft.id} was saved for recovery, but the agent chat could not start: ${error instanceof Error ? error.message : "unknown error"}`,
+              );
+            },
+            onSuccess: () => {
+              setActiveDraftId(undefined);
+              createIssueForm.closeDialog();
+              navigateWorkspace({
+                page: "chat",
+                scope: "workspace",
+              });
+            },
+          },
+        );
+      },
+    });
+  };
+  const recoverDraft = (draftId: string) => {
+    const draft = draftsQuery.data?.find((entry) => entry.id === draftId);
+    if (!draft) {
+      createIssueForm.setError("The selected draft is no longer available.");
+      return;
+    }
+    setActiveDraftId(draft.id);
+    createIssueForm.reset({
+      ...createIssueFormPatchFromDraft(draft),
+      repositoryId: createIssueRepository?.id ?? "",
+    });
+  };
+  const saveCurrentDraft = () => {
+    const input = getManualCreateDraftInput(createIssueForm.values);
+    if (!input) {
+      createIssueForm.setError("Enter an issue title and choose a canonical type.");
+      return;
+    }
+    createIssueForm.setError(undefined);
+    if (activeDraftId) {
+      updateDraft.mutate(createDraftUpdateInput(activeDraftId, input), {
+        onError: (error) =>
+          createIssueForm.setError(
+            error instanceof Error ? error.message : "Unable to update the draft.",
+          ),
+      });
+      return;
+    }
+    createDraft.mutate(input, {
+      onError: (error) =>
+        createIssueForm.setError(
+          error instanceof Error ? error.message : "Unable to save the draft.",
+        ),
+      onSuccess: (draft) => setActiveDraftId(draft.id),
+    });
+  };
+  const commitSavedDraft = (draftId: string) => {
+    createIssueForm.setError(undefined);
+    commitDraft.mutate(draftId, {
+      onError: (error) =>
+        createIssueForm.setError(
+          error instanceof Error ? error.message : "Unable to commit the draft.",
+        ),
+      onSuccess: () => {
+        if (activeDraftId === draftId) setActiveDraftId(undefined);
+        createIssueForm.closeDialog();
+      },
+    });
   };
   const submitCreateIssue = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1026,6 +1136,18 @@ export const WorkspaceScreen = () => {
     }
 
     createIssueForm.setError(undefined);
+    if (activeDraftId) {
+      const input = getManualCreateDraftInput(createIssueForm.values);
+      if (!input) return;
+      updateDraft.mutate(createDraftUpdateInput(activeDraftId, input), {
+        onError: (error) =>
+          createIssueForm.setError(
+            error instanceof Error ? error.message : "Unable to update the draft.",
+          ),
+        onSuccess: () => commitSavedDraft(activeDraftId),
+      });
+      return;
+    }
     createIssue.mutate(
       {
         assignee: createIssueForm.values.assignee,
@@ -1036,6 +1158,7 @@ export const WorkspaceScreen = () => {
         labels: createIssueForm.values.labels,
         parent: createIssueForm.values.parent,
         priority: createIssueForm.values.priority,
+        project: createIssueForm.values.project,
         status: createIssueForm.values.status,
         title: draft.title,
         type: draft.type,
@@ -1497,14 +1620,26 @@ export const WorkspaceScreen = () => {
       ) : null}
       {createIssueForm.open ? (
         <CreateIssueDialog
+          activeDraftId={activeDraftId}
           assignee={createIssueForm.values.assignee}
           assigneeSections={createIssueOptions.assigneeSections}
+          createLabel={activeDraftId ? "Commit draft" : "Create issue"}
           createDisabled={createIssueForm.createDisabled || !createIssueRepository}
           createMore={createIssueForm.values.createMore}
           description={createIssueForm.values.description}
+          draftActionPendingId={commitDraft.isPending ? commitDraft.variables : undefined}
           draftDisabled={createIssueForm.draftDisabled || !createIssueRepository}
           draftInstructions={createIssueForm.values.draftInstructions}
-          draftSaving={createTicketDraftChat.isPending}
+          drafts={(draftsQuery.data ?? [])
+            .filter((draft) => draft.status === "open")
+            .map((draft) => ({
+              id: draft.id,
+              title: draft.input.title,
+              type: draft.input.type,
+              updatedAt: draft.updatedAt,
+            }))}
+          draftsLoading={draftsQuery.isLoading}
+          draftSaving={createDraft.isPending || createTicketDraftChat.isPending}
           dueDate={createIssueForm.values.dueDate}
           error={createIssueForm.values.error}
           estimate={createIssueForm.values.estimate}
@@ -1519,6 +1654,8 @@ export const WorkspaceScreen = () => {
           onCreateMoreChange={createIssueForm.setCreateMore}
           onDescriptionChange={createIssueForm.setDescription}
           onDraftInstructionsChange={createIssueForm.setDraftInstructions}
+          onDraftCommit={commitSavedDraft}
+          onDraftRecover={recoverDraft}
           onDraftSubmit={submitCreateIssueDraft}
           onDueDateChange={createIssueForm.setDueDate}
           onEstimateChange={createIssueForm.setEstimate}
@@ -1558,6 +1695,7 @@ export const WorkspaceScreen = () => {
           onPriorityChange={createIssueForm.setPriority}
           onProjectChange={createIssueForm.setProject}
           onRepositoryChange={selectCreateIssueRepository}
+          onSaveDraft={saveCurrentDraft}
           onStatusChange={createIssueForm.setStatus}
           onTemplateChange={applyIssueTemplate}
           onTitleChange={createIssueForm.setTitle}
@@ -1570,7 +1708,10 @@ export const WorkspaceScreen = () => {
           projectSections={createIssueOptions.projectSections}
           repository={createIssueRepository?.id ?? null}
           repositorySections={createIssueRepositorySections}
-          saving={createIssue.isPending}
+          saveDraftDisabled={createIssueForm.createDisabled || !createIssueRepository}
+          saveDraftLabel={activeDraftId ? "Update draft" : "Save draft"}
+          saveDraftPending={createDraft.isPending || updateDraft.isPending}
+          saving={createIssue.isPending || updateDraft.isPending || commitDraft.isPending}
           status={createIssueForm.values.status}
           statusSections={createIssueOptions.statusSections}
           tagSuggestions={createIssueTagSuggestions}

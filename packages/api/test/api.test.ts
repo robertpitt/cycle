@@ -388,6 +388,7 @@ describe("@cycle/api", () => {
         undefined,
       );
       assert.ok(body.paths?.["/v1/repositories/{repositoryId}/issues/{issueId}/transitions"]);
+      assert.ok(body.paths?.["/v1/repositories/{repositoryId}/drafts"]);
       assert.ok(body.paths?.["/v1/repositories/{repositoryId}/drafts/{draftId}/commit"]);
       assert.ok(body.paths?.["/v1/repositories/{repositoryId}/labels/{labelId}"]);
       assert.ok(body.paths?.["/v1/repositories/{repositoryId}/templates/{templateId}/archive"]);

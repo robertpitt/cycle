@@ -116,6 +116,18 @@ export const IssueCreateInput = Schema.Struct({
 });
 export type IssueCreateInput = typeof IssueCreateInput.Type;
 
+export const DraftUpdateInput = Schema.Struct({
+  ...RepositoryFields,
+  ...ContractSchemas.UpdateDraftInput.fields,
+});
+export type DraftUpdateInput = typeof DraftUpdateInput.Type;
+
+export const DraftCommitInput = Schema.Struct({
+  draftId: Schema.String,
+  ...RepositoryFields,
+});
+export type DraftCommitInput = typeof DraftCommitInput.Type;
+
 export const IssueUpdateInput = Schema.Struct({
   ...IssueContextFields,
   ...TargetIssueFields,
@@ -341,6 +353,7 @@ export const ApiResourceEnvelope = ResourceEnvelopeOf;
 export const ApiCollectionEnvelope = CollectionEnvelopeOf;
 
 export const TicketResourceEnvelope = ApiResourceEnvelope(ContractSchemas.TicketDocument);
+export const DraftResourceEnvelope = ApiResourceEnvelope(ContractSchemas.TicketDraftDocument);
 export const TicketCollectionEnvelope = ApiCollectionEnvelope(ContractSchemas.TicketDocument);
 export const TicketSearchCollectionEnvelope = ApiCollectionEnvelope(
   ContractSchemas.TicketSearchResult,

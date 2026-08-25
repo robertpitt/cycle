@@ -437,6 +437,17 @@ export const UseCaseContracts = {
     sideEffect: "write",
     successSchema: TicketDraftDocument,
   }),
+  DraftList: contract({
+    aliases: ["ticket.draft.list"],
+    category: "draft",
+    description: "List durable issue drafts in a repository.",
+    idempotency: "read-only",
+    inputSchema: RepositoryScopedEmpty,
+    name: "DraftList",
+    repositoryScope: "single",
+    sideEffect: "read",
+    successSchema: Schema.Array(TicketDraftDocument),
+  }),
   DraftUpdate: contract({
     aliases: ["ticket.draft.update"],
     category: "draft",

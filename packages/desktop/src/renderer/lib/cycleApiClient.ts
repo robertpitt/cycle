@@ -22,6 +22,7 @@ import type {
   RepositorySyncEvent,
   SyncResult,
   TicketDocument,
+  TicketDraftDocument,
   TicketPage,
 } from "@cycle/contracts/schemas";
 import type {
@@ -133,6 +134,22 @@ export type CreatePageRequest = typeof ContractSchemas.CreatePageInput.Encoded;
 export type UpdatePageRequest = typeof ContractSchemas.UpdatePageInput.Encoded;
 export type ArchivePageRequest = typeof ContractSchemas.ArchivePageInput.Encoded;
 export type RestorePageRequest = typeof ContractSchemas.RestorePageInput.Encoded;
+export type CreateDraftRequest = typeof ContractSchemas.CreateDraftInput.Encoded;
+export type UpdateDraftRequest = typeof ContractSchemas.UpdateDraftInput.Encoded;
+
+export type TicketDraftAuthoringOptions = {
+  readonly assignee: string | null;
+  readonly dueDate: string | null;
+  readonly estimate: string | null;
+  readonly externalLinks: readonly { readonly title?: string; readonly url: string }[];
+  readonly labels: readonly string[];
+  readonly parent: string | null;
+  readonly priority: string;
+  readonly project: string | null;
+  readonly status: string;
+  readonly template: string | null;
+  readonly type: string;
+};
 
 export type OpenRepositoryPathInput = {
   readonly displayName?: string;
@@ -147,6 +164,8 @@ export type CloneRepositoryPathInput = {
 };
 
 export type StartTicketDraftChatInput = {
+  readonly authoringOptions: TicketDraftAuthoringOptions;
+  readonly draftId: string;
   readonly instructions: string;
   readonly providerId?: AgentProviderId;
   readonly repository: Pick<AppRepositoryRecord, "displayName" | "id" | "path">;
@@ -363,12 +382,21 @@ type StartAgentChatThreadInput = {
   readonly title: string;
 };
 
-const ticketDraftPrompt = ({ instructions, repository }: StartTicketDraftChatInput): string =>
+const ticketDraftPrompt = ({
+  authoringOptions,
+  draftId,
+  instructions,
+  repository,
+}: StartTicketDraftChatInput): string =>
   [
     `Target repository: cycle://repository/${repository.id} (${repository.displayName})`,
-    "Draft a Cycle ticket for the target repository.",
-    "If you are clear, go ahead and create the ticket, otherwise ask for clarification.",
+    `Target durable draft: ${draftId}`,
+    "Refine this exact Cycle draft using the selected authoring options below.",
+    "Your final outcome MUST be one of: update and commit this draft and report the created ticket ID; update and leave this draft open and report its draft ID; or ask a clarification question without creating a second draft or ticket.",
+    "Use cycle_draft_update and cycle_draft_commit for durable changes. Do not create a separate ticket with cycle_issue_create.",
     "Preserve and resolve any Cycle references from the request.",
+    "Selected authoring options:",
+    JSON.stringify(authoringOptions, null, 2),
     "User request:",
     instructions.trim(),
   ].join("\n\n");
@@ -543,6 +571,8 @@ const startTicketDraftChat = async (
     message: ticketDraftPrompt(input),
     missingThreadMessage: "Ticket draft chat was not created.",
     origin: {
+      authoringOptions: input.authoringOptions,
+      draftId: input.draftId,
       kind: "ticket-draft",
       label: "Ticket draft",
       repositoryId: input.repository.id,
@@ -1187,6 +1217,39 @@ export const cycleApiClient = {
 
   getAppConfig: (): Promise<AppConfigState> =>
     resource("GET", "/v1/app-config", AppConfigStateSchema),
+
+  listDrafts: (repositoryId: string): Promise<ReadonlyArray<TicketDraftDocument>> =>
+    collection(
+      "GET",
+      `${repositoryPath(repositoryId)}/drafts`,
+      ContractSchemas.TicketDraftDocument,
+    ),
+
+  createDraft: (repositoryId: string, input: CreateDraftRequest): Promise<TicketDraftDocument> =>
+    resource(
+      "POST",
+      `${repositoryPath(repositoryId)}/drafts`,
+      ContractSchemas.TicketDraftDocument,
+      input,
+    ),
+
+  updateDraft: (repositoryId: string, input: UpdateDraftRequest): Promise<TicketDraftDocument> => {
+    const { draftId, ...body } = input;
+    return resource(
+      "PATCH",
+      `${repositoryPath(repositoryId)}/drafts/${encodeSegment(draftId)}`,
+      ContractSchemas.TicketDraftDocument,
+      body,
+    );
+  },
+
+  commitDraft: (repositoryId: string, draftId: string): Promise<TicketDocument> =>
+    resource(
+      "POST",
+      `${repositoryPath(repositoryId)}/drafts/${encodeSegment(draftId)}/commit`,
+      ContractSchemas.TicketDocument,
+      {},
+    ),
 
   listPages: (repositoryId: string, query: PageQuery = {}): Promise<PagePage> =>
     page(

@@ -29,6 +29,9 @@ export const CreateIssueInput = Schema.Struct({
   planningNotRequired: Schema.optional(Schema.Boolean).pipe(
     Schema.annotateKey({ description: "Whether the issue can skip planning acceptance checks." }),
   ),
+  project: Schema.optional(Schema.NullOr(Schema.String)).pipe(
+    Schema.annotateKey({ description: "Optional project id, or null for no project." }),
+  ),
   priority: Schema.optional(Schema.String).pipe(
     Schema.annotateKey({ description: "Optional priority value." }),
   ),

@@ -106,6 +106,34 @@ export const Saving: Story = {
     }),
 };
 
+export const DraftRecovery: Story = {
+  render: () =>
+    renderDialog({
+      activeDraftId: "draft-2",
+      drafts: [
+        {
+          id: "draft-1",
+          title: "Improve issue creation",
+          type: "feature",
+          updatedAt: "2026-08-25T09:30:00.000Z",
+        },
+        {
+          id: "draft-2",
+          title: "Recover interrupted ticket authoring",
+          type: "task",
+          updatedAt: "2026-08-25T10:15:00.000Z",
+        },
+      ],
+      mode: "manual",
+      onDraftCommit: () => undefined,
+      onDraftRecover: () => undefined,
+      onSaveDraft: () => undefined,
+      saveDraftLabel: "Update draft",
+      teamLabel: "Cycle UI",
+      title: "Recover interrupted ticket authoring",
+    }),
+};
+
 export const Error: Story = {
   render: () =>
     renderDialog({

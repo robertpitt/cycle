@@ -280,6 +280,10 @@ export const DraftCreate = defineContractUseCase("DraftCreate", (input, context)
   database(context, (db) => db.createDraft(input.repository.id, input.input)),
 );
 
+export const DraftList = defineContractUseCase("DraftList", (input, context) =>
+  database(context, (db) => db.listDrafts(input.repository.id)),
+);
+
 export const DraftUpdate = defineContractUseCase("DraftUpdate", (input, context) =>
   database(context, (db) =>
     db.updateDraft(input.repository.id, input.input.draftId, {
@@ -319,45 +323,31 @@ export const PageHierarchyList = defineContractUseCase("PageHierarchyList", (inp
 );
 
 export const PageUpdate = defineContractUseCase("PageUpdate", (input, context) =>
-  database(context, (db) =>
-    db.updatePage(input.repository.id, input.input.pageId, input.input),
-  ),
+  database(context, (db) => db.updatePage(input.repository.id, input.input.pageId, input.input)),
 );
 
 export const PageArchive = defineContractUseCase("PageArchive", (input, context) =>
-  database(context, (db) =>
-    db.archivePage(input.repository.id, input.input.pageId, input.input),
-  ),
+  database(context, (db) => db.archivePage(input.repository.id, input.input.pageId, input.input)),
 );
 
 export const PageRestore = defineContractUseCase("PageRestore", (input, context) =>
-  database(context, (db) =>
-    db.restorePage(input.repository.id, input.input.pageId, input.input),
-  ),
+  database(context, (db) => db.restorePage(input.repository.id, input.input.pageId, input.input)),
 );
 
 export const PageHistoryList = defineContractUseCase("PageHistoryList", (input, context) =>
-  database(context, (db) =>
-    db.pageHistory(input.repository.id, input.input.pageId, input.input),
-  ),
+  database(context, (db) => db.pageHistory(input.repository.id, input.input.pageId, input.input)),
 );
 
 export const PageRevisionGet = defineContractUseCase("PageRevisionGet", (input, context) =>
   database(context, (db) =>
-    db.pageRevision(
-      input.repository.id,
-      input.input.pageId,
-      input.input.snapshotId,
-    ),
+    db.pageRevision(input.repository.id, input.input.pageId, input.input.snapshotId),
   ),
 );
 
 export const CommentList = defineContractUseCase("CommentList", (input, context) =>
   Effect.gen(function* () {
     yield* requireTargetRepository(context, input.repository.id, input.input.target.repositoryId);
-    return yield* database(context, (db) =>
-      db.listComments(input.input.target, input.input.query),
-    );
+    return yield* database(context, (db) => db.listComments(input.input.target, input.input.query));
   }),
 );
 

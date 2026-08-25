@@ -1472,6 +1472,18 @@ export const makeDatabaseServiceWithProjection = (
       );
     });
 
+  const listDrafts = (
+    repositoryId: string,
+  ): Effect.Effect<ReadonlyArray<TicketDraftDocument>, DatabaseFailure> =>
+    Effect.gen(function* () {
+      const repository = yield* getRepository(repositoryId);
+      const folded = yield* foldRepositoryEvents(repository);
+
+      return [...folded.drafts.values()].sort((left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt),
+      );
+    });
+
   const updateDraft = (
     repositoryId: string,
     draftId: string,
@@ -2323,6 +2335,7 @@ export const makeDatabaseServiceWithProjection = (
     inboxSummary,
     initiativeProgress,
     listInbox,
+    listDrafts,
     listIssueRelations,
     listLabels: (repositoryId, query = {}) =>
       sqlite("list labels", () => projection.listLabels(repositoryId, query)),

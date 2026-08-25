@@ -65,7 +65,15 @@ export type CreateIssueDialogStatus = "backlog" | "canceled" | "done" | "in-prog
 
 export type CreateIssueDialogPriority = "high" | "low" | "medium" | "none" | "urgent";
 
+export type CreateIssueDialogDraft = {
+  readonly id: string;
+  readonly title: string;
+  readonly type: string;
+  readonly updatedAt: string;
+};
+
 export type CreateIssueDialogProps = React.HTMLAttributes<HTMLDivElement> & {
+  readonly activeDraftId?: string;
   readonly assignee?: string | null;
   readonly createLabel?: string;
   readonly createDisabled?: boolean;
@@ -75,7 +83,10 @@ export type CreateIssueDialogProps = React.HTMLAttributes<HTMLDivElement> & {
   readonly description?: string;
   readonly descriptionPlaceholder?: string;
   readonly draftDisabled?: boolean;
+  readonly draftActionPendingId?: string;
   readonly draftInstructions?: string;
+  readonly drafts?: readonly CreateIssueDialogDraft[];
+  readonly draftsLoading?: boolean;
   readonly draftPlaceholder?: string;
   readonly draftSaving?: boolean;
   readonly draftSubmitLabel?: string;
@@ -95,6 +106,8 @@ export type CreateIssueDialogProps = React.HTMLAttributes<HTMLDivElement> & {
   readonly onCreateMoreChange?: (checked: boolean) => void;
   readonly onDescriptionChange?: (description: string) => void;
   readonly onDraftInstructionsChange?: (instructions: string) => void;
+  readonly onDraftCommit?: (draftId: string) => void;
+  readonly onDraftRecover?: (draftId: string) => void;
   readonly onDraftSubmit?: React.FormEventHandler<HTMLFormElement>;
   readonly onDueDateChange?: (dueDate: string) => void;
   readonly onEstimateChange?: (estimate: string) => void;
@@ -108,6 +121,7 @@ export type CreateIssueDialogProps = React.HTMLAttributes<HTMLDivElement> & {
   readonly onParentChange?: (parent: string | null) => void;
   readonly onProjectChange?: (project: string | null) => void;
   readonly onRepositoryChange?: (repository: string | null) => void;
+  readonly onSaveDraft?: () => void;
   readonly onStatusChange?: (status: CreateIssueDialogStatus) => void;
   readonly onTagQueryChange?: (query: string) => void;
   readonly onTagSelect?: (suggestion: MarkdownEditorTagSuggestion) => void;
@@ -122,6 +136,9 @@ export type CreateIssueDialogProps = React.HTMLAttributes<HTMLDivElement> & {
   readonly repository?: string | null;
   readonly repositorySections?: readonly PropertyPickerSection[];
   readonly saving?: boolean;
+  readonly saveDraftDisabled?: boolean;
+  readonly saveDraftLabel?: string;
+  readonly saveDraftPending?: boolean;
   readonly status?: CreateIssueDialogStatus;
   readonly statusSections?: readonly PropertyPickerSection[];
   readonly assigneeSections?: readonly PropertyPickerSection[];
@@ -427,6 +444,7 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
       assignee = null,
       className,
       createLabel = "Create issue",
+      activeDraftId,
       createDisabled = false,
       createMore = false,
       createMoreLabel = "Create more",
@@ -434,7 +452,10 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
       description,
       descriptionPlaceholder = "Add description",
       draftDisabled = false,
+      draftActionPendingId,
       draftInstructions = "",
+      drafts,
+      draftsLoading = false,
       draftPlaceholder = "Draft a ticket for...",
       draftSaving = false,
       draftSubmitLabel = "Draft ticket",
@@ -455,6 +476,8 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
       onCreateMoreChange,
       onDescriptionChange,
       onDraftInstructionsChange,
+      onDraftCommit,
+      onDraftRecover,
       onDraftSubmit,
       onDueDateChange,
       onEstimateChange,
@@ -468,6 +491,7 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
       onParentChange,
       onProjectChange,
       onRepositoryChange,
+      onSaveDraft,
       onStatusChange,
       onTagQueryChange,
       onTagSelect,
@@ -482,6 +506,9 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
       repository = null,
       repositorySections: repositoryPickerSections = [],
       saving = false,
+      saveDraftDisabled = false,
+      saveDraftLabel = "Save draft",
+      saveDraftPending = false,
       status = "todo",
       statusSections: statusPickerSections = statusSections,
       teamLabel = "ROB",
@@ -607,6 +634,66 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
                     </label>
                   </div>
 
+                  {drafts !== undefined ? (
+                    <div className="mb-4 rounded-lg border border-border bg-subtle/35 p-3">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <span className="text-sm font-semibold text-foreground">Saved drafts</span>
+                        <span className="text-xs text-muted-foreground">
+                          {draftsLoading ? "Loading…" : `${drafts.length} open`}
+                        </span>
+                      </div>
+                      {!draftsLoading && drafts.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          No open drafts in this repository.
+                        </p>
+                      ) : (
+                        <div className="grid max-h-36 gap-2 overflow-y-auto">
+                          {drafts.map((draft) => (
+                            <div
+                              className={cn(
+                                "flex items-center gap-3 rounded-md border border-border bg-popover px-3 py-2",
+                                activeDraftId === draft.id && "border-primary/55 bg-primary/5",
+                              )}
+                              key={draft.id}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium text-foreground">
+                                  {draft.title}
+                                </p>
+                                <p className="truncate text-xs text-muted-foreground">
+                                  {draft.type} · {new Date(draft.updatedAt).toLocaleString()}
+                                </p>
+                              </div>
+                              <Button
+                                disabled={
+                                  draftActionPendingId !== undefined || onDraftRecover === undefined
+                                }
+                                onClick={() => onDraftRecover?.(draft.id)}
+                                size="sm"
+                                type="button"
+                                variant="ghost"
+                              >
+                                Recover
+                              </Button>
+                              <Button
+                                disabled={
+                                  draftActionPendingId !== undefined || onDraftCommit === undefined
+                                }
+                                loading={draftActionPendingId === draft.id}
+                                onClick={() => onDraftCommit?.(draft.id)}
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                              >
+                                Commit
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+
                   {mode === "agent" ? (
                     <div className="flex flex-1 flex-col">
                       <MarkdownEditor
@@ -688,6 +775,20 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
                             <CircleUserRound aria-hidden className="size-4" strokeWidth={1.8} />
                           }
                           value={assignee ?? "none"}
+                          widthClassName="w-[350px]"
+                        />
+                        <PropertyPicker
+                          {...getControlledOpen(currentOpenChip, "project", setOpenChip)}
+                          align="end"
+                          formatValueLabel={formatNullableLabel("Project")}
+                          onValueChange={(value) => {
+                            const selectedProject = getSingleValue(value);
+                            onProjectChange?.(selectedProject === "none" ? null : selectedProject);
+                          }}
+                          placeholder="Project"
+                          sections={projectPickerSections}
+                          triggerIcon={<Box aria-hidden className="size-4" strokeWidth={1.8} />}
+                          value={project ?? "none"}
                           widthClassName="w-[350px]"
                         />
                         <PropertyPicker
@@ -991,6 +1092,18 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
                             variant="outline"
                           />
                           <div className="flex flex-wrap items-center gap-4">
+                            <Button
+                              disabled={
+                                saveDraftDisabled || saveDraftPending || onSaveDraft === undefined
+                              }
+                              loading={saveDraftPending}
+                              loadingLabel="Saving draft"
+                              onClick={onSaveDraft}
+                              type="button"
+                              variant="outline"
+                            >
+                              {saveDraftLabel}
+                            </Button>
                             <label className="inline-flex items-center gap-3 text-sm font-medium text-muted-foreground">
                               <Switch checked={createMore} onCheckedChange={onCreateMoreChange} />
                               {createMoreLabel}

@@ -1,6 +1,11 @@
 import * as ContractSchemas from "@cycle/contracts/schemas";
 import { Schema } from "effect";
-import { CreatedResourceEnvelopeOf, ResourceEnvelopeOf, strictSchema } from "./shared.ts";
+import {
+  CollectionEnvelopeOf,
+  CreatedResourceEnvelopeOf,
+  ResourceEnvelopeOf,
+  strictSchema,
+} from "./shared.ts";
 
 export const TicketDocumentResourceEnvelope = ResourceEnvelopeOf(ContractSchemas.TicketDocument);
 
@@ -8,6 +13,9 @@ export const DraftDocumentResourceEnvelope = ResourceEnvelopeOf(
   ContractSchemas.TicketDraftDocument,
 );
 export const DraftDocumentCreatedEnvelope = CreatedResourceEnvelopeOf(
+  ContractSchemas.TicketDraftDocument,
+);
+export const DraftDocumentCollectionEnvelope = CollectionEnvelopeOf(
   ContractSchemas.TicketDraftDocument,
 );
 export const DraftCreatePayload = strictSchema(ContractSchemas.CreateDraftInput);
