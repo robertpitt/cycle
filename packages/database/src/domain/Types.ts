@@ -166,7 +166,21 @@ export type IssueTemplateKind =
   | "specification"
   | "story";
 
-export type IssueTemplateDefaults = Partial<CreateTicketInput>;
+export type IssueTemplateDefaults = {
+  readonly assignee?: string | null;
+  readonly body?: string;
+  readonly dueDate?: string | null;
+  readonly estimate?: number | string | null;
+  readonly externalLinks?: ReadonlyArray<ExternalLink>;
+  readonly labels?: ReadonlyArray<string>;
+  readonly parent?: string | null;
+  readonly planningNotRequired?: boolean;
+  readonly priority?: string;
+  readonly repository?: string;
+  readonly status?: string;
+  readonly title?: string;
+  readonly type?: string;
+};
 
 export type IssueTemplateDocument = {
   readonly active: boolean;

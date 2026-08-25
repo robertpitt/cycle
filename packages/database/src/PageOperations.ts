@@ -33,17 +33,15 @@ import {
 import { Clock, Effect, Schema } from "effect";
 import type { DatabaseIdGeneratorShape } from "./DatabaseIdGenerator.ts";
 import type { DatabaseIdentityShape } from "./DatabaseIdentity.ts";
-import {
-  DatabaseConsistencyError,
-  type DatabaseFailure,
-} from "./DatabaseErrors.ts";
-import { foldRepositoryEvents } from "./DatabaseMaterialization.ts";
-import type { Projection } from "./Projection.ts";
-import { pageSummary } from "./PageProjection.ts";
-import { sqlite, storage } from "./internals/DatabaseHelpers.ts";
+import { DatabaseConsistencyError, type DatabaseFailure } from "./DatabaseErrors.ts";
+import { foldRepositoryEvents } from "./internals/materialization/EventFold.ts";
+import type { DatabaseProjection } from "./internals/projection/DatabaseProjection.ts";
+import { pageSummary } from "./internals/projection/ProjectionPageStore.ts";
+import { storage } from "./internals/DatabaseBoundary.ts";
 import type {
   DatabaseEventPayload,
-  DatabaseTransaction,
+  DatabaseWritePlan,
+  PreparedWrite,
   RepositoryRuntime,
 } from "./internals/DatabaseRuntime.ts";
 import type { Actor, CommitOptions } from "./domain/index.ts";
@@ -52,46 +50,41 @@ type PageOperationFailure = DatabaseFailure | PagesFailure;
 
 export type PageOperationsDependencies = {
   readonly appendEvent: (
-    tx: DatabaseTransaction,
+    plan: DatabaseWritePlan,
     aggregateType: string,
     aggregateId: string,
     payload: DatabaseEventPayload,
-  ) => Effect.Effect<string, DatabaseFailure>;
-  readonly beginWriteTransaction: (
+  ) => Effect.Effect<DatabaseWritePlan, DatabaseFailure>;
+  readonly beginWritePlan: (
     repository: RepositoryRuntime,
     label: string,
     actor: Actor,
     now: string,
-  ) => Effect.Effect<DatabaseTransaction, DatabaseFailure>;
+  ) => Effect.Effect<DatabaseWritePlan, DatabaseFailure>;
   readonly ensureActorUserProfile: (
     repository: RepositoryRuntime,
-    tx: DatabaseTransaction,
+    plan: DatabaseWritePlan,
     actor: Actor,
     now: string,
-  ) => Effect.Effect<void, DatabaseFailure>;
+  ) => Effect.Effect<DatabaseWritePlan, DatabaseFailure>;
   readonly getRepository: (
     repositoryId: string,
   ) => Effect.Effect<RepositoryRuntime, DatabaseFailure>;
   readonly ids: DatabaseIdGeneratorShape;
   readonly identity: DatabaseIdentityShape;
-  readonly projection: Projection;
+  readonly projection: DatabaseProjection;
   readonly writeAndSync: <A>(
     repositoryId: string,
     command: string,
     objectId: string | undefined,
-    write: (repository: RepositoryRuntime) => Effect.Effect<{
-      readonly result: A;
-      readonly snapshotId: string;
-    }, DatabaseFailure>,
-    visible: () => boolean,
+    buildPlan: (repository: RepositoryRuntime) => Effect.Effect<PreparedWrite<A>, DatabaseFailure>,
+    visible: () => Effect.Effect<boolean, DatabaseFailure>,
   ) => Effect.Effect<A, DatabaseFailure>;
 };
 
 export type PageOperationsShape = ReturnType<typeof makePageOperations>;
 
-const nowIso = Clock.currentTimeMillis.pipe(
-  Effect.map((millis) => new Date(millis).toISOString()),
-);
+const nowIso = Clock.currentTimeMillis.pipe(Effect.map((millis) => new Date(millis).toISOString()));
 
 const decodePagePath = (value: unknown) =>
   Schema.decodeUnknownEffect(PagePath)(value, { errors: "all" }).pipe(
@@ -152,9 +145,9 @@ export const makePageOperations = (dependencies: PageOperationsDependencies) => 
   const { projection } = dependencies;
 
   const projectedPage = (repositoryId: string, pageId: string) =>
-    sqlite("get projected Page", () => projection.pages.getPage(repositoryId, pageId));
+    projection.pages.getPage(repositoryId, pageId);
 
-  const requirePage = Effect.fn("requirePage")(function* (
+  const requirePage = Effect.fn("PageOperations.requirePage")(function* (
     repositoryId: string,
     pageIdValue: string,
   ) {
@@ -172,7 +165,7 @@ export const makePageOperations = (dependencies: PageOperationsDependencies) => 
     return page;
   });
 
-  const assertRevision = Effect.fn("assertRevision")(function* (
+  const assertRevision = Effect.fn("PageOperations.assertRevision")(function* (
     page: typeof PageDocument.Type,
     expectedRevisionId: string,
   ) {
@@ -188,7 +181,7 @@ export const makePageOperations = (dependencies: PageOperationsDependencies) => 
     });
   });
 
-  const assertState = Effect.fn("assertState")(function* (
+  const assertState = Effect.fn("PageOperations.assertState")(function* (
     page: typeof PageDocument.Type,
     expected: "active" | "archived",
   ) {
@@ -204,15 +197,13 @@ export const makePageOperations = (dependencies: PageOperationsDependencies) => 
     });
   });
 
-  const assertPathAvailable = Effect.fn("assertPathAvailable")(function* (
+  const assertPathAvailable = Effect.fn("PageOperations.assertPathAvailable")(function* (
     repositoryId: string,
     pathValue: unknown,
     exceptPageId?: string,
   ) {
     const path = yield* decodePagePath(pathValue);
-    const owner = yield* sqlite("resolve reserved Page path", () =>
-      projection.pages.resolvePath(repositoryId, path),
-    );
+    const owner = yield* projection.pages.resolvePath(repositoryId, path);
 
     if (owner !== null && owner.id !== exceptPageId) {
       return yield* new PagePathConflict({
@@ -226,7 +217,7 @@ export const makePageOperations = (dependencies: PageOperationsDependencies) => 
     return path;
   });
 
-  const readCommittedPage = Effect.fn("readCommittedPage")(function* (
+  const readCommittedPage = Effect.fn("PageOperations.readCommittedPage")(function* (
     repositoryId: string,
     pageId: string,
     revisionId: string,
@@ -245,7 +236,7 @@ export const makePageOperations = (dependencies: PageOperationsDependencies) => 
     });
   });
 
-  const commitPageEvent = Effect.fn("commitPageEvent")(function* (
+  const commitPageEvent = Effect.fn("PageOperations.commitPageEvent")(function* (
     repositoryId: string,
     pageId: string,
     actor: Actor,
@@ -260,25 +251,20 @@ export const makePageOperations = (dependencies: PageOperationsDependencies) => 
       pageId,
       (repository) =>
         Effect.gen(function* () {
-          const tx = yield* dependencies.beginWriteTransaction(
-            repository,
-            command,
-            actor,
-            timestamp,
-          );
-          yield* dependencies.ensureActorUserProfile(repository, tx, actor, timestamp);
-          yield* dependencies.appendEvent(tx, "page", pageId, payload);
-          const snapshot = yield* tx.commit({ message });
+          let plan = yield* dependencies.beginWritePlan(repository, command, actor, timestamp);
+          plan = yield* dependencies.ensureActorUserProfile(repository, plan, actor, timestamp);
+          plan = yield* dependencies.appendEvent(plan, "page", pageId, payload);
 
-          return { result: snapshot.id, snapshotId: snapshot.id };
+          return { commit: { message }, plan, resolve: (snapshot) => snapshot.id };
         }),
-      () => projection.pages.getPage(repositoryId, pageId) !== null,
+      () =>
+        projection.pages.getPage(repositoryId, pageId).pipe(Effect.map((page) => page !== null)),
     );
 
     return yield* readCommittedPage(repositoryId, pageId, revisionId, command);
   });
 
-  const createPage = Effect.fn("createPage")(function* (
+  const createPage = Effect.fn("PageOperations.createPage")(function* (
     repositoryId: string,
     rawInput: typeof CreatePageInput.Type,
     options: CommitOptions = {},
@@ -339,7 +325,7 @@ export const makePageOperations = (dependencies: PageOperationsDependencies) => 
     );
   });
 
-  const getPage = Effect.fn("getPage")(function* (
+  const getPage = Effect.fn("PageOperations.getPage")(function* (
     repositoryId: string,
     pageId: string,
     options: { readonly includeArchived?: boolean } = {},
@@ -357,40 +343,39 @@ export const makePageOperations = (dependencies: PageOperationsDependencies) => 
     return page;
   });
 
-  const resolvePagePath = Effect.fn("resolvePagePath")(function* (
+  const resolvePagePath = Effect.fn("PageOperations.resolvePagePath")(function* (
     repositoryId: string,
     pathValue: string,
     options: { readonly includeArchived?: boolean } = {},
   ) {
     const path = yield* decodePagePath(pathValue);
-    const page = yield* sqlite("resolve Page path", () =>
-      projection.pages.resolvePath(repositoryId, path),
-    );
+    const page = yield* projection.pages.resolvePath(repositoryId, path);
 
-    if (page === null || (page.frontmatter.archivedAt !== undefined && options.includeArchived !== true)) {
+    if (
+      page === null ||
+      (page.frontmatter.archivedAt !== undefined && options.includeArchived !== true)
+    ) {
       return null;
     }
 
     return page;
   });
 
-  const listPages = Effect.fn("listPages")(function* (
+  const listPages = Effect.fn("PageOperations.listPages")(function* (
     repositoryId: string,
     query: PageQuery = {},
   ) {
-    return yield* sqlite("list Pages", () => projection.pages.listPages(repositoryId, query));
+    return yield* projection.pages.listPages(repositoryId, query);
   });
 
-  const listPageHierarchy = Effect.fn("listPageHierarchy")(function* (
+  const listPageHierarchy = Effect.fn("PageOperations.listPageHierarchy")(function* (
     repositoryId: string,
     query: PageHierarchyQuery = {},
   ) {
-    return yield* sqlite("list Page hierarchy", () =>
-      projection.pages.hierarchy(repositoryId, query),
-    );
+    return yield* projection.pages.hierarchy(repositoryId, query);
   });
 
-  const updatePage = Effect.fn("updatePage")(function* (
+  const updatePage = Effect.fn("PageOperations.updatePage")(function* (
     repositoryId: string,
     pageIdValue: string,
     rawInput: typeof UpdatePageInput.Type,
@@ -411,11 +396,7 @@ export const makePageOperations = (dependencies: PageOperationsDependencies) => 
 
     const actor = yield* dependencies.identity.currentActor;
     const timestamp = yield* nowIso;
-    const path = yield* assertPathAvailable(
-      repositoryId,
-      input.path ?? current.path,
-      current.id,
-    );
+    const path = yield* assertPathAvailable(repositoryId, input.path ?? current.path, current.id);
     const extensions: Record<string, unknown> = { ...current.frontmatter };
     for (const [key, value] of Object.entries(input.frontmatterExtensionPatch ?? {})) {
       if (value === null) delete extensions[key];
@@ -459,7 +440,7 @@ export const makePageOperations = (dependencies: PageOperationsDependencies) => 
     );
   });
 
-  const archivePage = Effect.fn("archivePage")(function* (
+  const archivePage = Effect.fn("PageOperations.archivePage")(function* (
     repositoryId: string,
     pageIdValue: string,
     rawInput: typeof ArchivePageInput.Type,
@@ -485,7 +466,8 @@ export const makePageOperations = (dependencies: PageOperationsDependencies) => 
       actor,
       timestamp,
       "archivePage",
-      options.message ?? mutationMessage(actor, "archived", current.frontmatter.title, current.path),
+      options.message ??
+        mutationMessage(actor, "archived", current.frontmatter.title, current.path),
       {
         actor,
         humanApproved: input.humanApproved,
@@ -496,7 +478,7 @@ export const makePageOperations = (dependencies: PageOperationsDependencies) => 
     );
   });
 
-  const restorePage = Effect.fn("restorePage")(function* (
+  const restorePage = Effect.fn("PageOperations.restorePage")(function* (
     repositoryId: string,
     pageIdValue: string,
     rawInput: typeof RestorePageInput.Type,
@@ -522,7 +504,8 @@ export const makePageOperations = (dependencies: PageOperationsDependencies) => 
       actor,
       timestamp,
       "restorePage",
-      options.message ?? mutationMessage(actor, "restored", current.frontmatter.title, current.path),
+      options.message ??
+        mutationMessage(actor, "restored", current.frontmatter.title, current.path),
       {
         actor,
         humanApproved: input.humanApproved,
@@ -533,7 +516,7 @@ export const makePageOperations = (dependencies: PageOperationsDependencies) => 
     );
   });
 
-  const pageHistory = Effect.fn("pageHistory")(function* (
+  const pageHistory = Effect.fn("PageOperations.pageHistory")(function* (
     repositoryId: string,
     pageIdValue: string,
     input?: PageHistoryInput,
@@ -547,12 +530,10 @@ export const makePageOperations = (dependencies: PageOperationsDependencies) => 
       });
     }
 
-    return yield* sqlite("list Page history", () =>
-      projection.pages.history(repositoryId, page.id, input?.options),
-    );
+    return yield* projection.pages.history(repositoryId, page.id, input?.options);
   });
 
-  const pageRevision = Effect.fn("pageRevision")(function* (
+  const pageRevision = Effect.fn("PageOperations.pageRevision")(function* (
     repositoryId: string,
     pageIdValue: string,
     snapshotId: string,
@@ -606,16 +587,14 @@ export const makePageOperations = (dependencies: PageOperationsDependencies) => 
       }),
     );
 
-  const requireCommentTarget = Effect.fn("requireCommentTarget")(function* (
+  const requireCommentTarget = Effect.fn("PageOperations.requireCommentTarget")(function* (
     rawTarget: CycleResourceRefType,
   ) {
     const target = yield* decodeTarget(rawTarget);
     const exists =
       target.resourceKind === "page"
         ? (yield* projectedPage(target.repositoryId, target.resourceId)) !== null
-        : (yield* sqlite("get comment ticket target", () =>
-            projection.getTicket(target.repositoryId, target.resourceId),
-          )) !== null;
+        : (yield* projection.getTicket(target.repositoryId, target.resourceId)) !== null;
 
     if (!exists) {
       return yield* new CommentTargetNotFound({
@@ -627,17 +606,15 @@ export const makePageOperations = (dependencies: PageOperationsDependencies) => 
     return target;
   });
 
-  const listComments = Effect.fn("listComments")(function* (
+  const listComments = Effect.fn("PageOperations.listComments")(function* (
     rawTarget: CycleResourceRefType,
     query: CommentQuery = {},
   ) {
     const target = yield* requireCommentTarget(rawTarget);
-    return yield* sqlite("list resource comments", () =>
-      projection.pages.listComments(target, query),
-    );
+    return yield* projection.pages.listComments(target, query);
   });
 
-  const addComment = Effect.fn("addComment")(function* (
+  const addComment = Effect.fn("PageOperations.addComment")(function* (
     rawTarget: CycleResourceRefType,
     rawInput: typeof CommentAddInput.Type,
     options: CommitOptions = {},
@@ -684,30 +661,34 @@ export const makePageOperations = (dependencies: PageOperationsDependencies) => 
       commentId,
       (repository) =>
         Effect.gen(function* () {
-          const tx = yield* dependencies.beginWriteTransaction(
+          let plan = yield* dependencies.beginWritePlan(
             repository,
             "add comment",
             actor,
             timestamp,
           );
-          yield* dependencies.ensureActorUserProfile(repository, tx, actor, timestamp);
-          yield* dependencies.appendEvent(tx, "comment", commentId, {
+          plan = yield* dependencies.ensureActorUserProfile(repository, plan, actor, timestamp);
+          plan = yield* dependencies.appendEvent(plan, "comment", commentId, {
             humanApproved: input.humanApproved,
             op: "comment.add",
             value: comment,
           });
-          const snapshot = yield* tx.commit({
-            message:
-              options.message ??
-              `${actor.name} commented on ${target.resourceKind} ${target.resourceId}`,
-          });
-          return { result: commentId, snapshotId: snapshot.id };
+          return {
+            commit: {
+              message:
+                options.message ??
+                `${actor.name} commented on ${target.resourceKind} ${target.resourceId}`,
+            },
+            plan,
+            resolve: () => commentId,
+          };
         }),
-      () => projection.pages.getComment(target.repositoryId, commentId) !== null,
+      () =>
+        projection.pages
+          .getComment(target.repositoryId, commentId)
+          .pipe(Effect.map((comment) => comment !== null)),
     );
-    const projected = yield* sqlite("get projected comment", () =>
-      projection.pages.getComment(target.repositoryId, committedId),
-    );
+    const projected = yield* projection.pages.getComment(target.repositoryId, committedId);
 
     if (projected !== null) return projected;
 

@@ -1,7 +1,10 @@
 import { Document } from "@cycle/git-store/document";
 import { EVENT_ROOT } from "@cycle/git-store/events";
 import { withTestIdentity } from "@cycle/git-store/testing";
+import { UserProfileDocument as UserProfileDocumentSchema } from "@cycle/contracts/schemas";
 import { Crypto, Effect, Layer } from "effect";
+import { describe, it } from "@effect/vitest";
+import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -22,11 +25,10 @@ import {
   type CreateTicketInput,
   type LinkedRecord,
   type RepositoryStoreShape,
-  type TicketDocument,
 } from "../src/index.ts";
-import { Projection } from "../src/Projection.ts";
+import { decodeJson } from "../src/internals/projection/JsonCodec.ts";
+import { decodeTicketRow } from "../src/internals/projection/TicketProjectionCodec.ts";
 import { DatabaseTest } from "../src/testing/index.ts";
-import { assert, describe, it } from "./effect-vitest.ts";
 
 const storeGitDirs = new WeakMap<RepositoryStoreShape, string>();
 
@@ -282,25 +284,13 @@ const appendExternalComment = (
   });
 
 describe("@cycle/database", () => {
-  it("schema-validates persisted projection document JSON during hydration", () => {
-    const projection = new Projection(":memory:");
-    const now = "2026-06-20T00:00:00.000Z";
-
-    try {
-      projection.db.run(
-        `INSERT INTO users (
-            repository_id, user_id, snapshot_id, email, display_name, source,
-            created_at, updated_at, profile_json, schema_version
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          "projection-schema-repo",
-          "user-1",
-          "snapshot-1",
-          "user@example.invalid",
-          "User One",
-          "manual",
-          now,
-          now,
+  it.effect("schema-validates persisted projection document JSON during hydration", () =>
+    Effect.gen(function* () {
+      const now = "2026-06-20T00:00:00.000Z";
+      const failure = yield* Effect.flip(
+        decodeJson(
+          "user profile",
+          UserProfileDocumentSchema,
           JSON.stringify({
             createdAt: now,
             displayName: "User One",
@@ -309,29 +299,19 @@ describe("@cycle/database", () => {
             source: "manual",
             updatedAt: now,
           }),
-          1,
-        ],
+        ),
       );
 
-      assert.throws(() => projection.getUser("projection-schema-repo", "user-1"), /email/u);
-    } finally {
-      projection.close();
-    }
-  });
+      assert.match(failure.message, /user profile/u);
+      assert.match(String(failure.cause), /email/u);
+    }),
+  );
 
-  it("normalizes hydrated projection frontmatter statuses", () => {
-    const projection = new Projection(":memory:");
-    const now = "2026-06-20T00:00:00.000Z";
-    const ticket = {
-      body: "Legacy projected ticket body.",
-      bodyFormat: "markdown",
-      createdBy: "User One",
-      frontmatter: {
-        assignee: {
-          email: "user@example.invalid",
-          name: "User One",
-          type: "human",
-        },
+  it.effect("normalizes hydrated projection frontmatter statuses", () =>
+    Effect.gen(function* () {
+      const now = "2026-06-20T00:00:00.000Z";
+      const frontmatter = {
+        assignee: "user@example.invalid",
         createdAt: now,
         createdBy: {
           name: "User One",
@@ -343,35 +323,42 @@ describe("@cycle/database", () => {
         title: "Legacy projected ticket",
         type: "task",
         updatedAt: now,
-      },
-      id: "UKN-00001",
-      parent: "none",
-      priority: "none",
-      schemaVersion: 1,
-      status: "in progress",
-      title: "Legacy projected ticket",
-      type: "task",
-      updatedDate: "2026-06-20",
-    } as unknown as TicketDocument;
-
-    try {
-      projection.upsertTicket({
-        path: "tickets/UKN-00001.md",
-        repositoryId: "projection-status-repo",
-        snapshotId: "snapshot-1",
-        ticket,
+      };
+      const hydrated = yield* decodeTicketRow({
+        archived_at: null,
+        assignee: "user-example.invalid",
+        body: "Legacy projected ticket body.",
+        body_format: "markdown",
+        created_at: now,
+        created_by_email: null,
+        created_by_name: "User One",
+        created_by_type: "human",
+        deleted_at: null,
+        document_path: "tickets/UKN-00001.md",
+        due_date: null,
+        estimate: null,
+        frontmatter_json: JSON.stringify(frontmatter),
+        labels_json: null,
+        parent_id: "none",
+        priority: "none",
+        relation_summary_json: null,
+        repository_id: "projection-status-repo",
+        repository_key: null,
+        schema_version: 1,
+        snapshot_id: "snapshot-1",
+        status: "in progress",
+        ticket_id: "UKN-00001",
+        title: "Legacy projected ticket",
+        type: "task",
+        updated_at: now,
       });
 
-      const hydrated = projection.getTicket("projection-status-repo", "UKN-00001");
-
-      assert.strictEqual(hydrated?.status, "in-progress");
-      assert.strictEqual(hydrated?.assignee, "user-example.invalid");
-      assert.strictEqual(hydrated?.frontmatter.status, "in-progress");
-      assert.strictEqual(hydrated?.frontmatter.assignee, "user@example.invalid");
-    } finally {
-      projection.close();
-    }
-  });
+      assert.strictEqual(hydrated.status, "in-progress");
+      assert.strictEqual(hydrated.assignee, "user-example.invalid");
+      assert.strictEqual(hydrated.frontmatter.status, "in-progress");
+      assert.strictEqual(hydrated.frontmatter.assignee, "user@example.invalid");
+    }),
+  );
 
   it.effect(
     "writes tickets to GitDB, resyncs SQLite before returning, and queries multiple repositories",

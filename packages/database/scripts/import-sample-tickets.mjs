@@ -22,10 +22,7 @@ const defaultCsv = path.join(scriptDir, "sample-tickets.csv");
 const config = parseArgs(process.argv.slice(2));
 const GitStoresScriptLive = GitStoresLive.pipe(
   Layer.provide(
-    Layer.mergeAll(
-      NodeServices.layer,
-      RepositoryPathsLive.pipe(Layer.provide(NodeServices.layer)),
-    ),
+    Layer.mergeAll(NodeServices.layer, RepositoryPathsLive.pipe(Layer.provide(NodeServices.layer))),
   ),
 );
 
@@ -114,8 +111,6 @@ function importTickets(options) {
     }
 
     const finalStatus = yield* database.repositoryStatus(options.repositoryId);
-
-    yield* database.close();
 
     console.log(
       JSON.stringify(

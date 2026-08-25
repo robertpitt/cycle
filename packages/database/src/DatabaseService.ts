@@ -116,7 +116,6 @@ export type DatabaseServiceShape = {
     input?: ArchiveTicketInput,
     options?: CommitOptions,
   ) => Effect.Effect<TicketDocument, DatabaseFailure>;
-  readonly close: Effect.Effect<void>;
   readonly commitDraft: (
     repositoryId: string,
     draftId: string,

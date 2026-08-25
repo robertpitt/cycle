@@ -12,7 +12,8 @@ import {
   type RepositoryStoreShape,
 } from "../src/index.ts";
 import { DatabaseTest } from "../src/testing/index.ts";
-import { assert, describe, it } from "./effect-vitest.ts";
+import { describe, it } from "@effect/vitest";
+import { strict as assert } from "node:assert";
 
 const pagePath = Schema.decodeUnknownSync(PagePath);
 
@@ -44,146 +45,169 @@ const collectPaths = (
   });
 
 describe("@cycle/database Pages", () => {
-  it.effect("persists Page lifecycle, hierarchy, revisions, and generic comments through events", () =>
-    Effect.gen(function* () {
-      const repositoryId = "pages-lifecycle";
-      const database = yield* DatabaseService;
-      const store = yield* makeStore(repositoryId);
-      yield* database.openRepository({ repositoryId, store });
+  it.effect(
+    "persists Page lifecycle, hierarchy, revisions, and generic comments through events",
+    () =>
+      Effect.gen(function* () {
+        const repositoryId = "pages-lifecycle";
+        const database = yield* DatabaseService;
+        const store = yield* makeStore(repositoryId);
+        yield* database.openRepository({ repositoryId, store });
 
-      const root = yield* database.createPage(repositoryId, {
-        body: "# Home\n",
-        frontmatterExtensions: { audience: "team" },
-        path: pagePath("index.md"),
-        title: "Home",
-      });
-      const cover = yield* database.createPage(repositoryId, {
-        body: "# Payments\n",
-        path: pagePath("payments/index.md"),
-        title: "Payments",
-      });
-      const child = yield* database.createPage(repositoryId, {
-        body: "Old body",
-        path: pagePath("payments/refunds.md"),
-        title: "Refunds",
-      });
-      const originalRevision = child.revisionId;
-      const updated = yield* database.updatePage(repositoryId, child.id, {
-        body: "New body",
-        expectedRevisionId: child.revisionId,
-        frontmatterExtensionPatch: { owner: "platform" },
-        pageId: child.id,
-        path: pagePath("payments/providers/stripe.md"),
-        title: "Stripe",
-      });
-
-      assert.notStrictEqual(updated.revisionId, originalRevision);
-      assert.strictEqual(updated.frontmatter.audience, undefined);
-      assert.strictEqual(updated.frontmatter.owner, "platform");
-
-      const conflict = yield* Effect.flip(
-        database.updatePage(repositoryId, child.id, {
-          body: "stale",
-          expectedRevisionId: originalRevision,
+        const root = yield* database.createPage(repositoryId, {
+          body: "# Home\n",
+          frontmatterExtensions: { audience: "team" },
+          path: pagePath("index.md"),
+          title: "Home",
+        });
+        const cover = yield* database.createPage(repositoryId, {
+          body: "# Payments\n",
+          path: pagePath("payments/index.md"),
+          title: "Payments",
+        });
+        const child = yield* database.createPage(repositoryId, {
+          body: "Old body",
+          path: pagePath("payments/refunds.md"),
+          title: "Refunds",
+        });
+        const originalRevision = child.revisionId;
+        const updated = yield* database.updatePage(repositoryId, child.id, {
+          body: "New body",
+          expectedRevisionId: child.revisionId,
+          frontmatterExtensionPatch: { owner: "platform" },
           pageId: child.id,
-        }),
-      );
-      assert.ok(conflict instanceof PageRevisionConflict);
+          path: pagePath("payments/providers/stripe.md"),
+          title: "Stripe",
+        });
 
-      const beforeCommentRevision = updated.revisionId;
-      const target = {
-        repositoryId,
-        resourceId: child.id,
-        resourceKind: "page" as const,
-      };
-      const comment = yield* database.addComment(target, {
-        body: "Looks good.",
-        target,
-      });
-      const afterComment = yield* database.getPage(repositoryId, child.id);
-      const comments = yield* database.listComments(target);
+        assert.notStrictEqual(updated.revisionId, originalRevision);
+        assert.strictEqual(updated.frontmatter.audience, undefined);
+        assert.strictEqual(updated.frontmatter.owner, "platform");
 
-      assert.strictEqual(afterComment.revisionId, beforeCommentRevision);
-      assert.deepStrictEqual(comments.entries.map((entry) => entry.id), [comment.id]);
+        const conflict = yield* Effect.flip(
+          database.updatePage(repositoryId, child.id, {
+            body: "stale",
+            expectedRevisionId: originalRevision,
+            pageId: child.id,
+          }),
+        );
+        assert.ok(conflict instanceof PageRevisionConflict);
 
-      const hierarchy = yield* database.listPageHierarchy(repositoryId);
-      const payments = hierarchy.root.directories.find((directory) => directory.name === "payments");
-      const providers = payments?.directories.find((directory) => directory.name === "providers");
-      assert.strictEqual(hierarchy.root.cover?.id, root.id);
-      assert.strictEqual(payments?.cover?.id, cover.id);
-      assert.deepStrictEqual(providers?.pages.map((page) => page.id), [child.id]);
+        const beforeCommentRevision = updated.revisionId;
+        const target = {
+          repositoryId,
+          resourceId: child.id,
+          resourceKind: "page" as const,
+        };
+        const comment = yield* database.addComment(target, {
+          body: "Looks good.",
+          target,
+        });
+        const afterComment = yield* database.getPage(repositoryId, child.id);
+        const comments = yield* database.listComments(target);
 
-      const revision = yield* database.pageRevision(repositoryId, child.id, originalRevision);
-      const history = yield* database.pageHistory(repositoryId, child.id, {
-        pageId: child.id,
-      });
-      assert.strictEqual(revision.body, "Old body");
-      assert.deepStrictEqual(
-        history.entries.map((entry) => entry.operation).sort(),
-        ["page.create", "page.replace"].sort(),
-      );
+        assert.strictEqual(afterComment.revisionId, beforeCommentRevision);
+        assert.deepStrictEqual(
+          comments.entries.map((entry) => entry.id),
+          [comment.id],
+        );
 
-      const archived = yield* database.archivePage(repositoryId, child.id, {
-        expectedRevisionId: updated.revisionId,
-        pageId: child.id,
-      });
-      assert.ok(archived.frontmatter.archivedAt);
-      assert.deepStrictEqual((yield* database.listPages(repositoryId, { recursive: true })).entries.map((page) => page.id).sort(), [cover.id, root.id].sort());
-      yield* database.addComment(target, { body: "Archived note", target });
+        const hierarchy = yield* database.listPageHierarchy(repositoryId);
+        const payments = hierarchy.root.directories.find(
+          (directory) => directory.name === "payments",
+        );
+        const providers = payments?.directories.find((directory) => directory.name === "providers");
+        assert.strictEqual(hierarchy.root.cover?.id, root.id);
+        assert.strictEqual(payments?.cover?.id, cover.id);
+        assert.deepStrictEqual(
+          providers?.pages.map((page) => page.id),
+          [child.id],
+        );
 
-      const pathConflict = yield* Effect.flip(
-        database.createPage(repositoryId, {
-          body: "",
-          path: archived.path,
-          title: "Cannot reuse",
-        }),
-      );
-      assert.ok(pathConflict instanceof PagePathConflict);
+        const revision = yield* database.pageRevision(repositoryId, child.id, originalRevision);
+        const history = yield* database.pageHistory(repositoryId, child.id, {
+          pageId: child.id,
+        });
+        assert.strictEqual(revision.body, "Old body");
+        assert.deepStrictEqual(
+          history.entries.map((entry) => entry.operation).sort(),
+          ["page.create", "page.replace"].sort(),
+        );
 
-      const restored = yield* database.restorePage(repositoryId, child.id, {
-        expectedRevisionId: archived.revisionId,
-        pageId: child.id,
-      });
-      assert.strictEqual(restored.frontmatter.archivedAt, undefined);
+        const archived = yield* database.archivePage(repositoryId, child.id, {
+          expectedRevisionId: updated.revisionId,
+          pageId: child.id,
+        });
+        assert.ok(archived.frontmatter.archivedAt);
+        assert.deepStrictEqual(
+          (yield* database.listPages(repositoryId, { recursive: true })).entries
+            .map((page) => page.id)
+            .sort(),
+          [cover.id, root.id].sort(),
+        );
+        yield* database.addComment(target, { body: "Archived note", target });
 
-      const paths = yield* collectPaths(store);
-      assert.ok(
-        paths.some((eventPath) =>
-          new RegExp(`^collections/events/page/[0-9a-f]{2}/${child.id}/evt_`).test(eventPath),
-        ),
-      );
-      assert.ok(paths.every((eventPath) => eventPath.startsWith("collections/events/")));
-    }).pipe(Effect.provide(DatabaseTest("pages-lifecycle"))),
+        const pathConflict = yield* Effect.flip(
+          database.createPage(repositoryId, {
+            body: "",
+            path: archived.path,
+            title: "Cannot reuse",
+          }),
+        );
+        assert.ok(pathConflict instanceof PagePathConflict);
+
+        const restored = yield* database.restorePage(repositoryId, child.id, {
+          expectedRevisionId: archived.revisionId,
+          pageId: child.id,
+        });
+        assert.strictEqual(restored.frontmatter.archivedAt, undefined);
+
+        const paths = yield* collectPaths(store);
+        assert.ok(
+          paths.some((eventPath) =>
+            new RegExp(`^collections/events/page/[0-9a-f]{2}/${child.id}/evt_`).test(eventPath),
+          ),
+        );
+        assert.ok(paths.every((eventPath) => eventPath.startsWith("collections/events/")));
+      }).pipe(Effect.provide(DatabaseTest("pages-lifecycle"))),
   );
 
-  it.effect("materializes legacy and canonical ticket comments through one generic read model", () =>
-    Effect.gen(function* () {
-      const repositoryId = "generic-ticket-comments";
-      const database = yield* DatabaseService;
-      const store = yield* makeStore(repositoryId);
-      yield* database.openRepository({ repositoryId, store });
-      const ticket = yield* database.createTicket(repositoryId, {
-        title: "Commentable",
-        type: "task",
-      });
-      const legacy = yield* database.addTicketComment(repositoryId, ticket.id, {
-        body: "Legacy comment",
-      });
-      const target = {
-        repositoryId,
-        resourceId: ticket.id,
-        resourceKind: "ticket" as const,
-      };
-      const canonical = yield* database.addComment(target, {
-        body: "Canonical comment",
-        target,
-      });
-      const comments = yield* database.listComments(target);
-      const legacyRecords = yield* database.ticketComments(repositoryId, ticket.id);
+  it.effect(
+    "materializes legacy and canonical ticket comments through one generic read model",
+    () =>
+      Effect.gen(function* () {
+        const repositoryId = "generic-ticket-comments";
+        const database = yield* DatabaseService;
+        const store = yield* makeStore(repositoryId);
+        yield* database.openRepository({ repositoryId, store });
+        const ticket = yield* database.createTicket(repositoryId, {
+          title: "Commentable",
+          type: "task",
+        });
+        const legacy = yield* database.addTicketComment(repositoryId, ticket.id, {
+          body: "Legacy comment",
+        });
+        const target = {
+          repositoryId,
+          resourceId: ticket.id,
+          resourceKind: "ticket" as const,
+        };
+        const canonical = yield* database.addComment(target, {
+          body: "Canonical comment",
+          target,
+        });
+        const comments = yield* database.listComments(target);
+        const legacyRecords = yield* database.ticketComments(repositoryId, ticket.id);
 
-      assert.deepStrictEqual(comments.entries.map((entry) => entry.id), [legacy.id, canonical.id]);
-      assert.deepStrictEqual(legacyRecords.entries.map((entry) => entry.id), [legacy.id]);
-    }).pipe(Effect.provide(DatabaseTest("generic-ticket-comments"))),
+        assert.deepStrictEqual(
+          comments.entries.map((entry) => entry.id),
+          [legacy.id, canonical.id],
+        );
+        assert.deepStrictEqual(
+          legacyRecords.entries.map((entry) => entry.id),
+          [legacy.id],
+        );
+      }).pipe(Effect.provide(DatabaseTest("generic-ticket-comments"))),
   );
 
   it.effect("warns on modified Page events while retaining the last valid Page state", () =>
@@ -197,8 +221,8 @@ describe("@cycle/database Pages", () => {
         path: pagePath("valid.md"),
         title: "Valid",
       });
-      const pageEventPath = (yield* collectPaths(store)).find((eventPath) =>
-        eventPath.includes(`/page/`) && eventPath.includes(`/${page.id}/`),
+      const pageEventPath = (yield* collectPaths(store)).find(
+        (eventPath) => eventPath.includes(`/page/`) && eventPath.includes(`/${page.id}/`),
       );
       assert.ok(pageEventPath);
 

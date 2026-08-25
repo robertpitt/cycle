@@ -6,7 +6,7 @@ import {
   inboxSchemaSql,
   schemaSql,
   sharedMetadataSchemaSql,
-} from "../Projection.ts";
+} from "../internals/projection/ProjectionSchema.ts";
 
 const SqlStatementRequest = Schema.Struct({
   source: Schema.String,

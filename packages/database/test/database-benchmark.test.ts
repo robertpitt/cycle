@@ -13,7 +13,8 @@ import {
   type RepositoryStoreShape,
 } from "../src/index.ts";
 import { DatabaseTest } from "../src/testing/index.ts";
-import { assert, describe, it } from "./effect-vitest.ts";
+import { describe, it } from "@effect/vitest";
+import { strict as assert } from "node:assert";
 
 type BenchmarkTiming = {
   readonly ms: number;
@@ -187,7 +188,6 @@ describe("@cycle/database benchmark", () => {
         assert.strictEqual(afterExternalSync.entries.length, EXTERNAL_BATCH_COUNT);
         reportBenchmark(timings);
         yield* cleanupBenchmarkRef(store);
-        yield* database.close;
       }).pipe(Effect.provide(DatabaseTest("bench"))),
     TEST_TIMEOUT_MS,
   );
@@ -287,9 +287,7 @@ const writeExternalTicketBatch = (
     return count;
   });
 
-const cleanupBenchmarkRef = (
-  store: RepositoryStoreShape,
-): Effect.Effect<void, never, never> =>
+const cleanupBenchmarkRef = (store: RepositoryStoreShape): Effect.Effect<void, never, never> =>
   store.pointerRef("main").pipe(
     Effect.flatMap((ref) =>
       Effect.sync(() => {

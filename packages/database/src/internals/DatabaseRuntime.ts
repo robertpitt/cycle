@@ -1,9 +1,5 @@
 import type { Effect } from "effect";
-import type {
-  CommentDocument,
-  PageDocument,
-  PageHistoryEntry,
-} from "@cycle/contracts/schemas";
+import type { CommentDocument, PageDocument, PageHistoryEntry } from "@cycle/contracts/schemas";
 import type { CommentEventPayload, PageEventPayload } from "../PageEvent.ts";
 import {
   type Actor,
@@ -18,8 +14,11 @@ import {
   type TicketDraftDocument,
   type UserProfileDocument,
 } from "../domain/index.ts";
-import type { DatabaseFailure } from "../DatabaseErrors.ts";
-import type { RepositorySnapshot, RepositoryStoreShape } from "../RepositoryStore.ts";
+import type {
+  RepositorySnapshot,
+  RepositoryStoreShape,
+  RepositoryTransactionOptions,
+} from "../RepositoryStore.ts";
 
 export type RepositoryRuntime = {
   readonly cycleMetadata?: CycleRepositoryMetadata;
@@ -189,17 +188,21 @@ export type GitIdentity = {
   readonly name: string;
 };
 
-export type DatabaseTransaction = {
-  readonly abort: Effect.Effect<void, DatabaseFailure>;
-  readonly appendEvent: (input: {
-    readonly aggregateId: string;
-    readonly aggregateType: string;
-    readonly eventId: string;
-    readonly payload: DatabaseEventPayload;
-  }) => Effect.Effect<string, DatabaseFailure>;
-  readonly commit: (options: {
-    readonly author?: GitIdentity;
-    readonly committer?: GitIdentity;
-    readonly message: string;
-  }) => Effect.Effect<RepositorySnapshot, DatabaseFailure>;
+export type DatabaseWriteEvent = {
+  readonly aggregateId: string;
+  readonly aggregateType: string;
+  readonly eventId: string;
+  readonly payload: DatabaseEventPayload;
+};
+
+export type DatabaseWritePlan = {
+  readonly actor: Actor;
+  readonly events: ReadonlyArray<DatabaseWriteEvent>;
+  readonly label: string;
+};
+
+export type PreparedWrite<A> = {
+  readonly commit: RepositoryTransactionOptions;
+  readonly plan: DatabaseWritePlan;
+  readonly resolve: (snapshot: RepositorySnapshot) => A;
 };

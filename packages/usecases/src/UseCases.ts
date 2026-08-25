@@ -58,10 +58,6 @@ export const RepositoryOpen = defineContractUseCase("RepositoryOpen", (input, co
   RepositoryOpenService.use((service) => service.open(input, context)),
 );
 
-export const RepositoryClose = defineContractUseCase("RepositoryClose", (_input, context) =>
-  database(context, (db) => db.close),
-);
-
 export const RepositoryList = defineContractUseCase("RepositoryList", (_input, context) =>
   database(context, (db) => db.listRepositories),
 );

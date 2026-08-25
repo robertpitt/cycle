@@ -1,4 +1,5 @@
 import type { IssueRelation, TicketDocument } from "../domain/Types.ts";
+import { Effect } from "effect";
 
 type DependencyEdge = {
   readonly dependentId: string;
@@ -46,3 +47,25 @@ export const createsDependencyCycle = (
 
   return false;
 };
+
+export const createsDependencyCycleEffect = Effect.fn("TicketDependencies.createsDependencyCycle")(
+  function* <E, R>(
+    edge: DependencyEdge,
+    getTicket: (ticketId: string) => Effect.Effect<TicketDocument | null, E, R>,
+  ) {
+    const pending = [edge.prerequisiteId];
+    const visited = new Set<string>();
+
+    while (pending.length > 0) {
+      const currentId = pending.pop();
+      if (currentId === undefined || visited.has(currentId)) continue;
+      if (currentId === edge.dependentId) return true;
+
+      visited.add(currentId);
+      const current = yield* getTicket(currentId);
+      if (current !== null) pending.push(...prerequisiteIds(current));
+    }
+
+    return false;
+  },
+);

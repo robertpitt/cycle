@@ -217,6 +217,9 @@ importers:
         specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78
     devDependencies:
+      '@effect/vitest':
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78(effect@4.0.0-beta.78)(vitest@4.1.8)
       vitest:
         specifier: ^4.1.8
         version: 4.1.8(@types/node@25.9.2)(@vitest/coverage-v8@4.1.8)(vite@8.0.16(@types/node@25.9.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))

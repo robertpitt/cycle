@@ -27,10 +27,7 @@ const jiraKeyPattern = /^([A-Z0-9]{2,5})-([0-9A-Z]+)$/u;
 const config = parseArgs(process.argv.slice(2));
 const GitStoresScriptLive = GitStoresLive.pipe(
   Layer.provide(
-    Layer.mergeAll(
-      NodeServices.layer,
-      RepositoryPathsLive.pipe(Layer.provide(NodeServices.layer)),
-    ),
+    Layer.mergeAll(NodeServices.layer, RepositoryPathsLive.pipe(Layer.provide(NodeServices.layer))),
   ),
 );
 
@@ -172,57 +169,59 @@ function importJiraBoardExport(options) {
 
       const appendMs = elapsedMs(batchStartedAt);
       const commitStartedAt = performance.now();
-      const result = yield* store.transaction({
-        author: importActor,
-        committer: importActor,
-        message: `Import Jira board tickets ${batchStart + 1}-${batchEnd}`,
-        pointer: options.pointer,
-      }, (tx) =>
-        Effect.gen(function* () {
-          if (batchStart === 0) {
-            for (const label of labels) {
+      const result = yield* store.transaction(
+        {
+          author: importActor,
+          committer: importActor,
+          message: `Import Jira board tickets ${batchStart + 1}-${batchEnd}`,
+          pointer: options.pointer,
+        },
+        (tx) =>
+          Effect.gen(function* () {
+            if (batchStart === 0) {
+              for (const label of labels) {
+                yield* store.appendEvent(tx, {
+                  aggregateId: label.id,
+                  aggregateType: "label",
+                  eventId: eventId(options.eventSuffix, "label", label.id),
+                  payload: {
+                    op: "label.upsert",
+                    value: label,
+                  },
+                });
+                labelsWritten += 1;
+                batchLabelsWritten += 1;
+              }
+            }
+
+            for (const ticket of tickets.slice(batchStart, batchEnd)) {
               yield* store.appendEvent(tx, {
-                aggregateId: label.id,
-                aggregateType: "label",
-                eventId: eventId(options.eventSuffix, "label", label.id),
+                aggregateId: ticket.id,
+                aggregateType: "ticket",
+                eventId: eventId(options.eventSuffix, "ticket-create"),
                 payload: {
-                  op: "label.upsert",
-                  value: label,
+                  op: "ticket.create",
+                  value: ticket,
                 },
               });
-              labelsWritten += 1;
-              batchLabelsWritten += 1;
-            }
-          }
+              ticketsWritten += 1;
+              batchTicketsWritten += 1;
 
-          for (const ticket of tickets.slice(batchStart, batchEnd)) {
-            yield* store.appendEvent(tx, {
-              aggregateId: ticket.id,
-              aggregateType: "ticket",
-              eventId: eventId(options.eventSuffix, "ticket-create"),
-              payload: {
-                op: "ticket.create",
-                value: ticket,
-              },
-            });
-            ticketsWritten += 1;
-            batchTicketsWritten += 1;
-
-            for (const record of recordsForTicket(ticket, importActor, importedAt)) {
-              yield* store.appendEvent(tx, {
-                aggregateId: record.id,
-                aggregateType: "record",
-                eventId: eventId(options.eventSuffix, "record-add"),
-                payload: {
-                  op: "record.add",
-                  value: record,
-                },
-              });
-              recordsWritten += 1;
-              batchRecordsWritten += 1;
+              for (const record of recordsForTicket(ticket, importActor, importedAt)) {
+                yield* store.appendEvent(tx, {
+                  aggregateId: record.id,
+                  aggregateType: "record",
+                  eventId: eventId(options.eventSuffix, "record-add"),
+                  payload: {
+                    op: "record.add",
+                    value: record,
+                  },
+                });
+                recordsWritten += 1;
+                batchRecordsWritten += 1;
+              }
             }
-          }
-        }),
+          }),
       );
 
       commitsWritten += 1;
@@ -280,7 +279,6 @@ function syncProjection(store, options) {
     const status = yield* database.syncRepository(options.repositoryId);
     const importedTicketCount = yield* countImportedTickets(database, options.repositoryId);
 
-    yield* database.close();
     logMetric("sync.finish", {
       importedTicketCount,
       ms: elapsedMs(syncStartedAt),

@@ -17,7 +17,6 @@ const constructor =
     makeUseCase(name, input, meta);
 
 export const RepositoryOpen = constructor("RepositoryOpen");
-export const RepositoryClose = constructor("RepositoryClose");
 export const RepositoryList = constructor("RepositoryList");
 export const RepositoryStatusGet = constructor("RepositoryStatusGet");
 export const RepositoryMaterializationWarningsList = constructor(

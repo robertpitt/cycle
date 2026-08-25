@@ -39,10 +39,7 @@ const labelGroups = [
 const config = parseArgs(process.argv.slice(2));
 const GitStoresScriptLive = GitStoresLive.pipe(
   Layer.provide(
-    Layer.mergeAll(
-      NodeServices.layer,
-      RepositoryPathsLive.pipe(Layer.provide(NodeServices.layer)),
-    ),
+    Layer.mergeAll(NodeServices.layer, RepositoryPathsLive.pipe(Layer.provide(NodeServices.layer))),
   ),
 );
 
@@ -79,41 +76,47 @@ function seed(options) {
 
     for (let batchStart = 0; batchStart < options.tickets; batchStart += options.batchSize) {
       const batchEnd = Math.min(batchStart + options.batchSize, options.tickets);
-      const result = yield* store.transaction({
-        author: actor,
-        committer: actor,
-        message: `Seed ${options.prefix} tickets ${batchStart + 1}-${batchEnd}`,
-        pointer: options.pointer,
-      }, (tx) =>
-        Effect.gen(function* () {
-          for (let index = batchStart; index < batchEnd; index += 1) {
-            const ticket = makeSeedTicket(index, options);
+      const result = yield* store.transaction(
+        {
+          author: actor,
+          committer: actor,
+          message: `Seed ${options.prefix} tickets ${batchStart + 1}-${batchEnd}`,
+          pointer: options.pointer,
+        },
+        (tx) =>
+          Effect.gen(function* () {
+            for (let index = batchStart; index < batchEnd; index += 1) {
+              const ticket = makeSeedTicket(index, options);
 
-            yield* store.appendEvent(tx, {
-              aggregateId: ticket.id,
-              aggregateType: "ticket",
-              eventId: seedEventId("ticket", ticket.id, index),
-              payload: {
-                op: "ticket.create",
-                value: ticket,
-              },
-            });
-            ticketsWritten += 1;
-
-            for (const [recordIndex, record] of makeSeedRecords(ticket, index, options).entries()) {
               yield* store.appendEvent(tx, {
-                aggregateId: record.id,
-                aggregateType: "record",
-                eventId: seedEventId("record", record.id, recordIndex),
+                aggregateId: ticket.id,
+                aggregateType: "ticket",
+                eventId: seedEventId("ticket", ticket.id, index),
                 payload: {
-                  op: "record.add",
-                  value: record,
+                  op: "ticket.create",
+                  value: ticket,
                 },
               });
-              if (record.recordType === "comment") commentsWritten += 1;
+              ticketsWritten += 1;
+
+              for (const [recordIndex, record] of makeSeedRecords(
+                ticket,
+                index,
+                options,
+              ).entries()) {
+                yield* store.appendEvent(tx, {
+                  aggregateId: record.id,
+                  aggregateType: "record",
+                  eventId: seedEventId("record", record.id, recordIndex),
+                  payload: {
+                    op: "record.add",
+                    value: record,
+                  },
+                });
+                if (record.recordType === "comment") commentsWritten += 1;
+              }
             }
-          }
-        }),
+          }),
       );
 
       commitsWritten += 1;
@@ -129,8 +132,6 @@ function seed(options) {
     if (options.verify) {
       verification = yield* verifyProjection(database, store, options);
     }
-
-    yield* database.close();
 
     console.log(
       JSON.stringify(

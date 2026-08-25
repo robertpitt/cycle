@@ -129,17 +129,6 @@ export const UseCaseContracts = {
     sideEffect: "sync",
     successSchema: RepositoryStatus,
   }),
-  RepositoryClose: contract({
-    aliases: [],
-    category: "repository",
-    description: "Close an opened repository.",
-    idempotency: "not-supported",
-    inputSchema: RepositoryScopedEmpty,
-    name: "RepositoryClose",
-    repositoryScope: "single",
-    sideEffect: "write",
-    successSchema: Schema.Undefined,
-  }),
   RepositoryList: contract({
     aliases: ["repository.status.list"],
     category: "repository",

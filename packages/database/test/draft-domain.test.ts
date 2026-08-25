@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
-import { describe, it } from "vitest";
+import { describe, it } from "@effect/vitest";
 import { makeFrontmatter, makeTicketDocument } from "../src/domain/TicketDocument.ts";
-import { mergeDraftInput } from "../src/internals/DatabaseHelpers.ts";
+import { mergeDraftInput } from "../src/internals/commands/TicketCommandRules.ts";
 
 const actor = { name: "Test User", type: "human" as const };
 

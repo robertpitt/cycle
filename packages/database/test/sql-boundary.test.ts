@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, it } from "vitest";
+import { describe, it } from "@effect/vitest";
 
 const packageRoot = resolve(import.meta.dirname, "..");
 const srcRoot = resolve(packageRoot, "src");
