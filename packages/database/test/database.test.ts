@@ -642,7 +642,7 @@ describe("@cycle/database", () => {
     }).pipe(Effect.provide(DatabaseTest())),
   );
 
-  it.effect("indexes title, body, and comments for ticket-oriented full-text search", () =>
+  it.effect("searches ticket references, titles, and bodies with prefix matching", () =>
     Effect.gen(function* () {
       const database = yield* DatabaseService;
       const store = yield* makeStore("search-repo");
@@ -660,6 +660,14 @@ describe("@cycle/database", () => {
       const comment = yield* database.addComment("search-repo", ticket.id, {
         body: "Comment mentions sync visibility for the frontend.",
       });
+      const referenceResults = yield* database.searchTickets({
+        repositoryIds: ["search-repo"],
+        text: ticket.id.toLocaleLowerCase(),
+      });
+      const titlePrefixResults = yield* database.searchTickets({
+        repositoryIds: ["search-repo"],
+        text: "Projec",
+      });
       const bodyResults = yield* database.searchTickets({
         repositoryIds: ["search-repo"],
         text: "materialized",
@@ -672,6 +680,20 @@ describe("@cycle/database", () => {
 
       assert.strictEqual(comment.recordType, "comment");
       assert.deepStrictEqual(
+        referenceResults.entries.map((entry) => ({
+          fields: entry.matchedFields,
+          id: entry.ticket.id,
+        })),
+        [{ fields: ["reference"], id: ticket.id }],
+      );
+      assert.deepStrictEqual(
+        titlePrefixResults.entries.map((entry) => ({
+          fields: entry.matchedFields,
+          id: entry.ticket.id,
+        })),
+        [{ fields: ["title"], id: ticket.id }],
+      );
+      assert.deepStrictEqual(
         bodyResults.entries.map((entry) => ({
           fields: entry.matchedFields,
           id: entry.ticket.id,
@@ -683,7 +705,7 @@ describe("@cycle/database", () => {
           fields: entry.matchedFields,
           id: entry.ticket.id,
         })),
-        [{ fields: ["comment"], id: ticket.id }],
+        [],
       );
       assert.deepStrictEqual(
         comments.entries.map((entry) => entry.id),
@@ -698,6 +720,56 @@ describe("@cycle/database", () => {
 
       assert.ok(emptyComment instanceof DatabaseValidationError);
       assert.match(emptyComment.message, /comment body must not be empty/u);
+    }).pipe(Effect.provide(DatabaseTest())),
+  );
+
+  it.effect("ranks title matches above body matches and preserves filters and pagination", () =>
+    Effect.gen(function* () {
+      const database = yield* DatabaseService;
+      const store = yield* makeStore("ranked-search-repo");
+
+      yield* database.openRepository({
+        repositoryId: "ranked-search-repo",
+        store,
+      });
+
+      const bodyMatch = yield* database.createTicket("ranked-search-repo", {
+        body: "The body contains aurora planning details.",
+        status: "todo",
+        title: "Body-only candidate",
+        type: "task",
+      });
+      const titleMatch = yield* database.createTicket("ranked-search-repo", {
+        body: "No matching term here.",
+        status: "in-progress",
+        title: "Aurora delivery",
+        type: "task",
+      });
+
+      const ranked = yield* database.searchTickets({
+        limit: 1,
+        repositoryIds: ["ranked-search-repo"],
+        text: "aurora",
+      });
+      const secondPage = yield* database.searchTickets({
+        cursor: ranked.nextCursor,
+        limit: 1,
+        repositoryIds: ["ranked-search-repo"],
+        text: "aurora",
+      });
+      const filtered = yield* database.searchTickets({
+        repositoryIds: ["ranked-search-repo"],
+        status: "todo",
+        text: "aurora",
+      });
+
+      assert.strictEqual(ranked.entries[0]?.ticket.id, titleMatch.id);
+      assert.strictEqual(secondPage.entries[0]?.ticket.id, bodyMatch.id);
+      assert.strictEqual(secondPage.nextCursor, undefined);
+      assert.deepStrictEqual(
+        filtered.entries.map((entry) => entry.ticket.id),
+        [bodyMatch.id],
+      );
     }).pipe(Effect.provide(DatabaseTest())),
   );
 

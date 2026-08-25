@@ -2,7 +2,7 @@ import { Schema } from "effect";
 import { TicketDocument } from "./TicketDocument.ts";
 
 export const TicketSearchResult = Schema.Struct({
-  matchedFields: Schema.Array(Schema.Literals(["body", "comment", "title"])).pipe(
+  matchedFields: Schema.Array(Schema.Literals(["body", "reference", "title"])).pipe(
     Schema.annotateKey({ description: "Fields that matched the search query." }),
   ),
   ticket: TicketDocument.pipe(Schema.annotateKey({ description: "Matched ticket document." })),

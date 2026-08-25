@@ -996,17 +996,40 @@ const initiativeIdFromInput = (input: unknown): string => {
   throw new Error("Cycle API initiative request must include input.id.");
 };
 
-const listIssuesForRepository = (repositoryId: string, query: QueryInput): Promise<TicketPage> =>
-  page(
-    "GET",
-    withQuery(`${repositoryPath(repositoryId)}/issues`, query),
-    ContractSchemas.TicketDocument,
-  );
+const listIssuesForRepository = async (
+  repositoryId: string,
+  query: QueryInput,
+): Promise<TicketPage> => {
+  const path = withQuery(`${repositoryPath(repositoryId)}/issues`, query);
+  const text = typeof query.text === "string" ? query.text.trim() : "";
+
+  if (text.length === 0) {
+    return page("GET", path, ContractSchemas.TicketDocument);
+  }
+
+  const results = await page("GET", path, ContractSchemas.TicketSearchResult);
+  return {
+    entries: results.entries.map((result) => result.ticket),
+    ...(results.nextCursor === undefined ? {} : { nextCursor: results.nextCursor }),
+  };
+};
 
 const listIssuesForRepositories = async (
   repositoryIds: ReadonlyArray<string>,
   query: QueryInput,
 ): Promise<TicketPage> => {
+  const searchRepositoryId = repositoryIds[0];
+  if (
+    searchRepositoryId !== undefined &&
+    typeof query.text === "string" &&
+    query.text.trim().length > 0
+  ) {
+    return listIssuesForRepository(searchRepositoryId, {
+      ...query,
+      repositoryIds,
+    });
+  }
+
   const repositoryCursor = decodeRepositoryIssueCursor(query.cursor);
   const fallbackCursor = repositoryCursor === undefined ? query.cursor : undefined;
   const { cursor: _cursor, ...baseQuery } = query;

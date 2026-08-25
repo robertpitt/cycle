@@ -444,15 +444,12 @@ export type TicketPage = {
   readonly nextCursor?: string;
 };
 
-export type SearchTicketsQuery = {
-  readonly cursor?: string;
-  readonly limit?: number;
-  readonly repositoryIds?: ReadonlyArray<string>;
+export type SearchTicketsQuery = Omit<TicketQuery, "text"> & {
   readonly text: string;
 };
 
 export type TicketSearchResult = {
-  readonly matchedFields: ReadonlyArray<"body" | "comment" | "title">;
+  readonly matchedFields: ReadonlyArray<"body" | "reference" | "title">;
   readonly ticket: TicketDocument;
 };
 

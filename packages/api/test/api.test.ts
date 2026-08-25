@@ -239,14 +239,16 @@ const makeTestApi = (options: Partial<Parameters<typeof makeCycleApi>[0]> = {}) 
         issues[sourceIndex] = updatedSource;
         return updatedSource;
       }),
-    searchTickets: () =>
+    searchTickets: (query) =>
       Effect.sync(() => {
         calls.push("IssueSearch");
         return {
-          entries: issues.map((issue) => ({
-            matchedFields: ["title" as const],
-            ticket: issue,
-          })),
+          entries: issues
+            .filter((issue) => query.status === undefined || issue.status === query.status)
+            .map((issue) => ({
+              matchedFields: ["title" as const],
+              ticket: issue,
+            })),
         };
       }),
     syncRepository: () =>
@@ -1218,6 +1220,38 @@ describe("@cycle/api", () => {
       assert.equal(listedBody.data?.length, 1);
       assert.equal(listedBody.data?.[0]?.id, createdBody.data?.id);
       assert.deepEqual(calls, ["IssueCreate", "IssueList"]);
+    } finally {
+      await api.dispose();
+    }
+  });
+
+  it("preserves issue filters when routing text queries through full-text search", async () => {
+    const { api, calls } = makeTestApi();
+
+    try {
+      await api.fetch(
+        new Request(`http://cycle.test/v1/repositories/${repository.id}/issues`, {
+          ...authed({ title: "Searchable ticket", type: "task" }),
+          method: "POST",
+        }),
+      );
+      const response = await api.fetch(
+        new Request(
+          `http://cycle.test/v1/repositories/${repository.id}/issues?q=Search&filter[status]=todo`,
+          authed(),
+        ),
+      );
+      const body = (await response.json()) as {
+        readonly data?: ReadonlyArray<{
+          readonly matchedFields?: ReadonlyArray<string>;
+          readonly ticket?: { readonly id?: string };
+        }>;
+      };
+
+      assert.equal(response.status, 200);
+      assert.equal(body.data?.[0]?.ticket?.id, "ISSUE-1");
+      assert.deepEqual(body.data?.[0]?.matchedFields, ["title"]);
+      assert.deepEqual(calls, ["IssueCreate", "IssueSearch"]);
     } finally {
       await api.dispose();
     }

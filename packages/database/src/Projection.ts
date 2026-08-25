@@ -1904,9 +1904,22 @@ export class Projection {
       );
     }
     if (query.text !== undefined && query.text.trim().length > 0) {
-      const pattern = `%${query.text.toLowerCase().replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
-      filters.push("(lower(t.title) LIKE ? ESCAPE '\\' OR lower(t.body) LIKE ? ESCAPE '\\')");
-      params.push(pattern, pattern);
+      const search = ticketSearchValues(query.text);
+      filters.push(
+        `(lower(t.ticket_id) LIKE ? ESCAPE '\\'
+          OR EXISTS (
+            SELECT 1
+            FROM search_fts f
+            JOIN search_documents d
+              ON d.repository_id = f.repository_id
+             AND d.document_id = f.document_id
+            WHERE f.repository_id = t.repository_id
+              AND f.ticket_id = t.ticket_id
+              AND d.source_type = 'ticket'
+              AND search_fts MATCH ?
+          ))`,
+      );
+      params.push(search.referencePrefix, search.ftsQuery);
     }
     if (query.updatedAfter !== undefined) {
       filters.push("t.updated_at >= ?");
@@ -1932,14 +1945,42 @@ export class Projection {
               ? "title"
               : "updated_at";
     const direction = query.orderDirection === "asc" ? "ASC" : "DESC";
+    const search =
+      query.text !== undefined && query.text.trim().length > 0
+        ? ticketSearchValues(query.text)
+        : undefined;
+    const order =
+      search === undefined
+        ? `t.${orderColumn} ${direction}, t.ticket_id ASC`
+        : `CASE
+             WHEN lower(t.ticket_id) = ? THEN 0
+             WHEN lower(t.ticket_id) LIKE ? ESCAPE '\\' THEN 1
+             ELSE 2
+           END ASC,
+           COALESCE((
+             SELECT bm25(search_fts, 0.0, 0.0, 0.0, 8.0, 1.0)
+             FROM search_fts f
+             JOIN search_documents d
+               ON d.repository_id = f.repository_id
+              AND d.document_id = f.document_id
+             WHERE f.repository_id = t.repository_id
+               AND f.ticket_id = t.ticket_id
+               AND d.source_type = 'ticket'
+               AND search_fts MATCH ?
+             LIMIT 1
+           ), 0.0) ASC,
+           t.updated_at DESC,
+           t.ticket_id ASC`;
+    const orderParams =
+      search === undefined ? [] : [search.referenceExact, search.referencePrefix, search.ftsQuery];
     const where = filters.length === 0 ? "" : `WHERE ${filters.join(" AND ")}`;
     const rows = this.db.all(
       `SELECT t.*
          FROM tickets t
          ${where}
-         ORDER BY t.${orderColumn} ${direction}, t.ticket_id ASC
+         ORDER BY ${order}
          LIMIT ? OFFSET ?`,
-      [...params, limit + 1, cursor.offset],
+      [...params, ...orderParams, limit + 1, cursor.offset],
     ) as unknown as ReadonlyArray<TicketRow>;
     const entries = rows.slice(0, limit).map(ticketFromRow);
 
@@ -1950,50 +1991,14 @@ export class Projection {
   }
 
   searchTickets(query: SearchTicketsQuery): TicketSearchPage {
-    const limit = normalizeLimit(query.limit);
-    const cursor = decodeCursor(query.cursor);
-    const params: Array<SqlValue> = [toFtsQuery(query.text)];
-    const repositoryFilter =
-      query.repositoryIds !== undefined && query.repositoryIds.length > 0
-        ? `AND f.repository_id IN (${placeholders(query.repositoryIds.length)})`
-        : "";
-
-    if (query.repositoryIds !== undefined && query.repositoryIds.length > 0) {
-      params.push(...query.repositoryIds);
-    }
-
-    const rows = this.db.all(
-      `SELECT DISTINCT f.repository_id, f.ticket_id
-         FROM search_fts f
-         JOIN tickets t
-           ON t.repository_id = f.repository_id AND t.ticket_id = f.ticket_id
-         WHERE search_fts MATCH ?
-         AND t.archived_at IS NULL
-         AND t.deleted_at IS NULL
-         ${repositoryFilter}
-         ORDER BY f.ticket_id ASC
-         LIMIT ? OFFSET ?`,
-      [...params, limit + 1, cursor.offset],
-    ) as unknown as ReadonlyArray<{
-      readonly repository_id: string;
-      readonly ticket_id: string;
-    }>;
-    const pageRows = rows.slice(0, limit);
+    const page = this.listTickets(query);
 
     return {
-      entries: pageRows.flatMap((row) => {
-        const ticket = this.getTicket(row.repository_id, row.ticket_id);
-
-        if (ticket === null) return [];
-
-        return [
-          {
-            matchedFields: this.matchedFields(row.repository_id, row.ticket_id, query.text),
-            ticket,
-          },
-        ];
-      }),
-      nextCursor: rows.length > limit ? encodeCursor(cursor.offset + limit) : undefined,
+      entries: page.entries.map((ticket) => ({
+        matchedFields: this.matchedFields(ticket, query.text),
+        ticket,
+      })),
+      ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
     };
   }
 
@@ -2525,25 +2530,16 @@ export class Projection {
   }
 
   private matchedFields(
-    repositoryId: string,
-    ticketId: string,
+    ticket: TicketDocument,
     text: string,
-  ): ReadonlyArray<"body" | "comment" | "title"> {
-    const needle = text.toLowerCase();
-    const fields = new Set<"body" | "comment" | "title">();
-    const ticket = this.getTicket(repositoryId, ticketId);
+  ): ReadonlyArray<"body" | "reference" | "title"> {
+    const fields = new Set<"body" | "reference" | "title">();
+    const normalized = text.trim().toLocaleLowerCase();
+    const terms = searchTerms(text);
 
-    if (ticket?.frontmatter.title.toLowerCase().includes(needle) === true) fields.add("title");
-    if (ticket?.body.toLowerCase().includes(needle) === true) fields.add("body");
-
-    const comments = this.db.all(
-      "SELECT body FROM comments WHERE repository_id = ? AND ticket_id = ?",
-      [repositoryId, ticketId],
-    ) as unknown as ReadonlyArray<{ readonly body: string }>;
-
-    if (comments.some((comment) => comment.body.toLowerCase().includes(needle))) {
-      fields.add("comment");
-    }
+    if (ticket.id.toLocaleLowerCase().startsWith(normalized)) fields.add("reference");
+    if (fieldMatchesSearchTerms(ticket.frontmatter.title, terms)) fields.add("title");
+    if (fieldMatchesSearchTerms(ticket.body, terms)) fields.add("body");
 
     return [...fields];
   }
@@ -3222,12 +3218,29 @@ const decodeCursor = (cursor: string | undefined): { readonly offset: number } =
 
 const placeholders = (count: number): string => Array.from({ length: count }, () => "?").join(", ");
 
-const toFtsQuery = (text: string): string => {
-  const terms = text
-    .trim()
-    .split(/\s+/u)
-    .map((term) => term.replaceAll('"', '""'))
-    .filter((term) => term.length > 0);
+const searchTerms = (text: string): ReadonlyArray<string> =>
+  text.toLocaleLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [];
 
-  return terms.length === 0 ? '""' : terms.map((term) => `"${term}"`).join(" AND ");
+const toFtsQuery = (text: string): string => {
+  const terms = searchTerms(text).map((term) => term.replaceAll('"', '""'));
+
+  return terms.length === 0 ? '""' : terms.map((term) => `"${term}"*`).join(" AND ");
+};
+
+const escapeLike = (value: string): string =>
+  value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+
+const ticketSearchValues = (text: string) => {
+  const referenceExact = text.trim().toLocaleLowerCase();
+
+  return {
+    ftsQuery: toFtsQuery(text),
+    referenceExact,
+    referencePrefix: `${escapeLike(referenceExact)}%`,
+  };
+};
+
+const fieldMatchesSearchTerms = (value: string, terms: ReadonlyArray<string>): boolean => {
+  const normalized = value.toLocaleLowerCase();
+  return terms.some((term) => normalized.includes(term));
 };

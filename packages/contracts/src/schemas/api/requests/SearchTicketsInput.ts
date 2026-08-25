@@ -1,20 +1,12 @@
 import { Schema } from "effect";
-import { PositiveInteger } from "../../components/PositiveInteger.ts";
+import { IssueQuery } from "./IssueQuery.ts";
 
 export const SearchTicketsInput = Schema.Struct({
-  cursor: Schema.optional(Schema.String).pipe(
-    Schema.annotateKey({
-      description: "Opaque pagination cursor returned by a previous search response.",
-    }),
-  ),
-  limit: Schema.optional(PositiveInteger).pipe(
-    Schema.annotateKey({ description: "Maximum number of search results to return." }),
-  ),
-  repositoryIds: Schema.optional(Schema.Array(Schema.String)).pipe(
-    Schema.annotateKey({ description: "Repository id allow-list for multi-repository search." }),
-  ),
+  ...IssueQuery.fields,
   text: Schema.String.pipe(
-    Schema.annotateKey({ description: "Search text matched against title, body, and comments." }),
+    Schema.annotateKey({
+      description: "Search text matched against ticket references, titles, and bodies.",
+    }),
   ),
 }).pipe(
   Schema.annotate({

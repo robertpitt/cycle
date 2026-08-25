@@ -64,9 +64,7 @@ export const listIssues = ({ params, request }: V1Request<"listIssues">) =>
       return decodeHttpValue(
         ContractSchemas.SearchTicketsInput,
         {
-          cursor: query.cursor,
-          limit: query.limit,
-          repositoryIds: query.repositoryIds,
+          ...query,
           text: query.text,
         },
         requestId,

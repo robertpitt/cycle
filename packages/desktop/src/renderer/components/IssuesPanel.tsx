@@ -646,6 +646,7 @@ export const IssuesPanel = ({
     query.orderDirection ?? "desc",
   );
   const [searchText, setSearchText] = React.useState("");
+  const [debouncedSearchText, setDebouncedSearchText] = React.useState("");
   const [localActiveViewId, setLocalActiveViewId] = React.useState<string>();
   const [collapsedGroupIds, setCollapsedGroupIds] = React.useState<ReadonlySet<string>>(
     () => new Set(),
@@ -669,8 +670,12 @@ export const IssuesPanel = ({
   const activeViewId = savedViewId ?? localActiveViewId;
   const activeSavedView = savedViews.find((view) => view.id === activeViewId);
   const savedViewControlsVisible = showSavedViewControls && repositoryId !== undefined;
+  React.useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedSearchText(searchText.trim()), 250);
+    return () => window.clearTimeout(timeout);
+  }, [searchText]);
   const effectiveQuery = React.useMemo(() => {
-    const text = searchText.trim();
+    const text = debouncedSearchText;
 
     return {
       ...query,
@@ -679,7 +684,7 @@ export const IssuesPanel = ({
       orderDirection: sortDirection,
       ...(text.length > 0 ? { text } : {}),
     } satisfies Omit<TicketQuery, "repositoryIds">;
-  }, [activeSavedView, query, searchText, sortDirection, sortField]);
+  }, [activeSavedView, debouncedSearchText, query, sortDirection, sortField]);
   const issuesQuery = useIssueListInfiniteQuery(repositoryId, effectiveQuery, repositoryIds);
   const issues = React.useMemo(
     () => issuesQuery.data?.pages.flatMap((page) => page.entries) ?? [],
@@ -973,36 +978,53 @@ export const IssuesPanel = ({
     });
   }, [createSavedView, effectiveQuery, grouping, presentation, sortDirection, sortField]);
 
+  const effectiveSearchText = effectiveQuery.text?.trim() ?? "";
+  const searchPending = searchText.trim() !== debouncedSearchText;
   const listError =
     issuesQuery.error instanceof Error
-      ? issuesQuery.error.message
+      ? effectiveSearchText.length > 0
+        ? `Search failed: ${issuesQuery.error.message}`
+        : issuesQuery.error.message
       : metadataError instanceof Error
         ? metadataError.message
         : undefined;
   const emptyState = loadingRepository
     ? "Loading repository issues."
-    : repositoryId || globalIssueList
-      ? "No issues yet."
-      : "Choose a repository before creating issues.";
-  const listLoading = issuesQuery.isLoading || metadataLoading || loadingRepository;
+    : effectiveSearchText.length > 0
+      ? `No issues match “${effectiveSearchText}”.`
+      : repositoryId || globalIssueList
+        ? "No issues yet."
+        : "Choose a repository before creating issues.";
+  const listLoading =
+    issuesQuery.isLoading || metadataLoading || loadingRepository || searchPending;
 
   return (
     <div className="min-w-0">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          <label className="relative min-w-64 max-w-md flex-1">
+          <div className="relative min-w-64 max-w-md flex-1">
             <Search
               aria-hidden
               className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
             />
             <Input
               aria-label="Search issues"
-              className="h-9 pl-9"
+              className="h-9 px-9"
               onChange={(event) => setSearchText(event.currentTarget.value)}
               placeholder="Search issues"
               value={searchText}
             />
-          </label>
+            {searchText.length > 0 ? (
+              <button
+                aria-label="Clear issue search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-1 text-muted-foreground hover:text-foreground"
+                onClick={() => setSearchText("")}
+                type="button"
+              >
+                <X aria-hidden className="size-3.5" />
+              </button>
+            ) : null}
+          </div>
           {savedViewControlsVisible ? (
             <Select
               aria-label="Saved view"

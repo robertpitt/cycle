@@ -150,6 +150,41 @@ describe("@cycle/cli", () => {
     assert.equal(output.data?.status, "done");
   });
 
+  it("renders nested full-text issue search results in human output", async () => {
+    const io = makeIo(async (request, init) => {
+      const requestObject = request instanceof Request ? request : new Request(request, init);
+      const url = new URL(requestObject.url);
+
+      if (url.pathname === "/v1/repositories/repo-1") {
+        return Response.json({ data: { repositoryId: "repo-1" } });
+      }
+
+      assert.equal(url.pathname, "/v1/repositories/repo-1/issues");
+      assert.equal(url.searchParams.get("q"), "cycle");
+      return Response.json({
+        data: [
+          {
+            matchedFields: ["title"],
+            ticket: {
+              frontmatter: { title: "Search Cycle tickets" },
+              id: "CYC-42",
+              status: "todo",
+            },
+          },
+        ],
+      });
+    });
+
+    const exitCode = await runCycleCli(
+      ["issue", "list", "--repository", "repo-1", "--q", "cycle"],
+      io,
+    );
+
+    assert.equal(exitCode, 0);
+    assert.equal(io.stderrText(), "");
+    assert.equal(io.stdoutText().trim(), "CYC-42 todo Search Cycle tickets");
+  });
+
   it("routes the completed REST command families to their registered v1 endpoints", async () => {
     const cases: ReadonlyArray<{
       readonly argv: ReadonlyArray<string>;

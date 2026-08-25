@@ -90,7 +90,10 @@ export const issue = Command.make("issue").pipe(
               response.data.length === 0
                 ? "No issues found."
                 : response.data
-                    .map((item) => `${issueId(item)} ${issueStatus(item)} ${issueTitle(item)}`)
+                    .map((item) => {
+                      const ticket = ticketFromListEntry(item);
+                      return `${issueId(ticket)} ${issueStatus(ticket)} ${issueTitle(ticket)}`;
+                    })
                     .join("\n"),
             json: response,
           };
@@ -233,6 +236,11 @@ export const issue = Command.make("issue").pipe(
     issueRecordsCommand(),
   ]),
 );
+
+const ticketFromListEntry = (entry: Record<string, unknown>): Record<string, unknown> =>
+  typeof entry.ticket === "object" && entry.ticket !== null
+    ? (entry.ticket as Record<string, unknown>)
+    : entry;
 
 function issueRelationsCommand() {
   return Command.make("relations").pipe(

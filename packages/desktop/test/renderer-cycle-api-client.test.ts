@@ -212,6 +212,66 @@ describe("renderer cycle API client", () => {
     });
   });
 
+  it("decodes ticket search results and returns plain issues to list consumers", async () => {
+    installRendererApiWindow();
+    let requestUrl: URL | undefined;
+    const ticket = archivedIssueRecord("CYC-123");
+    globalThis.fetch = async (input) => {
+      requestUrl = new URL(String(input));
+      return jsonResponse(
+        collectionEnvelope([
+          {
+            matchedFields: ["reference", "title"],
+            ticket,
+          },
+        ]),
+      );
+    };
+
+    const result = await cycleApiClient.call("ticket.issue.list", {
+      input: {
+        status: "todo",
+        text: "cyc-123",
+      },
+      repository: { id: "repo-a" },
+    });
+
+    assert.equal(requestUrl?.pathname, "/v1/repositories/repo-a/issues");
+    assert.equal(requestUrl?.searchParams.get("q"), "cyc-123");
+    assert.equal(requestUrl?.searchParams.get("filter[status]"), "todo");
+    assert.deepEqual(result.entries, [ticket]);
+  });
+
+  it("runs cross-repository text search as one ranked database query", async () => {
+    installRendererApiWindow();
+    const calls: URL[] = [];
+    const ticket = archivedIssueRecord("CYC-124");
+    globalThis.fetch = async (input) => {
+      calls.push(new URL(String(input)));
+      return jsonResponse(
+        collectionEnvelope([
+          {
+            matchedFields: ["body"],
+            ticket,
+          },
+        ]),
+      );
+    };
+
+    const result = await cycleApiClient.call("ticket.issue.list", {
+      input: {
+        repositoryIds: ["repo-b", "repo-a"],
+        text: "authentication",
+      },
+      repository: { id: "repo-a" },
+    });
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.pathname, "/v1/repositories/repo-a/issues");
+    assert.equal(calls[0]?.searchParams.get("filter[repository][in]"), "repo-a,repo-b");
+    assert.deepEqual(result.entries, [ticket]);
+  });
+
   it("sends empty JSON payloads for agent task control posts", async () => {
     const calls: Array<{ readonly body?: BodyInit | null; readonly url: string }> = [];
     const storage = new Map<string, string>();
