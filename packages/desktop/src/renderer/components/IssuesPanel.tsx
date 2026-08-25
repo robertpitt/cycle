@@ -13,9 +13,15 @@ import {
   IssueStatusMark,
   type IssuePropertyMenuOption,
 } from "@cycle/ui/molecules";
-import { IssuesList, type IssuesListGroup, type IssuesListProps } from "@cycle/ui/organisms";
+import {
+  IssuesBoard,
+  IssuesList,
+  type IssuesBoardColumn,
+  type IssuesListGroup,
+  type IssuesListProps,
+} from "@cycle/ui/organisms";
 import { cn } from "@cycle/ui/utils";
-import { Plus, Save, Search, SlidersHorizontal, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Plus, Save, Search, SlidersHorizontal, X } from "lucide-react";
 import * as React from "react";
 import type { ProfileConfig } from "@cycle/config";
 import { useCreateSavedViewMutation } from "../mutations/index.ts";
@@ -54,6 +60,9 @@ type IssuePanelRepository = {
 };
 
 type IssueGrouping = "none" | "status" | "assignee" | "priority" | "label";
+type IssuePresentation = "board" | "list";
+type IssueSortField = NonNullable<TicketQuery["orderBy"]>;
+type IssueSortDirection = NonNullable<TicketQuery["orderDirection"]>;
 
 type IssueMenuOption = {
   readonly icon?: React.ReactNode;
@@ -87,6 +96,22 @@ const groupingOptions: readonly IssueMenuOption[] = [
     id: "label",
     label: "Label",
   },
+];
+
+const sortOptions: ReadonlyArray<{ readonly label: string; readonly value: IssueSortField }> = [
+  { label: "Recently updated", value: "updatedAt" },
+  { label: "Recently created", value: "createdAt" },
+  { label: "Priority", value: "priority" },
+  { label: "Due date", value: "dueDate" },
+  { label: "Title", value: "title" },
+];
+
+const presentationOptions: ReadonlyArray<{
+  readonly label: string;
+  readonly value: IssuePresentation;
+}> = [
+  { label: "List", value: "list" },
+  { label: "Board", value: "board" },
 ];
 
 const statusOrder = ["in-progress", "todo", "backlog", "done", "canceled"] as const;
@@ -615,6 +640,11 @@ export const IssuesPanel = ({
   title = "Issues",
 }: IssuesPanelProps) => {
   const [grouping, setGrouping] = React.useState<IssueGrouping>("status");
+  const [presentation, setPresentation] = React.useState<IssuePresentation>("list");
+  const [sortField, setSortField] = React.useState<IssueSortField>(query.orderBy ?? "updatedAt");
+  const [sortDirection, setSortDirection] = React.useState<IssueSortDirection>(
+    query.orderDirection ?? "desc",
+  );
   const [searchText, setSearchText] = React.useState("");
   const [localActiveViewId, setLocalActiveViewId] = React.useState<string>();
   const [collapsedGroupIds, setCollapsedGroupIds] = React.useState<ReadonlySet<string>>(
@@ -640,22 +670,16 @@ export const IssuesPanel = ({
   const activeSavedView = savedViews.find((view) => view.id === activeViewId);
   const savedViewControlsVisible = showSavedViewControls && repositoryId !== undefined;
   const effectiveQuery = React.useMemo(() => {
-    const sortPatch =
-      activeSavedView?.sort === undefined
-        ? {}
-        : {
-            orderBy: activeSavedView.sort.field,
-            orderDirection: activeSavedView.sort.direction,
-          };
     const text = searchText.trim();
 
     return {
       ...query,
       ...activeSavedView?.query,
-      ...sortPatch,
+      orderBy: sortField,
+      orderDirection: sortDirection,
       ...(text.length > 0 ? { text } : {}),
     } satisfies Omit<TicketQuery, "repositoryIds">;
-  }, [activeSavedView, query, searchText]);
+  }, [activeSavedView, query, searchText, sortDirection, sortField]);
   const issuesQuery = useIssueListInfiniteQuery(repositoryId, effectiveQuery, repositoryIds);
   const issues = React.useMemo(
     () => issuesQuery.data?.pages.flatMap((page) => page.entries) ?? [],
@@ -711,6 +735,13 @@ export const IssuesPanel = ({
   React.useEffect(() => {
     const nextGrouping = groupingFromSavedView(activeSavedView);
     if (nextGrouping) setGrouping(nextGrouping);
+    if (!activeSavedView) return;
+
+    setPresentation(activeSavedView.kind);
+    setSortField(activeSavedView.sort?.field ?? activeSavedView.query.orderBy ?? "updatedAt");
+    setSortDirection(
+      activeSavedView.sort?.direction ?? activeSavedView.query.orderDirection ?? "desc",
+    );
   }, [activeSavedView]);
 
   const statusCounts = React.useMemo(
@@ -841,19 +872,23 @@ export const IssuesPanel = ({
       return next;
     });
   }, []);
-  const groups = React.useMemo(() => {
-    if (grouping === "none") return undefined;
-
-    const definitions =
+  const groupDefinitions = React.useMemo(
+    () =>
       grouping === "status"
         ? statusOptions
         : grouping === "priority"
           ? priorityOptions
           : grouping === "label"
             ? labelOptions
-            : assigneeOptions;
+            : grouping === "assignee"
+              ? assigneeOptions
+              : [],
+    [assigneeOptions, grouping, labelOptions, priorityOptions, statusOptions],
+  );
+  const groups = React.useMemo(() => {
+    if (grouping === "none") return undefined;
 
-    return definitions
+    return groupDefinitions
       .map((definition): IssuesListGroup | undefined => {
         const groupId = `${grouping}:${definition.id}`;
         const groupIssues = issues.filter(
@@ -882,14 +917,42 @@ export const IssuesPanel = ({
     assigneeOptions,
     collapsedGroupIds,
     createGroupAction,
+    groupDefinitions,
     grouping,
     issues,
-    labelOptions,
-    priorityOptions,
     rowById,
-    statusOptions,
     toggleGroup,
   ]);
+  const boardColumns = React.useMemo<readonly IssuesBoardColumn[]>(() => {
+    if (grouping === "none") {
+      return rows.length === 0
+        ? []
+        : [
+            {
+              count: rows.length,
+              id: "all-issues",
+              rows,
+              title,
+            },
+          ];
+    }
+
+    return groupDefinitions.map((definition) => {
+      const columnRows = issues.flatMap((issue) => {
+        if (groupKeyForIssue(issue, grouping) !== definition.id) return [];
+        const row = rowById.get(issue.id);
+        return row ? [row] : [];
+      });
+
+      return {
+        count: columnRows.length,
+        icon: definition.icon,
+        id: `${grouping}:${definition.id}`,
+        rows: columnRows,
+        title: definition.title,
+      };
+    });
+  }, [groupDefinitions, grouping, issues, rowById, rows, title]);
 
   const saveCurrentView = React.useCallback(() => {
     const name = window.prompt("Saved view name");
@@ -899,12 +962,29 @@ export const IssuesPanel = ({
 
     createSavedView.mutate({
       groupBy: grouping,
-      kind: "list",
+      kind: presentation,
       name: trimmedName,
       pinned: true,
       query: effectiveQuery,
+      sort: {
+        direction: sortDirection,
+        field: sortField,
+      },
     });
-  }, [createSavedView, effectiveQuery, grouping]);
+  }, [createSavedView, effectiveQuery, grouping, presentation, sortDirection, sortField]);
+
+  const listError =
+    issuesQuery.error instanceof Error
+      ? issuesQuery.error.message
+      : metadataError instanceof Error
+        ? metadataError.message
+        : undefined;
+  const emptyState = loadingRepository
+    ? "Loading repository issues."
+    : repositoryId || globalIssueList
+      ? "No issues yet."
+      : "Choose a repository before creating issues.";
+  const listLoading = issuesQuery.isLoading || metadataLoading || loadingRepository;
 
   return (
     <div className="min-w-0">
@@ -954,7 +1034,39 @@ export const IssuesPanel = ({
             />
           ) : null}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1">
+          <Select
+            aria-label="Sort issues by"
+            className="w-44"
+            items={sortOptions}
+            onValueChange={(value) => setSortField(value as IssueSortField)}
+            value={sortField}
+          />
+          <IconButton
+            icon={
+              sortDirection === "desc" ? (
+                <ArrowDown aria-hidden className="size-4" />
+              ) : (
+                <ArrowUp aria-hidden className="size-4" />
+              )
+            }
+            label={sortDirection === "desc" ? "Sort descending" : "Sort ascending"}
+            onClick={() => setSortDirection((current) => (current === "desc" ? "asc" : "desc"))}
+            size="sm"
+            title={sortDirection === "desc" ? "Sort descending" : "Sort ascending"}
+            variant="outline"
+          />
+          <Select
+            aria-label="Issue layout"
+            className="w-28"
+            items={presentationOptions}
+            onValueChange={(value) => {
+              const nextPresentation = value as IssuePresentation;
+              setPresentation(nextPresentation);
+              if (nextPresentation === "board" && grouping === "none") setGrouping("status");
+            }}
+            value={presentation}
+          />
           {savedViewControlsVisible ? (
             <Button
               disabled={createSavedView.isPending}
@@ -979,34 +1091,34 @@ export const IssuesPanel = ({
           />
         </div>
       </div>
-      <IssuesList
-        className="bg-transparent"
-        count={issueCount}
-        density="comfortable"
-        emptyState={
-          loadingRepository
-            ? "Loading repository issues."
-            : repositoryId || globalIssueList
-              ? "No issues yet."
-              : "Choose a repository before creating issues."
-        }
-        error={
-          issuesQuery.error instanceof Error
-            ? issuesQuery.error.message
-            : metadataError instanceof Error
-              ? metadataError.message
-              : undefined
-        }
-        groups={groups}
-        loading={issuesQuery.isLoading || metadataLoading || loadingRepository}
-        onRowSelect={handleIssueSelect}
-        rowMetaLimit={2}
-        rows={rows}
-        rowsClassName="grid gap-1"
-        selectedRowId={selectedIssueId}
-        showHeader={false}
-        title={title}
-      />
+      {presentation === "board" ? (
+        <IssuesBoard
+          className="min-h-64"
+          columns={boardColumns}
+          emptyState={emptyState}
+          error={listError}
+          loading={listLoading}
+          onRowSelect={handleIssueSelect}
+          selectedRowId={selectedIssueId}
+        />
+      ) : (
+        <IssuesList
+          className="bg-transparent"
+          count={issueCount}
+          density="comfortable"
+          emptyState={emptyState}
+          error={listError}
+          groups={groups}
+          loading={listLoading}
+          onRowSelect={handleIssueSelect}
+          rowMetaLimit={2}
+          rows={rows}
+          rowsClassName="grid gap-1"
+          selectedRowId={selectedIssueId}
+          showHeader={false}
+          title={title}
+        />
+      )}
       {issuesQuery.hasNextPage ? (
         <div className="mt-3 flex justify-center">
           <Button

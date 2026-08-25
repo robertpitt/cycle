@@ -1,13 +1,18 @@
-import { RefreshCw, Settings, Upload } from "lucide-react";
+import { Download, GitFork, RefreshCw, Settings, Upload } from "lucide-react";
 import * as React from "react";
 import { Button, StatusIndicator } from "@cycle/ui/atoms";
 import type { RepositoryRecord } from "@cycle/config";
 import type { BootstrapRepositoryStatus, BootstrapStatus } from "@cycle/contracts/schemas/backend";
-import { usePushRepositoryMutation, useSyncRepositoryMutation } from "../mutations/index.ts";
+import {
+  useFetchRepositoryMutation,
+  usePushRepositoryMutation,
+  useSyncRepositoryMutation,
+} from "../mutations/index.ts";
 
 type RepositorySettingsIndexPanelProps = {
   readonly bootstrapStatus?: BootstrapStatus;
   readonly onRepositorySelect: (repositoryId: string) => void;
+  readonly onCloneRepository?: () => void;
   readonly repositories: readonly RepositoryRecord[];
 };
 
@@ -39,14 +44,23 @@ const errorText = (error: unknown): string | undefined =>
 
 export const RepositorySettingsIndexPanel = ({
   bootstrapStatus,
+  onCloneRepository,
   onRepositorySelect,
   repositories,
 }: RepositorySettingsIndexPanelProps) => {
   const statuses = React.useMemo(() => bootstrapByRepository(bootstrapStatus), [bootstrapStatus]);
+  const fetchRepository = useFetchRepositoryMutation();
   const syncRepository = useSyncRepositoryMutation();
   const pushRepository = usePushRepositoryMutation();
   const [pendingRepositoryId, setPendingRepositoryId] = React.useState<string | null>(null);
-  const pending = syncRepository.isPending || pushRepository.isPending;
+  const pending = fetchRepository.isPending || syncRepository.isPending || pushRepository.isPending;
+
+  const runFetch = (repositoryId: string) => {
+    setPendingRepositoryId(repositoryId);
+    fetchRepository.mutate(repositoryId, {
+      onSettled: () => setPendingRepositoryId(null),
+    });
+  };
 
   const runSync = (repositoryId: string) => {
     setPendingRepositoryId(repositoryId);
@@ -65,7 +79,19 @@ export const RepositorySettingsIndexPanel = ({
   return (
     <div className="mx-auto grid w-full max-w-3xl gap-6 p-5">
       <header className="grid gap-1">
-        <h1 className="text-2xl font-semibold tracking-normal text-foreground">Repositories</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-semibold tracking-normal text-foreground">Repositories</h1>
+          {onCloneRepository ? (
+            <Button
+              leftIcon={<GitFork aria-hidden className="size-4" />}
+              onClick={onCloneRepository}
+              size="sm"
+              variant="outline"
+            >
+              Clone repository
+            </Button>
+          ) : null}
+        </div>
         <p className="text-sm text-muted-foreground">
           Registered local repositories, bootstrap state, and remote actions.
         </p>
@@ -100,6 +126,12 @@ export const RepositorySettingsIndexPanel = ({
                         {repository.displayName}
                       </h3>
                       <p className="break-all text-xs text-muted-foreground">{repository.path}</p>
+                      <div className="mt-1 flex flex-wrap gap-1 text-xs text-muted-foreground">
+                        {repository.preferences.group ? (
+                          <span>{repository.preferences.group}</span>
+                        ) : null}
+                        {repository.preferences.archived ? <span>Archived</span> : null}
+                      </div>
                     </div>
                     <StatusIndicator
                       label={status?.stage ?? "Unavailable"}
@@ -133,6 +165,17 @@ export const RepositorySettingsIndexPanel = ({
                   ) : null}
 
                   <div className="flex flex-wrap gap-2">
+                    <Button
+                      disabled={rowPending || !hasRemote}
+                      leftIcon={<Download aria-hidden className="size-4" />}
+                      loading={rowPending && fetchRepository.isPending}
+                      loadingLabel="Fetching"
+                      onClick={() => runFetch(repository.id)}
+                      size="sm"
+                      variant="outline"
+                    >
+                      Fetch
+                    </Button>
                     <Button
                       leftIcon={<Settings aria-hidden className="size-4" />}
                       onClick={() => onRepositorySelect(repository.id)}
@@ -169,9 +212,9 @@ export const RepositorySettingsIndexPanel = ({
             })
           )}
         </div>
-        {errorText(syncRepository.error ?? pushRepository.error) ? (
+        {errorText(fetchRepository.error ?? syncRepository.error ?? pushRepository.error) ? (
           <p className="mt-3 text-sm text-destructive">
-            {errorText(syncRepository.error ?? pushRepository.error)}
+            {errorText(fetchRepository.error ?? syncRepository.error ?? pushRepository.error)}
           </p>
         ) : null}
       </section>

@@ -9,21 +9,26 @@ import {
   isInterfaceDensity,
   type AppConfigEncoded as AppConfigState,
   type InterfaceDensity,
+  type JsonObject,
   type ThemePreference,
 } from "@cycle/config";
 import {
   useClearCacheMutation,
+  useOpenBackendLogMutation,
+  useRebuildDatabaseMutation,
+  useRevealBackendLogMutation,
   useSetInterfaceDensityMutation,
   useSetThemePreferenceMutation,
   useUpdateAgentProviderPreferenceMutation,
+  useUpdateAgentWorkSettingsMutation,
   useUpdateProfileMutation,
 } from "../mutations/index.ts";
 import type { DetectedAgentProvider } from "@cycle/contracts/schemas/agents";
 import type { BootstrapStatus } from "@cycle/contracts/schemas/backend";
 import { useSettingsDiagnosticsQuery } from "../queries/index.ts";
 import { getDesktopBridge } from "../lib/desktopBridge.ts";
-import { Button, Input, Select, StatusIndicator } from "@cycle/ui/atoms";
-import { ExternalLink } from "lucide-react";
+import { Button, Input, Select, StatusIndicator, Switch, Textarea } from "@cycle/ui/atoms";
+import { Database, ExternalLink, FileText, FolderOpen } from "lucide-react";
 import type { SettingsDiagnostics } from "../../ipc/Channels.ts";
 
 export type ApplicationSettingsSection =
@@ -247,6 +252,9 @@ const AdvancedSettingsPanel = ({
   readonly diagnostics?: SettingsDiagnostics;
   readonly providers: readonly DetectedAgentProvider[];
 }) => {
+  const openLog = useOpenBackendLogMutation();
+  const revealLog = useRevealBackendLogMutation();
+  const rebuildDatabase = useRebuildDatabaseMutation();
   const repositorySummary =
     bootstrapStatus?.repositories.length === 0
       ? "No registered repositories"
@@ -276,6 +284,31 @@ const AdvancedSettingsPanel = ({
             value={asText(diagnostics?.paths.runtimeDiscovery)}
           />
         </dl>
+        <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
+          <Button
+            leftIcon={<FileText aria-hidden className="size-4" />}
+            loading={openLog.isPending}
+            onClick={() => openLog.mutate()}
+            size="sm"
+            variant="outline"
+          >
+            Open log
+          </Button>
+          <Button
+            leftIcon={<FolderOpen aria-hidden className="size-4" />}
+            loading={revealLog.isPending}
+            onClick={() => revealLog.mutate()}
+            size="sm"
+            variant="outline"
+          >
+            Reveal log
+          </Button>
+        </div>
+        {openLog.error || revealLog.error ? (
+          <p className="mt-3 text-sm text-destructive">
+            {asText(openLog.error ?? revealLog.error, "Unable to open the backend log.")}
+          </p>
+        ) : null}
       </SectionShell>
       <SectionShell title="Bootstrap">
         <dl>
@@ -299,6 +332,37 @@ const AdvancedSettingsPanel = ({
           <DiagnosticRow label="Node" value={asText(diagnostics?.app.nodeVersion)} />
         </dl>
       </SectionShell>
+      <SectionShell
+        description="Clears every local repository projection and rebuilds it from the Git-backed Cycle data. Repository source files and Cycle Git refs are not deleted."
+        title="Local database"
+      >
+        <Button
+          leftIcon={<Database aria-hidden className="size-4" />}
+          loading={rebuildDatabase.isPending}
+          loadingLabel="Rebuilding database"
+          onClick={() => {
+            if (
+              window.confirm(
+                "Reset and rebuild the local Cycle database?\n\nCycle will recreate its local projection from repository Git data. Source files are not changed.",
+              )
+            ) {
+              rebuildDatabase.mutate();
+            }
+          }}
+          size="sm"
+          variant="outline"
+        >
+          Reset and rebuild database
+        </Button>
+        {rebuildDatabase.isSuccess ? (
+          <p className="mt-3 text-sm text-success">Local database rebuilt successfully.</p>
+        ) : null}
+        {rebuildDatabase.error ? (
+          <p className="mt-3 text-sm text-destructive">
+            {asText(rebuildDatabase.error, "Unable to rebuild the local database.")}
+          </p>
+        ) : null}
+      </SectionShell>
     </PageShell>
   );
 };
@@ -312,6 +376,195 @@ const providerEnabled = (provider: DetectedAgentProvider, appConfig: AppConfigSt
   appConfig.agentProviders.preferences.find((preference) => preference.id === provider.id)
     ?.enabled ?? provider.status === "available";
 
+const inheritedAgentProviderValue = "__cycle_automatic_agent_provider__";
+
+const GlobalAgentDefaultsCard = ({
+  appConfig,
+  providers,
+}: {
+  readonly appConfig: AppConfigState;
+  readonly providers: readonly DetectedAgentProvider[];
+}) => {
+  const updateSettings = useUpdateAgentWorkSettingsMutation();
+  const settings = appConfig.agentWork;
+  const [providerId, setProviderId] = React.useState(settings.defaultProviderId ?? "");
+  const [model, setModel] = React.useState(settings.defaultModel ?? "");
+  const [maxConcurrentJobs, setMaxConcurrentJobs] = React.useState(
+    maxConcurrentInputValue(settings.maxConcurrentJobs),
+  );
+  const [paused, setPaused] = React.useState(settings.paused);
+  const [allowFullAccess, setAllowFullAccess] = React.useState(settings.allowFullAccessJobs);
+  const [allowDisposableMentions, setAllowDisposableMentions] = React.useState(
+    settings.allowDisposableWorktreeForMentions,
+  );
+  const [mentionAuthority, setMentionAuthority] = React.useState(
+    settings.defaultMentionAuthorityMode,
+  );
+  const [overrides, setOverrides] = React.useState(() =>
+    JSON.stringify(settings.perAgentOverrides, null, 2),
+  );
+  const maxValue = maxConcurrentJobs.trim();
+  const parsedMax = maxValue.length === 0 ? null : Number.parseInt(maxValue, 10);
+  const maxValid = parsedMax === null || (Number.isInteger(parsedMax) && parsedMax >= 1);
+  const parsedOverrides = React.useMemo<JsonObject | null>(() => {
+    try {
+      const value = JSON.parse(overrides) as unknown;
+      return typeof value === "object" && value !== null && !Array.isArray(value)
+        ? (value as JsonObject)
+        : null;
+    } catch {
+      return null;
+    }
+  }, [overrides]);
+
+  React.useEffect(() => {
+    setProviderId(settings.defaultProviderId ?? "");
+    setModel(settings.defaultModel ?? "");
+    setMaxConcurrentJobs(maxConcurrentInputValue(settings.maxConcurrentJobs));
+    setPaused(settings.paused);
+    setAllowFullAccess(settings.allowFullAccessJobs);
+    setAllowDisposableMentions(settings.allowDisposableWorktreeForMentions);
+    setMentionAuthority(settings.defaultMentionAuthorityMode);
+    setOverrides(JSON.stringify(settings.perAgentOverrides, null, 2));
+  }, [settings]);
+
+  return (
+    <SectionShell
+      description="Defaults apply to new agent work unless a repository overrides them."
+      title="Global Agent Work defaults"
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Select
+          disabled={updateSettings.isPending}
+          items={[
+            { label: "Automatic", value: inheritedAgentProviderValue },
+            ...providers.map((provider) => ({ label: provider.name, value: provider.id })),
+          ]}
+          label="Default provider"
+          onValueChange={(value) =>
+            setProviderId(value === inheritedAgentProviderValue || value === null ? "" : value)
+          }
+          value={providerId || inheritedAgentProviderValue}
+        />
+        <label className="grid gap-1.5 text-sm font-medium text-foreground">
+          Default model
+          <Input
+            disabled={updateSettings.isPending}
+            onChange={(event) => setModel(event.currentTarget.value)}
+            placeholder="Provider default"
+            value={model}
+          />
+        </label>
+        <label className="grid gap-1.5 text-sm font-medium text-foreground">
+          Global concurrent jobs
+          <Input
+            disabled={updateSettings.isPending}
+            min={1}
+            onChange={(event) => setMaxConcurrentJobs(event.currentTarget.value)}
+            placeholder="Unlimited"
+            type="number"
+            value={maxConcurrentJobs}
+          />
+        </label>
+        <Select
+          disabled={updateSettings.isPending}
+          items={[
+            { label: "Ticket context", value: "ticket-context" },
+            { label: "Disposable worktree", value: "disposable-worktree" },
+            { label: "Implementation worktree", value: "implementation-worktree" },
+          ]}
+          label="Mention authority"
+          onValueChange={(value) => {
+            if (
+              value === "ticket-context" ||
+              value === "disposable-worktree" ||
+              value === "implementation-worktree"
+            ) {
+              setMentionAuthority(value);
+            }
+          }}
+          value={mentionAuthority}
+        />
+      </div>
+      <div className="mt-4 grid gap-3 rounded-md border border-border px-4">
+        <div className="flex items-center justify-between gap-4 py-3">
+          <div>
+            <div className="text-sm font-medium text-foreground">Pause new agent jobs</div>
+            <div className="text-xs text-muted-foreground">Existing jobs continue running.</div>
+          </div>
+          <Switch checked={paused} onCheckedChange={(value) => setPaused(value === true)} />
+        </div>
+        <div className="flex items-center justify-between gap-4 border-t border-border py-3">
+          <div>
+            <div className="text-sm font-medium text-foreground">Allow full-access jobs</div>
+            <div className="text-xs text-muted-foreground">
+              Enables implementation work that can modify the selected repository.
+            </div>
+          </div>
+          <Switch
+            checked={allowFullAccess}
+            onCheckedChange={(value) => setAllowFullAccess(value === true)}
+          />
+        </div>
+        <div className="flex items-center justify-between gap-4 border-t border-border py-3">
+          <div>
+            <div className="text-sm font-medium text-foreground">
+              Disposable worktrees for mentions
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Lets mention-triggered work use an isolated disposable checkout.
+            </div>
+          </div>
+          <Switch
+            checked={allowDisposableMentions}
+            onCheckedChange={(value) => setAllowDisposableMentions(value === true)}
+          />
+        </div>
+      </div>
+      <label className="mt-4 grid gap-1.5 text-sm font-medium text-foreground">
+        Per-agent overrides (JSON)
+        <Textarea
+          className="min-h-28 font-mono text-xs"
+          disabled={updateSettings.isPending}
+          onChange={(event) => setOverrides(event.currentTarget.value)}
+          value={overrides}
+        />
+      </label>
+      {!maxValid || parsedOverrides === null ? (
+        <p className="mt-3 text-sm text-destructive">
+          {!maxValid
+            ? "Concurrent jobs must be empty or at least 1."
+            : "Per-agent overrides must be a JSON object."}
+        </p>
+      ) : null}
+      {updateSettings.error ? (
+        <p className="mt-3 text-sm text-destructive">{asText(updateSettings.error)}</p>
+      ) : null}
+      <div className="mt-4 flex justify-end">
+        <Button
+          disabled={!maxValid || parsedOverrides === null || updateSettings.isPending}
+          loading={updateSettings.isPending}
+          onClick={() =>
+            updateSettings.mutate({
+              allowDisposableWorktreeForMentions: allowDisposableMentions,
+              allowFullAccessJobs: allowFullAccess,
+              defaultMentionAuthorityMode: mentionAuthority,
+              defaultModel: model.trim() || null,
+              defaultProviderId: providerId.trim() || null,
+              maxConcurrentJobs: parsedMax,
+              paused,
+              perAgentOverrides: parsedOverrides ?? {},
+            })
+          }
+          size="sm"
+        >
+          Save global defaults
+        </Button>
+      </div>
+    </SectionShell>
+  );
+};
+
 const AgentsSettingsPanel = ({
   appConfig,
   providers,
@@ -323,6 +576,7 @@ const AgentsSettingsPanel = ({
 
   return (
     <PageShell {...settingPageCopy.agents}>
+      <GlobalAgentDefaultsCard appConfig={appConfig} providers={providers} />
       {providers.map((provider) => (
         <AgentProviderSettingsCard
           appConfig={appConfig}

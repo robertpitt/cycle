@@ -3,6 +3,7 @@ import type {
   HistoryPage,
   MaterializationWarning,
   RepositoryStatus,
+  RepositorySyncEvent,
 } from "@cycle/contracts/schemas";
 import type { RepositoryHistoryQuery } from "@cycle/contracts";
 import { cycleApiClient } from "../lib/cycleApiClient.ts";
@@ -15,6 +16,9 @@ export const materializationWarningsQueryKey = (repositoryId: string | undefined
 
 export const repositoryHistoryRepositoryQueryKey = (repositoryId: string | undefined) =>
   ["desktop", "api", "repositoryHistory", repositoryId] as const;
+
+export const repositorySyncEventsQueryKey = (repositoryId: string | undefined) =>
+  ["desktop", "api", "repositorySyncEvents", repositoryId] as const;
 
 const repositoryHistoryQueryKey = (
   repositoryId: string | undefined,
@@ -91,4 +95,17 @@ export const useRepositoryHistoryQuery = (
       return listRepositoryHistory(repositoryId, query);
     },
     queryKey: repositoryHistoryQueryKey(repositoryId, query),
+  });
+
+export const useRepositorySyncEventsQuery = (repositoryId: string | undefined) =>
+  useQuery<ReadonlyArray<RepositorySyncEvent>>({
+    enabled: repositoryId !== undefined,
+    queryFn: () => {
+      if (!repositoryId) {
+        throw new Error("Choose a repository before loading sync history.");
+      }
+      return cycleApiClient.listRepositorySyncEvents(repositoryId);
+    },
+    queryKey: repositorySyncEventsQueryKey(repositoryId),
+    refetchInterval: 1_000,
   });

@@ -32,6 +32,9 @@ export const RepositoryWarningCollectionEnvelope = CollectionEnvelopeOf(
 export const RepositoryPushAcceptedEnvelope = AcceptedResourceEnvelopeOf(
   ContractSchemas.SyncResult,
 );
+export const RepositorySyncEventCollectionEnvelope = CollectionEnvelopeOf(
+  ContractSchemas.RepositorySyncEvent,
+);
 
 export const RepositoryOpenPayload = strictSchema(
   Schema.Struct({
@@ -39,6 +42,21 @@ export const RepositoryOpenPayload = strictSchema(
     path: Schema.optional(Schema.String),
     repositoryId: Schema.optional(Schema.String),
     syncOnOpen: Schema.optional(Schema.Boolean),
+  }),
+);
+
+export const RepositoryInitializePayload = strictSchema(
+  Schema.Struct({
+    displayName: Schema.optional(Schema.String),
+    path: Schema.String,
+  }),
+);
+
+export const RepositoryClonePayload = strictSchema(
+  Schema.Struct({
+    displayName: Schema.optional(Schema.String),
+    path: Schema.String,
+    remoteUrl: Schema.String,
   }),
 );
 

@@ -8,6 +8,8 @@ import type {
 } from "@cycle/usecases/contracts";
 import type { AgentProviderId, AgentProviderProfile } from "@cycle/agents";
 import type { WorktreesShape } from "@cycle/git-worktrees";
+import type { RepositorySyncEvent } from "@cycle/contracts/schemas";
+import type { JsonObject } from "@cycle/config";
 import { Context, Layer } from "effect";
 
 export type ApiConfig = {
@@ -26,8 +28,18 @@ export type LocalSettingsThemePreference = "light" | "dark" | "system";
 export type LocalSettingsInterfaceDensity = "compact" | "spacious";
 export type LocalSettingsRepositoryCommitStyle = "descriptive" | "compact";
 export type LocalSettingsRepositoryPreferences = {
+  readonly agentWork?: {
+    readonly agentWorkDisabled?: boolean;
+    readonly maxConcurrentJobs?: number | null;
+    readonly model?: string | null;
+    readonly paused?: boolean;
+    readonly perAgentOverrides?: JsonObject;
+    readonly providerId?: string | null;
+  };
+  readonly archived?: boolean;
   readonly autoSync?: boolean;
   readonly commitStyle?: LocalSettingsRepositoryCommitStyle;
+  readonly group?: string | null;
   readonly sidebarExpanded?: boolean;
 };
 
@@ -56,9 +68,34 @@ export type LocalSettingsAgentProviderPreferenceInput = {
   readonly preference: LocalSettingsAgentProviderPreferencePatch;
 };
 
+export type LocalSettingsAgentWorkSettingsPatch = {
+  readonly allowDisposableWorktreeForMentions?: boolean;
+  readonly allowFullAccessJobs?: boolean;
+  readonly defaultMentionAuthorityMode?:
+    | "ticket-context"
+    | "disposable-worktree"
+    | "implementation-worktree";
+  readonly defaultModel?: string | null;
+  readonly defaultProviderId?: string | null;
+  readonly maxConcurrentJobs?: number | null;
+  readonly paused?: boolean;
+  readonly perAgentOverrides?: JsonObject;
+};
+
+export type LocalSettingsRepositoryPathInput = {
+  readonly displayName?: string;
+  readonly path: string;
+};
+
+export type LocalSettingsCloneRepositoryInput = LocalSettingsRepositoryPathInput & {
+  readonly remoteUrl: string;
+};
+
 export type LocalSettingsProviderShape = {
+  readonly cloneRepositoryPath?: (input: LocalSettingsCloneRepositoryInput) => Promise<unknown>;
   readonly completeOnboarding?: (input: LocalSettingsOnboardingInput) => Promise<unknown>;
   readonly read: () => Promise<unknown>;
+  readonly initializeRepositoryPath?: (input: LocalSettingsRepositoryPathInput) => Promise<unknown>;
   readonly removeRepository?: (repositoryId: string) => Promise<unknown>;
   readonly setInterfaceDensity?: (density: LocalSettingsInterfaceDensity) => Promise<unknown>;
   readonly setThemePreference?: (preference: LocalSettingsThemePreference) => Promise<unknown>;
@@ -68,6 +105,9 @@ export type LocalSettingsProviderShape = {
   ) => Promise<unknown>;
   readonly updateAgentProviderPreference?: (
     input: LocalSettingsAgentProviderPreferenceInput,
+  ) => Promise<unknown>;
+  readonly updateAgentWorkSettings?: (
+    input: LocalSettingsAgentWorkSettingsPatch,
   ) => Promise<unknown>;
 };
 
@@ -89,6 +129,13 @@ export type RepositoryDirectoryEntry = {
 };
 
 export type RepositoryDirectoryResolver = () => Promise<readonly RepositoryDirectoryEntry[]>;
+
+export type RepositoryOperationsShape = {
+  readonly fetch: (repositoryId: string) => Promise<unknown>;
+  readonly listSyncEvents: (repositoryId: string) => Promise<ReadonlyArray<RepositorySyncEvent>>;
+  readonly push: (repositoryId: string) => Promise<unknown>;
+  readonly sync: (repositoryId: string) => Promise<unknown>;
+};
 
 export type CycleApiMcpOptions = {
   readonly apiToken?: string;
@@ -113,6 +160,7 @@ export type CycleApiOptions = {
   readonly baseUrl?: string;
   readonly listRepositories?: RepositoryDirectoryResolver;
   readonly localSettings?: LocalSettingsProviderShape;
+  readonly repositoryOperations?: RepositoryOperationsShape;
   readonly mcp?: false | CycleApiMcpOptions;
   readonly now?: () => Date;
   readonly onUseCaseSuccess?: (event: CycleApiUseCaseSuccessEvent) => Promise<void> | void;
@@ -142,6 +190,7 @@ export type CycleApiRuntimeShape = {
   readonly baseUrl?: string;
   readonly listRepositories?: RepositoryDirectoryResolver;
   readonly localSettings?: LocalSettingsProviderShape;
+  readonly repositoryOperations?: RepositoryOperationsShape;
   readonly mcpPath?: string;
   readonly mcpUrl?: string;
   readonly now: () => Date;

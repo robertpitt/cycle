@@ -4,6 +4,7 @@ import { CycleApiRuntime, type LocalSettingsProviderShape } from "../../runtime/
 import {
   AppConfigOutput,
   AgentProviderPreferencePayload,
+  AgentWorkSettingsPayload,
   CompleteOnboardingPayload,
   InterfaceDensityPayload,
   ProfileOutput,
@@ -112,6 +113,23 @@ export const updateAgentProviderPreference = ({
     );
   });
 
+export const updateAgentWorkSettings = ({ payload }: V1Request<"updateAgentWorkSettings">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+    const input = yield* decodeHttpValue(AgentWorkSettingsPayload, payload, requestId, {
+      code: "INVALID_LOCAL_SETTINGS_INPUT",
+      message: "Invalid Agent Work settings payload.",
+    });
+    if (HttpServerResponse.isHttpServerResponse(input)) return input;
+
+    return yield* runLocalSettings(
+      requestId,
+      "updateAgentWorkSettings",
+      AppConfigOutput,
+      (settings) => settings.updateAgentWorkSettings?.(input.settings),
+    );
+  });
+
 export const updateRepositoryPreferences = ({
   params,
   payload,
@@ -146,7 +164,7 @@ export const removeRepository = ({ params }: V1Request<"removeRepository">) =>
     );
   });
 
-const runLocalSettings = <S extends Schema.Top>(
+export const runLocalSettings = <S extends Schema.Top>(
   requestId: string,
   operation: keyof LocalSettingsProviderShape,
   outputSchema: S,

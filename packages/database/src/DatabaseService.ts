@@ -256,6 +256,9 @@ export type DatabaseServiceShape = {
   readonly pushRepository: (
     repositoryId: string,
   ) => Effect.Effect<RepositorySyncResult, DatabaseFailure>;
+  readonly rebuildRepository: (
+    repositoryId: string,
+  ) => Effect.Effect<RepositoryStatus, DatabaseFailure>;
   readonly repositoryStatus: (
     repositoryId: string,
   ) => Effect.Effect<RepositoryStatus, DatabaseFailure>;

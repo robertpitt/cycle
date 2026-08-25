@@ -6,7 +6,12 @@ export const themeStateChangedChannel = "cycle:desktop:theme/state-changed";
 export const clearCacheChannel = "cycle:desktop:preferences/clear-cache";
 export const selectRepositoryFolderChannel =
   "cycle:desktop:local-workspace/select-repository-folder";
+export const selectCloneDestinationFolderChannel =
+  "cycle:desktop:local-workspace/select-clone-destination-folder";
 export const openExternalChannel = "cycle:desktop:shell/open-external";
+export const openBackendLogChannel = "cycle:desktop:logs/open";
+export const revealBackendLogChannel = "cycle:desktop:logs/reveal";
+export const rebuildDatabaseChannel = "cycle:desktop:database/rebuild";
 export const getBootstrapStatusChannel = "cycle:desktop:bootstrap/status";
 export const getBackendLogPathChannel = "cycle:desktop:logs/path";
 export const getApiConnectionChannel = "cycle:desktop:api/connection";
@@ -77,8 +82,12 @@ export type CycleDesktopBridge = {
   readonly getSettingsDiagnostics: () => Promise<SettingsDiagnostics>;
   readonly getThemeState: () => Promise<ElectronThemeState>;
   readonly onThemeStateChanged: (listener: (state: ElectronThemeState) => void) => () => void;
+  readonly openBackendLog: () => Promise<void>;
   readonly openExternal: (targetUrl: string) => Promise<void>;
   readonly platform: NodeJS.Platform;
+  readonly rebuildDatabase: () => Promise<void>;
+  readonly revealBackendLog: () => Promise<void>;
+  readonly selectCloneDestinationFolder: () => Promise<SelectRepositoryFolderResult>;
   readonly selectRepositoryFolder: () => Promise<SelectRepositoryFolderResult>;
 };
 

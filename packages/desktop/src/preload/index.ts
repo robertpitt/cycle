@@ -6,7 +6,11 @@ import {
   getBootstrapStatusChannel,
   getSettingsDiagnosticsChannel,
   getThemeStateChannel,
+  openBackendLogChannel,
   openExternalChannel,
+  rebuildDatabaseChannel,
+  revealBackendLogChannel,
+  selectCloneDestinationFolderChannel,
   selectRepositoryFolderChannel,
   themeStateChangedChannel,
   type ApiConnection,
@@ -123,11 +127,22 @@ const desktopBridge: CycleDesktopBridge = {
       ipcRenderer.off(themeStateChangedChannel, handler);
     };
   },
+  openBackendLog: async () => {
+    await ipcRenderer.invoke(openBackendLogChannel);
+  },
   openExternal: async (targetUrl) => {
     if (typeof targetUrl !== "string") throw new TypeError("targetUrl must be a string.");
     await ipcRenderer.invoke(openExternalChannel, { targetUrl });
   },
   platform: process.platform,
+  rebuildDatabase: async () => {
+    await ipcRenderer.invoke(rebuildDatabaseChannel);
+  },
+  revealBackendLog: async () => {
+    await ipcRenderer.invoke(revealBackendLogChannel);
+  },
+  selectCloneDestinationFolder: async () =>
+    selectedRepositoryFolderFrom(await ipcRenderer.invoke(selectCloneDestinationFolderChannel)),
   selectRepositoryFolder: async () =>
     selectedRepositoryFolderFrom(await ipcRenderer.invoke(selectRepositoryFolderChannel)),
 };

@@ -127,9 +127,7 @@ const listIssueRecordsForRepository = async ({
   cycleApiClient.call("ticket.record.listForIssue", {
     input: {
       issueId,
-      query: {
-        recordType: "comment",
-      },
+      query: { limit: 250 },
     },
     repository: {
       id: repositoryId,

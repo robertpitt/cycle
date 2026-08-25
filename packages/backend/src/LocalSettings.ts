@@ -7,8 +7,11 @@ import { AppConfig, AppConfigError } from "@cycle/config";
 import {
   defaultAgentProviderPreference,
   ThemePreference,
+  type AgentWorkAuthorityMode,
+  type AgentWorkConfig,
   type AppConfigState,
   type InterfaceDensity,
+  type JsonObject,
   type ProfileConfig,
   type RepositoryRecord,
   type ThemePreference as ThemePreferenceType,
@@ -20,7 +23,12 @@ import {
   normalizeOnboardingProfile,
   normalizeProfileUpdate,
 } from "./internals/localSettings.ts";
-import { LocalWorkspace, type UpdateRepositoryPreferencesInput } from "./LocalWorkspace.ts";
+import {
+  LocalWorkspace,
+  type CloneRepositoryPathInput,
+  type InitializeRepositoryPathInput,
+  type UpdateRepositoryPreferencesInput,
+} from "./LocalWorkspace.ts";
 
 export const ProfileUpdateInput = Schema.Struct({
   displayName: Schema.optional(Schema.String),
@@ -49,11 +57,28 @@ export type UpdateAgentProviderPreferenceInput = {
   readonly providerId: AgentProviderIdType;
 };
 
+export type AgentWorkSettingsPatch = {
+  readonly allowDisposableWorktreeForMentions?: boolean;
+  readonly allowFullAccessJobs?: boolean;
+  readonly defaultMentionAuthorityMode?: AgentWorkAuthorityMode;
+  readonly defaultModel?: string | null;
+  readonly defaultProviderId?: string | null;
+  readonly maxConcurrentJobs?: number | null;
+  readonly paused?: boolean;
+  readonly perAgentOverrides?: JsonObject;
+};
+
 export type LocalSettingsService = {
+  readonly cloneRepositoryPath: (
+    input: CloneRepositoryPathInput,
+  ) => Effect.Effect<RepositoryRecord, AppConfigError>;
   readonly completeOnboarding: (
     input: CompleteOnboardingInput,
   ) => Effect.Effect<AppConfigState, AppConfigError>;
   readonly getProfile: Effect.Effect<ProfileConfig, AppConfigError>;
+  readonly initializeRepositoryPath: (
+    input: InitializeRepositoryPathInput,
+  ) => Effect.Effect<RepositoryRecord, AppConfigError>;
   readonly read: Effect.Effect<AppConfigState, AppConfigError>;
   readonly removeRepository: (id: string) => Effect.Effect<AppConfigState, AppConfigError>;
   readonly setInterfaceDensity: (
@@ -67,6 +92,9 @@ export type LocalSettingsService = {
   ) => Effect.Effect<boolean, AppConfigError>;
   readonly updateAgentProviderPreference: (
     input: UpdateAgentProviderPreferenceInput,
+  ) => Effect.Effect<AppConfigState, AppConfigError>;
+  readonly updateAgentWorkSettings: (
+    input: AgentWorkSettingsPatch,
   ) => Effect.Effect<AppConfigState, AppConfigError>;
   readonly updateProfile: (
     input: ProfileUpdateInput,
@@ -97,6 +125,7 @@ export const LocalSettingsLive = Layer.effect(
         .pipe(Effect.map((config) => config.profile));
 
     return LocalSettings.of({
+      cloneRepositoryPath: (input) => localWorkspace.cloneRepositoryPath(input),
       completeOnboarding: (input) =>
         Effect.gen(function* () {
           const profile = yield* normalizeOnboardingProfile(input);
@@ -123,6 +152,7 @@ export const LocalSettingsLive = Layer.effect(
           }));
         }),
       getProfile,
+      initializeRepositoryPath: (input) => localWorkspace.initializeRepositoryPath(input),
       read: appConfig.read,
       removeRepository: (id) =>
         localWorkspace.removeRepository(id).pipe(Effect.flatMap(() => appConfig.read)),
@@ -195,6 +225,27 @@ export const LocalSettingsLive = Layer.effect(
               preferences,
             },
           };
+        }),
+      updateAgentWorkSettings: (input) =>
+        appConfig.update((current) => {
+          const next: AgentWorkConfig = {
+            ...current.agentWork,
+            ...input,
+            defaultModel:
+              input.defaultModel === undefined
+                ? current.agentWork.defaultModel
+                : normalizeNullableText(input.defaultModel),
+            defaultProviderId:
+              input.defaultProviderId === undefined
+                ? current.agentWork.defaultProviderId
+                : normalizeNullableText(input.defaultProviderId),
+            perAgentOverrides:
+              input.perAgentOverrides === undefined
+                ? current.agentWork.perAgentOverrides
+                : jsonObject(input.perAgentOverrides),
+          };
+
+          return { ...current, agentWork: next };
         }),
       updateProfile,
       updateRepositoryPreferences: (input: UpdateRepositoryPreferencesInput) =>

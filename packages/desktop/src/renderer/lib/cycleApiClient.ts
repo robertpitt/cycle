@@ -19,6 +19,8 @@ import type {
   PagePage,
   PageQuery,
   RepositoryStatus,
+  RepositorySyncEvent,
+  SyncResult,
   TicketDocument,
   TicketPage,
 } from "@cycle/contracts/schemas";
@@ -34,6 +36,7 @@ import {
   ProfileConfig as ProfileConfigSchema,
   RepositoryRecord as AppRepositoryRecordSchema,
   type AppConfigEncoded as AppConfigState,
+  type AgentWorkConfig,
   type AgentProviderPreference,
   type InterfaceDensity,
   type ProfileConfig,
@@ -52,6 +55,11 @@ import {
   type CreateAgentTaskInput,
   type StartIssueAgentTaskInput,
 } from "./agentTasks.ts";
+import {
+  assembleTicketPromptWorkflow,
+  ticketPromptWorkflowTitle,
+  type TicketPromptWorkflowInput,
+} from "./ticketPromptWorkflows.ts";
 
 type SupportedCycleApiAlias = Extract<
   UseCaseAlias,
@@ -70,6 +78,8 @@ type SupportedCycleApiAlias = Extract<
   | "ticket.issue.history"
   | "ticket.issue.list"
   | "ticket.issue.update"
+  | "ticket.issue.relation.add"
+  | "ticket.issue.relation.remove"
   | "ticket.label.list"
   | "ticket.record.add"
   | "ticket.record.listForIssue"
@@ -128,6 +138,12 @@ export type OpenRepositoryPathInput = {
   readonly syncOnOpen?: boolean;
 };
 
+export type CloneRepositoryPathInput = {
+  readonly displayName?: string;
+  readonly path: string;
+  readonly remoteUrl: string;
+};
+
 export type StartTicketDraftChatInput = {
   readonly instructions: string;
   readonly providerId?: AgentProviderId;
@@ -136,6 +152,10 @@ export type StartTicketDraftChatInput = {
 
 export type StartTicketDraftChatResult = {
   readonly threadId: string;
+};
+
+export type StartTicketWorkflowChatInput = TicketPromptWorkflowInput & {
+  readonly providerId?: AgentProviderId;
 };
 
 const API_URL_STORAGE_KEY = "cycle.api.baseUrl";
@@ -530,6 +550,28 @@ const startTicketDraftChat = async (
     runtimeMode: "workspace-write",
     timeoutMessage: "Timed out while starting the ticket draft chat.",
     title: "Draft ticket",
+  });
+
+const startTicketWorkflowChat = async (
+  input: StartTicketWorkflowChatInput,
+): Promise<StartTicketDraftChatResult> =>
+  startAgentChatThread({
+    closedMessage: "Agent chat connection closed before the ticket workflow started.",
+    commandPrefix: `ticket_${input.intent}`,
+    message: assembleTicketPromptWorkflow(input),
+    missingThreadMessage: "Ticket workflow chat was not created.",
+    origin: {
+      intent: input.intent,
+      issueId: input.issue.id,
+      kind: "ticket-workflow",
+      label: ticketPromptWorkflowTitle(input.intent),
+      repositoryId: input.issue.repositoryId,
+      trigger: "issue-more-actions",
+    },
+    providerId: input.providerId,
+    runtimeMode: input.intent === "plan" ? "read-only" : "workspace-write",
+    timeoutMessage: "Timed out while starting the ticket workflow.",
+    title: `${ticketPromptWorkflowTitle(input.intent)} · ${input.issue.id}`,
   });
 
 const StrictDecodeOptions = { onExcessProperty: "error" } as const;
@@ -1255,12 +1297,16 @@ export const cycleApiClient = {
       { preference },
     ),
 
+  updateAgentWorkSettings: (settings: Partial<AgentWorkConfig>): Promise<AppConfigState> =>
+    resource("PATCH", "/v1/agents/preferences", AppConfigStateSchema, { settings }),
+
   listAgentProviders: async (): Promise<ReadonlyArray<DetectedAgentProvider>> => {
     const response = await resource("GET", "/v1/agents/providers", AgentProvidersOutputSchema);
     return response.providers.map(detectedAgentProviderFromProfile);
   },
 
   startTicketDraftChat,
+  startTicketWorkflowChat,
 
   createAgentTask: async (input: CreateAgentTaskInput): Promise<AgentTask | null> =>
     parseAgentTask(await unknownResource("POST", "/v1/agent-tasks", input)),
@@ -1328,8 +1374,26 @@ export const cycleApiClient = {
   openRepositoryPath: (input: OpenRepositoryPathInput): Promise<RepositoryStatus> =>
     resource("POST", "/v1/repositories", ContractSchemas.RepositoryStatus, input),
 
-  pushRepository: (repositoryId: string): Promise<RepositoryStatus> =>
-    resource("POST", `${repositoryPath(repositoryId)}/push`, ContractSchemas.RepositoryStatus),
+  initializeRepositoryPath: (
+    input: Omit<CloneRepositoryPathInput, "remoteUrl">,
+  ): Promise<AppRepositoryRecord> =>
+    resource("POST", "/v1/repositories/initialize", AppRepositoryRecordSchema, input),
+
+  cloneRepositoryPath: (input: CloneRepositoryPathInput): Promise<AppRepositoryRecord> =>
+    resource("POST", "/v1/repositories/clone", AppRepositoryRecordSchema, input),
+
+  fetchRepository: (repositoryId: string): Promise<RepositoryStatus> =>
+    resource("POST", `${repositoryPath(repositoryId)}/fetch`, ContractSchemas.RepositoryStatus),
+
+  listRepositorySyncEvents: (repositoryId: string): Promise<ReadonlyArray<RepositorySyncEvent>> =>
+    collection(
+      "GET",
+      `${repositoryPath(repositoryId)}/sync-events?limit=100`,
+      ContractSchemas.RepositorySyncEvent,
+    ),
+
+  pushRepository: (repositoryId: string): Promise<SyncResult> =>
+    resource("POST", `${repositoryPath(repositoryId)}/push`, ContractSchemas.SyncResult),
 
   removeRepository: (repositoryId: string): Promise<AppConfigState> =>
     resource("DELETE", repositoryPath(repositoryId), AppConfigStateSchema),

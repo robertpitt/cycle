@@ -5,7 +5,11 @@ export {
   getBootstrapStatusChannel,
   getSettingsDiagnosticsChannel,
   getThemeStateChannel,
+  openBackendLogChannel,
   openExternalChannel,
+  rebuildDatabaseChannel,
+  revealBackendLogChannel,
+  selectCloneDestinationFolderChannel,
   selectRepositoryFolderChannel,
   themeStateChangedChannel,
 } from "./Channels.ts";

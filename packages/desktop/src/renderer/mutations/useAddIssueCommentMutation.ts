@@ -12,6 +12,11 @@ type UseAddIssueCommentMutationOptions = {
   readonly repositoryId?: string;
 };
 
+export type AddIssueCommentInput = {
+  readonly body: string;
+  readonly parentCommentId?: string;
+};
+
 export const useAddIssueCommentMutation = ({
   issueId,
   repositoryId,
@@ -19,11 +24,12 @@ export const useAddIssueCommentMutation = ({
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (body: string) => {
+    mutationFn: async (value: string | AddIssueCommentInput) => {
       if (!repositoryId || !issueId) {
         throw new Error("Choose an issue before commenting.");
       }
-      if (body.trim().length === 0) {
+      const input = typeof value === "string" ? { body: value } : value;
+      if (input.body.trim().length === 0) {
         throw new Error("Enter a comment before sending.");
       }
 
@@ -31,7 +37,10 @@ export const useAddIssueCommentMutation = ({
         input: {
           issueId,
           payload: {
-            body,
+            body: input.body.trim(),
+            ...(input.parentCommentId === undefined
+              ? {}
+              : { parentCommentId: input.parentCommentId }),
           },
           recordType: "comment",
         },

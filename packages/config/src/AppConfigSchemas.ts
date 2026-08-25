@@ -22,6 +22,13 @@ export type InterfaceDensity = typeof InterfaceDensity.Type;
 export const RepositoryCommitStyle = Schema.Literals(["descriptive", "compact"]);
 export type RepositoryCommitStyle = typeof RepositoryCommitStyle.Type;
 
+export const AgentWorkAuthorityMode = Schema.Literals([
+  "ticket-context",
+  "disposable-worktree",
+  "implementation-worktree",
+]);
+export type AgentWorkAuthorityMode = typeof AgentWorkAuthorityMode.Type;
+
 export const isThemePreference = Schema.is(ThemePreference);
 export const isInterfaceDensity = Schema.is(InterfaceDensity);
 export const isRepositoryCommitStyle = Schema.is(RepositoryCommitStyle);
@@ -40,18 +47,80 @@ const ApiPort = Schema.Number.check(
 const NonEmptyOptionalString = Schema.NullOr(Schema.NonEmptyString);
 const PositiveInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0));
 
+export const AgentWorkConfig = Schema.Struct({
+  allowDisposableWorktreeForMentions: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultTypeKey(Effect.succeed(true)),
+  ),
+  allowFullAccessJobs: Schema.Boolean.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(true))),
+  defaultMentionAuthorityMode: AgentWorkAuthorityMode.pipe(
+    Schema.withDecodingDefaultTypeKey(Effect.succeed("ticket-context")),
+  ),
+  defaultModel: NonEmptyOptionalString.pipe(
+    Schema.withDecodingDefaultTypeKey(Effect.succeed(null)),
+  ),
+  defaultProviderId: NonEmptyOptionalString.pipe(
+    Schema.withDecodingDefaultTypeKey(Effect.succeed(null)),
+  ),
+  maxConcurrentJobs: Schema.NullOr(PositiveInteger).pipe(
+    Schema.withDecodingDefaultTypeKey(Effect.succeed(null)),
+  ),
+  paused: Schema.Boolean.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(false))),
+  perAgentOverrides: JsonObject.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed({}))),
+});
+export type AgentWorkConfig = typeof AgentWorkConfig.Type;
+
+export const defaultAgentWorkConfig = (): AgentWorkConfig => ({
+  allowDisposableWorktreeForMentions: true,
+  allowFullAccessJobs: true,
+  defaultMentionAuthorityMode: "ticket-context",
+  defaultModel: null,
+  defaultProviderId: null,
+  maxConcurrentJobs: null,
+  paused: false,
+  perAgentOverrides: {},
+});
+
+export const RepositoryAgentWorkConfig = Schema.Struct({
+  agentWorkDisabled: Schema.Boolean.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(false))),
+  maxConcurrentJobs: Schema.NullOr(PositiveInteger).pipe(
+    Schema.withDecodingDefaultTypeKey(Effect.succeed(null)),
+  ),
+  model: NonEmptyOptionalString.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
+  paused: Schema.Boolean.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(false))),
+  perAgentOverrides: JsonObject.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed({}))),
+  providerId: NonEmptyOptionalString.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
+});
+export type RepositoryAgentWorkConfig = typeof RepositoryAgentWorkConfig.Type;
+
+export const defaultRepositoryAgentWorkConfig = (): RepositoryAgentWorkConfig => ({
+  agentWorkDisabled: false,
+  maxConcurrentJobs: null,
+  model: null,
+  paused: false,
+  perAgentOverrides: {},
+  providerId: null,
+});
+
 export const RepositoryPreferences = Schema.Struct({
+  agentWork: RepositoryAgentWorkConfig.pipe(
+    Schema.withDecodingDefaultTypeKey(Effect.succeed(defaultRepositoryAgentWorkConfig())),
+  ),
+  archived: Schema.Boolean.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(false))),
   autoSync: Schema.Boolean.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(true))),
   commitStyle: RepositoryCommitStyle.pipe(
     Schema.withDecodingDefaultTypeKey(Effect.succeed("descriptive")),
   ),
+  group: NonEmptyOptionalString.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
   sidebarExpanded: Schema.Boolean.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(true))),
 });
 export type RepositoryPreferences = typeof RepositoryPreferences.Type;
 
 export const defaultRepositoryPreferences = (): RepositoryPreferences => ({
+  agentWork: defaultRepositoryAgentWorkConfig(),
+  archived: false,
   autoSync: true,
   commitStyle: "descriptive",
+  group: null,
   sidebarExpanded: true,
 });
 
@@ -170,6 +239,9 @@ export const ApiConfigEncoded = Schema.Struct({
 export type ApiConfigEncoded = typeof ApiConfigEncoded.Type;
 
 export const AppConfigState = Schema.Struct({
+  agentWork: AgentWorkConfig.pipe(
+    Schema.withDecodingDefaultTypeKey(Effect.succeed(defaultAgentWorkConfig())),
+  ),
   agentProviders: AgentProvidersConfig.pipe(
     Schema.withDecodingDefaultTypeKey(Effect.succeed({ preferences: [] })),
   ),
@@ -199,6 +271,7 @@ export const AppConfigState = Schema.Struct({
 export type AppConfigState = typeof AppConfigState.Type;
 
 export const AppConfigEncoded = Schema.Struct({
+  agentWork: AgentWorkConfig,
   agentProviders: AgentProvidersConfig,
   api: ApiConfigEncoded,
   localWorkspace: LocalWorkspaceConfig,
@@ -249,6 +322,7 @@ export const defaultApiConfig = (staticToken: string = DEFAULT_STATIC_TOKEN): Ap
 });
 
 export const defaultAppConfig = (staticToken: string = DEFAULT_STATIC_TOKEN): AppConfigEncoded => ({
+  agentWork: defaultAgentWorkConfig(),
   agentProviders: { preferences: [] },
   api: defaultApiConfig(staticToken),
   localWorkspace: { repositories: [] },
@@ -280,8 +354,20 @@ export type InitializeRepositoryPathInput = typeof InitializeRepositoryPathInput
 export const UpdateRepositoryPreferencesInput = Schema.Struct({
   id: Schema.String,
   preferences: Schema.Struct({
+    agentWork: Schema.optionalKey(
+      Schema.Struct({
+        agentWorkDisabled: Schema.optionalKey(Schema.Boolean),
+        maxConcurrentJobs: Schema.optionalKey(Schema.NullOr(PositiveInteger)),
+        model: Schema.optionalKey(Schema.NullOr(Schema.String)),
+        paused: Schema.optionalKey(Schema.Boolean),
+        perAgentOverrides: Schema.optionalKey(JsonObject),
+        providerId: Schema.optionalKey(Schema.NullOr(Schema.String)),
+      }),
+    ),
+    archived: Schema.optionalKey(Schema.Boolean),
     autoSync: Schema.optionalKey(Schema.Boolean),
     commitStyle: Schema.optionalKey(RepositoryCommitStyle),
+    group: Schema.optionalKey(Schema.NullOr(Schema.String)),
     sidebarExpanded: Schema.optionalKey(Schema.Boolean),
   }),
 });

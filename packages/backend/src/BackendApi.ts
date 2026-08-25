@@ -1112,6 +1112,14 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
           agentProviderProfiles: listAgentProviderProfiles,
           host: options.host ?? config.api.host,
           localSettings: {
+            cloneRepositoryPath: (input) =>
+              runPromise(
+                settings.cloneRepositoryPath({
+                  displayName: input.displayName,
+                  path: input.path,
+                  remoteUrl: input.remoteUrl,
+                }),
+              ),
             completeOnboarding: (input) =>
               runAppConfigPromise(
                 settings.completeOnboarding({
@@ -1122,6 +1130,13 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
                 }),
               ),
             read: () => runAppConfigPromise(settings.read),
+            initializeRepositoryPath: (input) =>
+              runPromise(
+                settings.initializeRepositoryPath({
+                  displayName: input.displayName,
+                  path: input.path,
+                }),
+              ),
             removeRepository: (repositoryId) =>
               runAppConfigPromise(settings.removeRepository(repositoryId)),
             setInterfaceDensity: (density) =>
@@ -1143,6 +1158,8 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
                   providerId: input.providerId,
                 }),
               ),
+            updateAgentWorkSettings: (input) =>
+              runAppConfigPromise(settings.updateAgentWorkSettings(input)),
           },
           logging: { console: false, packageName: "backend" },
           mcp: {
@@ -1156,6 +1173,12 @@ const startBackendApiUnsafe = Effect.fn("BackendApi.start")(function* (
             path: "/mcp",
           },
           listRepositories,
+          repositoryOperations: {
+            fetch: (repositoryId) => runPromise(bootstrap.fetchRepositoryFromRemote(repositoryId)),
+            listSyncEvents: (repositoryId) => runPromise(bootstrap.listSyncEvents(repositoryId)),
+            push: (repositoryId) => runPromise(bootstrap.pushRepositoryToRemote(repositoryId)),
+            sync: (repositoryId) => runPromise(bootstrap.syncRepositoryFromRemote(repositoryId)),
+          },
           port: (() => {
             const configuredPort = options.port ?? config.api.port;
             return configuredPort === "auto" ? undefined : configuredPort;

@@ -3,6 +3,7 @@ import type * as React from "react";
 
 type AddRepositoryStepProps = {
   readonly error?: React.ReactNode;
+  readonly onClone?: () => void;
   readonly onSubmit: () => void;
   readonly saving?: boolean;
 };

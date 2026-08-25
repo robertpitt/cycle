@@ -58,6 +58,9 @@ export const makeCycleApiLayer = (options: CycleApiOptions) => {
       ? {}
       : { listRepositories: options.listRepositories }),
     ...(options.localSettings === undefined ? {} : { localSettings: options.localSettings }),
+    ...(options.repositoryOperations === undefined
+      ? {}
+      : { repositoryOperations: options.repositoryOperations }),
     ...(mcpPath === undefined ? {} : { mcpPath }),
     ...(mcpUrl === undefined ? {} : { mcpUrl }),
     now: options.now ?? (() => new Date()),

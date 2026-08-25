@@ -5,6 +5,7 @@ import { bootstrapStatusQueryKey } from "../queries/bootstrap.ts";
 import {
   materializationWarningsQueryKey,
   repositoryHistoryRepositoryQueryKey,
+  repositorySyncEventsQueryKey,
   repositoryStatusQueryKey,
 } from "../queries/repositories.ts";
 
@@ -18,6 +19,18 @@ const invalidateRepositoryQueries = (
     queryKey: repositoryHistoryRepositoryQueryKey(repositoryId),
   });
   void queryClient.invalidateQueries({ queryKey: bootstrapStatusQueryKey });
+  void queryClient.invalidateQueries({ queryKey: repositorySyncEventsQueryKey(repositoryId) });
+};
+
+export const useFetchRepositoryMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (repositoryId: string) => cycleApiClient.fetchRepository(repositoryId),
+    onSuccess: (_status, repositoryId) => {
+      invalidateRepositoryQueries(queryClient, repositoryId);
+    },
+  });
 };
 
 export const useSyncRepositoryMutation = () => {

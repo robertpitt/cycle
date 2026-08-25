@@ -20,9 +20,25 @@ import {
   PanelState,
   type IssuePropertyMenuOption,
 } from "@cycle/ui/molecules";
-import { BarChart3, CalendarDays, Gauge } from "lucide-react";
+import {
+  BarChart3,
+  CalendarDays,
+  Copy,
+  Gauge,
+  GitBranch,
+  ListChecks,
+  MessageSquarePlus,
+  Sparkles,
+} from "lucide-react";
 import * as React from "react";
-import type { HistoryCommit, LinkedRecord, TicketDocument } from "@cycle/contracts/schemas";
+import type {
+  ExternalLink,
+  HistoryCommit,
+  IssueRelation,
+  IssueRelationType,
+  LinkedRecord,
+  TicketDocument,
+} from "@cycle/contracts/schemas";
 import type { CreateTicketInput } from "@cycle/contracts";
 import {
   useAddIssueCommentMutation,
@@ -30,6 +46,8 @@ import {
   useCancelAgentTaskMutation,
   useCreateIssueMutation,
   useRetryAgentTaskMutation,
+  useIssueCommentActionsMutation,
+  useIssueRelationMutation,
   useStartIssueAgentTaskMutation,
   useUpdateIssueMutation,
 } from "../mutations/index.ts";
@@ -46,7 +64,7 @@ import {
 } from "../queries/index.ts";
 import { createMarkdownTagSuggestions } from "../lib/markdownTagSuggestions.ts";
 import { labelColorClassName } from "../screens/workspace/createIssueOptions.tsx";
-import type { RepositoryRecord } from "@cycle/config";
+import type { AgentWorkConfig, RepositoryRecord } from "@cycle/config";
 import type { DetectedAgentProvider } from "@cycle/contracts/schemas/agents";
 import {
   latestAgentTask,
@@ -58,8 +76,16 @@ import {
 } from "../lib/agentTasks.ts";
 import { mapTicketDependencies, mapTicketSubIssues } from "../lib/ticketDependencies.ts";
 import { MergeHandoffCard } from "./MergeHandoffCard.tsx";
+import { cycleApiClient } from "../lib/cycleApiClient.ts";
+import {
+  issueRecordActivityBody,
+  materializeIssueCommentRecords,
+} from "../lib/issueCommentRecords.ts";
+import type { TicketPromptWorkflowIntent } from "../lib/ticketPromptWorkflows.ts";
+import { useNotifications } from "../notifications/NotificationProvider.tsx";
 
 type ViewIssuePanelProps = {
+  readonly agentWork?: AgentWorkConfig;
   readonly agentProviders?: readonly DetectedAgentProvider[];
   readonly issueId?: string;
   readonly onArchived?: () => void;
@@ -97,30 +123,9 @@ const formatActivityTimestamp = (value: string | undefined): React.ReactNode => 
   );
 };
 
-const getCommentBody = (record: LinkedRecord): string => {
-  if (
-    record.payload !== null &&
-    typeof record.payload === "object" &&
-    "body" in record.payload &&
-    typeof record.payload.body === "string"
-  ) {
-    return record.payload.body;
-  }
-
-  return "";
-};
-
 const authorFromName = (name: string) => ({
   initials: initialsForName(name),
   name,
-});
-
-const commentFromRecord = (record: LinkedRecord): ViewIssueComment => ({
-  author: authorFromName(record.createdBy.name),
-  body: getCommentBody(record),
-  id: record.id,
-  occurredAt: record.createdAt,
-  timestamp: formatActivityTimestamp(record.createdAt),
 });
 
 const externalLinkTitle = (url: string): string => {
@@ -132,9 +137,10 @@ const externalLinkTitle = (url: string): string => {
 };
 
 const issueResources = (issue: TicketDocument) =>
-  (issue.frontmatter.externalLinks ?? []).map((link) => ({
+  (issue.frontmatter.externalLinks ?? []).map((link, index) => ({
     description: link.url,
-    id: link.url,
+    href: link.url,
+    id: String(index),
     meta: "Link",
     title: link.title ?? link.source ?? externalLinkTitle(link.url),
   }));
@@ -179,6 +185,7 @@ const issueCreatedActivity = (issue: TicketDocument): ViewIssueActivityEvent => 
 const issueActivity = (
   issue: TicketDocument,
   historyEntries: readonly HistoryCommit[],
+  records: readonly LinkedRecord[],
 ): readonly ViewIssueActivityEvent[] => {
   const historyEvents = historyEntries
     .filter((entry) => !isCommentHistoryEntry(entry))
@@ -194,9 +201,25 @@ const issueActivity = (
       } satisfies ViewIssueActivityEvent;
     });
 
+  const recordEvents = records.flatMap((record) => {
+    const body = issueRecordActivityBody(record);
+    return body === undefined
+      ? []
+      : [
+          {
+            author: authorFromName(record.createdBy.name),
+            body,
+            id: `record:${record.id}`,
+            occurredAt: record.createdAt,
+            timestamp: formatActivityTimestamp(record.createdAt),
+          } satisfies ViewIssueActivityEvent,
+        ];
+  });
+  const activity = [...historyEvents, ...recordEvents];
+
   return historyEntries.some(isCreatedHistoryEntry)
-    ? historyEvents
-    : [issueCreatedActivity(issue), ...historyEvents];
+    ? activity
+    : [issueCreatedActivity(issue), ...activity];
 };
 
 const issueHistoryPageLimit = 100;
@@ -679,7 +702,328 @@ const ArchiveIssueDialog = ({
   </DialogRoot>
 );
 
+const ManageLabelsDialog = ({
+  availableLabels,
+  onOpenChange,
+  onSave,
+  open,
+  pending,
+  value,
+}: {
+  readonly availableLabels: readonly { readonly id: string; readonly name: string }[];
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onSave: (labels: readonly string[]) => void;
+  readonly open: boolean;
+  readonly pending: boolean;
+  readonly value: readonly string[];
+}) => {
+  const [selected, setSelected] = React.useState<ReadonlySet<string>>(new Set(value));
+
+  React.useEffect(() => {
+    if (open) setSelected(new Set(value));
+  }, [open, value]);
+
+  return (
+    <DialogRoot onOpenChange={onOpenChange} open={open}>
+      <DialogPortal>
+        <DialogBackdrop />
+        <DialogViewport>
+          <DialogPanel width="sm">
+            <DialogHeader>
+              <div>
+                <DialogTitle>Edit issue labels</DialogTitle>
+                <DialogDescription>Add or remove labels assigned to this issue.</DialogDescription>
+              </div>
+              <DialogCloseButton disabled={pending} />
+            </DialogHeader>
+            <DialogBody className="grid max-h-80 gap-1 overflow-y-auto">
+              {availableLabels.length === 0 ? (
+                <div className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                  No repository labels are available.
+                </div>
+              ) : (
+                availableLabels.map((label) => {
+                  const checked = selected.has(label.id);
+                  return (
+                    <label
+                      className="flex min-h-10 items-center gap-3 rounded-md px-2 text-sm hover:bg-subtle"
+                      key={label.id}
+                    >
+                      <input
+                        checked={checked}
+                        disabled={pending}
+                        onChange={() =>
+                          setSelected((current) => {
+                            const next = new Set(current);
+                            if (next.has(label.id)) next.delete(label.id);
+                            else next.add(label.id);
+                            return next;
+                          })
+                        }
+                        type="checkbox"
+                      />
+                      <span className="font-medium text-foreground">{label.name}</span>
+                      <span className="ml-auto font-mono text-xs text-muted-foreground">
+                        {label.id}
+                      </span>
+                    </label>
+                  );
+                })
+              )}
+            </DialogBody>
+            <DialogFooter>
+              <Button disabled={pending} onClick={() => onOpenChange(false)} variant="ghost">
+                Cancel
+              </Button>
+              <Button loading={pending} onClick={() => onSave([...selected].sort())}>
+                Save labels
+              </Button>
+            </DialogFooter>
+          </DialogPanel>
+        </DialogViewport>
+      </DialogPortal>
+    </DialogRoot>
+  );
+};
+
+const ExternalLinkDialog = ({
+  initialValue,
+  onOpenChange,
+  onSave,
+  open,
+  pending,
+}: {
+  readonly initialValue?: ExternalLink;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onSave: (link: ExternalLink) => void;
+  readonly open: boolean;
+  readonly pending: boolean;
+}) => {
+  const [title, setTitle] = React.useState("");
+  const [url, setUrl] = React.useState("");
+
+  React.useEffect(() => {
+    if (!open) return;
+    setTitle(initialValue?.title ?? "");
+    setUrl(initialValue?.url ?? "");
+  }, [initialValue, open]);
+
+  return (
+    <DialogRoot onOpenChange={onOpenChange} open={open}>
+      <DialogPortal>
+        <DialogBackdrop />
+        <DialogViewport>
+          <DialogPanel width="sm">
+            <DialogHeader>
+              <div>
+                <DialogTitle>
+                  {initialValue ? "Edit external link" : "Add external link"}
+                </DialogTitle>
+                <DialogDescription>
+                  Attach a durable external resource to this issue.
+                </DialogDescription>
+              </div>
+              <DialogCloseButton disabled={pending} />
+            </DialogHeader>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                const normalizedUrl = url.trim();
+                if (!normalizedUrl) return;
+                onSave({
+                  ...(initialValue?.source ? { source: initialValue.source } : {}),
+                  ...(title.trim() ? { title: title.trim() } : {}),
+                  url: normalizedUrl,
+                });
+              }}
+            >
+              <DialogBody className="grid gap-4">
+                <label className="grid gap-1.5 text-sm font-medium text-foreground">
+                  Title
+                  <Input
+                    disabled={pending}
+                    onChange={(event) => setTitle(event.currentTarget.value)}
+                    placeholder="Design brief"
+                    value={title}
+                  />
+                </label>
+                <label className="grid gap-1.5 text-sm font-medium text-foreground">
+                  URL
+                  <Input
+                    autoFocus
+                    disabled={pending}
+                    onChange={(event) => setUrl(event.currentTarget.value)}
+                    placeholder="https://example.com/resource"
+                    type="url"
+                    value={url}
+                  />
+                </label>
+              </DialogBody>
+              <DialogFooter>
+                <Button disabled={pending} onClick={() => onOpenChange(false)} variant="ghost">
+                  Cancel
+                </Button>
+                <Button disabled={!url.trim()} loading={pending} type="submit">
+                  {initialValue ? "Save link" : "Add link"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogPanel>
+        </DialogViewport>
+      </DialogPortal>
+    </DialogRoot>
+  );
+};
+
+const relationshipTypes = ["depends_on", "blocks", "related"] as const;
+const relationshipTypeItems = [
+  { label: "Depends on", value: "depends_on" },
+  { label: "Blocks", value: "blocks" },
+  { label: "Related", value: "related" },
+];
+
+const ManageRelationshipsDialog = ({
+  candidates,
+  onAdd,
+  onChange,
+  onOpenChange,
+  onRemove,
+  open,
+  pending,
+  relations,
+}: {
+  readonly candidates: readonly { readonly id: string; readonly title: string }[];
+  readonly onAdd: (relation: IssueRelation) => void;
+  readonly onChange: (previous: IssueRelation, next: IssueRelation) => void;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onRemove: (relation: IssueRelation) => void;
+  readonly open: boolean;
+  readonly pending: boolean;
+  readonly relations: readonly IssueRelation[];
+}) => {
+  const [targetId, setTargetId] = React.useState("");
+  const [type, setType] = React.useState<IssueRelationType>("related");
+  const existingIds = new Set(relations.map((relation) => relation.issueId));
+  const candidateItems = candidates
+    .filter((candidate) => !existingIds.has(candidate.id))
+    .map((candidate) => ({ label: `${candidate.id} · ${candidate.title}`, value: candidate.id }));
+  const candidateMap = new Map(candidates.map((candidate) => [candidate.id, candidate] as const));
+
+  React.useEffect(() => {
+    if (open) {
+      setTargetId("");
+      setType("related");
+    }
+  }, [open]);
+
+  return (
+    <DialogRoot onOpenChange={onOpenChange} open={open}>
+      <DialogPortal>
+        <DialogBackdrop />
+        <DialogViewport>
+          <DialogPanel width="lg">
+            <DialogHeader>
+              <div>
+                <DialogTitle>Manage relationships</DialogTitle>
+                <DialogDescription>
+                  Add, remove, or change dependency and related-ticket links.
+                </DialogDescription>
+              </div>
+              <DialogCloseButton disabled={pending} />
+            </DialogHeader>
+            <DialogBody className="grid gap-5">
+              <div className="grid gap-2">
+                {relations.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                    No relationships yet.
+                  </div>
+                ) : (
+                  relations.map((relation) => (
+                    <div
+                      className="grid grid-cols-[minmax(0,1fr)_180px_auto] items-end gap-2 rounded-md border border-border p-3"
+                      key={`${relation.type}:${relation.issueId}`}
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-foreground">
+                          {candidateMap.get(relation.issueId)?.title ?? relation.issueId}
+                        </div>
+                        <div className="font-mono text-xs text-muted-foreground">
+                          {relation.issueId}
+                        </div>
+                      </div>
+                      <Select
+                        disabled={pending}
+                        items={relationshipTypeItems}
+                        label="Relationship type"
+                        onValueChange={(nextType) => {
+                          if (nextType === null || nextType === relation.type) return;
+                          onChange(relation, {
+                            issueId: relation.issueId,
+                            type: nextType as IssueRelationType,
+                          });
+                        }}
+                        value={relation.type}
+                      />
+                      <Button
+                        disabled={pending}
+                        onClick={() => onRemove(relation)}
+                        tone="danger"
+                        variant="ghost"
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="grid gap-3 border-t border-border pt-4 sm:grid-cols-[minmax(0,1fr)_180px_auto] sm:items-end">
+                <Select
+                  disabled={pending || candidateItems.length === 0}
+                  items={candidateItems}
+                  label="Issue"
+                  onValueChange={(value) => setTargetId(value ?? "")}
+                  placeholder="Choose an issue"
+                  value={targetId}
+                />
+                <Select
+                  disabled={pending}
+                  items={relationshipTypeItems}
+                  label="Relationship type"
+                  onValueChange={(value) => {
+                    if (
+                      value &&
+                      relationshipTypes.includes(value as (typeof relationshipTypes)[number])
+                    ) {
+                      setType(value as IssueRelationType);
+                    }
+                  }}
+                  value={type}
+                />
+                <Button
+                  disabled={pending || !targetId}
+                  onClick={() => {
+                    onAdd({ issueId: targetId, type });
+                    setTargetId("");
+                  }}
+                >
+                  Add
+                </Button>
+              </div>
+            </DialogBody>
+            <DialogFooter>
+              <Button disabled={pending} onClick={() => onOpenChange(false)} variant="ghost">
+                Done
+              </Button>
+            </DialogFooter>
+          </DialogPanel>
+        </DialogViewport>
+      </DialogPortal>
+    </DialogRoot>
+  );
+};
+
 export const ViewIssuePanel = ({
+  agentWork,
   agentProviders = [],
   issueId,
   onArchived,
@@ -724,12 +1068,15 @@ export const ViewIssuePanel = ({
     issueId,
     repositoryId,
   });
+  const commentActions = useIssueCommentActionsMutation({ issueId, repositoryId });
+  const relationMutation = useIssueRelationMutation({ issueId, repositoryId });
   const startAgentTask = useStartIssueAgentTaskMutation({
     issueId,
     repositoryId,
   });
   const cancelAgentTask = useCancelAgentTaskMutation();
   const retryAgentTask = useRetryAgentTaskMutation();
+  const notifications = useNotifications();
   const initiativeProgressQuery = useInitiativeProgressQuery(
     repositoryId,
     issueQuery.data?.type === "initiative" ? issueQuery.data.id : undefined,
@@ -738,7 +1085,19 @@ export const ViewIssuePanel = ({
     () => agentProviders.filter((provider) => provider.status === "available"),
     [agentProviders],
   );
-  const defaultAgentProviderId = availableAgentProviders[0]?.id ?? "";
+  const repositoryAgentWork = repositories.find((repository) => repository.id === repositoryId)
+    ?.preferences.agentWork;
+  const defaultAgentProviderId =
+    repositoryAgentWork?.providerId ??
+    agentWork?.defaultProviderId ??
+    availableAgentProviders[0]?.id ??
+    "";
+  const defaultAgentModel = repositoryAgentWork?.model ?? agentWork?.defaultModel ?? "";
+  const agentWorkUnavailable =
+    agentWork?.paused === true ||
+    agentWork?.allowFullAccessJobs === false ||
+    repositoryAgentWork?.paused === true ||
+    repositoryAgentWork?.agentWorkDisabled === true;
   const [agentTaskDialogOpen, setAgentTaskDialogOpen] = React.useState(false);
   const [agentTaskAgentId, setAgentTaskAgentId] = React.useState<string>(defaultAgentProviderId);
   const [agentTaskProviderId, setAgentTaskProviderId] =
@@ -746,6 +1105,10 @@ export const ViewIssuePanel = ({
   const [agentTaskModel, setAgentTaskModel] = React.useState("");
   const [agentTaskInstructions, setAgentTaskInstructions] = React.useState("");
   const [archiveDialogOpen, setArchiveDialogOpen] = React.useState(false);
+  const [labelsDialogOpen, setLabelsDialogOpen] = React.useState(false);
+  const [relationshipsDialogOpen, setRelationshipsDialogOpen] = React.useState(false);
+  const [linkEditor, setLinkEditor] = React.useState<"new" | number | null>(null);
+  const [workflowPending, setWorkflowPending] = React.useState<TicketPromptWorkflowIntent>();
 
   React.useEffect(() => {
     if (!agentTaskDialogOpen || !defaultAgentProviderId) return;
@@ -756,7 +1119,7 @@ export const ViewIssuePanel = ({
   const openAgentTaskDialog = () => {
     setAgentTaskProviderId(defaultAgentProviderId);
     setAgentTaskAgentId(defaultAgentProviderId);
-    setAgentTaskModel("");
+    setAgentTaskModel(defaultAgentModel);
     setAgentTaskInstructions("");
     setAgentTaskDialogOpen(true);
   };
@@ -819,6 +1182,23 @@ export const ViewIssuePanel = ({
   });
   const userMap = new Map(users.map((user) => [user.id, user] as const));
   const labelMap = new Map(labels.map((label) => [label.id, label] as const));
+  const records = recordsQuery.data?.entries ?? [];
+  const viewerActor = issue.frontmatter.createdBy;
+  const comments = materializeIssueCommentRecords(records, viewerActor).map(
+    (comment) =>
+      ({
+        archived: comment.archived,
+        author: authorFromName(comment.createdBy.name),
+        body: comment.body,
+        id: comment.id,
+        occurredAt: comment.createdAt,
+        ...(comment.parentCommentId === undefined
+          ? {}
+          : { parentCommentId: comment.parentCommentId }),
+        reactions: comment.reactions,
+        timestamp: formatActivityTimestamp(comment.createdAt),
+      }) satisfies ViewIssueComment,
+  );
   const rawAssignee = issue.frontmatter.assignee?.trim() || "";
   const assigneeName = rawAssignee
     ? (userMap.get(rawAssignee)?.displayName ?? rawAssignee)
@@ -847,6 +1227,50 @@ export const ViewIssuePanel = ({
       frontmatter,
       message,
     });
+  };
+  const externalLinks = issue.frontmatter.externalLinks ?? [];
+  const relationshipCandidates = (issueListQuery.data?.entries ?? [])
+    .filter((candidate) => candidate.id !== issue.id)
+    .map((candidate) => ({ id: candidate.id, title: candidate.title }));
+  const copyIssueValue = (label: string, value: string) => {
+    void navigator.clipboard.writeText(value).then(
+      () =>
+        notifications.notify({
+          description: value,
+          title: `${label} copied`,
+          tone: "success",
+        }),
+      () =>
+        notifications.notify({
+          description: "Clipboard access was unavailable.",
+          title: `Could not copy ${label.toLowerCase()}`,
+          tone: "danger",
+        }),
+    );
+  };
+  const startTicketWorkflow = (intent: TicketPromptWorkflowIntent) => {
+    if (workflowPending !== undefined) return;
+    const repositoryName =
+      repositories.find((repository) => repository.id === repositoryId)?.displayName ??
+      repositoryId;
+    setWorkflowPending(intent);
+    void cycleApiClient
+      .startTicketWorkflowChat({
+        intent,
+        issue,
+        repositoryName,
+      })
+      .then(({ threadId }) => onChatOpen?.(threadId))
+      .catch((error: unknown) => {
+        notifications.notify({
+          description:
+            error instanceof Error ? error.message : "Cycle could not start the ticket workflow.",
+          durationMs: 9000,
+          title: "Ticket workflow failed",
+          tone: "danger",
+        });
+      })
+      .finally(() => setWorkflowPending(undefined));
   };
   const currentDueDate =
     typeof issue.frontmatter.dueDate === "string" ? issue.frontmatter.dueDate : "";
@@ -992,7 +1416,7 @@ export const ViewIssuePanel = ({
   return (
     <>
       <ViewIssue
-        activityEvents={issueActivity(issue, issueHistoryQuery.data?.entries ?? [])}
+        activityEvents={issueActivity(issue, issueHistoryQuery.data?.entries ?? [], records)}
         agentWork={
           <AgentTaskSidebar
             cancelPending={cancelAgentTask.isPending}
@@ -1012,7 +1436,7 @@ export const ViewIssuePanel = ({
               }
             : undefined
         }
-        comments={(recordsQuery.data?.entries ?? []).map(commentFromRecord)}
+        comments={comments}
         defaultDescription={issue.body}
         defaultTitle={issue.frontmatter.title}
         dependencyState={mapTicketDependencies(
@@ -1029,10 +1453,61 @@ export const ViewIssuePanel = ({
           id: labelId,
           label: labelMap.get(labelId)?.name ?? labelId,
         }))}
-        onAgentDelegate={openAgentTaskDialog}
+        moreActions={[
+          {
+            disabled: workflowPending !== undefined,
+            icon: <Sparkles aria-hidden className="size-4" />,
+            id: "ticket.improve",
+            label: "Improve with agent",
+            onSelect: () => startTicketWorkflow("improve"),
+          },
+          {
+            disabled: workflowPending !== undefined,
+            icon: <GitBranch aria-hidden className="size-4" />,
+            id: "ticket.split",
+            label: "Split into tickets",
+            onSelect: () => startTicketWorkflow("split"),
+          },
+          {
+            disabled: workflowPending !== undefined,
+            icon: <MessageSquarePlus aria-hidden className="size-4" />,
+            id: "ticket.follow_up",
+            label: "Create follow-up",
+            onSelect: () => startTicketWorkflow("follow_up"),
+          },
+          {
+            disabled: workflowPending !== undefined,
+            icon: <ListChecks aria-hidden className="size-4" />,
+            id: "ticket.plan",
+            label: "Plan implementation",
+            onSelect: () => startTicketWorkflow("plan"),
+          },
+          {
+            icon: <Copy aria-hidden className="size-4" />,
+            id: "copy-id",
+            label: "Copy issue ID",
+            onSelect: () => copyIssueValue("Issue ID", issue.id),
+          },
+          {
+            icon: <Copy aria-hidden className="size-4" />,
+            id: "copy-link",
+            label: "Copy Cycle link",
+            onSelect: () =>
+              copyIssueValue("Cycle link", `cycle://repository/${repositoryId}/issue/${issue.id}`),
+          },
+        ]}
+        onAgentDelegate={agentWorkUnavailable ? undefined : openAgentTaskDialog}
         archiveDisabled={archiveIssue.isPending || Boolean(issue.archivedAt)}
         archivePending={archiveIssue.isPending}
+        onCommentArchive={(commentId) => commentActions.mutate({ commentId, kind: "archive" })}
         onCommentCreate={(comment) => addComment.mutate(comment)}
+        onCommentEdit={(commentId, body) =>
+          commentActions.mutate({ body, commentId, kind: "edit" })
+        }
+        onCommentReactionToggle={(commentId, emoji, active) =>
+          commentActions.mutate({ active, commentId, emoji, kind: "reaction" })
+        }
+        onCommentReply={(parentCommentId, body) => addComment.mutate({ body, parentCommentId })}
         onDescriptionSave={updateDescription}
         onArchive={() => setArchiveDialogOpen(true)}
         onFilesSelect={(files) => {
@@ -1041,7 +1516,19 @@ export const ViewIssuePanel = ({
             [...files].map((file) => file.name),
           );
         }}
+        onLabelsEdit={() => setLabelsDialogOpen(true)}
         onIssueReferenceClick={onIssueSelect}
+        onRelationshipsEdit={() => setRelationshipsDialogOpen(true)}
+        onResourceAdd={() => setLinkEditor("new")}
+        onResourceEdit={(resourceId) => setLinkEditor(Number(resourceId))}
+        onResourceRemove={(resourceId) => {
+          const index = Number(resourceId);
+          const nextLinks = externalLinks.filter((_, linkIndex) => linkIndex !== index);
+          updateFrontmatter(
+            { externalLinks: nextLinks },
+            `Removed an external link from ${issue.id}`,
+          );
+        }}
         onSubIssueCreate={(draft) => {
           const input = {
             body: draft.description,
@@ -1090,6 +1577,53 @@ export const ViewIssuePanel = ({
         onOpenChange={setArchiveDialogOpen}
         open={archiveDialogOpen}
         pending={archiveIssue.isPending}
+      />
+      <ManageLabelsDialog
+        availableLabels={labels.map((label) => ({ id: label.id, name: label.name }))}
+        onOpenChange={setLabelsDialogOpen}
+        onSave={(nextLabels) => {
+          updateIssue.mutate(
+            {
+              frontmatter: { labels: nextLabels },
+              message: `Updated ${issue.id} labels`,
+            },
+            { onSuccess: () => setLabelsDialogOpen(false) },
+          );
+        }}
+        open={labelsDialogOpen}
+        pending={updateIssue.isPending}
+        value={issue.frontmatter.labels ?? []}
+      />
+      <ExternalLinkDialog
+        initialValue={typeof linkEditor === "number" ? externalLinks[linkEditor] : undefined}
+        onOpenChange={(open) => {
+          if (!open) setLinkEditor(null);
+        }}
+        onSave={(link) => {
+          const nextLinks =
+            typeof linkEditor === "number"
+              ? externalLinks.map((current, index) => (index === linkEditor ? link : current))
+              : [...externalLinks, link];
+          updateIssue.mutate(
+            {
+              frontmatter: { externalLinks: nextLinks },
+              message: `${typeof linkEditor === "number" ? "Updated" : "Added"} an external link on ${issue.id}`,
+            },
+            { onSuccess: () => setLinkEditor(null) },
+          );
+        }}
+        open={linkEditor !== null}
+        pending={updateIssue.isPending}
+      />
+      <ManageRelationshipsDialog
+        candidates={relationshipCandidates}
+        onAdd={(relation) => relationMutation.mutate({ kind: "add", relation })}
+        onChange={(previous, next) => relationMutation.mutate({ kind: "replace", next, previous })}
+        onOpenChange={setRelationshipsDialogOpen}
+        onRemove={(relation) => relationMutation.mutate({ kind: "remove", relation })}
+        open={relationshipsDialogOpen}
+        pending={relationMutation.isPending}
+        relations={issue.frontmatter.relations ?? []}
       />
     </>
   );

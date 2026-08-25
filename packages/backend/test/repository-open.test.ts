@@ -6,6 +6,7 @@ import {
   type RepositoryStatus,
 } from "@cycle/database";
 import { GitRepository } from "@cycle/git";
+import { defaultRepositoryPreferences } from "@cycle/config";
 import { GitStores, type GitStoresShape } from "@cycle/git-store";
 import { RepositoryOpen } from "@cycle/usecases";
 import { Effect, Layer } from "effect";
@@ -19,9 +20,8 @@ const repository = {
   id: "repo-test",
   path: "/tmp/cycle-test",
   preferences: {
+    ...defaultRepositoryPreferences(),
     autoSync: true,
-    commitStyle: "descriptive" as const,
-    sidebarExpanded: true,
   },
 };
 
@@ -48,6 +48,7 @@ const makeLayer = (opened: Array<RepositoryInput>) => {
   const gitRepository = Layer.succeed(
     GitRepository,
     GitRepository.of({
+      clone: () => Effect.die("Git clone should not be called by this test."),
       ensure: (repositoryPath) =>
         Effect.succeed({
           cwd: repositoryPath,
@@ -88,6 +89,7 @@ const makeLayer = (opened: Array<RepositoryInput>) => {
   const workspace = Layer.succeed(
     LocalWorkspace,
     LocalWorkspace.of({
+      cloneRepositoryPath: () => Effect.succeed(repository),
       initializeRepositoryPath: () => Effect.succeed(repository),
       listRepositories: Effect.succeed([repository]),
       markRepositoryOpened: () => Effect.succeed(repository),

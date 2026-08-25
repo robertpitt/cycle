@@ -52,7 +52,20 @@ export const useAddRepositoryMutation = ({
         const selection = await bridge.selectRepositoryFolder();
         if (selection.status === "cancelled") return { status: "cancelled" };
 
-        const opened = await cycleApiClient.openRepositoryPath({ path: selection.path });
+        let opened: Awaited<ReturnType<typeof cycleApiClient.openRepositoryPath>>;
+        try {
+          opened = await cycleApiClient.openRepositoryPath({ path: selection.path });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (/not (?:a )?git repository|not git initiali[sz]ed/u.test(message.toLowerCase())) {
+            return {
+              message,
+              path: selection.path,
+              status: "not-git",
+            };
+          }
+          throw error;
+        }
         const nextConfig = await cycleApiClient.getAppConfig();
         const repository =
           nextConfig.localWorkspace.repositories.find(

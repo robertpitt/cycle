@@ -121,6 +121,7 @@ const makeLayer = (config: AppConfigState) =>
     Layer.succeed(
       LocalWorkspace,
       LocalWorkspace.of({
+        cloneRepositoryPath: () => Effect.die("not implemented"),
         initializeRepositoryPath: () => Effect.die("not implemented"),
         listRepositories: Effect.succeed([]),
         markRepositoryOpened: () => Effect.succeed(null),
@@ -132,9 +133,11 @@ const makeLayer = (config: AppConfigState) =>
     Layer.succeed(
       ElectronPreferences,
       ElectronPreferences.of({
+        cloneRepositoryPath: () => Effect.die("not implemented"),
         clearCache: Effect.void,
         completeOnboarding: () => Effect.succeed(config),
         read: Effect.succeed(config),
+        initializeRepositoryPath: () => Effect.die("not implemented"),
         removeRepository: () => Effect.succeed(config),
         setInterfaceDensity: (density) =>
           Effect.succeed({
@@ -153,6 +156,7 @@ const makeLayer = (config: AppConfigState) =>
             },
           }),
         updateAgentProviderPreference: () => Effect.succeed(config),
+        updateAgentWorkSettings: () => Effect.succeed(config),
         shouldAutoSyncRepository: () => Effect.succeed(false),
         startThemeLifecycleSupervision: () => Effect.void,
         syncThemePreference: Effect.succeed({
@@ -177,8 +181,11 @@ const makeLayer = (config: AppConfigState) =>
       DesktopBootstrap,
       DesktopBootstrap.of({
         ensureRepositoryOpened: () => Effect.void,
+        fetchRepositoryFromRemote: () => Effect.succeed({ pointers: [], remote: "origin" }),
+        listSyncEvents: () => Effect.succeed([]),
         notifyRepositoryChanged: () => Effect.void,
         pushRepositoryToRemote: () => Effect.die("not implemented"),
+        rebuildDatabase: Effect.void,
         start: () => Effect.void,
         status: Effect.succeed({
           blocking: false,
@@ -192,6 +199,7 @@ const makeLayer = (config: AppConfigState) =>
     Layer.succeed(
       GitRepository,
       GitRepository.of({
+        clone: () => Effect.die("not implemented"),
         ensure: () => Effect.die("not implemented"),
         init: () => Effect.die("not implemented"),
         inspect: () => Effect.die("not implemented"),

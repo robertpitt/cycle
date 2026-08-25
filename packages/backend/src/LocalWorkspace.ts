@@ -19,9 +19,30 @@ export type UpsertRepositoryPathInput = typeof UpsertRepositoryPathInput.Type;
 export const InitializeRepositoryPathInput = UpsertRepositoryPathInput;
 export type InitializeRepositoryPathInput = typeof InitializeRepositoryPathInput.Type;
 
+export const CloneRepositoryPathInput = Schema.Struct({
+  displayName: Schema.optional(Schema.String),
+  path: Schema.String,
+  remoteUrl: Schema.String,
+});
+export type CloneRepositoryPathInput = typeof CloneRepositoryPathInput.Type;
+
+const PositiveInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0));
+
 export const RepositoryPreferencesPatch = Schema.Struct({
+  agentWork: Schema.optional(
+    Schema.Struct({
+      agentWorkDisabled: Schema.optional(Schema.Boolean),
+      maxConcurrentJobs: Schema.optional(Schema.NullOr(PositiveInteger)),
+      model: Schema.optional(Schema.NullOr(Schema.String)),
+      paused: Schema.optional(Schema.Boolean),
+      perAgentOverrides: Schema.optional(Schema.Record(Schema.String, Schema.Json)),
+      providerId: Schema.optional(Schema.NullOr(Schema.String)),
+    }),
+  ),
+  archived: Schema.optional(Schema.Boolean),
   autoSync: Schema.optional(Schema.Boolean),
   commitStyle: Schema.optional(RepositoryCommitStyle),
+  group: Schema.optional(Schema.NullOr(Schema.String)),
   sidebarExpanded: Schema.optional(Schema.Boolean),
 });
 export type RepositoryPreferencesPatch = typeof RepositoryPreferencesPatch.Type;
@@ -49,6 +70,9 @@ export const SelectRepositoryFolderResult = Schema.Union([
 export type SelectRepositoryFolderResult = typeof SelectRepositoryFolderResult.Type;
 
 export type LocalWorkspaceService = {
+  readonly cloneRepositoryPath: (
+    input: CloneRepositoryPathInput,
+  ) => Effect.Effect<RepositoryRecordType, AppConfigError>;
   readonly initializeRepositoryPath: (
     input: InitializeRepositoryPathInput,
   ) => Effect.Effect<RepositoryRecordType, AppConfigError>;
@@ -366,6 +390,29 @@ export const LocalWorkspaceLive = Layer.effect(
       });
 
     return LocalWorkspace.of({
+      cloneRepositoryPath: (input: CloneRepositoryPathInput) =>
+        Effect.gen(function* () {
+          const normalizedPath = normalizeRepositoryPath(input.path);
+          yield* gitRepository
+            .clone({
+              remoteUrl: input.remoteUrl,
+              repositoryPath: normalizedPath,
+            })
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new AppConfigError({
+                    cause,
+                    message: "Unable to clone Git repository.",
+                    operation: "LocalWorkspace.gitClone",
+                  }),
+              ),
+            );
+          return yield* upsertRepositoryPath({
+            displayName: input.displayName,
+            path: normalizedPath,
+          });
+        }),
       initializeRepositoryPath: (input: InitializeRepositoryPathInput) =>
         Effect.gen(function* () {
           const normalizedPath = normalizeRepositoryPath(input.path);
@@ -414,6 +461,14 @@ export const LocalWorkspaceLive = Layer.effect(
                       preferences: {
                         ...repository.preferences,
                         ...input.preferences,
+                        agentWork: {
+                          ...repository.preferences.agentWork,
+                          ...input.preferences.agentWork,
+                        },
+                        group:
+                          input.preferences.group === undefined
+                            ? repository.preferences.group
+                            : input.preferences.group?.trim() || null,
                       },
                     }
                   : repository,

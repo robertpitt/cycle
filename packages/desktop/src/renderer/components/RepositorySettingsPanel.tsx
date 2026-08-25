@@ -1,21 +1,33 @@
 import type { RepositoryStatus } from "@cycle/contracts/schemas";
-import { Button, Select, StatusIndicator, Switch } from "@cycle/ui/atoms";
+import {
+  Button,
+  DateTime,
+  Input,
+  Select,
+  StatusIndicator,
+  Switch,
+  Textarea,
+} from "@cycle/ui/atoms";
 import { SettingRow } from "@cycle/ui/molecules";
-import { RefreshCw, Trash2, Upload } from "lucide-react";
+import { Download, RefreshCw, Trash2, Upload } from "lucide-react";
 import * as React from "react";
 import type { BootstrapStatus } from "@cycle/contracts/schemas/backend";
 import {
   isRepositoryCommitStyle,
   type AppConfigEncoded as AppConfigState,
+  type JsonObject,
   type RepositoryCommitStyle,
   type RepositoryRecord,
+  type UpdateRepositoryPreferencesInput,
 } from "@cycle/config";
 import {
   usePushRepositoryMutation,
+  useFetchRepositoryMutation,
   useRemoveRepositoryMutation,
   useSyncRepositoryMutation,
   useUpdateRepositoryPreferencesMutation,
 } from "../mutations/index.ts";
+import { useRepositorySyncEventsQuery } from "../queries/index.ts";
 import type { DetectedAgentProvider } from "@cycle/contracts/schemas/agents";
 
 type RepositorySettingsPanelProps = {
@@ -82,6 +94,7 @@ const SectionShell = ({
 );
 
 export const RepositorySettingsPanel = ({
+  agentProviders = [],
   appConfig,
   bootstrapStatus,
   onRemoved,
@@ -89,23 +102,39 @@ export const RepositorySettingsPanel = ({
   status,
 }: RepositorySettingsPanelProps) => {
   const updatePreferences = useUpdateRepositoryPreferencesMutation({ appConfig });
+  const fetchRepository = useFetchRepositoryMutation();
   const syncRepository = useSyncRepositoryMutation();
   const pushRepository = usePushRepositoryMutation();
   const removeRepository = useRemoveRepositoryMutation();
-  const [pendingRemoteAction, setPendingRemoteAction] = React.useState<"push" | "sync" | null>(
-    null,
+  const [pendingRemoteAction, setPendingRemoteAction] = React.useState<
+    "fetch" | "push" | "sync" | null
+  >(null);
+  const syncEventsQuery = useRepositorySyncEventsQuery(repository.id);
+  const [repositoryGroup, setRepositoryGroup] = React.useState(repository.preferences.group ?? "");
+  const [agentProviderId, setAgentProviderId] = React.useState(
+    repository.preferences.agentWork.providerId ?? "",
+  );
+  const [agentModel, setAgentModel] = React.useState(repository.preferences.agentWork.model ?? "");
+  const [agentConcurrency, setAgentConcurrency] = React.useState(
+    repository.preferences.agentWork.maxConcurrentJobs === null
+      ? ""
+      : String(repository.preferences.agentWork.maxConcurrentJobs),
+  );
+  const [agentOverrides, setAgentOverrides] = React.useState(() =>
+    JSON.stringify(repository.preferences.agentWork.perAgentOverrides, null, 2),
   );
   const defaultRemote = status?.metadata?.defaultRemote;
   const defaultRemoteUrl = status?.metadata?.defaultRemoteUrl;
   const remotes = status?.metadata?.remotes ?? [];
   const hasRemote = defaultRemote !== undefined;
-  const remotePending = syncRepository.isPending || pushRepository.isPending;
-  const remoteError = syncRepository.error ?? pushRepository.error;
+  const remotePending =
+    fetchRepository.isPending || syncRepository.isPending || pushRepository.isPending;
+  const remoteError = fetchRepository.error ?? syncRepository.error ?? pushRepository.error;
   const bootstrapRepository = bootstrapStatus?.repositories.find(
     (candidate) => candidate.repositoryId === repository.id,
   );
 
-  const patchPreferences = (preferences: Partial<RepositoryRecord["preferences"]>) => {
+  const patchPreferences = (preferences: UpdateRepositoryPreferencesInput["preferences"]) => {
     updatePreferences.mutate({
       id: repository.id,
       preferences,
@@ -117,13 +146,26 @@ export const RepositorySettingsPanel = ({
     patchPreferences({ commitStyle: value });
   };
 
-  const runRemoteAction = (action: "push" | "sync") => {
+  const runRemoteAction = (action: "fetch" | "push" | "sync") => {
     setPendingRemoteAction(action);
-    const mutation = action === "push" ? pushRepository : syncRepository;
+    const mutation =
+      action === "fetch" ? fetchRepository : action === "push" ? pushRepository : syncRepository;
     mutation.mutate(repository.id, {
       onSettled: () => setPendingRemoteAction(null),
     });
   };
+
+  React.useEffect(() => {
+    setRepositoryGroup(repository.preferences.group ?? "");
+    setAgentProviderId(repository.preferences.agentWork.providerId ?? "");
+    setAgentModel(repository.preferences.agentWork.model ?? "");
+    setAgentConcurrency(
+      repository.preferences.agentWork.maxConcurrentJobs === null
+        ? ""
+        : String(repository.preferences.agentWork.maxConcurrentJobs),
+    );
+    setAgentOverrides(JSON.stringify(repository.preferences.agentWork.perAgentOverrides, null, 2));
+  }, [repository.preferences]);
 
   const remove = () => {
     const confirmed =
@@ -137,6 +179,23 @@ export const RepositorySettingsPanel = ({
       onSuccess: () => onRemoved?.(),
     });
   };
+  const parsedAgentConcurrency =
+    agentConcurrency.trim().length === 0 ? null : Number.parseInt(agentConcurrency, 10);
+  const agentConcurrencyValid =
+    parsedAgentConcurrency === null ||
+    (Number.isInteger(parsedAgentConcurrency) && parsedAgentConcurrency >= 1);
+  let parsedAgentOverrides: JsonObject | null = null;
+  try {
+    const value = JSON.parse(agentOverrides) as unknown;
+    parsedAgentOverrides =
+      typeof value === "object" && value !== null && !Array.isArray(value)
+        ? (value as JsonObject)
+        : null;
+  } catch {
+    parsedAgentOverrides = null;
+  }
+  const inheritedProvider = appConfig?.agentWork.defaultProviderId ?? "Automatic";
+  const inheritedModel = appConfig?.agentWork.defaultModel ?? "Provider default";
 
   return (
     <div className="mx-auto grid w-full max-w-3xl gap-6 p-5">
@@ -224,6 +283,31 @@ export const RepositorySettingsPanel = ({
             description="Controls whether this repository is expanded in the main sidebar."
             title="Sidebar expanded"
           />
+          <SettingRow
+            control={
+              <Input
+                className="w-48"
+                disabled={updatePreferences.isPending}
+                onBlur={() => patchPreferences({ group: repositoryGroup.trim() || null })}
+                onChange={(event) => setRepositoryGroup(event.currentTarget.value)}
+                placeholder="Ungrouped"
+                value={repositoryGroup}
+              />
+            }
+            description="Groups this repository under a named section in the main sidebar."
+            title="Sidebar group"
+          />
+          <SettingRow
+            control={
+              <Switch
+                checked={repository.preferences.archived}
+                disabled={updatePreferences.isPending}
+                onCheckedChange={(checked) => patchPreferences({ archived: checked === true })}
+              />
+            }
+            description="Moves the repository to the Archived repositories section without deleting data."
+            title="Archived"
+          />
         </div>
         {updatePreferences.error ? (
           <p className="mt-3 text-sm text-destructive">
@@ -235,6 +319,119 @@ export const RepositorySettingsPanel = ({
       </SectionShell>
 
       <SectionShell
+        description="These values override the global Agent Work defaults for this repository. Empty provider, model, and concurrency fields inherit global values."
+        title="Agent Work overrides"
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Select
+            disabled={updatePreferences.isPending}
+            items={[
+              { label: `Inherit (${inheritedProvider})`, value: "__inherit_provider__" },
+              ...agentProviders.map((provider) => ({ label: provider.name, value: provider.id })),
+            ]}
+            label="Provider"
+            onValueChange={(value) =>
+              setAgentProviderId(value === "__inherit_provider__" || value === null ? "" : value)
+            }
+            value={agentProviderId || "__inherit_provider__"}
+          />
+          <label className="grid gap-1.5 text-sm font-medium text-foreground">
+            Model
+            <Input
+              disabled={updatePreferences.isPending}
+              onChange={(event) => setAgentModel(event.currentTarget.value)}
+              placeholder={`Inherit (${inheritedModel})`}
+              value={agentModel}
+            />
+          </label>
+          <label className="grid gap-1.5 text-sm font-medium text-foreground">
+            Concurrent jobs
+            <Input
+              disabled={updatePreferences.isPending}
+              min={1}
+              onChange={(event) => setAgentConcurrency(event.currentTarget.value)}
+              placeholder="Inherit global limit"
+              type="number"
+              value={agentConcurrency}
+            />
+          </label>
+        </div>
+        <div className="mt-4 rounded-md border border-border px-4">
+          <div className="flex items-center justify-between gap-4 py-3">
+            <div>
+              <div className="text-sm font-medium text-foreground">Pause repository jobs</div>
+              <div className="text-xs text-muted-foreground">
+                Holds new jobs for this repository.
+              </div>
+            </div>
+            <Switch
+              checked={repository.preferences.agentWork.paused}
+              disabled={updatePreferences.isPending}
+              onCheckedChange={(checked) =>
+                patchPreferences({
+                  agentWork: { paused: checked === true },
+                })
+              }
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4 border-t border-border py-3">
+            <div>
+              <div className="text-sm font-medium text-foreground">Disable Agent Work</div>
+              <div className="text-xs text-muted-foreground">
+                Prevents new delegated implementation jobs in this repository.
+              </div>
+            </div>
+            <Switch
+              checked={repository.preferences.agentWork.agentWorkDisabled}
+              disabled={updatePreferences.isPending}
+              onCheckedChange={(checked) =>
+                patchPreferences({
+                  agentWork: { agentWorkDisabled: checked === true },
+                })
+              }
+            />
+          </div>
+        </div>
+        <label className="mt-4 grid gap-1.5 text-sm font-medium text-foreground">
+          Per-agent overrides (JSON)
+          <Textarea
+            className="min-h-28 font-mono text-xs"
+            disabled={updatePreferences.isPending}
+            onChange={(event) => setAgentOverrides(event.currentTarget.value)}
+            value={agentOverrides}
+          />
+        </label>
+        {!agentConcurrencyValid || parsedAgentOverrides === null ? (
+          <p className="mt-3 text-sm text-destructive">
+            {!agentConcurrencyValid
+              ? "Concurrent jobs must be empty or at least 1."
+              : "Per-agent overrides must be a JSON object."}
+          </p>
+        ) : null}
+        <div className="mt-4 flex justify-end">
+          <Button
+            disabled={
+              updatePreferences.isPending || !agentConcurrencyValid || parsedAgentOverrides === null
+            }
+            loading={updatePreferences.isPending}
+            onClick={() =>
+              patchPreferences({
+                agentWork: {
+                  maxConcurrentJobs: parsedAgentConcurrency,
+                  model: agentModel.trim() || null,
+                  perAgentOverrides: parsedAgentOverrides ?? {},
+                  providerId: agentProviderId.trim() || null,
+                },
+              })
+            }
+            size="sm"
+          >
+            Save overrides
+          </Button>
+        </div>
+      </SectionShell>
+
+      <SectionShell
         description={
           hasRemote
             ? `Remote operations target ${defaultRemote}.`
@@ -243,6 +440,17 @@ export const RepositorySettingsPanel = ({
         title="Remote operations"
       >
         <div className="flex flex-wrap gap-2">
+          <Button
+            disabled={remotePending || !hasRemote}
+            leftIcon={<Download aria-hidden className="size-4" />}
+            loading={pendingRemoteAction === "fetch" && fetchRepository.isPending}
+            loadingLabel="Fetching"
+            onClick={() => runRemoteAction("fetch")}
+            size="sm"
+            variant="outline"
+          >
+            Fetch
+          </Button>
           <Button
             disabled={remotePending || !hasRemote}
             leftIcon={<RefreshCw aria-hidden className="size-4" />}
@@ -266,11 +474,72 @@ export const RepositorySettingsPanel = ({
             Push
           </Button>
         </div>
+        <div className="mt-4 grid gap-2 rounded-md border border-border bg-background/70 p-3 text-xs text-muted-foreground sm:grid-cols-3">
+          <div>
+            <strong className="text-foreground">Fetch</strong> downloads remote Cycle refs without
+            changing the local view.
+          </div>
+          <div>
+            <strong className="text-foreground">Sync</strong> fetches, reconciles, and rebuilds the
+            local projection.
+          </div>
+          <div>
+            <strong className="text-foreground">Push</strong> publishes local Cycle changes without
+            pulling remote changes.
+          </div>
+        </div>
         {remoteError ? (
           <p className="mt-3 text-sm text-destructive">
             {remoteError instanceof Error ? remoteError.message : "Remote operation failed."}
           </p>
         ) : null}
+      </SectionShell>
+
+      <SectionShell
+        description="Fetch, sync, push, and database rebuild operations recorded during this app session."
+        title="Sync history"
+      >
+        {syncEventsQuery.isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading sync history.</p>
+        ) : syncEventsQuery.error ? (
+          <p className="text-sm text-destructive">
+            {syncEventsQuery.error instanceof Error
+              ? syncEventsQuery.error.message
+              : "Unable to load sync history."}
+          </p>
+        ) : (syncEventsQuery.data?.length ?? 0) === 0 ? (
+          <p className="text-sm text-muted-foreground">No sync operations recorded this session.</p>
+        ) : (
+          <div className="grid gap-2">
+            {syncEventsQuery.data?.map((event) => (
+              <div
+                className="grid gap-2 rounded-md border border-border bg-background/70 p-3 sm:grid-cols-[100px_100px_minmax(0,1fr)_auto] sm:items-center"
+                key={event.id}
+              >
+                <span className="text-sm font-semibold capitalize text-foreground">
+                  {event.operation}
+                </span>
+                <StatusIndicator label={event.status} tone={stageTone(event.status)} />
+                <div className="min-w-0 text-xs text-muted-foreground">
+                  <div>{event.strategy ?? "Default strategy"}</div>
+                  {event.message ? (
+                    <div className="truncate text-destructive">{event.message}</div>
+                  ) : null}
+                </div>
+                <div className="text-right text-xs text-muted-foreground">
+                  <DateTime
+                    fallback={event.startedAt}
+                    format="compactDateTime"
+                    value={event.startedAt}
+                  />
+                  {event.durationMs === undefined ? null : (
+                    <div>{Math.round(event.durationMs)} ms</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </SectionShell>
 
       <SectionShell title="Diagnostics">

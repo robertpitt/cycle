@@ -6,6 +6,7 @@ import {
   type RepositoryStoreShape,
   type RepositorySyncResult,
 } from "@cycle/database";
+import type { RepositorySyncEvent } from "@cycle/contracts/schemas";
 import { GitRepository, type GitRepositoryMetadata } from "@cycle/git";
 import { GitStores, type GitStoresShape } from "@cycle/git-store";
 import { logDebug, logError, logInfo } from "@cycle/logging";
@@ -25,12 +26,19 @@ type BootstrapStatus = BackendContractSchemas.BootstrapStatus;
 
 export type RepositoryBootstrapService = {
   readonly ensureRepositoryOpened: (repositoryId: string) => Effect.Effect<void, unknown>;
+  readonly fetchRepositoryFromRemote: (
+    repositoryId: string,
+  ) => Effect.Effect<RepositorySyncResult, unknown>;
+  readonly listSyncEvents: (
+    repositoryId: string,
+  ) => Effect.Effect<ReadonlyArray<RepositorySyncEvent>>;
   readonly notifyRepositoryChanged: (repositoryId: string) => Effect.Effect<void>;
   readonly pushRepositoryToRemote: (
     repositoryId: string,
   ) => Effect.Effect<RepositorySyncResult, unknown>;
   readonly start: () => Effect.Effect<void>;
   readonly status: Effect.Effect<BootstrapStatus>;
+  readonly rebuildDatabase: Effect.Effect<void, unknown>;
   readonly syncRepositoryFromRemote: (repositoryId: string) => Effect.Effect<void, unknown>;
 };
 
@@ -135,6 +143,7 @@ export const RepositoryBootstrapLive = Layer.effect(
     const opened = new Map<string, RuntimeRepository>();
     const pendingRemoteSync = new Set<string>();
     const repositoryStatuses = new Map<string, BootstrapRepositoryStatus>();
+    const repositorySyncEvents = new Map<string, RepositorySyncEvent[]>();
     const remoteSyncedSnapshots = new Map<string, string | null>();
     let remoteSyncCycle = 0;
     let status: Omit<BootstrapStatus, "repositories"> = {
@@ -143,6 +152,70 @@ export const RepositoryBootstrapLive = Layer.effect(
       phase: "idle",
     };
     let started = false;
+    let syncEventSequence = 0;
+
+    const updateSyncEvent = (event: RepositorySyncEvent): void => {
+      const events = repositorySyncEvents.get(event.repositoryId) ?? [];
+      const next = [event, ...events.filter((candidate) => candidate.id !== event.id)].slice(
+        0,
+        100,
+      );
+      repositorySyncEvents.set(event.repositoryId, next);
+    };
+
+    const trackSyncOperation = <A, E, R>(
+      repositoryId: string,
+      operation: RepositorySyncEvent["operation"],
+      strategy: string,
+      effect: Effect.Effect<A, E, R>,
+    ): Effect.Effect<A, E, R> =>
+      Effect.gen(function* () {
+        const startedAt = nowIso();
+        const startedMs = performance.now();
+        const id = `${Date.now().toString(36)}-${(++syncEventSequence).toString(36)}`;
+        updateSyncEvent({
+          id,
+          operation,
+          repositoryId,
+          startedAt,
+          status: "started",
+          strategy,
+        });
+
+        return yield* effect.pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              const completedAt = nowIso();
+              updateSyncEvent({
+                completedAt,
+                durationMs: elapsedMs(startedMs),
+                id,
+                operation,
+                repositoryId,
+                startedAt,
+                status: "completed",
+                strategy,
+              });
+            }),
+          ),
+          Effect.tapError((error) =>
+            Effect.sync(() => {
+              const completedAt = nowIso();
+              updateSyncEvent({
+                completedAt,
+                durationMs: elapsedMs(startedMs),
+                id,
+                message: errorMessage(error),
+                operation,
+                repositoryId,
+                startedAt,
+                status: "failed",
+                strategy,
+              });
+            }),
+          ),
+        );
+      });
 
     const snapshot = (): BootstrapStatus => ({
       ...status,
@@ -495,62 +568,106 @@ export const RepositoryBootstrapLive = Layer.effect(
         pendingRemoteSync.delete(repositoryId);
       });
 
+    const fetchRepositoryFromRemote = (
+      repositoryId: string,
+    ): Effect.Effect<RepositorySyncResult, unknown> =>
+      trackSyncOperation(
+        repositoryId,
+        "fetch",
+        "fetch-only",
+        Effect.gen(function* () {
+          const repository = yield* repositoryById(repositoryId);
+          yield* ensureRepositoryOpenedUnsafe(repository);
+          const runtimeRepository = opened.get(repositoryId);
+          const remote = runtimeRepository?.metadata.defaultRemote;
+          const gitDir = runtimeRepository?.metadata.gitDir;
+          if (runtimeRepository === undefined || remote === undefined || gitDir === undefined) {
+            return yield* new BackendBootstrapError({
+              message: `Repository cannot fetch from a remote: ${repositoryId}`,
+              operation: "RepositoryBootstrap.fetchRepositoryFromRemote",
+              repositoryId,
+            });
+          }
+
+          const transportStore = yield* makeTransportStore(runtimeRepository.record.path, gitDir);
+          return yield* transportStore.sync({
+            mode: "fetch",
+            onDiverged: "error",
+            pointers: [DEFAULT_POINTER],
+            remote,
+          });
+        }),
+      );
+
     const syncRepositoryFromRemote = (repositoryId: string): Effect.Effect<void, unknown> =>
-      syncRepositoryFromRemoteUnsafe(repositoryId).pipe(
-        Effect.catch((error) =>
-          errorLog("bootstrap repository sync failed", {
-            error: errorMessage(error),
-            repositoryId,
-          }).pipe(Effect.andThen(Effect.fail(error))),
+      trackSyncOperation(
+        repositoryId,
+        "sync",
+        "fetch-rebase-project",
+        syncRepositoryFromRemoteUnsafe(repositoryId).pipe(
+          Effect.catch((error) =>
+            errorLog("bootstrap repository sync failed", {
+              error: errorMessage(error),
+              repositoryId,
+            }).pipe(Effect.andThen(Effect.fail(error))),
+          ),
         ),
       );
 
     const pushRepositoryToRemote = (
       repositoryId: string,
     ): Effect.Effect<RepositorySyncResult, unknown> =>
-      Effect.gen(function* () {
-        const repository = yield* repositoryById(repositoryId);
-        yield* ensureRepositoryOpenedUnsafe(repository);
-        const runtimeRepository = opened.get(repositoryId);
-        if (runtimeRepository === undefined) {
-          return yield* new BackendBootstrapError({
-            message: `Repository is not open: ${repositoryId}`,
-            operation: "RepositoryBootstrap.pushRepositoryToRemote",
-            repositoryId,
-          });
-        }
-        const remote = runtimeRepository.metadata.defaultRemote;
-        if (remote === undefined || runtimeRepository.metadata.gitDir === undefined) {
-          return yield* new BackendBootstrapError({
-            message: `Repository cannot be pushed: ${repositoryId}`,
-            operation: "RepositoryBootstrap.pushRepositoryToRemote",
-            repositoryId,
-          });
-        }
+      trackSyncOperation(
+        repositoryId,
+        "push",
+        "push-only",
+        Effect.gen(function* () {
+          const repository = yield* repositoryById(repositoryId);
+          yield* ensureRepositoryOpenedUnsafe(repository);
+          const runtimeRepository = opened.get(repositoryId);
+          if (runtimeRepository === undefined) {
+            return yield* new BackendBootstrapError({
+              message: `Repository is not open: ${repositoryId}`,
+              operation: "RepositoryBootstrap.pushRepositoryToRemote",
+              repositoryId,
+            });
+          }
+          const remote = runtimeRepository.metadata.defaultRemote;
+          if (remote === undefined || runtimeRepository.metadata.gitDir === undefined) {
+            return yield* new BackendBootstrapError({
+              message: `Repository cannot be pushed: ${repositoryId}`,
+              operation: "RepositoryBootstrap.pushRepositoryToRemote",
+              repositoryId,
+            });
+          }
 
-        setRepositoryStatus(runtimeRepository.record, {
-          error: undefined,
-          stage: "syncing",
-        });
-        const transportStore = yield* makeTransportStore(
-          runtimeRepository.record.path,
-          runtimeRepository.metadata.gitDir,
-        );
-        const pushResult = yield* transportStore.sync({
-          mode: "push",
-          onDiverged: "error",
-          pointers: [DEFAULT_POINTER],
-          remote,
-        });
-        const projection = yield* database.syncRepository(repositoryId);
-        setRepositoryStatus(
-          runtimeRepository.record,
-          repositoryStatusFromProjection(runtimeRepository.record, projection),
-        );
-        remoteSyncedSnapshots.set(repositoryId, yield* snapshotIdForStore(runtimeRepository.store));
-        pendingRemoteSync.delete(repositoryId);
-        return pushResult;
-      });
+          setRepositoryStatus(runtimeRepository.record, {
+            error: undefined,
+            stage: "syncing",
+          });
+          const transportStore = yield* makeTransportStore(
+            runtimeRepository.record.path,
+            runtimeRepository.metadata.gitDir,
+          );
+          const pushResult = yield* transportStore.sync({
+            mode: "push",
+            onDiverged: "error",
+            pointers: [DEFAULT_POINTER],
+            remote,
+          });
+          const projection = yield* database.syncRepository(repositoryId);
+          setRepositoryStatus(
+            runtimeRepository.record,
+            repositoryStatusFromProjection(runtimeRepository.record, projection),
+          );
+          remoteSyncedSnapshots.set(
+            repositoryId,
+            yield* snapshotIdForStore(runtimeRepository.store),
+          );
+          pendingRemoteSync.delete(repositoryId);
+          return pushResult;
+        }),
+      );
 
     const syncConfiguredRepositoriesFromRemote: Effect.Effect<void> = Effect.gen(function* () {
       remoteSyncCycle += 1;
@@ -579,11 +696,16 @@ export const RepositoryBootstrapLive = Layer.effect(
             remoteSynced += 1;
           }
           return snapshotIdForStore(runtimeRepository.store).pipe(
-            Effect.flatMap((currentSnapshot) =>
-              pendingRemoteSync.has(repository.id) || lastSynced !== currentSnapshot
-                ? syncRepositoryFromRemoteUnsafe(repository.id, { pushFirst: true })
-                : syncRepositoryFromRemoteUnsafe(repository.id),
-            ),
+            Effect.flatMap((currentSnapshot) => {
+              const pushFirst =
+                pendingRemoteSync.has(repository.id) || lastSynced !== currentSnapshot;
+              return trackSyncOperation(
+                repository.id,
+                "sync",
+                pushFirst ? "background-push-first" : "background-fetch-first",
+                syncRepositoryFromRemoteUnsafe(repository.id, { pushFirst }),
+              );
+            }),
             Effect.catch((error) =>
               Effect.sync(() => {
                 remoteFailed += 1;
@@ -757,14 +879,41 @@ export const RepositoryBootstrapLive = Layer.effect(
         pendingRemoteSync.add(repositoryId);
       }).pipe(Effect.andThen(Queue.offer(changeSignals, repositoryId)), Effect.asVoid);
 
+    const rebuildDatabase = settings.read.pipe(
+      Effect.flatMap((config) =>
+        Effect.forEach(
+          config.localWorkspace.repositories,
+          (repository) =>
+            Effect.gen(function* () {
+              yield* ensureRepositoryOpenedUnsafe(repository);
+              const projection = yield* trackSyncOperation(
+                repository.id,
+                "rebuild",
+                "reset-local-projection",
+                database.rebuildRepository(repository.id),
+              );
+              setRepositoryStatus(
+                repository,
+                repositoryStatusFromProjection(repository, projection),
+              );
+            }),
+          { concurrency: 1, discard: true },
+        ),
+      ),
+    );
+
     return RepositoryBootstrap.of({
       ensureRepositoryOpened: (repositoryId) =>
         Effect.gen(function* () {
           const repository = yield* repositoryById(repositoryId);
           yield* openRepository(repository);
         }),
+      fetchRepositoryFromRemote,
+      listSyncEvents: (repositoryId) =>
+        Effect.sync(() => repositorySyncEvents.get(repositoryId) ?? []),
       notifyRepositoryChanged,
       pushRepositoryToRemote,
+      rebuildDatabase,
       start,
       status: Effect.sync(snapshot),
       syncRepositoryFromRemote,

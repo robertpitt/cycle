@@ -23,6 +23,7 @@ export type IssueActivityEventProps = React.HTMLAttributes<HTMLDivElement> & {
 
 export type IssueCommentCardProps = React.HTMLAttributes<HTMLDivElement> &
   MarkdownReferenceHandlers & {
+    readonly actions?: React.ReactNode;
     readonly author: IssueAuthor;
     readonly body: React.ReactNode;
     readonly replyAction?: React.ReactNode;
@@ -98,6 +99,7 @@ export const IssueActivityEvent = React.forwardRef<HTMLDivElement, IssueActivity
 export const IssueCommentCard = React.forwardRef<HTMLDivElement, IssueCommentCardProps>(
   function IssueCommentCard(
     {
+      actions,
       author,
       body,
       className,
@@ -129,9 +131,15 @@ export const IssueCommentCard = React.forwardRef<HTMLDivElement, IssueCommentCar
         <span className={cn("min-w-0 truncate text-muted-foreground", typography.control)}>
           <span className="font-medium text-foreground">{author.name}</span> commented
         </span>
-        {timestamp ? (
-          <span className={cn("shrink-0 text-right text-muted-foreground", typography.control)}>
+        {timestamp || actions ? (
+          <span
+            className={cn(
+              "flex shrink-0 items-center justify-end gap-2 text-right text-muted-foreground",
+              typography.control,
+            )}
+          >
             {timestamp}
+            {actions}
           </span>
         ) : null}
         <div className="col-start-2 col-end-4 min-w-0 overflow-hidden rounded-lg border border-border bg-elevated">

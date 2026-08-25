@@ -21,7 +21,10 @@ import {
   urlFromRequest,
 } from "../query.ts";
 import { collectionResponse, resourceResponse } from "../responses.ts";
+import { errorResponse } from "../responses.ts";
 import { meta, repositoryOpenInputFrom, runUseCase, scoped } from "../usecases.ts";
+import { RepositoryRecordOutput } from "../../schemas/AppConfigResourceEnvelope.ts";
+import { runLocalSettings } from "./settings.ts";
 import type { V1Request } from "./types.ts";
 
 export const status = () =>
@@ -65,6 +68,28 @@ export const openRepository = ({ payload }: V1Request<"openRepository">) =>
     if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
     return resourceResponse(requestId, 201, result);
+  });
+
+export const initializeRepository = ({ payload }: V1Request<"initializeRepository">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+    return yield* runLocalSettings(
+      requestId,
+      "initializeRepositoryPath",
+      RepositoryRecordOutput,
+      (settings) => settings.initializeRepositoryPath?.(payload),
+    );
+  });
+
+export const cloneRepository = ({ payload }: V1Request<"cloneRepository">) =>
+  Effect.gen(function* () {
+    const { requestId } = yield* CycleRequestContext;
+    return yield* runLocalSettings(
+      requestId,
+      "cloneRepositoryPath",
+      RepositoryRecordOutput,
+      (settings) => settings.cloneRepositoryPath?.(payload),
+    );
   });
 
 export const getRepository = ({ params }: V1Request<"getRepository">) =>
@@ -117,14 +142,92 @@ export const listRepositoryHistory = ({ params, request }: V1Request<"listReposi
     );
   });
 
-export const syncRepository = ({ params }: V1Request<"syncRepository">) =>
+export const listRepositorySyncEvents = ({
+  params,
+  request,
+}: V1Request<"listRepositorySyncEvents">) =>
   Effect.gen(function* () {
+    const runtime = yield* CycleApiRuntime;
     const { requestId } = yield* CycleRequestContext;
+    const url = urlFromRequest(request);
+    if (runtime.repositoryOperations === undefined) {
+      return collectionResponse(requestId, url, [], pageLimitFrom(url.searchParams), null);
+    }
+
+    const events = yield* Effect.tryPromise({
+      try: () => runtime.repositoryOperations!.listSyncEvents(params.repositoryId),
+      catch: (error) =>
+        errorResponse(
+          requestId,
+          500,
+          "REPOSITORY_SYNC_HISTORY_FAILED",
+          error instanceof Error ? error.message : "Unable to load repository sync history.",
+          true,
+        ),
+    }).pipe(Effect.catch((response) => Effect.succeed(response)));
+    if (HttpServerResponse.isHttpServerResponse(events)) return events;
+    const page = arrayPageFrom(events, url.searchParams);
+    return collectionResponse(requestId, url, page.entries, page.limit, page.nextCursor);
+  });
+
+export const fetchRepository = ({ params }: V1Request<"fetchRepository">) =>
+  Effect.gen(function* () {
+    const runtime = yield* CycleApiRuntime;
+    const { requestId } = yield* CycleRequestContext;
+    if (runtime.repositoryOperations === undefined) {
+      return errorResponse(
+        requestId,
+        501,
+        "REPOSITORY_FETCH_UNAVAILABLE",
+        "Fetch requires the local repository runtime.",
+        false,
+      );
+    }
+
+    const fetched = yield* Effect.tryPromise({
+      try: () => runtime.repositoryOperations!.fetch(params.repositoryId),
+      catch: (error) =>
+        errorResponse(
+          requestId,
+          500,
+          "REPOSITORY_FETCH_FAILED",
+          error instanceof Error ? error.message : "Repository fetch failed.",
+          true,
+        ),
+    }).pipe(Effect.catch((response) => Effect.succeed(response)));
+    if (HttpServerResponse.isHttpServerResponse(fetched)) return fetched;
+
     const result = yield* runUseCase(
-      RepositorySync,
+      RepositoryStatusGet,
       scoped(params.repositoryId, {}),
       meta(requestId),
     );
+    if (HttpServerResponse.isHttpServerResponse(result)) return result;
+    return resourceResponse(requestId, 202, result);
+  });
+
+export const syncRepository = ({ params }: V1Request<"syncRepository">) =>
+  Effect.gen(function* () {
+    const runtime = yield* CycleApiRuntime;
+    const { requestId } = yield* CycleRequestContext;
+    if (runtime.repositoryOperations !== undefined) {
+      const synced = yield* Effect.tryPromise({
+        try: () => runtime.repositoryOperations!.sync(params.repositoryId),
+        catch: (error) =>
+          errorResponse(
+            requestId,
+            500,
+            "REPOSITORY_SYNC_FAILED",
+            error instanceof Error ? error.message : "Repository sync failed.",
+            true,
+          ),
+      }).pipe(Effect.catch((response) => Effect.succeed(response)));
+      if (HttpServerResponse.isHttpServerResponse(synced)) return synced;
+    }
+    const result =
+      runtime.repositoryOperations === undefined
+        ? yield* runUseCase(RepositorySync, scoped(params.repositoryId, {}), meta(requestId))
+        : yield* runUseCase(RepositoryStatusGet, scoped(params.repositoryId, {}), meta(requestId));
     if (HttpServerResponse.isHttpServerResponse(result)) return result;
 
     return resourceResponse(requestId, 202, result);
@@ -132,13 +235,28 @@ export const syncRepository = ({ params }: V1Request<"syncRepository">) =>
 
 export const pushRepository = ({ params }: V1Request<"pushRepository">) =>
   Effect.gen(function* () {
+    const runtime = yield* CycleApiRuntime;
     const { requestId } = yield* CycleRequestContext;
+    if (runtime.repositoryOperations !== undefined) {
+      const pushed = yield* Effect.tryPromise({
+        try: () => runtime.repositoryOperations!.push(params.repositoryId),
+        catch: (error) =>
+          errorResponse(
+            requestId,
+            500,
+            "REPOSITORY_PUSH_FAILED",
+            error instanceof Error ? error.message : "Repository push failed.",
+            true,
+          ),
+      }).pipe(Effect.catch((response) => Effect.succeed(response)));
+      if (HttpServerResponse.isHttpServerResponse(pushed)) return pushed;
+      return resourceResponse(requestId, 202, pushed);
+    }
     const result = yield* runUseCase(
       RepositoryPush,
       scoped(params.repositoryId, {}),
       meta(requestId),
     );
     if (HttpServerResponse.isHttpServerResponse(result)) return result;
-
     return resourceResponse(requestId, 202, result);
   });

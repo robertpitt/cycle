@@ -8,8 +8,12 @@ import {
   getBootstrapStatusChannel,
   getSettingsDiagnosticsChannel,
   getThemeStateChannel,
+  openBackendLogChannel,
   OpenExternalRequest,
   openExternalChannel,
+  rebuildDatabaseChannel,
+  revealBackendLogChannel,
+  selectCloneDestinationFolderChannel,
   SelectRepositoryFolderResultSchema,
   selectRepositoryFolderChannel,
   SettingsDiagnostics,
@@ -279,6 +283,39 @@ const selectRepositoryFolder: Effect.Effect<
   };
 });
 
+const selectCloneDestinationFolder: Effect.Effect<
+  { readonly path: string; readonly status: "selected" } | { readonly status: "cancelled" },
+  ElectronError
+> = Effect.gen(function* () {
+  const result = yield* Effect.tryPromise({
+    try: async () => {
+      const window = currentDesktopWindow();
+      const options: OpenDialogOptions = {
+        buttonLabel: "Clone Here",
+        message: "Choose an empty folder where Cycle should clone the repository.",
+        properties: ["openDirectory", "createDirectory"],
+        title: "Choose Clone Destination",
+      };
+
+      return window === null
+        ? await dialog.showOpenDialog(options)
+        : await dialog.showOpenDialog(window, options);
+    },
+    catch: (cause) =>
+      new ElectronError({
+        category: "security",
+        cause,
+        message: "Unable to open clone destination picker.",
+        operation: "dialog.selectCloneDestinationFolder",
+      }),
+  });
+
+  const selectedPath = result.filePaths[0];
+  return result.canceled || selectedPath === undefined
+    ? { status: "cancelled" as const }
+    : { path: selectedPath, status: "selected" as const };
+});
+
 const registerIpcHandler = <A, B>(
   runtime: ElectronRuntimeService,
   channel: string,
@@ -343,6 +380,12 @@ export const registerDesktopIpc = Effect.gen(function* () {
 
   yield* registerIpcHandler(runtime, openExternalChannel, decodeOpenExternalRequest, (request) =>
     shell.openExternal(request.targetUrl),
+  );
+  yield* registerIpcHandler(runtime, openBackendLogChannel, decodeEmptyRequest, () =>
+    logger.path.pipe(Effect.flatMap(shell.openPath)),
+  );
+  yield* registerIpcHandler(runtime, revealBackendLogChannel, decodeEmptyRequest, () =>
+    logger.path.pipe(Effect.flatMap(shell.showItemInFolder)),
   );
   yield* registerIpcHandler(
     runtime,
@@ -455,6 +498,19 @@ export const registerDesktopIpc = Effect.gen(function* () {
     clearCacheChannel,
     decodeEmptyRequest,
     () => preferences.clearCache,
+  );
+  yield* registerIpcHandler(
+    runtime,
+    rebuildDatabaseChannel,
+    decodeEmptyRequest,
+    () => bootstrap.rebuildDatabase,
+  );
+  yield* registerIpcHandler(
+    runtime,
+    selectCloneDestinationFolderChannel,
+    decodeEmptyRequest,
+    () => selectCloneDestinationFolder,
+    SelectRepositoryFolderResultSchema,
   );
   yield* registerIpcHandler(
     runtime,

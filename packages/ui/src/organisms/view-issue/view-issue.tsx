@@ -9,10 +9,11 @@ import {
   GitBranch,
   Link as LinkIcon,
   MoreHorizontal,
+  Pencil,
   Plus,
+  Reply,
   SendHorizontal,
-  SmilePlus,
-  Tag,
+  Trash2,
   UserRound,
 } from "lucide-react";
 import * as React from "react";
@@ -37,6 +38,7 @@ import {
 } from "../../molecules/issue-editor/index.ts";
 import { IssueResourceLink } from "../../molecules/issue-resource-link/index.ts";
 import { IssueSidebarSection } from "../../molecules/issue-sidebar-section/index.ts";
+import { IssuePropertyOptionMenu } from "../../molecules/issue-property-control/index.ts";
 import {
   IssueSubIssueComposer,
   type IssueSubIssueDraft,
@@ -65,6 +67,14 @@ export type ViewIssueResource = {
   readonly title: React.ReactNode;
 };
 
+export type ViewIssueAction = {
+  readonly disabled?: boolean;
+  readonly icon?: React.ReactNode;
+  readonly id: string;
+  readonly label: string;
+  readonly onSelect: () => void;
+};
+
 export type ViewIssueActivityEvent = {
   readonly author: IssueAuthor;
   readonly body: React.ReactNode;
@@ -75,9 +85,16 @@ export type ViewIssueActivityEvent = {
 
 export type ViewIssueComment = {
   readonly author: IssueAuthor;
-  readonly body: React.ReactNode;
+  readonly archived?: boolean;
+  readonly body: string;
   readonly id: string;
   readonly occurredAt?: Date | number | string;
+  readonly parentCommentId?: string;
+  readonly reactions?: readonly {
+    readonly active: boolean;
+    readonly count: number;
+    readonly emoji: string;
+  }[];
   readonly timestamp?: React.ReactNode;
 };
 
@@ -116,14 +133,24 @@ export type ViewIssueProps = Omit<React.HTMLAttributes<HTMLDivElement>, "title">
     readonly dependencyState?: ViewIssueDependencyState;
     readonly dueDate?: React.ReactNode;
     readonly labels?: readonly ViewIssueLabel[];
+    readonly moreActions?: readonly ViewIssueAction[];
     readonly onCommentCreate?: (comment: string) => void;
+    readonly onCommentArchive?: (commentId: string) => void;
+    readonly onCommentEdit?: (commentId: string, body: string) => void;
+    readonly onCommentReactionToggle?: (commentId: string, emoji: string, active: boolean) => void;
+    readonly onCommentReply?: (commentId: string, body: string) => void;
     readonly onArchive?: () => void;
     readonly onDescriptionSave?: (description: string) => void;
     readonly onEditorCommandSelect?: (command: IssueEditorCommand) => void;
     readonly onEditorFormatSelect?: (action: IssueEditorFormatAction) => void;
     readonly onFilesSelect?: (files: FileList) => void;
+    readonly onLabelsEdit?: () => void;
     readonly onAgentDelegate?: () => void;
     readonly onSubIssueCreate?: (draft: IssueSubIssueDraft) => void;
+    readonly onRelationshipsEdit?: () => void;
+    readonly onResourceAdd?: () => void;
+    readonly onResourceEdit?: (resourceId: string) => void;
+    readonly onResourceRemove?: (resourceId: string) => void;
     readonly onTagQueryChange?: (query: string) => void;
     readonly onTagSelect?: (suggestion: IssueEditorTagSuggestion) => void;
     readonly onTitleSave?: (title: string) => void;
@@ -199,6 +226,131 @@ const RelationshipTicketGroup = ({
       ))}
     </div>
   );
+
+const commentReactionOptions = ["👍", "❤️", "🎉", "👀"] as const;
+
+const CommentTimelineCard = ({
+  comment,
+  onArchive,
+  onEdit,
+  onReactionToggle,
+  onReply,
+  referenceHandlers,
+}: {
+  readonly comment: ViewIssueComment;
+  readonly onArchive?: (commentId: string) => void;
+  readonly onEdit?: (commentId: string, body: string) => void;
+  readonly onReactionToggle?: (commentId: string, emoji: string, active: boolean) => void;
+  readonly onReply?: (commentId: string, body: string) => void;
+  readonly referenceHandlers: MarkdownReferenceHandlers;
+}) => {
+  const [editing, setEditing] = React.useState(false);
+  const [replying, setReplying] = React.useState(false);
+  const reactions = new Map(
+    (comment.reactions ?? []).map((reaction) => [reaction.emoji, reaction]),
+  );
+
+  return (
+    <div
+      className={cn(
+        "grid gap-3",
+        comment.parentCommentId && "ml-10 border-l border-border pl-4 max-sm:ml-4",
+      )}
+    >
+      <IssueCommentCard
+        {...referenceHandlers}
+        actions={
+          comment.archived ? undefined : (
+            <span className="flex items-center gap-1">
+              {onReply ? (
+                <IconButton
+                  icon={<Reply aria-hidden className="size-3.5" />}
+                  label="Reply to comment"
+                  onClick={() => setReplying((current) => !current)}
+                  size="sm"
+                  title="Reply"
+                />
+              ) : null}
+              {onEdit ? (
+                <IconButton
+                  icon={<Pencil aria-hidden className="size-3.5" />}
+                  label="Edit comment"
+                  onClick={() => setEditing((current) => !current)}
+                  size="sm"
+                  title="Edit comment"
+                />
+              ) : null}
+              {onArchive ? (
+                <IconButton
+                  icon={<Trash2 aria-hidden className="size-3.5" />}
+                  label="Archive comment"
+                  onClick={() => onArchive(comment.id)}
+                  size="sm"
+                  title="Archive comment"
+                />
+              ) : null}
+            </span>
+          )
+        }
+        author={comment.author}
+        body={comment.archived ? "_This comment was archived._" : comment.body}
+        timestamp={comment.timestamp}
+      />
+      {!comment.archived && onReactionToggle ? (
+        <div className="ml-10 flex flex-wrap items-center gap-1.5">
+          {commentReactionOptions.map((emoji) => {
+            const reaction = reactions.get(emoji);
+            return (
+              <button
+                aria-label={`${reaction?.active ? "Remove" : "Add"} ${emoji} reaction`}
+                className={cn(
+                  "rounded-full border border-border px-2 py-1 text-xs transition hover:bg-subtle",
+                  reaction?.active && "border-primary/40 bg-primary/10 text-primary",
+                )}
+                key={emoji}
+                onClick={() => onReactionToggle(comment.id, emoji, reaction?.active ?? false)}
+                type="button"
+              >
+                {emoji} {reaction?.count ?? 0}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+      {editing ? (
+        <div className="ml-10 grid gap-2">
+          <IssueCommentComposer
+            defaultValue={comment.body}
+            onSubmit={(body) => {
+              onEdit?.(comment.id, body);
+              setEditing(false);
+            }}
+            placeholder="Edit comment..."
+            submitLabel="Save comment"
+          />
+          <Button className="justify-self-start" onClick={() => setEditing(false)} variant="ghost">
+            Cancel
+          </Button>
+        </div>
+      ) : null}
+      {replying ? (
+        <div className="ml-10 grid gap-2">
+          <IssueCommentComposer
+            onSubmit={(body) => {
+              onReply?.(comment.id, body);
+              setReplying(false);
+            }}
+            placeholder="Reply to this comment..."
+            submitLabel="Send reply"
+          />
+          <Button className="justify-self-start" onClick={() => setReplying(false)} variant="ghost">
+            Cancel
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+};
 
 const defaultAuthor: IssueAuthor = {
   initials: "RP",
@@ -441,9 +593,14 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
       },
     ],
     labelsDefaultOpen = true,
+    moreActions = [],
     onAgentReferenceClick,
     onArchive,
+    onCommentArchive,
     onCommentCreate,
+    onCommentEdit,
+    onCommentReactionToggle,
+    onCommentReply,
     onCommitReferenceClick,
     onCycleReferenceClick,
     onExternalLinkClick,
@@ -451,10 +608,15 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
     onEditorCommandSelect,
     onEditorFormatSelect,
     onFilesSelect,
+    onLabelsEdit,
     onAgentDelegate,
     onIssueReferenceClick,
     onRepositoryReferenceClick,
     onSubIssueCreate,
+    onRelationshipsEdit,
+    onResourceAdd,
+    onResourceEdit,
+    onResourceRemove,
     onTagQueryChange,
     onTagSelect,
     onTitleSave,
@@ -477,7 +639,6 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
   const [subIssueComposerOpen, setSubIssueComposerOpen] = React.useState(
     defaultSubIssueComposerOpen,
   );
-  const [localComments, setLocalComments] = React.useState<readonly ViewIssueComment[]>(comments);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const properties =
     customProperties ??
@@ -488,30 +649,15 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
       status,
     });
 
-  React.useEffect(() => {
-    setLocalComments(comments);
-  }, [comments]);
-
   const openFilePicker = React.useCallback(() => {
     fileInputRef.current?.click();
   }, []);
 
   const handleCommentCreate = React.useCallback(
     (body: string) => {
-      const now = new Date().toISOString();
       onCommentCreate?.(body);
-      setLocalComments((current) => [
-        ...current,
-        {
-          author: viewer,
-          body,
-          id: `comment-${current.length + 1}`,
-          occurredAt: now,
-          timestamp: "just now",
-        },
-      ]);
     },
-    [onCommentCreate, viewer],
+    [onCommentCreate],
   );
 
   const activityTimeline = React.useMemo<readonly ActivityTimelineItem[]>(() => {
@@ -522,7 +668,7 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
         order: index,
         time: activityTime(event.occurredAt),
       })),
-      ...localComments.map((comment, index) => ({
+      ...comments.map((comment, index) => ({
         comment,
         kind: "comment" as const,
         order: activityEvents.length + index,
@@ -537,7 +683,7 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
 
       return first.order - second.order;
     });
-  }, [activityEvents, localComments]);
+  }, [activityEvents, comments]);
 
   const activityTimelineGroups = React.useMemo<readonly ActivityTimelineGroup[]>(() => {
     const groups: ActivityTimelineGroup[] = [];
@@ -667,19 +813,22 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
           ) : null}
         </section>
 
-        {dependencyState !== undefined &&
-        (dependencyState.dependencyTickets.length > 0 ||
-          dependencyState.downstreamTickets.length > 0 ||
-          dependencyState.relatedTickets.length > 0 ||
-          dependencyState.warnings.length > 0) ? (
+        {dependencyState !== undefined ? (
           <section aria-label="Relationships" className="grid gap-4">
             <div className="flex items-center justify-between gap-3">
               <h2 className={typography.sectionTitle}>Relationships</h2>
-              {dependencyState.blocked ? (
-                <span className="rounded-full bg-warning/15 px-2 py-1 text-xs font-medium text-warning">
-                  Blocked
-                </span>
-              ) : null}
+              <div className="flex items-center gap-2">
+                {dependencyState.blocked ? (
+                  <span className="rounded-full bg-warning/15 px-2 py-1 text-xs font-medium text-warning">
+                    Blocked
+                  </span>
+                ) : null}
+                {onRelationshipsEdit ? (
+                  <Button onClick={onRelationshipsEdit} size="sm" variant="outline">
+                    Manage
+                  </Button>
+                ) : null}
+              </div>
             </div>
             <RelationshipTicketGroup
               blockingIds={new Set(dependencyState.blockingTickets.map((ticket) => ticket.id))}
@@ -687,6 +836,14 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
               onSelect={onIssueReferenceClick}
               tickets={dependencyState.dependencyTickets}
             />
+            {dependencyState.dependencyTickets.length === 0 &&
+            dependencyState.downstreamTickets.length === 0 &&
+            dependencyState.relatedTickets.length === 0 &&
+            dependencyState.warnings.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted-foreground">
+                No relationships yet.
+              </div>
+            ) : null}
             <RelationshipTicketGroup
               blockingIds={
                 new Set(dependencyState.downstreamBlockedTickets.map((ticket) => ticket.id))
@@ -724,25 +881,59 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
               <ChevronDown aria-hidden className="size-4" />
               Resources
             </button>
-            <IconButton
-              icon={<Plus aria-hidden className="size-4" />}
-              label="Add resource"
-              size="sm"
-              title="Add resource"
-              variant="outline"
-            />
+            {onResourceAdd ? (
+              <IconButton
+                icon={<Plus aria-hidden className="size-4" />}
+                label="Add resource"
+                onClick={onResourceAdd}
+                size="sm"
+                title="Add resource"
+                variant="outline"
+              />
+            ) : null}
           </div>
           <div className="grid gap-2">
             {resources.map((resource) => (
-              <IssueResourceLink
-                description={resource.description}
-                favicon={resource.favicon}
-                href={resource.href}
+              <div
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2"
                 key={resource.id}
-                meta={resource.meta}
-                title={resource.title}
-              />
+              >
+                <IssueResourceLink
+                  description={resource.description}
+                  favicon={resource.favicon}
+                  href={resource.href}
+                  meta={resource.meta}
+                  title={resource.title}
+                />
+                {onResourceEdit || onResourceRemove ? (
+                  <span className="flex items-center gap-1">
+                    {onResourceEdit ? (
+                      <IconButton
+                        icon={<Pencil aria-hidden className="size-3.5" />}
+                        label="Edit resource"
+                        onClick={() => onResourceEdit(resource.id)}
+                        size="sm"
+                        title="Edit resource"
+                      />
+                    ) : null}
+                    {onResourceRemove ? (
+                      <IconButton
+                        icon={<Trash2 aria-hidden className="size-3.5" />}
+                        label="Remove resource"
+                        onClick={() => onResourceRemove(resource.id)}
+                        size="sm"
+                        title="Remove resource"
+                      />
+                    ) : null}
+                  </span>
+                ) : null}
+              </div>
             ))}
+            {resources.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted-foreground">
+                No resources yet.
+              </div>
+            ) : null}
           </div>
         </section>
 
@@ -774,18 +965,22 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
                   ))}
                 </div>
               ) : (
-                <IssueCommentCard
-                  author={group.comment.author}
-                  body={group.comment.body}
+                <CommentTimelineCard
+                  comment={group.comment}
                   key={group.id}
-                  onAgentReferenceClick={onAgentReferenceClick}
-                  onCommitReferenceClick={onCommitReferenceClick}
-                  onCycleReferenceClick={onCycleReferenceClick}
-                  onExternalLinkClick={onExternalLinkClick}
-                  onIssueReferenceClick={onIssueReferenceClick}
-                  onRepositoryReferenceClick={onRepositoryReferenceClick}
-                  onUserReferenceClick={onUserReferenceClick}
-                  timestamp={group.comment.timestamp}
+                  onArchive={onCommentArchive}
+                  onEdit={onCommentEdit}
+                  onReactionToggle={onCommentReactionToggle}
+                  onReply={onCommentReply}
+                  referenceHandlers={{
+                    onAgentReferenceClick,
+                    onCommitReferenceClick,
+                    onCycleReferenceClick,
+                    onExternalLinkClick,
+                    onIssueReferenceClick,
+                    onRepositoryReferenceClick,
+                    onUserReferenceClick,
+                  }}
                 />
               ),
             )}
@@ -827,12 +1022,15 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
         ) : null}
         <IssueSidebarSection
           actions={
-            <IconButton
-              icon={<Plus aria-hidden className="size-4" />}
-              label="Add label"
-              size="sm"
-              title="Add label"
-            />
+            onLabelsEdit ? (
+              <IconButton
+                icon={<Plus aria-hidden className="size-4" />}
+                label="Add label"
+                onClick={onLabelsEdit}
+                size="sm"
+                title="Add label"
+              />
+            ) : undefined
           }
           defaultOpen={labelsDefaultOpen}
           title="Labels"
@@ -855,22 +1053,33 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
             <span className="min-w-0 truncate">{project ?? "Add to project"}</span>
           </button>
         </IssueSidebarSection>
-        <IssueSidebarSection defaultOpen={false} title="More">
-          <div className={cn("grid gap-2 text-muted-foreground", typography.control)}>
-            <button className="flex items-center gap-2 text-left" type="button">
-              <Tag aria-hidden className={propertyIconClassName} />
-              Convert to label
-            </button>
-            <button className="flex items-center gap-2 text-left" type="button">
-              <SmilePlus aria-hidden className={propertyIconClassName} />
-              Add reaction
-            </button>
-            <button className="flex items-center gap-2 text-left" type="button">
-              <MoreHorizontal aria-hidden className={propertyIconClassName} />
-              More actions
-            </button>
-          </div>
-        </IssueSidebarSection>
+        {moreActions.length > 0 ? (
+          <IssueSidebarSection defaultOpen={false} title="More">
+            <div className={cn("grid gap-2 text-muted-foreground", typography.control)}>
+              <div className="flex items-center gap-2">
+                <IssuePropertyOptionMenu
+                  align="start"
+                  label="More issue actions"
+                  onChange={(actionId) =>
+                    moreActions.find((action) => action.id === actionId)?.onSelect()
+                  }
+                  options={moreActions.map((action) => ({
+                    disabled: action.disabled,
+                    icon: action.icon ?? (
+                      <MoreHorizontal aria-hidden className={propertyIconClassName} />
+                    ),
+                    label: action.label,
+                    value: action.id,
+                  }))}
+                  trigger={<MoreHorizontal aria-hidden className={propertyIconClassName} />}
+                  value=""
+                  widthClassName="w-[280px]"
+                />
+                <span>More actions</span>
+              </div>
+            </div>
+          </IssueSidebarSection>
+        ) : null}
       </aside>
     </div>
   );

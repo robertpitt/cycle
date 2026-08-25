@@ -67,3 +67,56 @@ export const WithComments: Story = {
       ],
     }),
 };
+
+export const CollaborationAndActions: Story = {
+  render: () =>
+    renderIssue({
+      comments: [
+        {
+          author: { initials: "RP", name: "Robert Pitt" },
+          body: "Can we preserve the existing API contract?",
+          id: "comment-1",
+          reactions: [{ active: true, count: 2, emoji: "👍" }],
+          timestamp: "12m ago",
+        },
+        {
+          author: { initials: "CA", name: "Cycle Agent" },
+          body: "Yes — the mutation can remain append-only.",
+          id: "comment-2",
+          parentCommentId: "comment-1",
+          timestamp: "8m ago",
+        },
+      ],
+      dependencyState: {
+        blocked: false,
+        blockingTickets: [],
+        dependencyTickets: [],
+        downstreamBlockedTickets: [],
+        downstreamTickets: [],
+        relatedTickets: [],
+        warnings: [],
+      },
+      labels: [{ id: "product", label: "Product" }],
+      moreActions: [
+        { id: "improve", label: "Improve with agent", onSelect: () => undefined },
+        { id: "copy", label: "Copy issue ID", onSelect: () => undefined },
+      ],
+      onCommentArchive: () => undefined,
+      onCommentEdit: () => undefined,
+      onCommentReactionToggle: () => undefined,
+      onCommentReply: () => undefined,
+      onLabelsEdit: () => undefined,
+      onRelationshipsEdit: () => undefined,
+      onResourceAdd: () => undefined,
+      onResourceEdit: () => undefined,
+      onResourceRemove: () => undefined,
+      resources: [
+        {
+          description: "https://example.com/design",
+          href: "https://example.com/design",
+          id: "design",
+          title: "Design brief",
+        },
+      ],
+    }),
+};

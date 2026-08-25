@@ -12,8 +12,10 @@ const LocalSettingsFromElectronPreferences = Layer.effect(
       effect.pipe(Effect.mapError((error) => error as AppConfigError));
 
     return LocalSettings.of({
+      cloneRepositoryPath: (input) => preferences.cloneRepositoryPath(input),
       completeOnboarding: (input) => mapConfigError(preferences.completeOnboarding(input)),
       getProfile: preferences.read.pipe(Effect.map((config) => config.profile)),
+      initializeRepositoryPath: (input) => preferences.initializeRepositoryPath(input),
       read: preferences.read,
       removeRepository: (id) => preferences.removeRepository(id),
       setInterfaceDensity: (density) => preferences.setInterfaceDensity(density),
@@ -22,6 +24,7 @@ const LocalSettingsFromElectronPreferences = Layer.effect(
       shouldAutoSyncRepository: (repositoryId) =>
         preferences.shouldAutoSyncRepository(repositoryId),
       updateAgentProviderPreference: (input) => preferences.updateAgentProviderPreference(input),
+      updateAgentWorkSettings: (input) => preferences.updateAgentWorkSettings(input),
       updateProfile: (input) => preferences.updateProfile(input),
       updateRepositoryPreferences: (input) => preferences.updateRepositoryPreferences(input),
     });

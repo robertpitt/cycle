@@ -1,16 +1,18 @@
-import { FolderPlus, LoaderCircle } from "lucide-react";
+import { FolderPlus, GitFork, LoaderCircle } from "lucide-react";
 import type * as React from "react";
 import { Button } from "../../atoms/button/index.ts";
 import { Text } from "../../atoms/text/index.ts";
 
 export type AddRepositoryPanelProps = {
   readonly error?: React.ReactNode;
+  readonly onClone?: () => void;
   readonly onSubmit: () => void;
   readonly saving?: boolean;
 };
 
 export const AddRepositoryPanel = ({
   error,
+  onClone,
   onSubmit,
   saving = false,
 }: AddRepositoryPanelProps) => (
@@ -32,19 +34,31 @@ export const AddRepositoryPanel = ({
           {error}
         </div>
       ) : null}
-      <Button
-        disabled={saving}
-        leftIcon={
-          saving ? (
-            <LoaderCircle aria-hidden className="size-4 animate-spin" />
-          ) : (
-            <FolderPlus aria-hidden className="size-4" />
-          )
-        }
-        onClick={onSubmit}
-      >
-        Choose Folder
-      </Button>
+      <div className="flex flex-wrap justify-center gap-2">
+        <Button
+          disabled={saving}
+          leftIcon={
+            saving ? (
+              <LoaderCircle aria-hidden className="size-4 animate-spin" />
+            ) : (
+              <FolderPlus aria-hidden className="size-4" />
+            )
+          }
+          onClick={onSubmit}
+        >
+          Choose Folder
+        </Button>
+        {onClone ? (
+          <Button
+            disabled={saving}
+            leftIcon={<GitFork aria-hidden className="size-4" />}
+            onClick={onClone}
+            variant="outline"
+          >
+            Clone Repository
+          </Button>
+        ) : null}
+      </div>
     </section>
   </div>
 );

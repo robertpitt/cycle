@@ -414,6 +414,24 @@ export const makeDatabaseServiceWithProjection = (
       return result;
     });
 
+  const rebuildRepository = Effect.fn("DatabaseService.rebuildRepository")(function* (
+    repositoryId: string,
+  ) {
+    yield* getRepository(repositoryId);
+    yield* sqlite("reset repository projection", () =>
+      projection.transaction(() => {
+        projection.clearRepositoryProjection(repositoryId);
+        projection.clearCycleRepositoryMetadata(repositoryId);
+        return projection.activateSnapshot({
+          completedAt: nowIso(),
+          repositoryId,
+          snapshotId: null,
+        });
+      }),
+    );
+    return yield* syncRepository(repositoryId);
+  });
+
   const writeAndSync = <A>(
     repositoryId: string,
     command: string,
@@ -2355,6 +2373,7 @@ export const makeDatabaseServiceWithProjection = (
     repositoryHistory: (repositoryId, query = {}) =>
       sqlite("repository history", () => projection.repositoryHistory(repositoryId, query)),
     pushRepository,
+    rebuildRepository,
     repositoryStatus: (repositoryId) =>
       sqlite("repository status", () => projection.repositoryStatus(repositoryId)),
     removeIssueRelation: (repositoryId, ticketId, relation, options) =>

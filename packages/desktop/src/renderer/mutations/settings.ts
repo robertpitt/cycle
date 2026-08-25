@@ -4,6 +4,7 @@ import {
   isInterfaceDensity,
   isThemePreference,
   type AgentProviderPreference,
+  type AgentWorkConfig,
   type AppConfigEncoded as AppConfigState,
   type InterfaceDensity,
   type ProfileConfig,
@@ -93,5 +94,50 @@ export const useUpdateAgentProviderPreferenceMutation = () => {
       queryClient.setQueryData(appConfigQueryKey, next);
       void queryClient.invalidateQueries({ queryKey: agentProvidersQueryKey });
     },
+  });
+};
+
+export const useUpdateAgentWorkSettingsMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (settings: Partial<AgentWorkConfig>): Promise<AppConfigState> =>
+      cycleApiClient.updateAgentWorkSettings(settings),
+    onSuccess: (next) => {
+      queryClient.setQueryData(appConfigQueryKey, next);
+    },
+  });
+};
+
+export const useOpenBackendLogMutation = () =>
+  useMutation({
+    mutationFn: async () => {
+      const bridge = getDesktopBridge();
+      if (bridge === undefined) throw new Error("Backend logs require the Cycle desktop app.");
+      await bridge.openBackendLog();
+    },
+  });
+
+export const useRevealBackendLogMutation = () =>
+  useMutation({
+    mutationFn: async () => {
+      const bridge = getDesktopBridge();
+      if (bridge === undefined) throw new Error("Backend logs require the Cycle desktop app.");
+      await bridge.revealBackendLog();
+    },
+  });
+
+export const useRebuildDatabaseMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const bridge = getDesktopBridge();
+      if (bridge === undefined) {
+        throw new Error("Database rebuild requires the Cycle desktop app.");
+      }
+      await bridge.rebuildDatabase();
+    },
+    onSuccess: () => queryClient.invalidateQueries(),
   });
 };

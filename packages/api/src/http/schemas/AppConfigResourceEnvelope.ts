@@ -73,6 +73,23 @@ export const AgentProviderPreferencePayload = strictSchema(
     preference: AgentProviderPreferencePatch,
   }),
 );
+export const AgentWorkSettingsPatch = Schema.Struct({
+  allowDisposableWorktreeForMentions: Schema.optional(Schema.Boolean),
+  allowFullAccessJobs: Schema.optional(Schema.Boolean),
+  defaultMentionAuthorityMode: Schema.optional(
+    Schema.Literals(["ticket-context", "disposable-worktree", "implementation-worktree"]),
+  ),
+  defaultModel: Schema.optional(Schema.NullOr(Schema.String)),
+  defaultProviderId: Schema.optional(Schema.NullOr(Schema.String)),
+  maxConcurrentJobs: Schema.optional(Schema.NullOr(PositiveInteger)),
+  paused: Schema.optional(Schema.Boolean),
+  perAgentOverrides: Schema.optional(JsonObject),
+});
+export const AgentWorkSettingsPayload = strictSchema(
+  Schema.Struct({
+    settings: AgentWorkSettingsPatch,
+  }),
+);
 export const ThemeConfigOutput = Schema.Struct({
   density: InterfaceDensity,
   preference: ThemePreference,
@@ -85,13 +102,35 @@ export const LocalApiConfigOutput = Schema.Struct({
 });
 export const RepositoryCommitStyle = Schema.Literals(["descriptive", "compact"]);
 export const RepositoryPreferencesOutput = Schema.Struct({
+  agentWork: Schema.Struct({
+    agentWorkDisabled: Schema.Boolean,
+    maxConcurrentJobs: Schema.NullOr(PositiveInteger),
+    model: Schema.NullOr(Schema.String),
+    paused: Schema.Boolean,
+    perAgentOverrides: JsonObject,
+    providerId: Schema.NullOr(Schema.String),
+  }),
+  archived: Schema.Boolean,
   autoSync: Schema.Boolean,
   commitStyle: RepositoryCommitStyle,
+  group: Schema.NullOr(Schema.String),
   sidebarExpanded: Schema.Boolean,
 });
 export const RepositoryPreferencesPatch = Schema.Struct({
+  agentWork: Schema.optional(
+    Schema.Struct({
+      agentWorkDisabled: Schema.optional(Schema.Boolean),
+      maxConcurrentJobs: Schema.optional(Schema.NullOr(PositiveInteger)),
+      model: Schema.optional(Schema.NullOr(Schema.String)),
+      paused: Schema.optional(Schema.Boolean),
+      perAgentOverrides: Schema.optional(JsonObject),
+      providerId: Schema.optional(Schema.NullOr(Schema.String)),
+    }),
+  ),
+  archived: Schema.optional(Schema.Boolean),
   autoSync: Schema.optional(Schema.Boolean),
   commitStyle: Schema.optional(RepositoryCommitStyle),
+  group: Schema.optional(Schema.NullOr(Schema.String)),
   sidebarExpanded: Schema.optional(Schema.Boolean),
 });
 export const RepositoryPreferencesPayload = strictSchema(
@@ -117,3 +156,4 @@ export const AppConfigResourceEnvelope = ResourceEnvelopeOf(AppConfigOutput);
 export const RepositoryRecordNullableResourceEnvelope = ResourceEnvelopeOf(
   RepositoryRecordNullableOutput,
 );
+export const RepositoryRecordResourceEnvelope = ResourceEnvelopeOf(RepositoryRecordOutput);

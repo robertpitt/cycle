@@ -14,14 +14,17 @@ const LocalSettingsFromProfile = Layer.effect(
       ) as Effect.Effect<A, AppConfigError>;
 
     return LocalSettings.of({
+      cloneRepositoryPath: unavailable,
       completeOnboarding: unavailable,
       getProfile: profile.getProfile,
+      initializeRepositoryPath: unavailable,
       read: unavailable(),
       removeRepository: unavailable,
       setInterfaceDensity: unavailable,
       setThemePreference: unavailable,
       shouldAutoSyncRepository: unavailable,
       updateAgentProviderPreference: unavailable,
+      updateAgentWorkSettings: unavailable,
       updateProfile: (input) => profile.updateProfile(input),
       updateRepositoryPreferences: unavailable,
     });

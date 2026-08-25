@@ -69,6 +69,55 @@ const createRepositoryNavItems = (repositories: readonly RepositoryRecord[]) =>
     ];
   });
 
+const createRepositoryNavSections = (
+  repositories: readonly RepositoryRecord[],
+  repositoryAction: AppShellNavSection["action"] | undefined,
+): readonly AppShellNavSection[] => {
+  const activeGroups = new Map<string, RepositoryRecord[]>();
+  const archived: RepositoryRecord[] = [];
+
+  for (const repository of repositories) {
+    if (repository.preferences.archived) {
+      archived.push(repository);
+      continue;
+    }
+    const group = repository.preferences.group?.trim() || "Repositories";
+    activeGroups.set(group, [...(activeGroups.get(group) ?? []), repository]);
+  }
+
+  const groups = [...activeGroups.entries()].sort(([left], [right]) => {
+    if (left === "Repositories") return -1;
+    if (right === "Repositories") return 1;
+    return left.localeCompare(right);
+  });
+  const sections: AppShellNavSection[] = groups.map(([title, groupedRepositories], index) => ({
+    ...(index === 0 ? { action: repositoryAction } : {}),
+    id: `repositories:${title.toLowerCase().replace(/[^a-z0-9]+/gu, "-")}`,
+    items: createRepositoryNavItems(groupedRepositories),
+    title,
+  }));
+
+  if (archived.length > 0) {
+    sections.push({
+      ...(sections.length === 0 ? { action: repositoryAction } : {}),
+      id: "repositories:archived",
+      items: createRepositoryNavItems(archived),
+      title: "Archived repositories",
+    });
+  }
+
+  if (sections.length === 0) {
+    sections.push({
+      action: repositoryAction,
+      id: "repositories",
+      items: [],
+      title: "Repositories",
+    });
+  }
+
+  return sections;
+};
+
 type RendererNavOptions = {
   readonly inboxUnreadCount?: number;
   readonly repositoryAction?: AppShellNavSection["action"];
@@ -114,12 +163,7 @@ export const createRendererNavSections = (
       ],
       title: "Workspace",
     },
-    {
-      action: options.repositoryAction,
-      id: "repositories",
-      items: createRepositoryNavItems(repositories),
-      title: "Repositories",
-    },
+    ...createRepositoryNavSections(repositories, options.repositoryAction),
   ] satisfies readonly AppShellNavSection[];
 
 export const defaultApplicationSettingsSection = "general" satisfies ApplicationSettingsSection;

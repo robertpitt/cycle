@@ -9,6 +9,11 @@ import {
   type ElectronThemeState,
 } from "./ElectronTheme.ts";
 import type { AppConfigError } from "@cycle/config";
+import type { AgentWorkSettingsPatch } from "@cycle/backend/settings";
+import type {
+  CloneRepositoryPathInput,
+  InitializeRepositoryPathInput,
+} from "@cycle/backend/workspace";
 import type {
   AppConfigState,
   InterfaceDensity,
@@ -20,11 +25,17 @@ import type {
 import { type CompleteOnboardingInput, type ProfileUpdateInput } from "./shared/Profile.ts";
 
 export type ElectronPreferencesService = {
+  readonly cloneRepositoryPath: (
+    input: CloneRepositoryPathInput,
+  ) => Effect.Effect<RepositoryRecord, AppConfigError>;
   readonly clearCache: Effect.Effect<void, ElectronError>;
   readonly completeOnboarding: (
     input: CompleteOnboardingInput,
   ) => Effect.Effect<AppConfigState, AppConfigError | ElectronError>;
   readonly read: Effect.Effect<AppConfigState, AppConfigError>;
+  readonly initializeRepositoryPath: (
+    input: InitializeRepositoryPathInput,
+  ) => Effect.Effect<RepositoryRecord, AppConfigError>;
   readonly removeRepository: (id: string) => Effect.Effect<AppConfigState, AppConfigError>;
   readonly setInterfaceDensity: (
     density: InterfaceDensity,
@@ -56,6 +67,9 @@ export type ElectronPreferencesService = {
       readonly maxConcurrentRuns?: number | null;
     };
   }) => Effect.Effect<AppConfigState, AppConfigError>;
+  readonly updateAgentWorkSettings: (
+    input: AgentWorkSettingsPatch,
+  ) => Effect.Effect<AppConfigState, AppConfigError>;
 };
 
 export class ElectronPreferences extends Context.Service<
@@ -84,12 +98,14 @@ export class ElectronPreferences extends Context.Service<
       );
 
       return {
+        cloneRepositoryPath: (input) => settings.cloneRepositoryPath(input),
         clearCache,
         completeOnboarding: (input) =>
           settings
             .completeOnboarding(input)
             .pipe(Effect.tap(() => electronTheme.setSource(input.themePreference))),
         read: settings.read,
+        initializeRepositoryPath: (input) => settings.initializeRepositoryPath(input),
         removeRepository: (id) => settings.removeRepository(id),
         setInterfaceDensity: (density) => settings.setInterfaceDensity(density),
         setThemePreference: (preference) =>
@@ -104,6 +120,7 @@ export class ElectronPreferences extends Context.Service<
         updateProfile: (input) => settings.updateProfile(input),
         updateRepositoryPreferences: (input) => settings.updateRepositoryPreferences(input),
         updateAgentProviderPreference: (input) => settings.updateAgentProviderPreference(input),
+        updateAgentWorkSettings: (input) => settings.updateAgentWorkSettings(input),
       };
     }),
   );

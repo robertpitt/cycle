@@ -33,6 +33,7 @@ export * from "./RecordPage.ts";
 export * from "./RepositoryMetadata.ts";
 export * from "./RepositoryRemote.ts";
 export * from "./RepositoryStatus.ts";
+export * from "./RepositorySyncEvent.ts";
 export * from "./SavedViewDocument.ts";
 export * from "./SavedViewPage.ts";
 export * from "./SyncPointer.ts";

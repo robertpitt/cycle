@@ -15,7 +15,11 @@ import { Data, Effect, Layer } from "effect";
 import { GitStoresTestLive } from "@cycle/git-store/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { ElectronRuntimeLive } from "../src/ElectronRuntime.ts";
-import { defaultAppConfigState, type RepositoryRecord } from "@cycle/config";
+import {
+  defaultAppConfigState,
+  defaultRepositoryPreferences,
+  type RepositoryRecord,
+} from "@cycle/config";
 import { RepositoryBootstrap as DesktopBootstrap } from "@cycle/backend/bootstrap";
 import { LocalWorkspace } from "@cycle/backend/workspace";
 import { DesktopBootstrapLive } from "../src/DesktopBootstrapLive.ts";
@@ -57,9 +61,8 @@ const makeRepository = (path: string): RepositoryRecord => ({
   id: "repo-test",
   path,
   preferences: {
+    ...defaultRepositoryPreferences(),
     autoSync: false,
-    commitStyle: "descriptive",
-    sidebarExpanded: true,
   },
 });
 
@@ -270,13 +273,16 @@ const makeLayer = (
 
   const preferences = Layer.succeed(ElectronPreferences)(
     ElectronPreferences.of({
+      cloneRepositoryPath: () => Effect.die("not implemented"),
       clearCache: Effect.void,
       completeOnboarding: () => Effect.succeed(config),
       read: Effect.succeed(config),
+      initializeRepositoryPath: () => Effect.die("not implemented"),
       removeRepository: () => Effect.succeed(config),
       setInterfaceDensity: () => Effect.succeed(config),
       setThemePreference: () => Effect.succeed(config),
       updateAgentProviderPreference: () => Effect.succeed(config),
+      updateAgentWorkSettings: () => Effect.succeed(config),
       shouldAutoSyncRepository: () =>
         Effect.sync(() => {
           events.push("shouldAutoSyncRepository");
@@ -324,6 +330,7 @@ const makeLayer = (
 
   const git = Layer.succeed(GitRepository)(
     GitRepository.of({
+      clone: () => Effect.die("not implemented"),
       ensure: (repositoryPath) =>
         Effect.succeed({ cwd: repositoryPath, gitDir: gitDirFor(repositoryPath) }),
       init: (repositoryPath) =>
@@ -370,6 +377,7 @@ const makeLayer = (
 
   const localWorkspace = Layer.succeed(LocalWorkspace)(
     LocalWorkspace.of({
+      cloneRepositoryPath: () => Effect.die("not implemented"),
       initializeRepositoryPath: (input) =>
         Effect.succeed(
           repositories.find((repository) => repository.path === input.path) ??

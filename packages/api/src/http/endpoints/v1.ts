@@ -6,6 +6,7 @@ import {
 } from "../schemas/AgentProvidersResourceEnvelope.ts";
 import {
   AgentProviderPreferencePayload,
+  AgentWorkSettingsPayload,
   AppConfigResourceEnvelope,
   CompleteOnboardingPayload,
   InterfaceDensityPayload,
@@ -13,6 +14,7 @@ import {
   ProfileUpdatePayload,
   RepositoryPreferencesPayload,
   RepositoryRecordNullableResourceEnvelope,
+  RepositoryRecordResourceEnvelope,
   ThemePreferencePayload,
 } from "../schemas/AppConfigResourceEnvelope.ts";
 import {
@@ -142,9 +144,12 @@ import {
   RepositoryCollectionQuery,
   RepositoryHistoryCollectionEnvelope,
   RepositoryHistoryQuery,
+  RepositoryClonePayload,
+  RepositoryInitializePayload,
   RepositoryOpenPayload,
   RepositoryParams,
   RepositoryPushAcceptedEnvelope,
+  RepositorySyncEventCollectionEnvelope,
   RepositoryStatusAcceptedEnvelope,
   RepositoryStatusCollectionEnvelope,
   RepositoryStatusCreatedEnvelope,
@@ -169,6 +174,14 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
       payload: RepositoryOpenPayload,
       success: RepositoryStatusCreatedEnvelope,
     }),
+    HttpApiEndpoint.post("initializeRepository", "/v1/repositories/initialize", {
+      payload: RepositoryInitializePayload,
+      success: RepositoryRecordResourceEnvelope,
+    }),
+    HttpApiEndpoint.post("cloneRepository", "/v1/repositories/clone", {
+      payload: RepositoryClonePayload,
+      success: RepositoryRecordResourceEnvelope,
+    }),
     HttpApiEndpoint.get("getRepository", "/v1/repositories/:repositoryId", {
       params: RepositoryParams,
       success: RepositoryStatusResourceEnvelope,
@@ -182,6 +195,15 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
       params: RepositoryParams,
       query: RepositoryHistoryQuery.fields,
       success: RepositoryHistoryCollectionEnvelope,
+    }),
+    HttpApiEndpoint.get("listRepositorySyncEvents", "/v1/repositories/:repositoryId/sync-events", {
+      params: RepositoryParams,
+      query: RepositoryWarningQuery.fields,
+      success: RepositorySyncEventCollectionEnvelope,
+    }),
+    HttpApiEndpoint.post("fetchRepository", "/v1/repositories/:repositoryId/fetch", {
+      params: RepositoryParams,
+      success: RepositoryStatusAcceptedEnvelope,
     }),
     HttpApiEndpoint.post("syncRepository", "/v1/repositories/:repositoryId/sync", {
       params: RepositoryParams,
@@ -205,6 +227,10 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
         success: AppConfigResourceEnvelope,
       },
     ),
+    HttpApiEndpoint.patch("updateAgentWorkSettings", "/v1/agents/preferences", {
+      payload: AgentWorkSettingsPayload,
+      success: AppConfigResourceEnvelope,
+    }),
     HttpApiEndpoint.post("createAgentTask", "/v1/agent-tasks", {
       payload: AgentTaskCreatePayload,
       success: AgentTaskAcceptedEnvelope,
@@ -450,33 +476,21 @@ export class V1ApiGroup extends HttpApiGroup.make("v1", { topLevel: true })
       payload: PageUpdatePayload,
       success: HttpPageResourceEnvelope,
     }),
-    HttpApiEndpoint.post(
-      "archivePage",
-      "/v1/repositories/:repositoryId/pages/:pageId/archive",
-      {
-        params: PageParams,
-        payload: PageArchivePayload,
-        success: HttpPageResourceEnvelope,
-      },
-    ),
-    HttpApiEndpoint.post(
-      "restorePage",
-      "/v1/repositories/:repositoryId/pages/:pageId/restore",
-      {
-        params: PageParams,
-        payload: PageRestorePayload,
-        success: HttpPageResourceEnvelope,
-      },
-    ),
-    HttpApiEndpoint.get(
-      "listPageHistory",
-      "/v1/repositories/:repositoryId/pages/:pageId/history",
-      {
-        params: PageParams,
-        query: PageHistoryQueryParams,
-        success: HttpPageHistoryCollectionEnvelope,
-      },
-    ),
+    HttpApiEndpoint.post("archivePage", "/v1/repositories/:repositoryId/pages/:pageId/archive", {
+      params: PageParams,
+      payload: PageArchivePayload,
+      success: HttpPageResourceEnvelope,
+    }),
+    HttpApiEndpoint.post("restorePage", "/v1/repositories/:repositoryId/pages/:pageId/restore", {
+      params: PageParams,
+      payload: PageRestorePayload,
+      success: HttpPageResourceEnvelope,
+    }),
+    HttpApiEndpoint.get("listPageHistory", "/v1/repositories/:repositoryId/pages/:pageId/history", {
+      params: PageParams,
+      query: PageHistoryQueryParams,
+      success: HttpPageHistoryCollectionEnvelope,
+    }),
     HttpApiEndpoint.get(
       "getPageRevision",
       "/v1/repositories/:repositoryId/pages/:pageId/revisions/:snapshotId",

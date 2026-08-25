@@ -10,6 +10,7 @@ export * from "./initial-setup/index.ts";
 export * from "./initial-setup-screen/index.ts";
 export * from "./inbox-list/index.ts";
 export * from "./issues-list/index.ts";
+export * from "./issues-board/index.ts";
 export * from "./issues-sidebar/index.ts";
 export * from "./issues-toolbar/index.ts";
 export * from "./pages-area/index.ts";

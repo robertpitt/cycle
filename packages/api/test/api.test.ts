@@ -755,6 +755,16 @@ describe("@cycle/api", () => {
 
   it("serves local app config and profile updates through the authenticated API", async () => {
     let appConfig = {
+      agentWork: {
+        allowDisposableWorktreeForMentions: true,
+        allowFullAccessJobs: true,
+        defaultMentionAuthorityMode: "ticket-context" as const,
+        defaultModel: null,
+        defaultProviderId: null,
+        maxConcurrentJobs: null,
+        paused: false,
+        perAgentOverrides: {},
+      },
       agentProviders: {
         preferences: [] as TestAgentProviderPreference[],
       },
@@ -773,8 +783,18 @@ describe("@cycle/api", () => {
             id: "cycle",
             path: "/tmp/cycle",
             preferences: {
+              agentWork: {
+                agentWorkDisabled: false,
+                maxConcurrentJobs: null,
+                model: null,
+                paused: false,
+                perAgentOverrides: {},
+                providerId: null,
+              },
+              archived: false,
               autoSync: true,
               commitStyle: "descriptive",
+              group: null,
               sidebarExpanded: true,
             },
           },

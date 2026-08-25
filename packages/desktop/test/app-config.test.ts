@@ -328,6 +328,16 @@ describe("desktop app config", () => {
     assert.equal(result.first.gitDbRootCommitId, rootCommit);
     assert.equal(result.first.preferences.autoSync, true);
     assert.equal(result.first.preferences.commitStyle, "descriptive");
+    assert.equal(result.first.preferences.archived, false);
+    assert.equal(result.first.preferences.group, null);
+    assert.deepEqual(result.first.preferences.agentWork, {
+      agentWorkDisabled: false,
+      maxConcurrentJobs: null,
+      model: null,
+      paused: false,
+      perAgentOverrides: {},
+      providerId: null,
+    });
     assert.equal(result.first.preferences.sidebarExpanded, true);
     assert.equal(result.second.displayName, "Renamed project");
     assert.equal(result.collapsed?.preferences.sidebarExpanded, false);
@@ -429,6 +439,38 @@ describe("desktop app config", () => {
     assert.equal(repository.path, repositoryPath);
     assert.equal(repository.id, repositoryIdForCycleRoot(rootCommit));
     assert.equal(repository.gitDbRootCommitId, rootCommit);
+    assert.equal(config.localWorkspace.repositories[0]?.id, repository.id);
+  });
+
+  it("clones a repository into a selected folder before adding it", async () => {
+    const userData = await makeTempDir();
+    const sourcePath = join(userData, "source");
+    const destinationPath = join(userData, "cloned");
+    await mkdir(sourcePath);
+    await execFileAsync("git", ["init", "--initial-branch=main"], { cwd: sourcePath });
+    await execFileAsync("git", ["config", "user.name", "Test User"], { cwd: sourcePath });
+    await execFileAsync("git", ["config", "user.email", "test@example.com"], {
+      cwd: sourcePath,
+    });
+    await writeFile(join(sourcePath, "README.md"), "# cloned\n", "utf8");
+    await execFileAsync("git", ["add", "README.md"], { cwd: sourcePath });
+    await execFileAsync("git", ["commit", "-m", "Initial commit"], { cwd: sourcePath });
+    await mkdir(destinationPath);
+
+    const repository = await runServices(
+      userData,
+      Effect.gen(function* () {
+        const workspace = yield* LocalWorkspace;
+        return yield* workspace.cloneRepositoryPath({
+          path: destinationPath,
+          remoteUrl: sourcePath,
+        });
+      }),
+    );
+
+    assert.equal(await readFile(join(destinationPath, "README.md"), "utf8"), "# cloned\n");
+    assert.equal(repository.path, destinationPath);
+    const config = await readPersistedConfig(userData);
     assert.equal(config.localWorkspace.repositories[0]?.id, repository.id);
   });
 

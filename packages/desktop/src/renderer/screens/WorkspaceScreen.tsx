@@ -39,6 +39,7 @@ import { createMarkdownTagSuggestions } from "../lib/markdownTagSuggestions.ts";
 import {
   useAddRepositoryMutation,
   useCompleteOnboardingMutation,
+  useCloneRepositoryMutation,
   useCreateIssueMutation,
   useInitialiseRepositoryMutation,
   useUpdateRepositoryPreferencesMutation,
@@ -320,6 +321,21 @@ export const WorkspaceScreen = () => {
     onErrorMessage: setRepositoryInitialiseError,
     onInitialised: () => setRepositoryInitialiseRequest(null),
   });
+  const cloneRepository = useCloneRepositoryMutation();
+
+  const beginCloneRepository = React.useCallback(() => {
+    const remoteUrl = window.prompt("Git repository URL");
+    const normalized = remoteUrl?.trim();
+    if (!normalized) return;
+
+    setRepositoryImportError(undefined);
+    cloneRepository.mutate(normalized, {
+      onError: (error) =>
+        setRepositoryImportError(
+          error instanceof Error ? error.message : "Unable to clone repository.",
+        ),
+    });
+  }, [cloneRepository]);
 
   const updateRepositoryPreferences = useUpdateRepositoryPreferencesMutation({
     appConfig: appConfigQuery.data,
@@ -1243,6 +1259,7 @@ export const WorkspaceScreen = () => {
               {isApplicationSettingsPage && appConfigQuery.data && isRepositorySettingsIndexPage ? (
                 <RepositorySettingsIndexPanel
                   bootstrapStatus={bootstrapStatusQuery.data}
+                  onCloneRepository={beginCloneRepository}
                   onRepositorySelect={(repositoryId) =>
                     navigateWorkspace({
                       page: "settings",
@@ -1304,6 +1321,7 @@ export const WorkspaceScreen = () => {
                 />
               ) : hasRepositories && isIssueDetailPage ? (
                 <ViewIssuePanel
+                  agentWork={appConfigQuery.data?.agentWork}
                   agentProviders={detectedAgentProviders}
                   issueId={selectedIssueId}
                   onArchived={navigateToParent}
@@ -1425,8 +1443,9 @@ export const WorkspaceScreen = () => {
               ) : (
                 <AddRepositoryStep
                   error={repositoryImportError}
+                  onClone={beginCloneRepository}
                   onSubmit={chooseRepositoryFolder}
-                  saving={addRepository.isPending}
+                  saving={addRepository.isPending || cloneRepository.isPending}
                 />
               )}
               {activeRepository &&

@@ -11,6 +11,10 @@ import type {
 } from "./GitSchemas.ts";
 
 export type GitRepositoryServiceShape = {
+  readonly clone: (input: {
+    readonly remoteUrl: string;
+    readonly repositoryPath: string;
+  }) => Effect.Effect<GitRepositoryRef, GitRepositoryError>;
   readonly ensure: (repositoryPath: string) => Effect.Effect<GitRepositoryRef, GitRepositoryError>;
   readonly init: (repositoryPath: string) => Effect.Effect<GitRepositoryRef, GitRepositoryError>;
   readonly inspect: (
@@ -113,6 +117,37 @@ export const GitRepositoryLive = Layer.effect(
       });
 
     return GitRepository.of({
+      clone: (input) =>
+        Effect.gen(function* () {
+          const cwd = normalize(input.repositoryPath);
+          const remoteUrl = input.remoteUrl.trim();
+          const containsInvalidControlCharacter = ["\u0000", "\n", "\r"].some((character) =>
+            remoteUrl.includes(character),
+          );
+          if (remoteUrl.length === 0 || containsInvalidControlCharacter) {
+            return yield* new GitRepositoryError({
+              operation: "git clone",
+              path: cwd,
+              message: "Git repository URL is invalid.",
+            });
+          }
+
+          const parent = path.dirname(cwd);
+          const destination = path.basename(cwd);
+          yield* gitRaw(spawner, parent, ["clone", "--", remoteUrl, destination]).pipe(
+            Effect.mapError(
+              (cause) =>
+                new GitRepositoryError({
+                  operation: "git clone",
+                  path: cwd,
+                  message: "Unable to clone Git repository.",
+                  cause,
+                }),
+            ),
+          );
+
+          return yield* ensure(cwd);
+        }),
       ensure,
       init: (repositoryPath) =>
         Effect.gen(function* () {
