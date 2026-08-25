@@ -6,7 +6,9 @@ describe("create issue form", () => {
   it("clears repository-scoped selections when switching repositories", () => {
     assert.deepEqual(getCreateIssueRepositorySelectionPatch("repo-b"), {
       assignee: null,
+      externalLinks: [],
       labels: [],
+      parent: null,
       project: null,
       repositoryId: "repo-b",
       template: null,

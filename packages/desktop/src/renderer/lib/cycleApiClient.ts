@@ -86,8 +86,10 @@ type SupportedCycleApiAlias = Extract<
   | "ticket.template.list"
   | "ticket.user.list"
   | "ticket.view.create"
+  | "ticket.view.delete"
   | "ticket.view.get"
   | "ticket.view.list"
+  | "ticket.view.update"
 >;
 
 type ApiDiscovery = {
@@ -1371,6 +1373,14 @@ export const cycleApiClient = {
       await unknownResource("POST", `/v1/agent-tasks/${encodeSegment(taskId)}/retry`, {}),
     ),
 
+  appendAgentTaskInput: async (taskId: string, input: string): Promise<AgentTask | null> =>
+    parseAgentTask(
+      await unknownResource("POST", `/v1/agent-tasks/${encodeSegment(taskId)}/input`, {
+        input,
+        requestedBy: "user",
+      }),
+    ),
+
   openRepositoryPath: (input: OpenRepositoryPathInput): Promise<RepositoryStatus> =>
     resource("POST", "/v1/repositories", ContractSchemas.RepositoryStatus, input),
 
@@ -1598,6 +1608,26 @@ export const cycleApiClient = {
           "GET",
           `${base}/views/${encodeSegment(viewId)}`,
           ContractSchemas.SavedViewDocument,
+        ) as Promise<UseCaseSuccessesByAlias[Alias]>;
+      }
+
+      case "ticket.view.update": {
+        const viewId = viewIdFromInput(input);
+        return resource(
+          "PATCH",
+          `${base}/views/${encodeSegment(viewId)}`,
+          ContractSchemas.SavedViewDocument,
+          isRecord(input.patch) ? input.patch : {},
+        ) as Promise<UseCaseSuccessesByAlias[Alias]>;
+      }
+
+      case "ticket.view.delete": {
+        const viewId = viewIdFromInput(input);
+        return resource(
+          "POST",
+          `${base}/views/${encodeSegment(viewId)}/archive`,
+          ContractSchemas.SavedViewDocument,
+          {},
         ) as Promise<UseCaseSuccessesByAlias[Alias]>;
       }
 

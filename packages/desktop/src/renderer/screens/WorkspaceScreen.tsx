@@ -260,8 +260,7 @@ export const WorkspaceScreen = () => {
   const isWorkItemsPage = isIssuesPage || isInitiativesPage || isSavedViewDetailPage;
   const activeRepository =
     routeRepositoryId === undefined
-      ? workspaceLocation.scope === "workspace" &&
-        (workspaceLocation.page === "initiatives" || workspaceLocation.page === "views")
+      ? workspaceLocation.scope === "workspace" && workspaceLocation.page === "views"
         ? repositories[0]
         : undefined
       : repositories.find((repository) => repository.id === routeRepositoryId);
@@ -420,6 +419,7 @@ export const WorkspaceScreen = () => {
   const createIssueOptions = React.useMemo(
     () =>
       createIssueDialogOptionSections({
+        issues: createIssueSuggestionsQuery.data?.entries,
         labels: labelListQuery.data?.entries,
         profile: appConfigQuery.data?.profile,
         repository: createIssueRepository,
@@ -429,6 +429,7 @@ export const WorkspaceScreen = () => {
     [
       appConfigQuery.data?.profile,
       createIssueRepository,
+      createIssueSuggestionsQuery.data?.entries,
       labelListQuery.data?.entries,
       templateListQuery.data?.entries,
       userListQuery.data?.entries,
@@ -1031,7 +1032,9 @@ export const WorkspaceScreen = () => {
         body: draft.body,
         dueDate: draft.dueDate,
         estimate: draft.estimate,
+        externalLinks: createIssueForm.values.externalLinks,
         labels: createIssueForm.values.labels,
+        parent: createIssueForm.values.parent,
         priority: createIssueForm.values.priority,
         status: createIssueForm.values.status,
         title: draft.title,
@@ -1386,7 +1389,9 @@ export const WorkspaceScreen = () => {
                   profile={appConfigQuery.data?.profile}
                   query={isInitiativesPage ? { type: "epic" } : {}}
                   repositoryId={issueRepository?.id}
-                  repositoryIds={isGlobalIssuesPage ? repositoryIds : undefined}
+                  repositoryIds={
+                    isGlobalIssuesPage || isInitiativesPage ? repositoryIds : undefined
+                  }
                   repositories={repositories}
                   savedViewId={selectedSavedView?.id}
                   selectedIssueId={selectedIssueId}
@@ -1503,6 +1508,7 @@ export const WorkspaceScreen = () => {
           dueDate={createIssueForm.values.dueDate}
           error={createIssueForm.values.error}
           estimate={createIssueForm.values.estimate}
+          externalLinks={createIssueForm.values.externalLinks}
           labelSections={createIssueOptions.labelSections}
           labels={createIssueForm.values.labels}
           moreSections={createIssueOptions.moreSections}
@@ -1516,11 +1522,39 @@ export const WorkspaceScreen = () => {
           onDraftSubmit={submitCreateIssueDraft}
           onDueDateChange={createIssueForm.setDueDate}
           onEstimateChange={createIssueForm.setEstimate}
+          onExternalLinkRemove={(index) =>
+            createIssueForm.setExternalLinks(
+              createIssueForm.values.externalLinks.filter(
+                (_, externalLinkIndex) => externalLinkIndex !== index,
+              ),
+            )
+          }
           onLabelsChange={createIssueForm.setLabels}
           onModeChange={createIssueForm.setMode}
-          onMoreAction={(actionId) =>
-            createIssueForm.setError(defaultCreateIssueMoreActionMessage(actionId))
-          }
+          onMoreAction={(actionId) => {
+            if (actionId === "link") {
+              const url = window.prompt("External link URL")?.trim();
+              if (!url) return;
+              try {
+                const parsed = new URL(url);
+                if (!["http:", "https:"].includes(parsed.protocol)) {
+                  throw new Error("Unsupported URL protocol");
+                }
+              } catch {
+                createIssueForm.setError("Enter a valid HTTP or HTTPS URL.");
+                return;
+              }
+              const title = window.prompt("Link title (optional)")?.trim();
+              createIssueForm.setExternalLinks([
+                ...createIssueForm.values.externalLinks,
+                { ...(title ? { title } : {}), url },
+              ]);
+              createIssueForm.setError(undefined);
+              return;
+            }
+            createIssueForm.setError(defaultCreateIssueMoreActionMessage(actionId));
+          }}
+          onParentChange={createIssueForm.setParent}
           onPriorityChange={createIssueForm.setPriority}
           onProjectChange={createIssueForm.setProject}
           onRepositoryChange={selectCreateIssueRepository}
@@ -1529,6 +1563,8 @@ export const WorkspaceScreen = () => {
           onTitleChange={createIssueForm.setTitle}
           onTypeChange={createIssueForm.setType}
           priority={createIssueForm.values.priority}
+          parent={createIssueForm.values.parent}
+          parentSections={createIssueOptions.parentSections}
           prioritySections={createIssueOptions.prioritySections}
           project={createIssueForm.values.project}
           projectSections={createIssueOptions.projectSections}

@@ -139,6 +139,9 @@ export type ViewIssueProps = Omit<React.HTMLAttributes<HTMLDivElement>, "title">
     readonly onCommentEdit?: (commentId: string, body: string) => void;
     readonly onCommentReactionToggle?: (commentId: string, emoji: string, active: boolean) => void;
     readonly onCommentReply?: (commentId: string, body: string) => void;
+    readonly onCopyIssueId?: () => void;
+    readonly onCopyIssueLink?: () => void;
+    readonly onCreateBranch?: () => void;
     readonly onArchive?: () => void;
     readonly onDescriptionSave?: (description: string) => void;
     readonly onEditorCommandSelect?: (command: IssueEditorCommand) => void;
@@ -428,31 +431,43 @@ const ViewIssueActions = ({
   archivePending,
   onAgentDelegate,
   onArchive,
+  onCopyIssueId,
+  onCopyIssueLink,
+  onCreateBranch,
 }: {
   readonly archiveDisabled?: boolean;
   readonly archiveLabel?: string;
   readonly archivePending?: boolean;
   readonly onAgentDelegate?: () => void;
   readonly onArchive?: () => void;
+  readonly onCopyIssueId?: () => void;
+  readonly onCopyIssueLink?: () => void;
+  readonly onCreateBranch?: () => void;
 }) => (
   <div className="flex items-center justify-end gap-2">
     <IconButton
+      disabled={!onCopyIssueLink}
       icon={<LinkIcon aria-hidden className="size-4" />}
       label="Copy issue link"
+      onClick={onCopyIssueLink}
       size="sm"
       title="Copy issue link"
       variant="outline"
     />
     <IconButton
+      disabled={!onCopyIssueId}
       icon={<Copy aria-hidden className="size-4" />}
       label="Copy issue ID"
+      onClick={onCopyIssueId}
       size="sm"
       title="Copy issue ID"
       variant="outline"
     />
     <IconButton
+      disabled={!onCreateBranch}
       icon={<GitBranch aria-hidden className="size-4" />}
       label="Create branch"
+      onClick={onCreateBranch}
       size="sm"
       title="Create branch"
       variant="outline"
@@ -477,14 +492,6 @@ const ViewIssueActions = ({
         variant="outline"
       />
     ) : null}
-    <Button
-      className="h-8 rounded-full px-2"
-      rightIcon={<ChevronDown aria-hidden className="size-4" />}
-      size="sm"
-      variant="outline"
-    >
-      <span className="sr-only">Issue actions</span>
-    </Button>
   </div>
 );
 
@@ -601,6 +608,9 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
     onCommentEdit,
     onCommentReactionToggle,
     onCommentReply,
+    onCopyIssueId,
+    onCopyIssueLink,
+    onCreateBranch,
     onCommitReferenceClick,
     onCycleReferenceClick,
     onExternalLinkClick,
@@ -1003,6 +1013,9 @@ export const ViewIssue = React.forwardRef<HTMLDivElement, ViewIssueProps>(functi
           archivePending={archivePending}
           onAgentDelegate={onAgentDelegate}
           onArchive={onArchive}
+          onCopyIssueId={onCopyIssueId}
+          onCopyIssueLink={onCopyIssueLink}
+          onCreateBranch={onCreateBranch}
         />
         <IssueSidebarSection
           className="overflow-visible"

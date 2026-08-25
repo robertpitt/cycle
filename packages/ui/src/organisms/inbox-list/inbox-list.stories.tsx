@@ -68,6 +68,9 @@ const meta = {
   args: {
     count: "3 unread · 3 shown",
     entries,
+    onArchiveSelected: () => undefined,
+    onMarkSelectedRead: () => undefined,
+    onMarkSelectedUnread: () => undefined,
     repositories,
     title: "Inbox",
   },

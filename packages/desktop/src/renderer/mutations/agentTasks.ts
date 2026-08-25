@@ -39,6 +39,27 @@ export const useRetryAgentTaskMutation = () => {
   });
 };
 
+export const useAppendAgentTaskInputMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ input, taskId }: { readonly input: string; readonly taskId: string }) => {
+      const trimmedInput = input.trim();
+      if (!trimmedInput) throw new Error("Enter task input before sending.");
+      return cycleApiClient.appendAgentTaskInput(taskId, trimmedInput);
+    },
+    onSuccess: (task) => {
+      void queryClient.invalidateQueries({ queryKey: agentTaskEventsQueryKey(task?.taskId) });
+      void queryClient.invalidateQueries({
+        queryKey: agentTasksQueryKey({
+          repositoryId: originField(task, "repositoryId"),
+          ticketId: originField(task, "ticketId"),
+        }),
+      });
+    },
+  });
+};
+
 export const useStartIssueAgentTaskMutation = (input: {
   readonly issueId?: string;
   readonly repositoryId?: string;

@@ -63,6 +63,7 @@ export const InboxPanel = ({ onIssueSelect, profile, repositories }: InboxPanelP
   const inboxQuery = useInboxListInfiniteQuery(query);
   const inboxSummaryQuery = useInboxSummaryQuery(summaryQuery);
   const markRead = useInboxMutation({ kind: "markRead" });
+  const markUnread = useInboxMutation({ kind: "markUnread" });
   const archive = useInboxMutation({ kind: "archive" });
   const inboxEntries = inboxListEntriesFromPages(inboxQuery.data);
   const entries: readonly InboxListEntry[] = inboxEntries.map((entry) => ({
@@ -121,6 +122,13 @@ export const InboxPanel = ({ onIssueSelect, profile, repositories }: InboxPanelP
       }}
       onMarkSelectedRead={(itemIds) => {
         markRead.mutate({
+          itemIds,
+          userId: profile.email,
+        });
+        setSelectedItemIds([]);
+      }}
+      onMarkSelectedUnread={(itemIds) => {
+        markUnread.mutate({
           itemIds,
           userId: profile.email,
         });

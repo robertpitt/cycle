@@ -275,14 +275,57 @@ describe("renderer cycle API client", () => {
 
     await cycleApiClient.cancelAgentTask("task-a");
     await cycleApiClient.retryAgentTask("task-a");
+    await cycleApiClient.appendAgentTaskInput("task-a", "Use the existing test helper");
 
     assert.deepEqual(
       calls.map((call) => [call.url, call.body]),
       [
         ["http://cycle.test/v1/agent-tasks/task-a/cancel", "{}"],
         ["http://cycle.test/v1/agent-tasks/task-a/retry", "{}"],
+        [
+          "http://cycle.test/v1/agent-tasks/task-a/input",
+          JSON.stringify({ input: "Use the existing test helper", requestedBy: "user" }),
+        ],
       ],
     );
+  });
+
+  it("updates and archives saved views through their canonical endpoints", async () => {
+    const calls: Array<{
+      readonly body?: BodyInit | null;
+      readonly method?: string;
+      readonly url: string;
+    }> = [];
+    installRendererApiWindow();
+    globalThis.fetch = async (input, init) => {
+      calls.push({ body: init?.body, method: init?.method, url: String(input) });
+      return jsonResponse({
+        data: savedViewRecord("view-triage"),
+        meta: { requestId: "req-test" },
+      });
+    };
+
+    await cycleApiClient.call("ticket.view.update", {
+      input: { id: "view-triage", patch: { name: "Triage queue", pinned: true } },
+      repository: { id: "repo-a" },
+    });
+    await cycleApiClient.call("ticket.view.delete", {
+      input: { id: "view-triage" },
+      repository: { id: "repo-a" },
+    });
+
+    assert.deepEqual(calls, [
+      {
+        body: JSON.stringify({ name: "Triage queue", pinned: true }),
+        method: "PATCH",
+        url: "http://cycle.test/v1/repositories/repo-a/views/view-triage",
+      },
+      {
+        body: "{}",
+        method: "POST",
+        url: "http://cycle.test/v1/repositories/repo-a/views/view-triage/archive",
+      },
+    ]);
   });
 
   it("starts ticket implementation through the durable issue task endpoint", async () => {
@@ -656,4 +699,17 @@ const archivedIssueRecord = (id: string) => ({
   title: "Archive me",
   type: "issue",
   updatedDate: "2026-07-03",
+});
+
+const savedViewRecord = (id: string) => ({
+  createdAt: "2026-07-01T10:00:00.000Z",
+  createdBy: { name: "Tester", type: "human" },
+  groupBy: "status",
+  id,
+  kind: "list",
+  name: "Triage",
+  pinned: false,
+  query: {},
+  schemaVersion: 1,
+  updatedAt: "2026-07-01T10:00:00.000Z",
 });

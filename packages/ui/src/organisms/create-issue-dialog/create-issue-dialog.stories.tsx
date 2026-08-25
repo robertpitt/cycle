@@ -73,8 +73,21 @@ export const Filled: Story = {
       assignee: "robert-pitt",
       description:
         "Add a first-class issue dialog API with data-driven property pickers and reusable footer actions.",
+      externalLinks: [{ title: "Design brief", url: "https://example.com/design" }],
       labels: ["feature"],
       mode: "manual",
+      onExternalLinkRemove: () => undefined,
+      onParentChange: () => undefined,
+      parent: "CYC-1023",
+      parentSections: [
+        {
+          id: "parent",
+          options: [
+            { id: "none", label: "No parent" },
+            { id: "CYC-1023", label: "CYC-1023 · Improve issue creation" },
+          ],
+        },
+      ],
       priority: "high",
       status: "in-progress",
       teamLabel: "Cycle UI",

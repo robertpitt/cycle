@@ -19,6 +19,7 @@ import {
   SendHorizontal,
   Tag,
   Ticket,
+  X,
 } from "lucide-react";
 import * as React from "react";
 import { Avatar, AvatarFallback } from "../../atoms/avatar/index.ts";
@@ -50,6 +51,7 @@ export type CreateIssueDialogChipId =
   | "assignee"
   | "labels"
   | "more"
+  | "parent"
   | "priority"
   | "project"
   | "repository"
@@ -80,6 +82,7 @@ export type CreateIssueDialogProps = React.HTMLAttributes<HTMLDivElement> & {
   readonly dueDate?: string;
   readonly error?: React.ReactNode;
   readonly estimate?: number | string | null;
+  readonly externalLinks?: readonly { readonly title?: string; readonly url: string }[];
   readonly heading?: React.ReactNode;
   readonly labels?: readonly string[];
   readonly labelSections?: readonly PropertyPickerSection[];
@@ -95,12 +98,14 @@ export type CreateIssueDialogProps = React.HTMLAttributes<HTMLDivElement> & {
   readonly onDraftSubmit?: React.FormEventHandler<HTMLFormElement>;
   readonly onDueDateChange?: (dueDate: string) => void;
   readonly onEstimateChange?: (estimate: string) => void;
+  readonly onExternalLinkRemove?: (index: number) => void;
   readonly onExpand?: React.MouseEventHandler<HTMLButtonElement>;
   readonly onLabelsChange?: (labels: readonly string[]) => void;
   readonly onModeChange?: (mode: CreateIssueDialogMode) => void;
   readonly onMoreAction?: (actionId: string, option: PropertyPickerOption) => void;
   readonly onOpenChipChange?: (chip: CreateIssueDialogChipId | undefined) => void;
   readonly onPriorityChange?: (priority: CreateIssueDialogPriority) => void;
+  readonly onParentChange?: (parent: string | null) => void;
   readonly onProjectChange?: (project: string | null) => void;
   readonly onRepositoryChange?: (repository: string | null) => void;
   readonly onStatusChange?: (status: CreateIssueDialogStatus) => void;
@@ -110,6 +115,8 @@ export type CreateIssueDialogProps = React.HTMLAttributes<HTMLDivElement> & {
   readonly openChip?: CreateIssueDialogChipId;
   readonly priority?: CreateIssueDialogPriority;
   readonly prioritySections?: readonly PropertyPickerSection[];
+  readonly parent?: string | null;
+  readonly parentSections?: readonly PropertyPickerSection[];
   readonly project?: string | null;
   readonly projectSections?: readonly PropertyPickerSection[];
   readonly repository?: string | null;
@@ -434,6 +441,7 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
       dueDate = "",
       error,
       estimate = "",
+      externalLinks = [],
       heading = "New issue",
       assigneeSections: assigneePickerSections = assigneeSections,
       labelSections: labelPickerSections = labelSections,
@@ -450,12 +458,14 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
       onDraftSubmit,
       onDueDateChange,
       onEstimateChange,
+      onExternalLinkRemove,
       onExpand,
       onLabelsChange,
       onModeChange,
       onMoreAction,
       onOpenChipChange,
       onPriorityChange,
+      onParentChange,
       onProjectChange,
       onRepositoryChange,
       onStatusChange,
@@ -465,6 +475,8 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
       openChip,
       priority = "none",
       prioritySections: priorityPickerSections = prioritySections,
+      parent = null,
+      parentSections: parentPickerSections = [],
       project = null,
       projectSections: projectPickerSections = projectSections,
       repository = null,
@@ -852,6 +864,25 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
                             value={project ?? "none"}
                             widthClassName="w-[350px]"
                           />
+                          {parentPickerSections.length > 0 ? (
+                            <PropertyPicker
+                              {...getControlledOpen(currentOpenChip, "parent", setOpenChip)}
+                              align="end"
+                              formatValueLabel={formatNullableLabel("Parent")}
+                              onValueChange={(value) => {
+                                const selectedParent = getSingleValue(value);
+                                onParentChange?.(selectedParent === "none" ? null : selectedParent);
+                              }}
+                              placeholder="Parent"
+                              searchPlaceholder="Choose parent issue..."
+                              sections={parentPickerSections}
+                              triggerIcon={
+                                <ChevronRight aria-hidden className="size-4" strokeWidth={1.8} />
+                              }
+                              value={parent ?? "none"}
+                              widthClassName="w-[414px]"
+                            />
+                          ) : null}
                           <PropertyPicker
                             {...getControlledOpen(currentOpenChip, "template", setOpenChip)}
                             align="end"
@@ -924,6 +955,30 @@ export const CreateIssueDialog = React.forwardRef<HTMLDivElement, CreateIssueDia
                             widthClassName="w-[384px]"
                           />
                         </div>
+
+                        {externalLinks.length > 0 ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            {externalLinks.map((externalLink, index) => (
+                              <span
+                                className="inline-flex max-w-full items-center gap-2 rounded-md border border-border bg-subtle px-2 py-1 text-xs text-muted-foreground"
+                                key={`${externalLink.url}:${index}`}
+                              >
+                                <Link2 aria-hidden className="size-3.5 shrink-0" />
+                                <span className="max-w-64 truncate">
+                                  {externalLink.title || externalLink.url}
+                                </span>
+                                <IconButton
+                                  disabled={onExternalLinkRemove === undefined}
+                                  icon={<X aria-hidden className="size-3.5" />}
+                                  label="Remove external link"
+                                  onClick={() => onExternalLinkRemove?.(index)}
+                                  size="sm"
+                                  title="Remove external link"
+                                />
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
 
                         {errorMessage}
 

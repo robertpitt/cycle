@@ -8,20 +8,52 @@ import { cn } from "@cycle/ui/utils";
 import type {
   IssueTemplateDocument,
   LabelDefinitionDocument,
+  TicketDocument,
   UserProfileDocument,
 } from "@cycle/contracts/schemas";
-import { Box, CalendarPlus, CircleDashed, FileText, Link2, Repeat2 } from "lucide-react";
+import {
+  Box,
+  CalendarPlus,
+  CircleDashed,
+  CornerDownRight,
+  FileText,
+  Link2,
+  Repeat2,
+} from "lucide-react";
 import type { ProfileConfig, RepositoryRecord } from "@cycle/config";
 
 export type CreateIssueDialogOptionSections = {
   readonly assigneeSections: readonly PropertyPickerSection[];
   readonly labelSections: readonly PropertyPickerSection[];
   readonly moreSections: readonly PropertyPickerSection[];
+  readonly parentSections: readonly PropertyPickerSection[];
   readonly prioritySections: readonly PropertyPickerSection[];
   readonly projectSections: readonly PropertyPickerSection[];
   readonly statusSections: readonly PropertyPickerSection[];
   readonly templateSections: readonly PropertyPickerSection[];
 };
+
+const createParentSections = (
+  issues?: readonly TicketDocument[],
+): readonly PropertyPickerSection[] => [
+  {
+    id: "parent",
+    label: "Parent issue",
+    options: [
+      {
+        icon: <CornerDownRight aria-hidden className="size-5" strokeWidth={2} />,
+        id: "none",
+        label: "No parent",
+      },
+      ...(issues ?? []).map((issue) => ({
+        icon: <CornerDownRight aria-hidden className="size-5" strokeWidth={2} />,
+        id: issue.id,
+        label: issue.title,
+        rightMeta: issue.id,
+      })),
+    ],
+  },
+];
 
 export const labelColorClassName = (color: string | undefined): string => {
   switch (color?.trim().toLowerCase()) {
@@ -174,12 +206,14 @@ const createProjectSections = (repository?: RepositoryRecord): readonly Property
 
 export const createIssueDialogOptionSections = ({
   labels,
+  issues,
   profile,
   repository,
   templates,
   users,
 }: {
   readonly labels?: readonly LabelDefinitionDocument[];
+  readonly issues?: readonly TicketDocument[];
   readonly profile?: ProfileConfig;
   readonly repository?: RepositoryRecord;
   readonly templates?: readonly IssueTemplateDocument[];
@@ -212,6 +246,7 @@ export const createIssueDialogOptionSections = ({
       ],
     },
   ],
+  parentSections: createParentSections(issues),
   prioritySections: [
     {
       id: "priority",
@@ -295,7 +330,7 @@ export const defaultCreateIssueMoreActionMessage = (actionId: string): string =>
     case "due-date":
       return "Use the due date field in the create dialog.";
     case "link":
-      return "Issue links are not wired in the desktop renderer yet.";
+      return "Use Add link in the create dialog.";
     case "recurring":
       return "Recurring issues are not wired in the desktop renderer yet.";
     default:

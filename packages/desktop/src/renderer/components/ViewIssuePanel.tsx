@@ -24,6 +24,7 @@ import {
   BarChart3,
   CalendarDays,
   Copy,
+  Download,
   Gauge,
   GitBranch,
   ListChecks,
@@ -42,6 +43,7 @@ import type {
 import type { CreateTicketInput } from "@cycle/contracts";
 import {
   useAddIssueCommentMutation,
+  useAppendAgentTaskInputMutation,
   useArchiveIssueMutation,
   useCancelAgentTaskMutation,
   useCreateIssueMutation,
@@ -52,6 +54,7 @@ import {
   useUpdateIssueMutation,
 } from "../mutations/index.ts";
 import {
+  useAgentTaskEventsQuery,
   useAgentTasksQuery,
   useInitiativeProgressQuery,
   useIssueDetailQuery,
@@ -73,6 +76,7 @@ import {
   terminalAgentTaskStatuses,
   resumableAgentTaskStatuses,
   type AgentTask,
+  type AgentTaskEvent,
 } from "../lib/agentTasks.ts";
 import { mapTicketDependencies, mapTicketSubIssues } from "../lib/ticketDependencies.ts";
 import { MergeHandoffCard } from "./MergeHandoffCard.tsx";
@@ -223,6 +227,37 @@ const issueActivity = (
 };
 
 const issueHistoryPageLimit = 100;
+
+const issueMarkdownExport = (issue: TicketDocument): string =>
+  [
+    "---",
+    `id: ${JSON.stringify(issue.id)}`,
+    `title: ${JSON.stringify(issue.frontmatter.title)}`,
+    `type: ${JSON.stringify(issue.type)}`,
+    `status: ${JSON.stringify(issue.frontmatter.status)}`,
+    `priority: ${JSON.stringify(issue.frontmatter.priority)}`,
+    ...(issue.frontmatter.assignee
+      ? [`assignee: ${JSON.stringify(issue.frontmatter.assignee)}`]
+      : []),
+    `labels: ${JSON.stringify(issue.frontmatter.labels ?? [])}`,
+    `externalLinks: ${JSON.stringify(issue.frontmatter.externalLinks ?? [])}`,
+    "---",
+    "",
+    issue.body,
+    "",
+  ].join("\n");
+
+const exportIssueMarkdown = (issue: TicketDocument): void => {
+  const blob = new Blob([issueMarkdownExport(issue)], { type: "text/markdown;charset=utf-8" });
+  const href = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.download = `${issue.id.replace(/[^a-z0-9_-]+/giu, "-")}.md`;
+  anchor.href = href;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(href), 0);
+};
 
 const renderPanelState = (message: string, kind: "error" | "loading") => (
   <PanelState kind={kind} message={message} />
@@ -398,8 +433,26 @@ const providerName = (
 ): string =>
   providers.find((provider) => provider.id === providerId)?.name ?? providerId ?? "Agent";
 
+const agentTaskEventDetail = (event: AgentTaskEvent): string | undefined => {
+  for (const key of ["message", "reason", "status", "error"]) {
+    const value = event.payload[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+
+  const compact = Object.entries(event.payload)
+    .filter(([, value]) => ["boolean", "number", "string"].includes(typeof value))
+    .slice(0, 3)
+    .map(([key, value]) => `${titleForValue(key)}: ${String(value)}`)
+    .join(" · ");
+  return compact || undefined;
+};
+
 const AgentTaskSidebar = ({
+  appendPending,
   cancelPending,
+  events,
+  eventsLoading,
+  onAppend,
   tasks,
   onCancel,
   onOpenChat,
@@ -407,7 +460,11 @@ const AgentTaskSidebar = ({
   providers,
   retryPending,
 }: {
+  readonly appendPending: boolean;
   readonly cancelPending: boolean;
+  readonly events: readonly AgentTaskEvent[];
+  readonly eventsLoading: boolean;
+  readonly onAppend: (taskId: string, input: string) => void;
   readonly tasks: readonly AgentTask[];
   readonly onCancel: (taskId: string) => void;
   readonly onOpenChat: (threadId: string) => void;
@@ -415,12 +472,14 @@ const AgentTaskSidebar = ({
   readonly providers: readonly DetectedAgentProvider[];
   readonly retryPending: boolean;
 }) => {
+  const [taskInput, setTaskInput] = React.useState("");
   const currentTask = latestAgentTask(tasks);
   const branchName = metadataString(currentTask, "branchName");
   const commitSha = metadataString(currentTask, "commitSha");
   const worktreePath = currentTask?.workspace?.path ?? metadataString(currentTask, "worktreePath");
   const canCancel = currentTask !== undefined && !terminalAgentTaskStatuses.has(currentTask.status);
   const canRetry = currentTask !== undefined && resumableAgentTaskStatuses.has(currentTask.status);
+  const canAppend = currentTask !== undefined && !terminalAgentTaskStatuses.has(currentTask.status);
   const threadId = metadataString(currentTask, "threadId");
 
   return (
@@ -473,6 +532,36 @@ const AgentTaskSidebar = ({
             </div>
           ) : null}
           {currentTask.handoff ? <MergeHandoffCard handoff={currentTask.handoff} /> : null}
+          {canAppend ? (
+            <form
+              className="grid gap-2 border-t border-border pt-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const input = taskInput.trim();
+                if (!input) return;
+                onAppend(currentTask.taskId, input);
+                setTaskInput("");
+              }}
+            >
+              <Textarea
+                aria-label="Additional task input"
+                disabled={appendPending}
+                onChange={(event) => setTaskInput(event.currentTarget.value)}
+                placeholder="Add context or direction..."
+                value={taskInput}
+              />
+              <Button
+                className="justify-self-start"
+                disabled={!taskInput.trim()}
+                loading={appendPending}
+                size="sm"
+                type="submit"
+                variant="outline"
+              >
+                Send input
+              </Button>
+            </form>
+          ) : null}
           {threadId !== undefined || canCancel || canRetry ? (
             <div className="flex flex-wrap items-center gap-2 pt-1">
               {threadId !== undefined ? (
@@ -507,6 +596,44 @@ const AgentTaskSidebar = ({
       ) : (
         <div className="text-sm text-muted-foreground">No agent tasks yet.</div>
       )}
+      {currentTask ? (
+        <div className="grid gap-2 border-t border-border pt-3">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Event timeline
+          </div>
+          {eventsLoading ? (
+            <div className="text-xs text-muted-foreground">Loading task events…</div>
+          ) : events.length === 0 ? (
+            <div className="text-xs text-muted-foreground">No task events recorded yet.</div>
+          ) : (
+            <ol className="grid max-h-72 gap-2 overflow-y-auto pr-1">
+              {events.map((event) => (
+                <li className="grid grid-cols-[auto_minmax(0,1fr)] gap-2" key={event.eventId}>
+                  <span className="mt-1.5 size-1.5 rounded-full bg-muted-foreground" />
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 items-center justify-between gap-2">
+                      <span className="truncate text-xs font-medium text-foreground">
+                        {statusLabel(event.type)}
+                      </span>
+                      <DateTime
+                        className="shrink-0 text-[11px] text-muted-foreground"
+                        fallback={event.occurredAt}
+                        format="compactDateTime"
+                        value={event.occurredAt}
+                      />
+                    </div>
+                    {agentTaskEventDetail(event) ? (
+                      <div className="line-clamp-2 text-xs text-muted-foreground">
+                        {agentTaskEventDetail(event)}
+                      </div>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 };
@@ -1052,6 +1179,8 @@ export const ViewIssuePanel = ({
     repositoryId,
     ticketId: issueId,
   });
+  const currentAgentTaskId = latestAgentTask(agentTasksQuery.data ?? [])?.taskId;
+  const agentTaskEventsQuery = useAgentTaskEventsQuery(currentAgentTaskId);
   const updateIssue = useUpdateIssueMutation({
     issueId,
     repositoryId,
@@ -1076,10 +1205,13 @@ export const ViewIssuePanel = ({
   });
   const cancelAgentTask = useCancelAgentTaskMutation();
   const retryAgentTask = useRetryAgentTaskMutation();
+  const appendAgentTaskInput = useAppendAgentTaskInputMutation();
   const notifications = useNotifications();
   const initiativeProgressQuery = useInitiativeProgressQuery(
     repositoryId,
-    issueQuery.data?.type === "initiative" ? issueQuery.data.id : undefined,
+    issueQuery.data?.type === "initiative" || issueQuery.data?.type === "epic"
+      ? issueQuery.data.id
+      : undefined,
   );
   const availableAgentProviders = React.useMemo(
     () => agentProviders.filter((provider) => provider.status === "available"),
@@ -1399,7 +1531,7 @@ export const ViewIssuePanel = ({
       muted: currentEstimate.length === 0,
       value: currentEstimate.length > 0 ? currentEstimate : "None",
     },
-    ...(issue.type === "initiative"
+    ...(issue.type === "initiative" || issue.type === "epic"
       ? [
           {
             icon: <BarChart3 aria-hidden className={propertyIconClassName} />,
@@ -1419,7 +1551,11 @@ export const ViewIssuePanel = ({
         activityEvents={issueActivity(issue, issueHistoryQuery.data?.entries ?? [], records)}
         agentWork={
           <AgentTaskSidebar
+            appendPending={appendAgentTaskInput.isPending}
             cancelPending={cancelAgentTask.isPending}
+            events={agentTaskEventsQuery.data ?? []}
+            eventsLoading={agentTaskEventsQuery.isLoading}
+            onAppend={(taskId, input) => appendAgentTaskInput.mutate({ input, taskId })}
             tasks={agentTasks}
             onCancel={(taskId) => cancelAgentTask.mutate(taskId)}
             onOpenChat={(threadId) => onChatOpen?.(threadId)}
@@ -1483,6 +1619,12 @@ export const ViewIssuePanel = ({
             onSelect: () => startTicketWorkflow("plan"),
           },
           {
+            icon: <Download aria-hidden className="size-4" />,
+            id: "export-markdown",
+            label: "Export as Markdown",
+            onSelect: () => exportIssueMarkdown(issue),
+          },
+          {
             icon: <Copy aria-hidden className="size-4" />,
             id: "copy-id",
             label: "Copy issue ID",
@@ -1508,6 +1650,10 @@ export const ViewIssuePanel = ({
           commentActions.mutate({ active, commentId, emoji, kind: "reaction" })
         }
         onCommentReply={(parentCommentId, body) => addComment.mutate({ body, parentCommentId })}
+        onCopyIssueId={() => copyIssueValue("Issue ID", issue.id)}
+        onCopyIssueLink={() =>
+          copyIssueValue("Cycle link", `cycle://repository/${repositoryId}/issue/${issue.id}`)
+        }
         onDescriptionSave={updateDescription}
         onArchive={() => setArchiveDialogOpen(true)}
         onFilesSelect={(files) => {

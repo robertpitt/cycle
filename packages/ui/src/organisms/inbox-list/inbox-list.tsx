@@ -5,6 +5,7 @@ import {
   CheckCheck,
   ChevronDown,
   Inbox,
+  Mail,
   MessageCircle,
   UserRoundCheck,
 } from "lucide-react";
@@ -60,6 +61,7 @@ export type InboxListProps = Omit<React.HTMLAttributes<HTMLDivElement>, "title">
   readonly onSelectionChange?: (itemIds: readonly string[]) => void;
   readonly onStatusFilterChange?: (status: InboxListStatus | "all") => void;
   readonly onMarkSelectedRead?: (itemIds: readonly string[]) => void;
+  readonly onMarkSelectedUnread?: (itemIds: readonly string[]) => void;
   readonly reasonFilter?: InboxListReason | "all";
   readonly repositories?: readonly InboxListRepository[];
   readonly repositoryFilter?: string | "all";
@@ -119,6 +121,7 @@ export const InboxList = React.forwardRef<HTMLDivElement, InboxListProps>(functi
     onEntrySelect,
     onLoadMore,
     onMarkSelectedRead,
+    onMarkSelectedUnread,
     onReasonFilterChange,
     onRepositoryFilterChange,
     onSelectionChange,
@@ -223,7 +226,7 @@ export const InboxList = React.forwardRef<HTMLDivElement, InboxListProps>(functi
             value={statusFilter}
           />
           <IconButton
-            disabled={selected.length === 0}
+            disabled={selected.length === 0 || onMarkSelectedRead === undefined}
             icon={<CheckCheck aria-hidden className="size-4" />}
             label="Mark read"
             onClick={() => onMarkSelectedRead?.(selected)}
@@ -232,7 +235,16 @@ export const InboxList = React.forwardRef<HTMLDivElement, InboxListProps>(functi
             variant="outline"
           />
           <IconButton
-            disabled={selected.length === 0}
+            disabled={selected.length === 0 || onMarkSelectedUnread === undefined}
+            icon={<Mail aria-hidden className="size-4" />}
+            label="Mark unread"
+            onClick={() => onMarkSelectedUnread?.(selected)}
+            size="sm"
+            title="Mark unread"
+            variant="outline"
+          />
+          <IconButton
+            disabled={selected.length === 0 || onArchiveSelected === undefined}
             icon={<Archive aria-hidden className="size-4" />}
             label="Archive"
             onClick={() => onArchiveSelected?.(selected)}

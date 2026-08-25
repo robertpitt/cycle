@@ -1,4 +1,5 @@
 import type { CreateIssueDialogPriority, CreateIssueDialogStatus } from "@cycle/ui/organisms";
+import type { ExternalLinkInput } from "@cycle/contracts/schemas";
 import * as React from "react";
 import {
   isTicketTypeSelection,
@@ -17,8 +18,10 @@ export type CreateIssueFormValues = {
   readonly dueDate: string;
   readonly error?: React.ReactNode;
   readonly estimate: string;
+  readonly externalLinks: readonly ExternalLinkInput[];
   readonly labels: readonly string[];
   readonly mode: CreateIssueFormMode;
+  readonly parent: string | null;
   readonly priority: CreateIssueDialogPriority;
   readonly project: string | null;
   readonly repositoryId: string;
@@ -36,8 +39,10 @@ const initialCreateIssueFormValues = (): CreateIssueFormValues => ({
   dueDate: "",
   error: undefined,
   estimate: "",
+  externalLinks: [],
   labels: [],
   mode: "agent",
+  parent: null,
   priority: "none",
   project: null,
   repositoryId: "",
@@ -59,10 +64,12 @@ export const getCreateIssueRepositorySelectionPatch = (
   repositoryId: string | null,
 ): Pick<
   CreateIssueFormValues,
-  "assignee" | "labels" | "project" | "repositoryId" | "template"
+  "assignee" | "externalLinks" | "labels" | "parent" | "project" | "repositoryId" | "template"
 > => ({
   assignee: null,
+  externalLinks: [],
   labels: [],
+  parent: null,
   project: null,
   repositoryId: repositoryId ?? "",
   template: null,
@@ -141,7 +148,12 @@ export const useCreateIssueForm = () => {
     setEstimate: React.useCallback((estimate: string) => update({ estimate }), [update]),
     setError: React.useCallback((error?: React.ReactNode) => update({ error }), [update]),
     setLabels: React.useCallback((labels: readonly string[]) => update({ labels }), [update]),
+    setExternalLinks: React.useCallback(
+      (externalLinks: readonly ExternalLinkInput[]) => update({ externalLinks }),
+      [update],
+    ),
     setMode: React.useCallback((mode: CreateIssueFormMode) => update({ mode }), [update]),
+    setParent: React.useCallback((parent: string | null) => update({ parent }), [update]),
     setPriority: React.useCallback(
       (priority: CreateIssueDialogPriority) => update({ priority }),
       [update],

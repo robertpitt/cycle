@@ -2,7 +2,11 @@ import type { TicketQuery } from "@cycle/contracts";
 import type { SavedViewDocument } from "@cycle/contracts/schemas";
 import { ViewsPanel as UiViewsPanel, type ViewsPanelRow } from "@cycle/ui/organisms";
 import * as React from "react";
-import { useCreateSavedViewMutation } from "../mutations/index.ts";
+import {
+  useArchiveSavedViewMutation,
+  useCreateSavedViewMutation,
+  useUpdateSavedViewMutation,
+} from "../mutations/index.ts";
 import { useSavedViewListQuery, useUserListQuery } from "../queries/index.ts";
 
 type ViewsPanelProps = {
@@ -60,6 +64,8 @@ export const ViewsPanel = ({ onViewSelect, repositoryId }: ViewsPanelProps) => {
   const createSavedView = useCreateSavedViewMutation({
     repositoryId,
   });
+  const updateSavedView = useUpdateSavedViewMutation({ repositoryId });
+  const archiveSavedView = useArchiveSavedViewMutation({ repositoryId });
   const usersById = React.useMemo(
     () => new Map((usersQuery.data?.entries ?? []).map((user) => [user.id, user] as const)),
     [usersQuery.data?.entries],
@@ -105,14 +111,65 @@ export const ViewsPanel = ({ onViewSelect, repositoryId }: ViewsPanelProps) => {
       query: {},
     });
   }, [createSavedView]);
+  const viewForRow = (row: ViewsPanelRow): SavedViewDocument | undefined => viewsById.get(row.id);
+  const renameView = (row: ViewsPanelRow) => {
+    const view = viewForRow(row);
+    if (!view) return;
+    const name = window.prompt("View name", view.name)?.trim();
+    if (!name) return;
+    const description = window.prompt("View description", view.description ?? "");
+    if (description === null) return;
+    const nextDescription = description.trim();
+    if (name === view.name && nextDescription === (view.description ?? "")) return;
+    updateSavedView.mutate({
+      id: view.id,
+      patch: { description: nextDescription, name },
+    });
+  };
+  const duplicateView = (row: ViewsPanelRow) => {
+    const view = viewForRow(row);
+    if (!view) return;
+    createSavedView.mutate({
+      ...(view.description === undefined ? {} : { description: view.description }),
+      ...(view.display === undefined ? {} : { display: view.display }),
+      groupBy: view.groupBy,
+      kind: view.kind,
+      name: `${view.name} copy`,
+      pinned: false,
+      query: view.query,
+      ...(view.sort === undefined ? {} : { sort: view.sort }),
+    });
+  };
+  const archiveView = (row: ViewsPanelRow) => {
+    const view = viewForRow(row);
+    if (!view || !window.confirm(`Archive “${view.name}”?`)) return;
+    archiveSavedView.mutate(view.id);
+  };
 
   return (
     <UiViewsPanel
       createDisabled={!repositoryId || createSavedView.isPending}
       creating={createSavedView.isPending}
-      error={viewsQuery.error instanceof Error ? viewsQuery.error.message : undefined}
+      error={
+        viewsQuery.error instanceof Error
+          ? viewsQuery.error.message
+          : updateSavedView.error instanceof Error
+            ? updateSavedView.error.message
+            : archiveSavedView.error instanceof Error
+              ? archiveSavedView.error.message
+              : createSavedView.error instanceof Error
+                ? createSavedView.error.message
+                : undefined
+      }
       loading={viewsQuery.isLoading}
       onCreateView={createView}
+      onViewArchive={archiveView}
+      onViewDuplicate={duplicateView}
+      onViewPinnedChange={(row, pinned) => {
+        const view = viewForRow(row);
+        if (view) updateSavedView.mutate({ id: view.id, patch: { pinned } });
+      }}
+      onViewRename={renameView}
       onViewSelect={(row) => {
         const view = viewsById.get(row.id);
         if (view) onViewSelect?.(view);

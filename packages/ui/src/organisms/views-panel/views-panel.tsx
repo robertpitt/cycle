@@ -1,12 +1,26 @@
-import { Layers2, ListFilter, Pin, Plus, Search, Table2, UserRound } from "lucide-react";
+import {
+  Archive,
+  Copy,
+  Layers2,
+  ListFilter,
+  Pencil,
+  Pin,
+  PinOff,
+  Plus,
+  Search,
+  Table2,
+  UserRound,
+} from "lucide-react";
 import * as React from "react";
 import { Button } from "../../atoms/button/index.ts";
 import { DateTime, type DateTimeValue } from "../../atoms/date-time/index.ts";
 import { Input } from "../../atoms/input/index.ts";
+import { IconButton } from "../../atoms/icon-button/index.ts";
 import { Text } from "../../atoms/text/index.ts";
 import { cn } from "../../lib/cn.ts";
 
 export type ViewsPanelRow = {
+  readonly actionsDisabled?: boolean;
   readonly description?: React.ReactNode;
   readonly filterSummary: React.ReactNode;
   readonly id: string;
@@ -30,6 +44,10 @@ export type ViewsPanelProps = {
   readonly loading?: boolean;
   readonly loadingMessage?: React.ReactNode;
   readonly onCreateView?: () => void;
+  readonly onViewArchive?: (row: ViewsPanelRow) => void;
+  readonly onViewDuplicate?: (row: ViewsPanelRow) => void;
+  readonly onViewPinnedChange?: (row: ViewsPanelRow, pinned: boolean) => void;
+  readonly onViewRename?: (row: ViewsPanelRow) => void;
   readonly onViewSelect?: (row: ViewsPanelRow) => void;
   readonly repositoryRequiredMessage?: React.ReactNode;
   readonly repositorySelected?: boolean;
@@ -68,7 +86,7 @@ const EmptyRow = ({
   readonly tone?: "danger" | "muted";
 }) => (
   <tr>
-    <td className="px-4 py-10 text-center" colSpan={6}>
+    <td className="px-4 py-10 text-center" colSpan={7}>
       <Text tone={tone} variant="bodyCompact">
         {children}
       </Text>
@@ -87,6 +105,10 @@ export const ViewsPanel = ({
   loading = false,
   loadingMessage = defaultLoadingMessage,
   onCreateView,
+  onViewArchive,
+  onViewDuplicate,
+  onViewPinnedChange,
+  onViewRename,
   onViewSelect,
   repositoryRequiredMessage = defaultRepositoryRequiredMessage,
   repositorySelected = true,
@@ -178,6 +200,48 @@ export const ViewsPanel = ({
             value={row.updatedAt}
           />
         </td>
+        <td className="px-4 py-3">
+          <div className="flex items-center justify-end gap-1 opacity-70 transition group-hover:opacity-100 group-focus-within:opacity-100">
+            <IconButton
+              disabled={row.actionsDisabled || onViewPinnedChange === undefined}
+              icon={
+                row.pinned ? (
+                  <PinOff aria-hidden className="size-3.5" />
+                ) : (
+                  <Pin aria-hidden className="size-3.5" />
+                )
+              }
+              label={row.pinned ? "Unpin view" : "Pin view"}
+              onClick={() => onViewPinnedChange?.(row, !row.pinned)}
+              size="sm"
+              title={row.pinned ? "Unpin view" : "Pin view"}
+            />
+            <IconButton
+              disabled={row.actionsDisabled || onViewRename === undefined}
+              icon={<Pencil aria-hidden className="size-3.5" />}
+              label="Edit view"
+              onClick={() => onViewRename?.(row)}
+              size="sm"
+              title="Edit view"
+            />
+            <IconButton
+              disabled={row.actionsDisabled || onViewDuplicate === undefined}
+              icon={<Copy aria-hidden className="size-3.5" />}
+              label="Duplicate view"
+              onClick={() => onViewDuplicate?.(row)}
+              size="sm"
+              title="Duplicate view"
+            />
+            <IconButton
+              disabled={row.actionsDisabled || onViewArchive === undefined}
+              icon={<Archive aria-hidden className="size-3.5" />}
+              label="Archive view"
+              onClick={() => onViewArchive?.(row)}
+              size="sm"
+              title="Archive view"
+            />
+          </div>
+        </td>
       </tr>
     ));
   };
@@ -245,6 +309,7 @@ export const ViewsPanel = ({
               <th className="px-4 py-3">Scope</th>
               <th className="px-4 py-3">Owner</th>
               <th className="px-4 py-3 text-right">Updated</th>
+              <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody
