@@ -36,13 +36,13 @@ export const DesktopLoggerLive = Layer.effect(
       component: input.component ?? "desktop",
     });
 
-    yield* logInfo("desktop", "desktop logger initialized", { logPath: logFile.pathSync });
+    yield* logInfo("desktop", "desktop logger initialized", { logPath: logFile.path });
 
     return DesktopLogger.of({
       debug: (message, input) => logDebug("desktop", message, fields(input)),
       error: (message, input) => logError("desktop", message, fields(input)),
       info: (message, input) => logInfo("desktop", message, fields(input)),
-      path: logFile.path,
+      path: Effect.succeed(logFile.path),
       warn: (message, input) => logWarning("desktop", message, fields(input)),
     });
   }),

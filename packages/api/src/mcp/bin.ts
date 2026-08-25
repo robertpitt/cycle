@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { defaultLayer as CycleLoggingLive } from "@cycle/logging";
+import { CycleLoggingLive } from "@cycle/logging";
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { Effect } from "effect";
 import { CycleApiError } from "../CycleApiError.ts";

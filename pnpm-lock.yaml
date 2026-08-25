@@ -365,10 +365,16 @@ importers:
 
   packages/logging:
     dependencies:
+      '@effect/platform-node':
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.11.1)
       effect:
         specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78
     devDependencies:
+      '@effect/vitest':
+        specifier: 4.0.0-beta.78
+        version: 4.0.0-beta.78(effect@4.0.0-beta.78)(vitest@4.1.8)
       vitest:
         specifier: ^4.1.8
         version: 4.1.8(@types/node@25.9.2)(@vitest/coverage-v8@4.1.8)(vite@8.0.16(@types/node@25.9.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -772,6 +778,12 @@ packages:
     resolution: {integrity: sha512-I1n2ob9w78YvyXAGlLdqNxdvidZgr07s5/08wCWiS0Pp+vViojoPaew9oyo7EYZmmQJ22+yBwZGlKgO/hvS+1g==}
     peerDependencies:
       effect: ^4.0.0-beta.78
+
+  '@effect/vitest@4.0.0-beta.78':
+    resolution: {integrity: sha512-5KQsQYrQ/o7mfOVAxRtNnfD9M0W4OI6yQd0n/m2N7OOLxTdX4FwN4s/X4obykBC7ZEwH+bzMrFJiB4pq9lrQKQ==}
+    peerDependencies:
+      effect: ^4.0.0-beta.78
+      vitest: ^3.0.0 || ^4.0.0
 
   '@electron/get@5.0.0':
     resolution: {integrity: sha512-pjoBpru1KdEtcExBnuHAP1cAc/5faoedw0hzJkL3o4/IJp7HNF1+fbrdxT3gMYRX2oJfvnA/WXeCTVQpYYxyJA==}
@@ -4722,6 +4734,11 @@ snapshots:
     dependencies:
       better-sqlite3: 12.11.1
       effect: 4.0.0-beta.78
+
+  '@effect/vitest@4.0.0-beta.78(effect@4.0.0-beta.78)(vitest@4.1.8)':
+    dependencies:
+      effect: 4.0.0-beta.78
+      vitest: 4.1.8(@types/node@25.9.2)(@vitest/coverage-v8@4.1.8)(vite@8.0.16(@types/node@25.9.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   '@electron/get@5.0.0':
     dependencies:

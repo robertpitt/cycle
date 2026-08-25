@@ -1,6 +1,6 @@
 import { BackendRuntime, BackendServicesLive } from "@cycle/backend";
 import { defaultRuntimeDiscoveryPath } from "@cycle/config";
-import { defaultLayer as CycleLoggingLive } from "@cycle/logging";
+import { CycleLoggingLive } from "@cycle/logging";
 import { NodeServices } from "@effect/platform-node";
 import { Context, Effect, Layer } from "effect";
 

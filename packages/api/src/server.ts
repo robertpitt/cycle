@@ -1,9 +1,5 @@
 import { NodeHttpServer, NodeServices } from "@effect/platform-node";
-import {
-  defaultLayer as CycleLoggingLive,
-  logInfo,
-  type CycleLogConfigInput,
-} from "@cycle/logging";
+import { CycleLoggingLive, logInfo, type CycleLogConfigInput } from "@cycle/logging";
 import { RuntimeDiscovery, RuntimeDiscoveryLive, type RuntimeDiscoveryFile } from "@cycle/config";
 import { ConfigProvider, Context, Effect, Exit, Layer, Scope } from "effect";
 import { HttpRouter, HttpServer } from "effect/unstable/http";

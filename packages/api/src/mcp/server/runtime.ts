@@ -1,5 +1,5 @@
 import { NodeHttpServer, NodeRuntime, NodeServices } from "@effect/platform-node";
-import { defaultLayer as CycleLoggingLive, logInfo, logWarning } from "@cycle/logging";
+import { CycleLoggingLive, logInfo, logWarning } from "@cycle/logging";
 import { Context, Effect, Exit, Layer, Redacted, Scope } from "effect";
 import {
   HttpMiddleware,

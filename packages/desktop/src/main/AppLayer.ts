@@ -1,4 +1,4 @@
-import { defaultLayer as CycleLoggingLive } from "@cycle/logging";
+import { CycleLoggingLive } from "@cycle/logging";
 import { NodeServices } from "@effect/platform-node";
 import { Layer } from "effect";
 import { ApplicationLifecycleLive } from "../ApplicationLifecycle.ts";
